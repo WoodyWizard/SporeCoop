@@ -10,10 +10,10 @@ role: guest
 versions: 0.7.16.1
 fixed_in:
 branch: fix/w63-space
-commits:
+commits: ca07b2e8
 tests: space_grant_restore, space_grant_restore_off, space_core_own_save, space_core_own_save_off
 signature:
-docs:
+docs: docs/re/space.md#space-restore-window
 related: BUG-1034, BUG-0678, BUG-0694, BUG-0226, BUG-0709, BUG-0816
 ---
 

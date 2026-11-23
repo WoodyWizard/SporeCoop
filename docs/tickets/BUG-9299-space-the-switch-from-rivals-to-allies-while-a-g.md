@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.16.1
 fixed_in:
 branch: fix/w63-space
-commits:
+commits: 0d07ae00
 tests: space_merge_away, space_merge_away_off
 signature:
 docs:
