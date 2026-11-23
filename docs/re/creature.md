@@ -5380,3 +5380,14 @@ BUG-1393. GOG 2024, the logs of lab 20261121-003202 mem_census (20 min of Creatu
 * In co-op with own DNA the bar is the party's (the host's): a guest's own drop is undone by the host's next total
   (raised to the party's when over half a point); the host's drop is the party's setback, which the guests now follow
   (`creature.bar_setback`, a fall under one point only: dna_own.h apply_own).
+
+## The HUD portrait's drawable vtable is a symbol (2026-11-22, fix/w63-net)
+<a id="creature-portrait-vtable-symbol"></a>
+
+BUG-9311 (UIFX-3 of the 0.7.15.5 audit; the same as BUG-9269 of PR #208 by IltonBJSilva).
+* ✔ (.rdata, GOG 2024 dc04aee5) `UTFWin::ImageDrawable::vftable` = 0x01443248: slot 4 (+0x10) = ImageDrawable::Paint
+  0x97D1E0, slot 6 (+0x18) = GetDimensions 0x97D0E0 (both ModAPI March2017 names). It is the vtable of the Creature HUD
+  portrait window's drawable (runtime 2026-11-12, BUG-0937).
+* ✔ (PE header) SporeApp.exe is DYNAMIC_BASE (DllCharacteristics 0x8140) and has a .reloc directory (0xC2C04 bytes):
+  Windows may load it elsewhere (PR #208: 0x00320000 on Windows 11, every address -0xE0000), Wine never does. A raw
+  game address in the code is right under Wine and wrong on such a Windows PC; ask H->sym (rebased).

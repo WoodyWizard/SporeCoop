@@ -33,6 +33,8 @@ bool saved_box_up();     // the "game saved" box of our last save is up (seen, w
 // BUG-1365: the game takes a Save message now (its last save finished: SaveGame_Allowed set, its clock stopped)
 bool save_may_start();
 extern unsigned g_saves_too_early; // tests: saves refused because the game's last save was still finishing
+extern unsigned g_saves_dropped, g_saves_reposted, g_saves_lost; // tests (BUG-1413): Save messages the game dropped, made again, given up
+bool post_player_save(); // tests (BUG-1413): the Save message as the pause menu posts it
 // coop.cpp: why the game must not save now (an editor opens or is open, a mode switch is pending),
 // nullptr when it may
 void set_save_blocker(const char* (*probe)());

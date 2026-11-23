@@ -160,6 +160,7 @@ static void save_write_watch()
 }
 
 static void install_intro_hook();
+static void install_save_hook(); // BUG-1413
 // coop.menuslot <GameN> (tests, BUG-0676): the galaxy menu shows the planets of another save slot, as when the player
 // picks that slot: the save database moves there and the star manager reads its stars (the menu rebuilds its planets
 // on the message 0x625D27D that sends). Outside the frame (it rebuilds UI).
@@ -226,6 +227,7 @@ void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)
     H->command_add(M, "coop.menuintro", "coop.menuintro - tests: in the galaxy menu, the start-up video's end message (the menu plays its "
                    "intro and shows its main menu panel; BUG-1254, BUG-1260)", c_menuintro, nullptr, SK_CMD_OUTSIDE_FRAME);
     install_intro_hook(); // BUG-0626
+    install_save_hook();  // BUG-1413
 }
 
 static std::wstring current_db_dir(bool lower = true);
@@ -493,12 +495,103 @@ COOP_FIX("world.adventure_saves", "BUG-0854", g_adventure_fix, "world: no campai
 static bool g_save_allowed_fix = true;
 COOP_FIX("world.save_allowed", "BUG-1365", g_save_allowed_fix, "world: a save is not posted while the game's previous save is still finishing (the game would drop it silently)");
 unsigned g_saves_too_early; // tests
+static bool g_save_allowed_fix_on() { return g_save_allowed_fix; }
 bool save_may_start()
 {
     static uintptr_t allowed = H->sym("SporeCoop::SaveGame_Allowed"), clock = H->sym("SporeCoop::SaveGame_Clock");
     if (!allowed || !clock || !skg::readable((void*)allowed, 1) || !skg::readable((void*)clock, 8))
         return true;
     return *(volatile uint8_t*)allowed != 0 && *(volatile uint32_t*)clock == 0 && *(volatile uint32_t*)(clock + 4) == 0;
+}
+
+// BUG-1413: a Save the game drops is posted again once it takes one. Since BUG-1365 the mod's own saves wait for the
+// game's Save handler to take them; a save the player asks for itself (the pause menu's Save, 0x1CD20F0 posted by the
+// game's UI as save_game does) within ~1.5 s after one of the mod's (a world share for a joining guest, an autosave)
+// was still dropped without a word (lab 20261121-003202, twoinst.session_restart: store writes 2 -> 2). The handler
+// (SporeCoop::SaveGame_MessageHandler, hooked: it only looks) sees the message the game will drop now (its save clock
+// runs or SaveGame_Allowed is 0, as save_may_start) and remembers it; resave_tick posts the save again through
+// save_game (its blockers and the box watch as for every save of the mod) as soon as the game takes one, for up to 30 s
+// and 5 times per dropped request. Off: dropped (0.7.16).
+static bool g_resave_fix = true;
+COOP_FIX("world.save_retry", "BUG-1413", g_resave_fix,
+         "world: a save the game drops (the player's own save right after one of the mod's, its last save still finishing) is posted again once the game takes one");
+constexpr uint32_t kSaveMsg = 0x1CD20F0;
+using SaveHandler_t = bool(SK_THISCALL*)(void*, uint32_t, void*);
+static SaveHandler_t o_SaveHandler;
+static uint64_t g_resave_since, g_resave_next; // a dropped save waits since (tick count; 0 none), the next try
+static int g_resave_tries;
+static uint32_t g_resave_mode; // the game mode the dropped save was asked in (a quit after it: not made in the menu)
+unsigned g_saves_dropped, g_saves_reposted, g_saves_lost; // tests (coop.save box)
+// the mod's own posts not handled yet (a dropped one of them is BUG-1365's, left alone while world.save_allowed is
+// off so that its twin still shows it); forgotten 2 s after the last post (a queue the game threw away)
+static unsigned g_own_unhandled;
+static uint64_t g_own_posted_at;
+static bool g_save_allowed_fix_on();
+static bool SK_THISCALL h_SaveHandler(void* self, uint32_t msg, void* data)
+{
+    if (msg == kSaveMsg) {
+        if (g_own_unhandled && GetTickCount64() - g_own_posted_at > 2000)
+            g_own_unhandled = 0;
+        bool ours = g_own_unhandled > 0;
+        if (ours)
+            g_own_unhandled--;
+        bool drops = !save_may_start(); // (the game's own +0x45 condition is left to it)
+        if (drops) {
+            g_saves_dropped++;
+            if (g_resave_fix && !(ours && !g_save_allowed_fix_on()) && !g_resave_since && g_resave_tries < 5) {
+                g_resave_since = GetTickCount64();
+                g_resave_next = g_resave_since + 100;
+                g_resave_mode = game::mode_id();
+                H->log(M, SK_INFO, "world: the game drops a Save now (its last save is still finishing): it is made again "
+                                   "as soon as the game takes one (BUG-1413)");
+            }
+        } else
+            g_resave_tries = 0;
+    }
+    return o_SaveHandler(self, msg, data);
+}
+
+static void resave_tick()
+{
+    if (!g_resave_since)
+        return;
+    uint64_t now = GetTickCount64();
+    bool left = game::mode_id() != g_resave_mode;
+    if (!g_resave_fix || left || now - g_resave_since > 30000) {
+        g_saves_lost++;
+        g_resave_since = 0;
+        H->log(M, SK_WARN, "world: a save the game dropped could not be made again (%s, BUG-1413)",
+               left ? "the game left that mode first: a quit right after the save" : "30 s");
+        return;
+    }
+    if (now < g_resave_next || !save_may_start())
+        return;
+    g_resave_next = now + 250;
+    std::string err;
+    if (save_game(err)) {
+        g_saves_reposted++;
+        g_resave_tries++;
+        H->log(M, SK_INFO, "world: the dropped save is made now, %.1f s later (BUG-1413)", (now - g_resave_since) / 1000.0);
+        g_resave_since = 0;
+    } // else (an editor opens, the last box is still up, a planet in Space): later
+}
+
+static void install_save_hook()
+{
+    if (uintptr_t a = H->sym("SporeCoop::SaveGame_MessageHandler"))
+        if (H->hook_create(M, (void*)a, (void*)h_SaveHandler, (void**)&o_SaveHandler) != 0)
+            o_SaveHandler = nullptr;
+}
+
+// tests (BUG-1413): the Save message posted as the pause menu's Save button does (no check of the mod's)
+bool post_player_save()
+{
+    uintptr_t get = H->sym("App::IMessageManager::Get");
+    void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (!mm)
+        return false;
+    skg::vcall<void>(mm, 0x18 / 4, kSaveMsg, (void*)nullptr, (void*)nullptr, 0);
+    return true;
 }
 
 bool save_game(std::string& err)
@@ -551,8 +644,10 @@ bool save_game(std::string& err)
     // MessagePost like the pause menu button (4 arguments, as pushed at 0xE03149): the save then runs
     // in the game's own message processing. A synchronous MessageSend from our frame hook (inside
     // Present) deadlocked DXVK threads.
-    vcall<void>(mm, 0x18 / 4, 0x1CD20F0u, (void*)nullptr, (void*)nullptr, 0);
+    vcall<void>(mm, 0x18 / 4, kSaveMsg, (void*)nullptr, (void*)nullptr, 0);
     g_saves_posted++;
+    g_own_unhandled++; // BUG-1413
+    g_own_posted_at = GetTickCount64();
     GetSystemTimeAsFileTime(&g_saved_ft);
     std::string planet;
     bool missing = false;
@@ -1449,6 +1544,7 @@ void guest_tick()
     menu_intro_return_tick();
     deferred_tick();
     box_tick();
+    resave_tick(); // BUG-1413
 }
 
 void tick(net::Session& s)
@@ -1461,6 +1557,7 @@ void tick(net::Session& s)
     menu_intro_return_tick();
     deferred_tick();
     box_tick();
+    resave_tick(); // BUG-1413
     if (g_drop_peer_fix) {
         // BUG-0166: a player who left takes its shares and transfers with it (the host saved for
         // nobody, held its editors up to 15 s and read the slot for a peer that was gone)

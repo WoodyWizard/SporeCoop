@@ -416,3 +416,14 @@ anchor so other docs can link to it:
   the camera point` says when it happens.
 * Next steps: the camera's state from that log line, then a co-op rule for the recentre.
 * Ticket: BUG-1394
+
+## Saves: "save and quit" right after one of the mod's saves still loses the save (2026-11-22, fix/w63-net)
+<a id="issue-save-quit-dropped"></a>
+
+* What happens: since BUG-1413 a save the player asks for within ~1.5 s after one of the mod's saves (a world share
+  for a joining guest, an autosave) is made again once the game takes one. When the player quits in that moment
+  (the pause menu's quit with "save"), the game has left the world before the save can be made: the mod does not save
+  the galaxy menu and says so in the log (`could not be made again (the game left that mode first ...)`).
+* Reproduce: not tried; quit with save within 1.5 s after the host's world-share save for a joining guest.
+* Next steps: hold the game's quit message while a dropped save waits (its message id and handler are not known yet).
+* Ticket: BUG-1413

@@ -321,8 +321,28 @@ static void test_claims()
           claims::holder("host", present) == 0);
 }
 
+// BUG-9309 (NET-12): a salt.txt or world file that cannot be read now is not replaced
+static void test_unreadable()
+{
+    printf("unreadable store files (BUG-9309)\n");
+    using pstore::Got;
+    using pstore::SaltStep;
+    using pstore::WorldStep;
+    CHECK(pstore::salt_step(Got::Text, true, true) == SaltStep::Use);
+    CHECK(pstore::salt_step(Got::Missing, false, true) == SaltStep::MakeNew);     // the first run of a host
+    CHECK(pstore::salt_step(Got::Text, false, true) == SaltStep::MakeNew);        // there, no salt in it (kept as .bad)
+    CHECK(pstore::salt_step(Got::Unreadable, false, true) == SaltStep::NoKeys);   // the fix: the old salt stays
+    CHECK(pstore::salt_step(Got::Unreadable, false, false) == SaltStep::MakeNew); // 0.7.16: every key changed
+    CHECK(pstore::world_step(Got::Text, true) == WorldStep::Parse && pstore::world_step(Got::Missing, true) == WorldStep::Empty);
+    CHECK(pstore::world_step(Got::Unreadable, true) == WorldStep::Wait);
+    CHECK(pstore::world_step(Got::Unreadable, false) == WorldStep::Empty); // 0.7.16: the next write replaced the world's file
+    // what a new salt does to the stored players: the same token, another key (why only a missing file may make one)
+    CHECK(pstore::stable_key(0x1111, "t:00000000deadbeef") != pstore::stable_key(0x2222, "t:00000000deadbeef"));
+}
+
 int main()
 {
+    test_unreadable();
     test_autosave();
     test_new_colonies();
     test_claims();

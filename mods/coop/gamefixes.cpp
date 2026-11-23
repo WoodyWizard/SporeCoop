@@ -916,6 +916,68 @@ unsigned destroy_nulls(uintptr_t* from)
     return g_destroy_nulls;
 }
 
+// BUG-9312 (the analogue of BUG-9272, found and fixed by IltonBJSilva in their fork, PR #212 commit 6d94b4ae6: a
+// guest's game stood 12-31 s, once past the 30 s watchdog, while it tore down its Tribe world at a rejoin). The destroy
+// hook's stale-reference fixes walk the world for every creature or citizen destroyed: forget_sender (BUG-0456) every
+// object of the world (IsBadReadPtr, its noun's virtual call) and, for each live animal or citizen, two readable()
+// (VirtualQuery each, a system call on Windows, BUG-0791); forget_last_attacker (BUG-0930) one more readable() per animal
+// or citizen. A world reset destroys D creatures out of A, so it costs about 1.5 * D * A readable() calls and D walks of
+// the whole object list: O(n^2) (their measurement: 283-314 creatures, 13.2 and 16.5 s off, 0.9-2.2 s on). The game's
+// simulator reset of the galaxy menu (SporeCoop::GalaxyMenu_SimReset, which a guest leaving its world for the host's
+// passes, as every quit to the menu) leaves no NPC whose stimuli or last attacker could name the dying creature (they
+// all go, no AI runs inside the call, and the references they hold are counted), so the walks are skipped while it
+// runs. The reset's time, its creatures and the walks are logged and counted (coop.status gamefixes line; tests).
+// Off (`coop.fix game.reset_no_walks off`): a walk for every destroy, as 0.7.16.
+static bool g_reset_walk_fix = true;
+COOP_FIX("game.reset_no_walks", "BUG-9312", g_reset_walk_fix,
+         "game: the galaxy menu's world reset does not walk every object for each creature it destroys (seconds of stall leaving a world)");
+struct ResetStat {
+    double secs = -1, walk_secs = 0; // the reset's time; the time inside the walks of the destroy hook
+    unsigned creatures = 0, walks = 0, skipped = 0; // animals and citizens destroyed; destroys walked / not walked
+    long readable = 0;                              // skg::readable calls of this module during the reset
+};
+static ResetStat g_reset_cur, g_reset_last;
+static unsigned g_resets;
+static bool g_in_sim_reset;
+using SimReset_t = void(SK_CDECL*)();
+static SimReset_t g_sim_reset_orig;
+static double qpc_now()
+{
+    LARGE_INTEGER q, f;
+    QueryPerformanceCounter(&q);
+    QueryPerformanceFrequency(&f);
+    return (double)q.QuadPart / (double)f.QuadPart;
+}
+static void SK_CDECL sim_reset_guard()
+{
+    if (g_in_sim_reset || !game::on_main()) { // (a nested or another thread's call: as it is)
+        g_sim_reset_orig();
+        return;
+    }
+    g_in_sim_reset = true;
+    g_reset_cur = {};
+    LONG rc0 = skg::readable_calls;
+    double t0 = qpc_now();
+    g_sim_reset_orig();
+    g_reset_cur.secs = qpc_now() - t0;
+    g_reset_cur.readable = skg::readable_calls - rc0;
+    g_in_sim_reset = false;
+    g_reset_last = g_reset_cur;
+    g_resets++;
+    H->log(M, SK_INFO, "game fixes: the world reset took %.2f s: %u creature(s) destroyed, %u walked (%.2f s), %u not "
+                       "walked, %ld readable calls (BUG-9312, %s)",
+           g_reset_last.secs, g_reset_last.creatures, g_reset_last.walks, g_reset_last.walk_secs, g_reset_last.skipped,
+           g_reset_last.readable, g_reset_walk_fix ? "on" : "off");
+}
+std::string reset_status()
+{
+    char b[200];
+    snprintf(b, sizeof b, "world resets %u (hooked %d), the last: secs=%.2f creatures=%u walked=%u walk_secs=%.2f skipped=%u readable=%ld",
+             g_resets, g_sim_reset_orig ? 1 : 0, g_reset_last.secs, g_reset_last.creatures, g_reset_last.walks,
+             g_reset_last.walk_secs, g_reset_last.skipped, g_reset_last.readable);
+    return b;
+}
+
 static void __fastcall destroy_guard(void* nm, void*, void* obj)
 {
     if (!obj && g_destroy_null_fix) {
@@ -932,24 +994,34 @@ static void __fastcall destroy_guard(void* nm, void*, void* obj)
     game::note_destroyed(obj); // (BUG-0426: the object list of this frame, game::listed)
     if (g_destroy_listener && obj)
         g_destroy_listener(obj, (uintptr_t)__builtin_return_address(0));
+    bool creature = false;
     if (obj && readable(obj, 0x30)) {
         uint32_t noun = game::noun_id(obj);
-        if (noun == kAnimalNoun || noun == kCitizenNoun)
-            forget_sender(obj);
+        creature = noun == kAnimalNoun || noun == kCitizenNoun;
     }
+    bool walk = creature && !(g_reset_walk_fix && g_in_sim_reset); // BUG-9312
+    double w0 = g_in_sim_reset && walk ? qpc_now() : 0;
+    if (g_in_sim_reset && creature) {
+        g_reset_cur.creatures++;
+        (walk ? g_reset_cur.walks : g_reset_cur.skipped)++;
+    }
+    if (walk)
+        forget_sender(obj);
     if (g_avatar_target_fix && obj && readable(obj, 0x30) && game::noun_id(obj) == kAnimalNoun)
         forget_avatar_target(obj);
-    bool la = false;
-    if (g_last_attacker_fix && obj && readable(obj, 0x30)) {
-        uint32_t noun = game::noun_id(obj);
-        la = noun == kAnimalNoun || noun == kCitizenNoun;
-    }
+    bool la = g_last_attacker_fix && walk;
+    if (w0)
+        g_reset_cur.walk_secs += qpc_now() - w0;
     g_destroy_orig(nm, obj);
     // after the destroy: a reference released before it may be the creature's last one (the game's destroy then ran on
     // a freed block: a fault at 0xC0439F, lab 20261112-134349); afterwards it frees the block as the game's own
     // replacement of the last attacker does
-    if (la)
+    if (la) {
+        double l0 = g_in_sim_reset ? qpc_now() : 0;
         forget_last_attacker(obj);
+        if (l0)
+            g_reset_cur.walk_secs += qpc_now() - l0;
+    }
 }
 
 // BUG-0454 (BUG-0371): the host's creature editor crashed three times at RenderWare::Raster::Fill+0x7
@@ -2036,6 +2108,9 @@ void init(const SkHost* host, SkMod* mod)
     if (!dest)
         g_destroy_orig = nullptr;
     H->log(M, SK_INFO, "game fixes: stale stimulus sender guard %s", dest ? "on" : "off");
+    if (uintptr_t sr = H->sym("SporeCoop::GalaxyMenu_SimReset")) // BUG-9312
+        if (H->hook_create(M, (void*)sr, (void*)&sim_reset_guard, (void**)&g_sim_reset_orig) != 0)
+            g_sim_reset_orig = nullptr;
     uintptr_t ts = H->sym("SporeCoop::TribeAttack_TakeSpot");
     bool spot = ts && H->hook_create(M, (void*)ts, (void*)&take_spot_guard, (void**)&g_spot_orig) == 0;
     if (!spot)
@@ -2172,7 +2247,7 @@ std::string status()
            std::to_string(g_model_fx_dropped.load()) + " (tests: planted " + std::to_string(g_fxcut_planted) + ", dropped " + std::to_string(g_fxcut_done) + ")" +
            ", freed fruit taken out of the pool " + std::to_string(g_fruit_dropped.load()) +
            ", galaxy menu rollovers rolled out before a rebuild " + std::to_string(g_menu_rollouts.load()) + " (stale dropped " +
-           std::to_string(g_menu_dropped.load()) + ")\n";
+           std::to_string(g_menu_dropped.load()) + ")" + ", " + reset_status() + "\n";
 }
 
 } // namespace gamefixes
