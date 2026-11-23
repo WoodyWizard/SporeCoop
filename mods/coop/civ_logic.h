@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace civlogic {
@@ -89,6 +90,37 @@ inline bool hold_removal(bool planner_moves, bool movie) { return planner_moves 
 enum class Unseen : uint8_t { Remove, Defer };
 inline Unseen unseen_mirror(bool alive, bool dead, bool held) { return alive && !dead && held ? Unseen::Defer : Unseen::Remove; }
 inline bool kill_unseen(bool alive, bool dead) { return alive && !dead; }
+// BUG-9301 (audit CIV-1): a mirror a guest's save took out of a civilization's vehicle lists goes back at the save's
+// end only when that civilization is still listed and the vehicle is still in the game's list as the same object (its
+// serial): a host snapshot between the save's start and end may have removed it (freed a moment later)
+inline bool took_goes_back(bool civ_listed, bool vehicle_listed, bool same_serial)
+{
+    return civ_listed && vehicle_listed && same_serial;
+}
+// BUG-9302 (audit CIV-7): a guest's planner building goes to the host once the planner closed only when it is still in
+// the city's building list (the same block, the same noun): a drop off a free plot adds it and takes it away again
+inline bool planner_kept(bool city_listed, bool in_buildings, bool same_noun)
+{
+    return city_listed && in_buildings && same_noun;
+}
+// BUG-9303 (audit CIV-6): the claim a city of the player civilization gets at the host's refresh. has_old/old: its claim
+// now; old_absent: that claim's player is not here; owner_key: the key of its owner in the owner table ("" none, not a
+// player); owner_shared: the shared capital; alone: the host plays alone (fix on): its own deal claims nothing.
+// Returns "" for no claim.
+inline std::string city_claim(bool has_old, const std::string& old, bool old_absent, bool owner_shared,
+                              const std::string& owner_key, bool alone)
+{
+    if (has_old && old != "shared" && old_absent)
+        return old; // an absent player's claim stays
+    if (alone)
+        return has_old ? old : std::string(); // the claim it has stays, the solo deal gives none
+    if (owner_shared)
+        return "shared";
+    return owner_key;
+}
+// BUG-9303 (CIV-6 B): `coop.store adopt` gives the adopted player its claimed cities of the player civ at once, never the
+// capital (dealt by host_assign_cities)
+inline bool adopt_takes_city(bool listed, bool capital) { return listed && !capital; }
 // the waiting removals, once a frame: one the game removed first (not in its list, dead) is dropped, a held one waits
 inline bool pump_waits(bool listed, bool dead, bool held) { return listed && !dead && held; }
 inline bool pump_kills(bool listed, bool dead) { return listed && !dead; }

@@ -16,8 +16,15 @@ h_AddBuilding, CMD_BUILD), which builds it in its game (the guest already paid w
    money fell by the same amount on both games (the house's price), the guest's building list is the host's.
 SPORE_FIX_OFF=civ.planner_send must FAIL (the guest's placement stays in the guest's game).
 
-  SPORE_LANE=3 python3 tools/tests/coop_civ_planner_build.py
+--miss (BUG-9302, audit CIV-7): the guest drops the house tile on a taken plot: the planner adds the building at the drop
+and takes it away again (no money taken). PASS: the guest's planner added it (`coop.civ tables` planner_out adds went
+up; else INCONCLUSIVE), the guest kept no new house, the host's city gets no new house within 20 s and the shared money
+is unchanged on both games. SPORE_FIX_OFF=civ.planner_closed must FAIL (the host builds the house unpaid, sent at
+AddBuilding).
+
+  SPORE_LANE=3 python3 tools/tests/coop_civ_planner_build.py [--miss]
 """
+import argparse
 import random
 import re
 import time
@@ -69,11 +76,19 @@ def drag(con, sx, sy, tx, ty):
     time.sleep(2)
 
 
+def planner_adds(con):
+    m = re.search(r'planner_out: fix=\d+ adds=(\d+)', con.call('coop.civ tables')['out'])
+    return int(m.group(1)) if m else -1
+
+
 def close_enough(a, b):
     return len(a) == len(b) and all(any(n == m and d(p, q) < 3 for m, q in b) for n, p in a)
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--miss', action='store_true', help='the guest drops the house on a taken plot (BUG-9302)')
+    a = ap.parse_args()
     host, guest = start('civ_npc')
     ck = Checks()
     time.sleep(3)
@@ -107,6 +122,8 @@ def main():
         ck.faults(host=host, guest=guest)
         return ck.result()
     time.sleep(2)
+    if a.miss:
+        return miss(ck, host, guest, p, ci, b0h, b0g, m0h, m0g)
     free = [s for s in slots(guest, ci) if s['free'] and 400 < s['at'][0] < 1300 and 150 < s['at'][1] < 950]
     ck(free, f'a free plot on the guest\'s planner screen ({len(free)})')
     s = free[0] if free else None
@@ -157,6 +174,45 @@ def main():
         ok = close_enough(buildings(guest, ci), buildings(host, ci))
         time.sleep(1)
     ck(ok, f'the guest\'s building list of city {ci} is the host\'s ({len(buildings(guest, ci))} / {len(buildings(host, ci))})')
+    ck.faults(host=host, guest=guest)
+    return ck.result()
+
+
+def miss(ck, host, guest, p, ci, b0h, b0g, m0h, m0g):
+    """BUG-9302: a drop on a taken plot of the open planner; the host must get nothing"""
+    busy = [s for s in slots(guest, ci) if not s['free'] and 400 < s['at'][0] < 1300 and 150 < s['at'][1] < 950]
+    ck(busy, f'a taken plot on the guest\'s planner screen ({len(busy)})')
+    adds0 = planner_adds(guest)
+    if busy:
+        s = busy[0]
+        print(f'  guest drops the house tile on the taken plot {s["k"]} at {s["at"]}', flush=True)
+        drag(guest, TILE_HOUSE[0], TILE_HOUSE[1], s['at'][0], s['at'][1])
+    shot(guest, 'planner_miss_guest.png')
+    mg = money(guest)
+    print(f'  guest: money {m0g} -> {mg} after the drop; {guest.call("coop.civ tables")["out"].splitlines()[-1]}', flush=True)
+    for _ in range(3):
+        guest.call(f'click {PLANNER_DONE[0]} {PLANNER_DONE[1]}')
+        if p.wait_ui(PLANNER_NAME, False, 5):
+            break
+    time.sleep(3)
+    adds = planner_adds(guest) - adds0
+    new_g = [b for b in buildings(guest, ci) if b[0] == HOUSE and not any(b[0] == n and d(b[1], q) < 1 for n, q in b0g)]
+    print(f'  guest: planner adds +{adds}, new houses {new_g}', flush=True)
+    if adds <= 0:
+        ck.faults(host=host, guest=guest)
+        return ck.inconclusive('the guest\'s planner did not add the building at the drop on the taken plot')
+    ck(not new_g, f'the guest\'s planner kept no new house in city {ci} ({new_g})')
+    t0, got = time.time(), []
+    while time.time() - t0 < 20 and not got:
+        got = [b for b in buildings(host, ci) if b[0] == HOUSE and not any(b[0] == n and d(b[1], q) < 1 for n, q in b0h)]
+        time.sleep(1)
+    shot(host, 'planner_miss_host.png')
+    print(f'  host: new houses {got}; {host.call("coop.civ tables")["out"].splitlines()[-2]}', flush=True)
+    ck(not got, f'the host\'s game got no house the guest\'s planner did not keep ({got})')
+    m1h, m1g = money(host), money(guest)
+    print(f'  money: host {m0h} -> {m1h}, guest {m0g} -> {m1g}', flush=True)
+    ck(m1h is not None and m1g is not None and abs(m1h - m0h) < 1 and abs(m1g - m0g) < 1,
+       f'the shared money did not change (host {m0h} -> {m1h}, guest {m0g} -> {m1g})')
     ck.faults(host=host, guest=guest)
     return ck.result()
 
