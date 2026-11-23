@@ -22,5 +22,8 @@ struct StageScreen {
 bool stage_screen(StageScreen& out);
 // 8M A: called when the screen goes (a stage pressed, Back, or the menu's state left): the panel goes at once
 void on_screen_gone(void (*fn)());
+// BUG-9350: true while a load from the menu should wait: the new-game screen (Choose A Stage) is open and its Back
+// has been asked (outside the frame); false once it is closed, or 5 s on (load as before)
+bool stage_screen_holds_load(double now);
 
 } // namespace galaxy_menu

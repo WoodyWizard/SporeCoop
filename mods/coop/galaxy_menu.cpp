@@ -276,6 +276,15 @@ static unsigned g_native_opens, g_native_picks, g_native_closes;
 static std::string g_native_last;
 static std::string g_native_planet; // 8M A: the planet the screen is open for
 static void (*g_gone_fn)();         // 8M A: the planet details panel goes with the screen
+// BUG-9350: a load that leaves the menu while the new-game screen (state 4: Choose A Stage, ours or an empty star's)
+// is open (a rejoin, a party move, an enter) left the screen drawn over the planet, and its X there crashed the game
+// (its Back runs the menu's code outside the menu). The mod's load from the menu waits: the screen's Back is pressed
+// first (the path a stage press uses, outside the frame), the load follows once the menu has left state 4.
+static bool g_close_on_leave = true;
+COOP_FIX("galaxy.stage_screen_close", "BUG-9350", g_close_on_leave,
+         "galaxy menu: Spore's Choose A Stage screen is closed before a load from the menu");
+static double g_close_first_at, g_close_posted_at;
+static unsigned g_left_closes, g_left_timeouts;
 
 // switch_now: the menu's state switch here (tests); else the caller switches (h_SetState: Play's switch made state 4)
 static bool open_native(const Row& row, uint8_t* entry, bool switch_now)
@@ -372,6 +381,54 @@ static void __fastcall h_FlowButton(void* flow, void* edx, uint32_t id)
         }
     }
     o_FlowButton(flow, edx, id);
+}
+
+// BUG-9350: the menu shows the new-game screen (state 4) now; its flow, else nullptr
+static void* open_flow()
+{
+    uint8_t* gge = a_Gge ? *(uint8_t**)a_Gge : nullptr;
+    uint8_t* st = a_NewGameState ? *(uint8_t**)a_NewGameState : nullptr;
+    if (!g_flow_hooks || !o_FlowButton || !gge || !st || game::mode_id() != modes::kMenu || *(int*)(gge + 0x108) != 4)
+        return nullptr;
+    return *(void**)(st + 0x8);
+}
+
+// BUG-9350 (outside the frame, in the menu only): the screen's Back, as a stage press closes it
+static void close_for_load(void*)
+{
+    void* flow = open_flow();
+    if (!flow)
+        return;
+    o_FlowButton(flow, nullptr, kFlowBack);
+    if (g_native_entry) {
+        g_native_closes++;
+        native_closed();
+    }
+    g_left_closes++;
+    H->log(M, SK_INFO, "galaxy menu: Choose A Stage closed before a load from the menu (BUG-9350)");
+}
+
+bool stage_screen_holds_load(double now)
+{
+    if (!g_close_on_leave || !open_flow()) {
+        g_close_first_at = 0;
+        return false;
+    }
+    if (!g_close_first_at)
+        g_close_first_at = now;
+    if (now - g_close_first_at > 5) { // (the screen did not close: load as before)
+        if (g_close_first_at > 0) {
+            g_left_timeouts++;
+            H->log(M, SK_WARN, "galaxy menu: Choose A Stage still open 5 s after its Back: loading anyway (BUG-9350)");
+        }
+        g_close_first_at = -1e9; // (once per open screen)
+        return false;
+    }
+    if (now - g_close_posted_at > 1) {
+        g_close_posted_at = now;
+        H->run_outside_frame(close_for_load, nullptr);
+    }
+    return true;
 }
 
 static bool active() { return g_hooks && g_on && galaxy::online() && game::mode_id() == modes::kMenu; }
@@ -584,6 +641,8 @@ void tick(double now)
     if (g_native_entry && now - g_native_at > 2) { // BUG-9337: the screen left without a stage (Esc), or the menu left
         uint8_t* gge = a_Gge ? *(uint8_t**)a_Gge : nullptr;
         if (!gge || game::mode_id() != modes::kMenu || *(int*)(gge + 0x108) != 4) {
+            H->log(M, SK_INFO, "galaxy menu: Choose A Stage counted closed: mode %08X, menu state %d (BUG-9350)",
+                   game::mode_id(), gge ? *(int*)(gge + 0x108) : -1);
             g_native_closes++;
             native_closed();
         }
@@ -656,8 +715,9 @@ std::string command(int argc, const char* const* argv)
              (int)stage_reached(3), (int)stage_reached(4), (int)stage_reached(5));
     const size_t n = strlen(b);
     snprintf(b + n, sizeof b - n, "\nSpore's Choose A Stage screen (BUG-9337, %s): hooks %s, opened %u, stages pressed %u, closed %u, "
-             "open now %d, last: %s", g_native ? "on" : "off", g_flow_hooks ? "on" : "missing", g_native_opens,
-             g_native_picks, g_native_closes, (int)(g_native_entry != nullptr), g_native_last.empty() ? "-" : g_native_last.c_str());
+             "open now %d, last: %s; closed before a load (BUG-9350, %s): %u, timeouts %u", g_native ? "on" : "off",
+             g_flow_hooks ? "on" : "missing", g_native_opens, g_native_picks, g_native_closes, (int)(g_native_entry != nullptr),
+             g_native_last.empty() ? "-" : g_native_last.c_str(), g_close_on_leave ? "on" : "off", g_left_closes, g_left_timeouts);
     return b;
 }
 

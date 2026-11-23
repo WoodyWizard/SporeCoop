@@ -34,6 +34,7 @@
 #include "savestrip.h"
 #include "spacecoop.h"
 #include "parties_net.h"
+#include "galaxy_menu.h"
 
 namespace world {
 
@@ -1414,6 +1415,8 @@ static void via_menu_tick()
         // inside Present disposed spheres whose jobs the render frame had already taken, and they
         // were drawn without terrain (docs/re/space.md 8.3). Let the menu settle first.
         if (!other && now - g_menu_since < kMenuSettle)
+            return;
+        if (!other && galaxy_menu::stage_screen_holds_load(now)) // BUG-9350: Choose A Stage closed first
             return;
         // switching the save folder and starting the load reads files and builds UI: outside the
         // frame (this tick runs inside Present)
