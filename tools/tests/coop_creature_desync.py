@@ -25,6 +25,7 @@ and after the reload:
   --seed-nodeath  the guest's mirrors do not play the game's death (`coop.npc deathfix off`, the
                   bug BUG-0015 fixed): the kill check must FAIL
 """
+import os
 import re
 import subprocess
 import sys
@@ -171,6 +172,15 @@ def kill_game(inst):
         subprocess.run(['kill', '-9', pid])
     if lane.on_kill and pids:
         lane.on_kill[1]([inst])
+    if pids:
+        # BUG-1464: the game is gone; its start marker (spore.sh, BUG-1075) would refuse the restart for 20 s from its
+        # start (lab 20261123-023643 nest_species: killed 6 s after its join, the restart refused, 90 s waited while the
+        # host's game showed the killed guest silent and the monitor gate fired). spore.sh kill clears it the same way
+        n = (inst + 1) // 2 if inst <= 20 else inst - 20 if inst <= 30 else inst - 30
+        try:
+            os.remove(os.path.join(lane.game_dir(n), 'SporebinEP1', 'mods', 'logs', f'.started.{inst}'))
+        except OSError:
+            pass
     if not pids:
         print(f'  kill_game: no game of instance {inst} found on lane {lane.LANE}')
 

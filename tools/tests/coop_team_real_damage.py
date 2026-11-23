@@ -59,7 +59,7 @@ def beside(partner, victim, d):
 
 def provoke(host, guest, victim, tried, tries=8, wait=10.0):
     """the victim walks up to a host NPC and hits it lightly until one fights back (its bites lower the
-    victim's own health): returns (npc id, the first bite)"""
+    victim's own health): returns (npc id, the first bite, the victim's health just before it)"""
     fam = re.search(r'key=0x([0-9A-F]+)', host.call('coop.avatar')['out'])
     fam = fam.group(1).zfill(8) if fam else ''
     vcon, pcon = (guest, host) if victim == 'guest' else (host, guest)
@@ -89,7 +89,7 @@ def provoke(host, guest, victim, tried, tries=8, wait=10.0):
             h1, _ = own_hp(vcon)
             if h1 is not None and h0 is not None and h1 < h0 - 0.05:
                 print(f'  #{nid} ({ns[nid][3]}) fights back: {victim} {h0:.2f} -> {h1:.2f} of {mx}', flush=True)
-                return nid, h0 - h1
+                return nid, h0 - h1, h0
         print(f'  #{nid} ({ns[nid][3]}) did not fight back in {wait:.0f} s', flush=True)
     return None
 
@@ -105,10 +105,15 @@ def run(ck, host, guest, victim, shots):
     tried = set()
     got = provoke(host, guest, victim, tried)
     h_set = 0.6 * mx
+    # BUG-1462: an NPC that does not fight back leaves the victim regenerating (lab 20261123-023643: #18 did not, #13 bit
+    # from 8.20, the hits took it to 6.2, "6.2 < 6.00 - 0.3" failed): the hits are measured from the health at the first
+    # bite of the NPC that fought back
+    if got:
+        h_set = got[2]
     ck(got is not None, f'{victim}: a host NPC fights back and hurts it (the game\'s own hits)')
     if not got:
         return
-    nid, bite = got
+    nid, bite, _ = got
     print(f'  the {other} {beside(ocon, vcon, 25):.0f} m away (no regen)', flush=True)
     time.sleep(4)
     own, _ = own_hp(vcon)
@@ -150,7 +155,7 @@ def run(ck, host, guest, victim, shots):
     if not got:
         ck(False, f'{victim}: a second host NPC fights back (for the rescue)')
         return
-    nid2, bite = got
+    nid2, bite, _ = got
     print(f'  the {other} next to it: {beside(ocon, vcon, 3):.1f} m', flush=True)
     # one bite from death until a bite lands: the regen next to the partner is undone each second, and the victim
     # hits the NPC lightly every 3 s (an NPC that lost interest fights back again)

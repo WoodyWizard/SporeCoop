@@ -34,9 +34,16 @@ def main():
     host, guest = start()
     ck = Checks()
     fam = family(host)
-    prox = proxies(guest)
-    cand = [i for _, i in sorted((n[3], i) for i, n in npcs(host).items()
-                                 if i in prox and not n[4] and n[2] > 0 and n[1] != fam)]
+    # BUG-1465: the guest spawns its mirrors ~0.8 s after it entered the host's world (lab 20261123-023643: "npcs
+    # mirrored: 0" at 06:37:11.2, 21 at 06:37:12.1): wait for them (at most 30 s), as creature_kills does (BUG-1348)
+    t0 = time.time()
+    while True:
+        prox = proxies(guest)
+        cand = [i for _, i in sorted((n[3], i) for i, n in npcs(host).items()
+                                     if i in prox and not n[4] and n[2] > 0 and n[1] != fam)]
+        if cand or time.time() - t0 > 30:
+            break
+        time.sleep(0.5)
     ck(bool(cand), f'host NPCs of other species mirrored on the guest ({len(cand)})')
     removals, held_after, kept_alive = 0, [], []
     for r in range(a.rounds * 5):  # (an NPC that does not take the bait, dies or flees: the next one)
