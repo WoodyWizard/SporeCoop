@@ -124,6 +124,28 @@ static void test_citizens()
     CHECK(citizen_line_owner(1, false, 4) == -1); // creature.mode host: every city the civilization's
 }
 
+static void test_audit_v1()
+{
+    printf("audit WP-V1\n");
+    // BUG-1479 (CIV-10): the first listener takes the answer, every later one drops the same data (open or closed)
+    CHECK(spec_answer(true, true, false) == SpecAnswer::Take);
+    CHECK(spec_answer(true, true, true) == SpecAnswer::Drop);
+    CHECK(spec_answer(true, false, true) == SpecAnswer::Drop);
+    CHECK(spec_answer(true, false, false) == SpecAnswer::Pass); // the game's own box (no question of the host)
+    // fix off: 0.7.16.1, the closed question let the repeat through to the game's listener
+    CHECK(spec_answer(false, true, false) == SpecAnswer::Take && spec_answer(false, true, true) == SpecAnswer::Drop);
+    CHECK(spec_answer(false, false, true) == SpecAnswer::Pass && spec_answer(false, false, false) == SpecAnswer::Pass);
+    // BUG-1480 (CIV-11): the space build goes the Space way in an editor or a load too
+    CHECK(space_build_routed(true, true, kSpaceBuildBytes) && space_build_routed(true, false, kSpaceBuildBytes));
+    CHECK(space_build_routed(false, true, kSpaceBuildBytes) && !space_build_routed(false, false, kSpaceBuildBytes));
+    // a Civ guest's superweapon request (the same first byte) stays in the Civ hold outside Space
+    CHECK(!space_build_routed(true, false, kSuperRequestBytes) && space_build_routed(true, true, kSuperRequestBytes));
+    CHECK(kSpaceBuildBytes == 33 && kSuperRequestBytes == 17);
+    // BUG-1481 (CIV-15 a): only a candidate waiting for its design is spared, and only with the fix
+    CHECK(sweep_spares(true, true) && !sweep_spares(true, false));
+    CHECK(!sweep_spares(false, true) && !sweep_spares(false, false));
+}
+
 // BUG-1468: every player's own Civ money (civ_wallet_logic.h; the rules of PR #205 by IltonBJSilva)
 static void test_wallets()
 {
@@ -260,6 +282,7 @@ static void test_passive_income_cause()
 int main()
 {
     test_money();
+    test_audit_v1();
     test_owners();
     test_holds();
     test_citizens();

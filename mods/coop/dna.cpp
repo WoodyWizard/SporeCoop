@@ -4,10 +4,18 @@
 // dna_route.h, dna_ledger.h and dna_pace.h; the messages are handled in the session callbacks, the totals are sent from
 // the frame, the away state is coop.cpp's host_away_tick.
 #include "coop_state.h"
+#include "actor_scope.h"
 #include "dna_own.h"
+#include "net/validate.h"
+#include "own_progress.h"
 #include "store.h"
 
 namespace coop_core {
+
+// WP-P1 / P2 of 0.7.17 (BUG-1469, own_progress.h): with all.shared_dna 2 every player's DNA and bar are its own: a gain
+// stays on the game that made it (nothing forwarded, nothing paced), the host sends no total and passes what its game
+// paid for a guest's deed (the hunt credit, the Actor scope) to that guest, a spend stays where it was made
+uint32_t g_own_totals_ignored = 0, g_own_gains_kept = 0, g_own_deeds_given = 0; // tests (coop.progress)
 
 float g_dna_sent = -1;      // host: last broadcast total
 double g_dna_at = 0;        // host: when it was sent
@@ -112,7 +120,7 @@ int dna_pace_announce()
 // the divisor for a gain of this machine's game now (1: whole)
 int pace_div()
 {
-    if (dna_pace::g_bypass || !g_sess.connected())
+    if (dna_pace::g_bypass || !g_sess.connected() || own_progress::active()) // BUG-1469: own bars, a solo game's pace
         return 1;
     if (g_sess.role() == net::Role::Host)
         return dna_pace_announce();
@@ -150,6 +158,31 @@ void dna_pace_heard(int div) { g_pace_heard = std::clamp(div, 1, 255); }
 bool on_dna(float& delta)
 {
     bool guest = g_sess.role() == net::Role::Client && g_sess.connected();
+    if (own_progress::active()) { // BUG-1469: this game's own DNA and bar (each game pays its own goal card too)
+        if (g_sess.role() == net::Role::Host && delta > 0 && g_mode == modes::kCreature) {
+            // the game paid our avatar for a guest's deed: inside an Actor scope (WP-H1: a guest's hit landing as ours, a
+            // guest's social win) or within the hunt credit of a guest's kill (npc.cpp)
+            uint8_t who = actor::current();
+            uint8_t cause = own_progress::kGainActor;
+            if (who == actor::kNone) {
+                auto part = dna_ledger::g_credit.gain(delta, H->time_seconds());
+                if (part.cause == dna_ledger::Cause::Hunt)
+                    who = part.player, cause = own_progress::kGainHunt;
+            }
+            if (who != actor::kNone && who != g_sess.my_id() && net::is_player(g_sess, who)) {
+                own_progress::give_gain(who, delta, cause);
+                g_own_deeds_given++;
+                LOG("dna: +%.0f of %s's deed goes to %s (own progress)", delta, g_sess.name_of(who).c_str(),
+                    g_sess.name_of(who).c_str());
+                return false;
+            }
+        }
+        if (delta > 0)
+            g_own_gains_kept++;
+        if (g_sess.role() == net::Role::Host && delta != 0 && g_mode == modes::kCreature)
+            LOG("dna: %.0f -> %.0f cause=own", game::dna(), game::dna() + delta);
+        return true;
+    }
     auto g = dna_route::guest_gain(guest, delta > 0, guest_elsewhere(), g_away_dna_fix && g_host_away);
     if (g == dna_route::Gain::Own) {
         g_dna_own++;
@@ -227,7 +260,7 @@ void dna_spend_sample()
 // sample (a host total can arrive before the next tick: it would undo it)
 void dna_spend_note(float d)
 {
-    if (g_sess.role() != net::Role::Client || !g_sess.connected() || d >= 0)
+    if (g_sess.role() != net::Role::Client || !g_sess.connected() || d >= 0 || own_progress::active()) // BUG-1469: ours
         return;
     if (g_dna_spend == 0)
         g_dna_spend_world = g_stage_world; // (an editor has no world of its own)
@@ -247,6 +280,11 @@ void dna_spend_resync()
 void dna_spend_tick(double now)
 {
     static double last_send = -100;
+    if (own_progress::active()) { // BUG-1469: a spend is the spender's own: nothing goes to the host
+        g_dna_spend = 0;
+        g_dna_seen_ok = false;
+        return;
+    }
     dna_spend_sample();
     if (g_dna_spend > -0.5f)
         return;
@@ -297,8 +335,10 @@ float g_own_bar_heard = NAN;
 bool host_creature_mode();
 bool own_dna_on()
 {
-    return g_sess.role() == net::Role::Host &&
-           dna_own::active(g_own_dna_fix, settings::on(settings::kSharedDna), host_creature_mode());
+    // all.shared_dna: 0 own wallet, 1 shared, 2 own progress (BUG-1469: get(), never on(); value 2 refused or switched
+    // off plays as own wallet: own_progress::dna_mode)
+    return g_sess.role() == net::Role::Host && own_progress::dna_mode() == own_progress::kOwnWallet &&
+           dna_own::active(g_own_dna_fix, false, host_creature_mode());
 }
 // host: the mod of player `id` reads its own wallet (family `fam` minor 2 or newer)
 bool dna_peer_reads(uint8_t id, net::Family fam)

@@ -133,13 +133,14 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | 73 | `SPECIES_LINE` | R | any | Session | SpeciesLine | creations | u8 kind (species_line_core.h): a player's species line row, its stored row, a piece of a line creation (the host relays it; WP-0, BUG-1270) |
 | 74 | `CIV_WALLET` | R | any | HostWorld | CivWallet | civ | every player's own Civ money (civ_wallet.h, civ.own_money, BUG-1468): u8 kind; guest -> host 1 an ask, 4 a report (u32 last seq applied, f64 money); host -> guest 2 the wallet, 3 a change (u32 seq, f64); only between peers of civ 1.2 |
 | 75 | `PLAYER_HISTORY` | R | any | Session | History | session | u8 kind (wire/history.h): 1 host -> guest its own stage history (cards, trait progress), 2 guest -> host its own game's Cell card (WP-H1, BUG-1470) |
+| 76 | `PROGRESS` | R | any | HostWorld | Progress | creature | own progress (all.shared_dna 2, own_progress_logic.h): u8 kind: guest ask / report of its own values, host values back / the players' table / a gain its game paid for the guest's deed (WP-P1/P2 of 0.7.17, BUG-1469) |
 | 78 | `UFO_LEAD` | RU | any | Module | Squadron | space | u8 kind (wire/space_ufo.h): 0 a guest leader's ship state, 1 a follower's hit, 2 the leader's NPC hit on a follower, 3 the host's table of guest leaders per place; the NPC ships of a star system or planet without the host (the host relays; BUG-1288) |
 
 | Family | Id | Rev | Used in | Covers |
 |---|---|---|---|---|
 | session (session) | 1 | 1.3 | every stage and the menus | `HELLO`, `WELCOME`, `REJECT`, `PLAYER_JOIN`, `PLAYER_LEAVE`, `PLAYER_STATE`, `CHAT`, `PING`, `PONG`, `BYE`, `ABILITY`, `PING_MARK`, `READY`, `LOBBY`, `NOTICE`, `DIAG`, `SETTINGS`, `COLORS`, `REPORT`, `HOST_WORLD`, `HOST_BUSY`, `PLAYER_HISTORY` |
 | world (world transfer) | 2 | 1.1 | every stage and the menus | `WORLD_OFFER`, `WORLD_FILE`, `WORLD_CHUNK`, `WORLD_DONE` |
-| creature (Creature) | 3 | 1.3 | Creature | `ANIM`, `WORLD_TIME`, `DNA`, `DNA_ADD`, `VOTE`, `SPECIES`, `SOCIAL`, `NEST`, `PARTS`, `EFFECT` |
+| creature (Creature) | 3 | 1.3 | Creature | `ANIM`, `WORLD_TIME`, `DNA`, `DNA_ADD`, `VOTE`, `SPECIES`, `SOCIAL`, `NEST`, `PARTS`, `EFFECT`, `PROGRESS` |
 | npc (mirrored creature and world state) | 4 | 1.2 | Creature, Tribe, Civilization | `DAMAGE`, `NPC_STATE`, `NPC_SPAWN`, `NPC_DESPAWN`, `DAMAGE_REQ`, `WOBJ`, `FIELDS`, `NPC_RESYNC`, `NPC_ANIM`, `WSTATE`, `PLAYER_RULE`, `MIRROR_FX`, `NPC_MEAT` |
 | cell (Cell) | 5 | 1.2 | Cell | `CELL_STATE`, `CELL_HIT`, `CELL_EAT`, `CELL_FOOD`, `CELL_KO`, `CELL_BITTEN`, `CELL_MATE` |
 | tribe (Tribe) | 6 | 1.1 | Tribe | `TRIBE_STATE`, `TRIBE_CMD`, `TRIBE_ANIM` |
@@ -941,3 +942,23 @@ WP-X1 of 0.7.17 (docs/re/space.md#space-audit-0717). No new id or kind; the spac
   (an ACK for an offer it no longer waits for is ignored).
 * MSG_SPACE spacecoop K_TERRA 4: the receiver refuses a message with a non-finite delta and clamps a finite one to +-1
   (BUG-1489); the bytes are unchanged.
+
+## MSG_PROGRESS: own progress (2026-11-23, feat/w69-progress)
+<a id="netcode-progress"></a>
+
+WP-P1 / P2 of docs/plan-0.7.17.md (BUG-1469), the reserved id 76 of #netcode-reserved-0717, family creature 1.3 (the
+WP-0 bump; the gate also needs cell 1.2). Reliable, both directions, class HostWorld (a guest in another world drops
+it), route Progress (own_progress.cpp). Body: u8 kind (own_progress_logic.h), then:
+
+| Kind | Direction | Body |
+|---|---|---|
+| 1 kAsk | guest -> host | u32 stage mode: a copy of the host's world opened here (a join, a rejoin, a reload, another stage) |
+| 2 kSet | host -> guest | u32 mode, u8 has, Values when has (u32 mode, f32 DNA, f32 bar, i32 food, i32 spent, u8 brain level): its own values of this world and stage back |
+| 3 kReport | guest -> host | Values: every second while it plays the host's stage, at once on a change (0.25 s apart at most) |
+| 4 kTable | host -> guests | u8 flags (1: own progress is played), u8 n (at most 16), n x (u8 id, u32 mode, u8 flags 1 known / 2 full, u8 percent, i32 Cell food): every second and on a change |
+| 5 kGain | host -> one guest | f32 DNA its game paid for that guest's deed, u8 cause (1 hunt, 2 friend, 3 Actor scope) |
+
+Old peers: the host plays own progress only when every peer has creature 1.3 and cell 1.2 (`peer_families`,
+`own_progress::peer_reads`); else value 2 is refused at the start (own wallet, a notice names the players) and a late
+joiner below it is kicked with "update SporeCoop to 0.7.17". A guest plays it only on the host's kTable flag from a host
+with those minors (`host_families`). A 0.7.16.1 peer ignores type 76 (an unknown type). Codecs: tests/dna_tests.cpp.

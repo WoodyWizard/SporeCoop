@@ -326,6 +326,48 @@ static void lead_cap()
     CHECK(!fix || mirror_lead_speed(true, true, -1.f, 9.f, false, 1.f, true, 1.f, true) == 9.f);
 }
 
+// 0.7.17 WP-B1, the audit's TR items and the save's taken members: each rule with its switch on (the lab's case) and off
+// (0.7.16.1); with `--nofix` the first check of each FAILS
+static void audit_tr()
+{
+    printf("audit TR-7, 8, 9, 11 and the save's taken members (BUG-1493..1496, BUG-1522)\n");
+    const bool fix = !g_nofix;
+    // TR-8: a picked-empty tree (+0x48 = 0) of a big tree (+0x4C = 0x1F) is no gather target
+    CHECK(!tree_has_fruit(fix, 0, 0x1F));        // (FAILS with --nofix)
+    CHECK(tree_has_fruit(fix, 0x04, 0x1F));      // fruit left
+    CHECK(tree_has_fruit(false, 0, 0x07));       // the 0.7.16.1 read: every tree passes
+    CHECK(tree_has_fruit(true, 0x01, 0x07) && !tree_has_fruit(true, 0, 0));
+    // TR-7: the hold goes when the mirror is not placed from the host any more
+    CHECK(air_release(fix, true, true, false));  // the host away (FAILS with --nofix)
+    CHECK(air_release(fix, true, false, true) == fix); // no snapshot for 3 s
+    CHECK(!air_release(fix, true, false, false)); // placed from the host: the hold is the air list's
+    CHECK(!air_release(fix, false, true, true));  // no hold
+    CHECK(!air_release(false, true, true, true));
+    // TR-9: a guest in another world drops the host's music plays and its caption's going up, takes the stops and ends
+    CHECK(elsewhere_drops(fix, true, 20, true)); // the game-over caption up (FAILS with --nofix)
+    for (uint8_t k : {4, 5, 7})
+        CHECK(elsewhere_drops(fix, true, k, true) == fix);
+    CHECK(elsewhere_drops(fix, true, 21, true) == fix);
+    for (uint8_t k : {6, 8})
+        CHECK(!elsewhere_drops(fix, true, k, false)); // the stops pass
+    CHECK(!elsewhere_drops(fix, true, 20, false) && !elsewhere_drops(fix, true, 21, false)); // a wait's end passes
+    for (uint8_t k : {2, 3, 4, 11, 16, 20})
+        CHECK(!elsewhere_drops(fix, false, k, true)); // in the host's world: every kind
+    CHECK(!elsewhere_drops(false, true, 20, true));
+    // TR-11: a theme the relay plays is stopped at the session's end in Tribe; a stop outside Tribe waits for the return
+    CHECK(theme_end(fix, true, true) == ThemeEnd::Stop); // (FAILS with --nofix)
+    CHECK(theme_end(fix, false, false) == (fix ? ThemeEnd::Later : ThemeEnd::Lost));
+    CHECK(theme_end(fix, true, false) == ThemeEnd::Stop);
+    CHECK(theme_end(false, true, true) == ThemeEnd::Lost && theme_end(false, false, false) == ThemeEnd::Lost);
+    // BUG-1522: a taken member goes back only alive, the same object, its tribe listed, not in the vector yet
+    CHECK(!took_goes_back(fix, true, false, false, false)); // removed during the save (FAILS with --nofix)
+    CHECK(took_goes_back(fix, true, true, true, false));
+    CHECK(took_goes_back(fix, true, true, false, false) == !fix); // another citizen at that address
+    CHECK(took_goes_back(fix, false, true, true, false) == !fix); // its tribe gone
+    CHECK(took_goes_back(fix, true, true, true, true) == !fix);   // already back (put back by the removal itself)
+    CHECK(took_goes_back(false, false, false, false, true));
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && !strcmp(argv[1], "--nofix");
@@ -340,6 +382,7 @@ int main(int argc, char** argv)
     smooth_bound();
     lead_cap();
     body_rules();
+    audit_tr();
     if (g_fail) {
         printf("tribe_tests: %d FAILED\n", g_fail);
         return 1;

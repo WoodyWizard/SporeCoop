@@ -617,7 +617,78 @@ static void* theme_mgr()
     void* stage = a_Stage ? skg::cdecl_call<void*>(a_Stage) : nullptr;
     return stage && skg::readable((uint8_t*)stage + 0x1C8, 4) ? F<void*>(stage, 0x1C8) : nullptr;
 }
-void theme_forget() { memset(g_theme_local, 0, sizeof g_theme_local); }
+// BUG-1496 (audit TR-11): theme_forget at the session's end only forgot the slots the relay plays, the guest's game
+// stays in Tribe and played them on; and a kind 6 stop that came while the guest was not in Tribe (an editor) was lost
+// (on_member_anims returns outside Tribe), the slot played on until its next play or the stage's end. BUG-0890's shape
+// (party music, fixed for kind 8). Now the session's end stops them in Tribe, and a stop outside Tribe is kept and runs
+// when this game is back in Tribe in the same world (theme_tick; a world change forgets it: another theme manager).
+// `coop.fix tribe.theme_end off`: as 0.7.16.1.
+static bool g_theme_end_fix = true;
+COOP_FIX("tribe.theme_end", "BUG-1496", g_theme_end_fix,
+         "tribe: the host's fight and hunt music stops on the guest at the session's end and when its stop came during an editor");
+static int g_theme_later[24]; // guest: this game's slot of a stop that came outside Tribe (0 none)
+uint32_t g_theme_ended, g_theme_later_n, g_theme_lost;
+static void theme_end_slot(uint8_t slot, bool session_end)
+{
+    int& local = g_theme_local[slot];
+    if (!local)
+        return;
+    void* mgr = game::mode_id() == modes::kTribe ? theme_mgr() : nullptr;
+    switch (tribe_logic::theme_end(g_theme_end_fix, mgr && o_ThemeStop, session_end)) {
+    case tribe_logic::ThemeEnd::Stop: {
+        callguard::Hold theme_relaying(g_theme_relaying);
+        o_ThemeStop(mgr, local);
+        g_theme_ended++;
+        break;
+    }
+    case tribe_logic::ThemeEnd::Later:
+        g_theme_later[slot] = local;
+        g_theme_later_n++;
+        break;
+    case tribe_logic::ThemeEnd::Lost:
+        g_theme_lost++;
+        break;
+    }
+    local = 0;
+}
+void theme_forget() // a world change: the slots were the old theme manager's
+{
+    memset(g_theme_local, 0, sizeof g_theme_local);
+    memset(g_theme_later, 0, sizeof g_theme_later);
+}
+void theme_session_end()
+{
+    for (uint8_t slot = 1; slot < 24; slot++)
+        theme_end_slot(slot, true);
+    memset(g_theme_local, 0, sizeof g_theme_local);
+}
+void theme_stop_outside(net::Reader& r) // guest, kind 6 while this game is not in Tribe
+{
+    uint8_t slot = r.u8();
+    if (!r.ok() || slot == 0 || slot >= 24)
+        return;
+    g_anim.theme_rx++;
+    if (g_theme_end_fix)
+        theme_end_slot(slot, false);
+    else if (g_theme_local[slot])
+        g_theme_lost++;
+}
+void theme_tick() // every frame in Tribe (also after the session): the stops kept for the return
+{
+    void* mgr = nullptr;
+    for (uint8_t slot = 1; slot < 24; slot++)
+        if (g_theme_later[slot]) {
+            if (!mgr && !(mgr = theme_mgr()))
+                return;
+            {
+                callguard::Hold theme_relaying(g_theme_relaying);
+                o_ThemeStop(mgr, g_theme_later[slot]);
+            }
+            g_theme_later[slot] = 0;
+            g_theme_ended++;
+            H->log(M, SK_INFO, "tribe: the host's theme slot %u stopped here on the return to Tribe (BUG-1496)", slot);
+        }
+}
 void on_theme(uint8_t kind, net::Reader& r)
 {
     uint8_t slot = r.u8();

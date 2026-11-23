@@ -2776,6 +2776,24 @@ the GOG 2024 `SporeApp.exe` (dc04aee5); the lines are in data/symbols/overrides_
 * ✔ `City_CenterPoint` 0xBD95D0: thiscall(city, Vector3* out) ret 4: the position of the city's walls object
   (+0x324, 0xBEC2E0); the Civ "next city" HUD message sends the camera there (0xCF64E5, then SimCamera_GoToPoint).
 
+## The audit's Civ items of 0.7.17 (2026-11-23, fix/w78-civ)
+<a id="civ-audit-v1-0717"></a>
+
+BUG-1479, BUG-1480, BUG-1481 (audit 0.7.15.5 CIV-10, CIV-11, CIV-15 a). Static reading of our code against the game
+behaviour recorded above; no new game address. Lab runs pending (night).
+* ~ (static, BUG-1479) The specialty answer 0x40FAFDF reaches every city's listener (`cCity_MessageListener` 0xBE75C0,
+  this = city +0x20C) with one data pointer ([the specialty question](#civ-specialty-buyer)). Our hook took it at the
+  first listener and cleared the open question, so the repeat guard (inside `g_spec_open >= 0`) never ran and every
+  later listener passed the answer to the game's; that one acts for the player civ's +0x44C city, which on a guest is
+  whatever the loaded save named. The game's listener order is visible with `coop.msglisteners 40FAFDF` (obj = city
+  +0x20C); ? whether the dispatch follows that list order is not measured (civ_specialty_once logs `took_at=`).
+* ✔ (code) MSG_CIV_CMD's first byte 5 is two commands: CMD_SPACE_BUILD of a Space guest (u8 5, u32 place, u32 noun,
+  6 x f32: 33 bytes) and the superweapon request of a Civ guest (u8 5, u32 type, 3 x f32: 17 bytes). Outside Space and
+  Civ (an editor, a load) the host tells them by the size (BUG-1480); in Civ only the superweapon is possible.
+* ~ (static, BUG-1481) A local vehicle a mirror chooses within 25 m waits while `creations::host_design` asks the host
+  (pending for one round trip, at most 20 s): with one chunk per state cycle the cycle's own sweep of unbound local
+  vehicles removed it before the answer. The design answers are forgotten at every session end
+  (creations on_session_end), so a guest's rejoin always meets this case for vehicles of the host's own designs.
 ## Every player's own money, the NPC budgets and Civ -> Space money (2026-11-23, feat/w68-wallet)
 <a id="civ-own-money"></a>
 

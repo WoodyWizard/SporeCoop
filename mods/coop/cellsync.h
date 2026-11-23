@@ -68,6 +68,7 @@ std::string debug(const std::vector<std::string>& args);
 void set_fake_model(uint32_t idx, uint32_t inst);
 
 bool food_total(int& food); // the own game's food total S+0x1C (support sync-check); false outside Cell
+bool set_food_total(int food); // BUG-1469: the own food to `food` (AddFoodPoints by the difference, in the step)
 uint32_t forget_mate();           // BUG-1245: the mate G+0x51D4 is no longer the mate (its index, 0: none); the cell stays
 bool restore_mate(uint32_t idx);  // BUG-1245: ... the mate again (still alive, no new mate called meanwhile)
 // BUG-1249: a guest's own cell editor's spend (cell.guest_spend)
