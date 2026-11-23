@@ -78,6 +78,7 @@
 #include "net/session.h"
 #include "net/utf8.h"
 #include "creation_props.h"
+#include "lineage_cells.h"
 #include "creations.h"
 #include "species_line.h"
 #include "history.h"
@@ -1977,16 +1978,31 @@ std::string ui_world_line()
     return "";
 }
 
+// BUG-1512 (CELL-11 of the external audit of 0.7.15.5): in Cell a partner's pose is in ITS world scale, which differs
+// from ours for ~3 s after a level change on one game before the other (BUG-0511); the Cell module compared it with
+// our own cell's position (nearest_partner: the revive's helper, the regen's 12 m, the respawn spot), so a knockout or
+// low hp across a level change lost the revive hold or respawned far away. On: the pose in our scale, as the puppet
+// is drawn (puppets.cpp view_pos). Off (`coop.fix cell.partner_scale off`): the pose as it came (0.7.16.1).
+static bool g_partner_scale_fix = true;
+COOP_FIX("cell.partner_scale", "BUG-1512", g_partner_scale_fix,
+         "cell: a partner's place for the revive, the regeneration and the respawn is in our world scale during a level change");
 std::vector<std::pair<std::string, net::Vec3>> partners()
 {
     std::vector<std::pair<std::string, net::Vec3>> v;
     double now = H->time_seconds();
+    const float own = g_partner_scale_fix && g_mode == modes::kCell ? cellsync::scale_now() : 0.f;
     for (auto& [id, r] : g_remotes) {
         if (r.echo || r.buf.empty() || r.buf.age(now) > 3.0)
             continue;
         const auto& s = r.buf.latest();
-        if ((s.flags & net::PF_IN_WORLD) && !(s.flags & net::PF_DEAD) && same_place(s))
-            v.push_back({r.name, s.pos});
+        if ((s.flags & net::PF_IN_WORLD) && !(s.flags & net::PF_DEAD) && same_place(s)) {
+            net::Vec3 p = s.pos;
+            if (const float k = own > 0 ? cell_logic::partner_scale_k(s.scale, own) : 1.f; k != 1.f) {
+                p = {p.x * k, p.y * k, p.z * k};
+                cellsync::g_partner_scaled++;
+            }
+            v.push_back({r.name, p});
+        }
     }
     return v;
 }
@@ -2244,6 +2260,9 @@ void init_ui()
         own = (int)creations::options(k).size();
         return true;
     };
+    a.creation_premades = [] { return g_mode == modes::kCell && creations::premades_listed(creations::kCell); };
+    a.lineage_box = [] { return lineage_cells::box(); };       // BUG-1477
+    a.lineage_toggle = [] { lineage_cells::toggle(); };
     a.creation_cycle = [](int dir) {
         creations::Kind k = g_mode == modes::kCell ? creations::kCell : creations::kCreature;
         if (g_mode == modes::kSpace)

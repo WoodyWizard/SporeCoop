@@ -234,6 +234,19 @@ static cell_logic::Once g_kill_sent(10.0), g_kill_applied(10.0);
 // next lethal bites of it as sent already. Now the host records a kill only when it applied it and the creature is
 // dying; a guest sends a kill again when the creature still lives here 2 s after the last one went (the host's death
 // comes with its state within ~1 s). Off: 0.7.12.
+// BUG-1511 (CELL-9 of the external audit of 0.7.15.5): BreakOrSwallow (the host's own lethal bite) plays the break
+// animation (+0x18C 7 / 8 / 9) and posts event 5 (loot, DestroyCell) 0.1-0.3 s later without setting +0x113, and the
+// host's handlers took such a cell for alive: a guest's ACT_KILL or a type-6 chunk hit at hp 0 in that window ran
+// KillCell on the breaking cell (a second death, a second loot drop). On: a cell in a break or swallow state counts as
+// dying in MSG_CELL_HIT and MSG_CELL_EAT. Off (`coop.fix cell.breaking_dying off`): 0.7.16.1.
+bool g_fix_breaking_dying = true;
+COOP_FIX("cell.breaking_dying", "BUG-1511", g_fix_breaking_dying,
+         "cell: a creature the host's bite is breaking takes no second kill from a guest (a second death and loot)");
+unsigned g_breaking_refused; // tests (BUG-1511)
+static bool breaking(uint8_t* c)
+{
+    return g_fix_breaking_dying && c && cell_logic::breaking_state(F<int>(c, 0x18C)); // (h_Break's states)
+}
 static bool g_fix_kill_refused = true;
 COOP_FIX("cell.kill_refused", "BUG-0821", g_fix_kill_refused, "cell: a guest's kill the host refused or the game spared does not block that creature's next kills for 10 s");
 // BUG-0959: the host's trace line for a knocked-out guest's kill said "applied" and the next line refused it (a support
@@ -725,9 +738,10 @@ static void downed_tick(uint8_t* a, double now, double dt)
 // the resource's cell type (+0xB4: 2 solid, 3 plant, 5 poison, ...) and ai.type (docs/re/cell.md 1:
 // the first int of the AI block chosen by difficulty, as IsDamageable 0xE52940 picks it); false when
 // the resource data cannot be read. One reader for kind_of, ai_type and the guest-bite gate.
-bool res_types(uint8_t* c, int* cell_type, int* ai_type)
+bool res_types(uint8_t* c, int* cell_type, int* ai_type) { return ref_types(c ? F<void*>(c, kRes) : nullptr, cell_type, ai_type); }
+// the same for a resource reference (+0x108 of a cell; CreateCellObject's res argument)
+bool ref_types(void* ref, int* cell_type, int* ai_type)
 {
-    void* ref = c ? F<void*>(c, kRes) : nullptr;
     if (!ref || !a_GetData)
         return false;
     void* holder = nullptr;
@@ -1128,7 +1142,26 @@ static uint32_t g_spend_meal = 0;      // guest: the meal number of the last spe
 struct Owed {
     int spent = 0;
     uint32_t meal = 0;
+    uint32_t world = 0; // BUG-1507: the host's world when it came (paid only back in that world)
 };
+// BUG-1507 (CELL-4 of the external audit of 0.7.15.5): a guest that does not play the host's Cell world (its own Cell
+// world: own_world::elsewhere, BUG-0797 / BUG-0809; or the host already in another stage: host_left) still sent its own
+// editor's spend (spend_measure) and its mate's pose (mate_tick runs before the solo guard), and the host took both
+// without asking where that guest is: the spend came off the host's (or the party's) DNA, or waited in g_spend_owed,
+// which no stage or world change cleared, and was paid into whatever Cell game the host entered next; the mate stood as
+// a ghost in the host's pool. On: a guest elsewhere sends neither (a gone mate once, so the host drops its copy), the
+// host refuses both from a guest that plays another world (an older guest), and a spend owed goes when the host leaves
+// the Cell stage (no Cell game and no editor) or is paid only in the world it came in. Off
+// (`coop.fix cell.elsewhere_spend off`): 0.7.16.1.
+bool g_fix_elsewhere_spend = true;
+COOP_FIX("cell.elsewhere_spend", "BUG-1507", g_fix_elsewhere_spend,
+         "cell: a guest that plays another world sends no editor spend and no mate to the host, and a spend owed stays in its world");
+unsigned g_elsewhere_spend_held, g_elsewhere_spend_refused, g_owed_dropped; // tests (BUG-1507)
+// guest: we do not play the host's Cell world now
+bool not_host_world()
+{
+    return g_fix_elsewhere_spend && is_guest() && (own_world::elsewhere() || own_world::host_left());
+}
 static std::unordered_map<int, Owed> g_spend_owed;        // host: spends that came while it had no Cell game
 static std::unordered_map<int, uint32_t> g_spend_acked;   // host: the last spend of each guest in its count
 static double g_cell_entered_at = -100;
@@ -1147,6 +1180,11 @@ static void spend_in(int from, int spent, uint32_t meal, bool cell)
 {
     if (!is_host() || !g_fix_guest_spend || spent == 0 || own_progress::active()) // BUG-1469: the guest's own DNA
         return;
+    if (g_fix_elsewhere_spend && own_world::peer_elsewhere((uint8_t)from)) { // BUG-1507: its own world's spend
+        g_elsewhere_spend_refused++;
+        H->log(M, SK_INFO, "cell: player %d's own editor spent %d DNA in another world: not ours (BUG-1507)", from, spent);
+        return;
+    }
     g_spends_got++;
     if (coop_core::dna_own_wallet((uint8_t)from, net::Family::npc)) { // WP-D: its own count, the host's untouched
         uint8_t* hs = cell ? S() : nullptr;
@@ -1159,6 +1197,7 @@ static void spend_in(int from, int spent, uint32_t meal, bool cell)
         Owed& o = g_spend_owed[from];
         o.spent += spent;
         o.meal = meal;
+        o.world = modes::current_world();
         H->log(M, SK_INFO, "cell: player %d's own editor spent %d DNA: kept until this game is back in Cell (BUG-1249)", from, spent);
         return;
     }
@@ -1178,6 +1217,19 @@ static void spend_tick(bool cell, bool was_in_cell)
     if (is_host()) {
         if (uint8_t* hs = cell ? S() : nullptr)
             g_host_spent_last = F<int32_t>(hs, 0x2C);
+        if (g_fix_elsewhere_spend && !g_spend_owed.empty()) { // BUG-1507: owed only to the Cell stage of its world
+            const uint32_t m = game::mode_id(), w = modes::current_world();
+            const bool left = m != modes::kCell && m != modes::kEditor;
+            for (auto it = g_spend_owed.begin(); it != g_spend_owed.end();) {
+                if (cell_logic::owed_drop(true, !left, cell, it->second.world, w)) {
+                    H->log(M, SK_INFO, "cell: player %d's own editor spend of %d DNA dropped: %s (BUG-1507)", it->first,
+                           it->second.spent, left ? "the Cell stage was left" : "another world");
+                    g_owed_dropped++;
+                    it = g_spend_owed.erase(it);
+                } else
+                    ++it;
+            }
+        }
         uint8_t* s = cell && avatar() && now - g_cell_entered_at > 1.0 ? S() : nullptr;
         if (s && !g_spend_owed.empty()) {
             for (auto& [id, o] : g_spend_owed) {
@@ -1225,6 +1277,11 @@ void spend_measure()
            !g_fix_guest_spend ? ", not sent (cell.guest_spend off)" : d ? ", sent to the host" : "");
     if (!g_fix_guest_spend || !d || !C.sess || !C.sess->connected() || own_progress::active()) // BUG-1469: ours
         return;
+    if (not_host_world()) { // BUG-1507: the spend of our own world's editor is not the host's
+        g_elsewhere_spend_held++;
+        H->log(M, SK_INFO, "cell: our own editor's spend of %d DNA is our own world's: not sent (BUG-1507)", d);
+        return;
+    }
     net::Writer w;
     w.u32(0); // no food
     w.u8(0);
@@ -1234,6 +1291,15 @@ void spend_measure()
     C.sess->send_reliable_to(0, net::MSG_CELL_FOOD, w);
     g_spend_pending += d;
     g_spends_sent++;
+}
+
+// tests (BUG-1507, `coop.pool spend fake <n>`): as if our own cell editor had just spent n DNA (measured next tick)
+void spend_fake(int n)
+{
+    if (uint8_t* s = S()) {
+        g_own_ed_due = true;
+        g_own_ed_before = F<int32_t>(s, 0x2C) - n;
+    }
 }
 
 // guest: the host's count to show here (the host's own plus our spends it has not taken yet)
@@ -1481,10 +1547,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         // a bite lands on an NPC of our pool: never on a player's cell (ours or a puppet); BUG-1008: nor on a dead one
         bool dead = c && g_fix_chunk_killer && F<uint8_t>(c, kDead);
         bool copy = mate_copy_refuse(c); // BUG-1432: the copy of a partner's mate is its owner's game's
-        if (!r.ok() || !c || F<uint8_t>(c, kDying) || dead || c == avatar() || modes::cell_is_puppet(c) || copy) {
+        bool brk = c && !copy && breaking(c); // BUG-1511: the host's bite is breaking it
+        if (!r.ok() || !c || F<uint8_t>(c, kDying) || dead || c == avatar() || modes::cell_is_puppet(c) || copy || brk) {
+            if (brk)
+                g_breaking_refused++;
             trace::ev("bite", "refused", "from %u c%u refused: %s", from, idx,
                       !c ? "no such cell here" : c == avatar() || modes::cell_is_puppet(c) ? "a player's cell" : copy ? "a partner's mate"
-                      : dead ? "dead" : "dying");
+                      : dead ? "dead" : brk ? "breaking" : "dying");
             return;
         }
         if (guest_knocked_out(from)) { // BUG-0509: a knocked-out guest bites nothing (an old guest, or one in flight)
@@ -1572,6 +1641,26 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         uint8_t* pc = puppet_cell(from);
         const char* what = c ? kind_of(c) : "-";
         bool alive = c && !F<uint8_t>(c, kDying) && !F<uint8_t>(c, kDead);
+        if (kind == ACT_SHRINK) { // BUG-1514: the guest's bite shrank the plant one level in its game
+            if (c && alive) {
+                int ct = -1, ait = -1;
+                bool is_plant = g_fix_plant_shrink && res_types(c, &ct, &ait) && ct == 3;
+                if (is_plant)
+                    shrink_plant(c, arg);
+                trace::ev("eat", "from shrink", "from %u shrink c%u (%s) to level %d food=%d: %s", from, idx, what, (int)arg,
+                          food, is_plant ? "applied" : !g_fix_plant_shrink ? "cell.plant_shrink off" : "not a plant");
+                if (food && !own_progress::active()) // (the bite's points, as ACT_GONE's)
+                    food_in_step([food, plant = e.plant] { o_AddFood(food, plant); });
+            } else if (food) { // eaten first: no points for it (our next total takes them back)
+                g_n.eats_late++;
+                g_food_sent = -1;
+            }
+            return;
+        }
+        if (alive && kind != ACT_GONE && breaking(c)) { // BUG-1511: a kill of a cell the host's bite is breaking
+            alive = false;
+            g_breaking_refused++;
+        }
         // BUG-0632: a second lethal bite of the same guest kill (or of two guests) is not a second death
         // (BUG-0821: only a kill applied here is recorded, below; off: recorded at once)
         bool again = kind != ACT_GONE && alive &&
@@ -1907,7 +1996,7 @@ std::string status()
     snprintf(pp, sizeof pp, "cell_partner_poison: fix=%d hurt_each_other=%d refused=%u taken=%u partner_clouds=%u last_hit=%s\n",
              (int)g_fix_partner_poison, (int)players_hurt_each_other(), g_n.partner_poison_refused, g_n.partner_poison_taken,
              (unsigned)g_partner_clouds.size(), g_own_hit_last);
-    return b + std::string(d) + t + j + o + sc + c1 + pp;
+    return b + std::string(d) + t + j + o + sc + c1 + pp + audit_status();
 }
 
 std::vector<syncdbg::Entry> sync_entries()
