@@ -10,7 +10,7 @@ role: both
 versions: <=0.7.15
 fixed_in:
 branch: feat/w74-captain
-commits:
+commits: 596a872b, 6ac83cfb, 0bd01c0d
 tests: adventure_tutorial, adventure_tutorial_partner_off
 signature:
 docs: docs/re/adventure.md#adventure-captain-copy, docs/re/creations.md#creations-captain-0717, docs/04-netcode.md#netcode-creation-captains

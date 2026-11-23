@@ -10,7 +10,7 @@ role:
 versions: unreleased
 fixed_in:
 branch: feat/w74-captain
-commits:
+commits: 596a872b, 6ac83cfb, 0bd01c0d
 tests: own_prebake, own_prebake_off
 signature:
 docs: docs/re/creations.md#creations-captain-0717, docs/re/creations.md#creations-model-bake

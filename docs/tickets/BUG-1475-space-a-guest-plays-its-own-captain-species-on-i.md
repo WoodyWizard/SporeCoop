@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.17
 fixed_in:
 branch: feat/w74-captain
-commits:
+commits: 596a872b, 6ac83cfb, 0bd01c0d
 tests: space_own_captain, space_own_captain_off
 signature:
 docs: docs/re/space.md#space-own-captain
