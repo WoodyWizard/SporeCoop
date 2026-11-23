@@ -28,6 +28,7 @@
 #include "wire/space_eco.h"
 #include "wire/space_rivalry.h"
 #include "wire/space_trade.h"
+#include "wire/space_ufo.h"
 #include "wire/tribe_anim.h"
 
 static int g_fail = 0;
@@ -940,6 +941,166 @@ static void test_fields_wire()
     g_golden++;
 }
 
+// squadron.cpp: MSG_UFO_LEAD (id 78, space 1.3 of 0.7.17, BUG-1288; ported from the agy branch's id 74): K_STATE 0,
+// K_HIT 1, K_DAMAGE 2, K_LEADS 3
+static void test_space_ufo()
+{
+    namespace u = wire::space_ufo;
+    {
+        u::LeadState st;
+        st.leader = 1;
+        st.mode = 0x01654C05u;
+        st.world = 0x80000042u;
+        st.body = {0x07, 0x00, 0x00, 0x01, 0x00};
+        golden("ufo K_STATE", st, "00 01 054c6501 42000080 0500 0700000100", nullptr);
+        auto b = enc(st);
+        uint8_t k = 0xFF;
+        net::Reader rp(b.data(), b.size());
+        CHECK(u::peek_kind(rp, k) && k == u::K_STATE && rp.left() == b.size(), "ufo peek_kind K_STATE");
+        rejects<u::LeadState>("ufo K_STATE empty", {});
+        rejects<u::LeadState>("ufo K_STATE cut body", cut(b, 1));
+        rejects<u::LeadState>("ufo K_STATE cut header", cut(b, 6));
+        auto bad = b;
+        bad[0] = u::K_HIT;
+        rejects<u::LeadState>("ufo K_STATE wrong kind", bad);
+        u::LeadState z = st;
+        z.leader = 0;
+        rejects<u::LeadState>("ufo K_STATE host leader", enc(z));
+        z = st;
+        z.world = 0;
+        rejects<u::LeadState>("ufo K_STATE world 0", enc(z));
+        z = st;
+        z.body.clear();
+        rejects<u::LeadState>("ufo K_STATE empty body", enc(z));
+        net::Writer big;
+        big.u8(u::K_STATE); big.u8(1); big.u32(st.mode); big.u32(st.world);
+        big.u16((uint16_t)(u::kMaxStateBody + 1));
+        for (size_t i = 0; i <= u::kMaxStateBody; i++)
+            big.u8(0);
+        rejects<u::LeadState>("ufo K_STATE oversize body", big.data);
+    }
+    {
+        u::LeadHit h;
+        h.leader = 1;
+        h.mode = 0x01654C05u;
+        h.world = 0x80000042u;
+        h.shooter = 2;
+        h.ship_id = 5;
+        h.dmg = 25.f;
+        h.type = 3;
+        h.dir[0] = 0.f; h.dir[1] = 0.f; h.dir[2] = 1.f;
+        golden("ufo K_HIT", h, "01 01 054c6501 42000080 02 0500 0000c841 03000000 00000000 00000000 0000803f", nullptr);
+        auto b = enc(h);
+        rejects<u::LeadHit>("ufo K_HIT cut", cut(b, 1));
+        auto bad = b;
+        bad[0] = u::K_DAMAGE;
+        rejects<u::LeadHit>("ufo K_HIT wrong kind", bad);
+        u::LeadHit z = h;
+        z.leader = 0;
+        rejects<u::LeadHit>("ufo K_HIT host leader", enc(z));
+        z = h;
+        z.world = 0;
+        rejects<u::LeadHit>("ufo K_HIT world 0", enc(z));
+        z = h;
+        z.shooter = 0;
+        rejects<u::LeadHit>("ufo K_HIT host shooter", enc(z));
+        z = h;
+        z.shooter = z.leader;
+        rejects<u::LeadHit>("ufo K_HIT self shooter", enc(z));
+        z = h;
+        z.dmg = -1.f;
+        rejects<u::LeadHit>("ufo K_HIT negative damage", enc(z));
+        z = h;
+        z.dmg = u::kMaxDamage + 1.f;
+        rejects<u::LeadHit>("ufo K_HIT huge damage", enc(z));
+        z = h;
+        z.dmg = NAN;
+        rejects<u::LeadHit>("ufo K_HIT NaN damage", enc(z));
+        z = h;
+        z.dir[2] = INFINITY;
+        rejects<u::LeadHit>("ufo K_HIT Inf dir", enc(z));
+    }
+    {
+        u::LeadDamage d;
+        d.leader = 1;
+        d.mode = 0x01654C05u;
+        d.world = 0x41000009u;
+        d.victim = 3;
+        d.dmg = 25.f;
+        d.type = 0;
+        d.dir[0] = 0.f; d.dir[1] = 0.f; d.dir[2] = 1.f;
+        d.attacker = 7;
+        golden("ufo K_DAMAGE", d, "02 01 054c6501 09000041 03 0000c841 00000000 00000000 00000000 0000803f 0700", nullptr);
+        auto b = enc(d);
+        rejects<u::LeadDamage>("ufo K_DAMAGE cut", cut(b, 1));
+        u::LeadDamage z = d;
+        z.leader = 0;
+        rejects<u::LeadDamage>("ufo K_DAMAGE host leader", enc(z));
+        z = d;
+        z.world = 0;
+        rejects<u::LeadDamage>("ufo K_DAMAGE world 0", enc(z));
+        z = d;
+        z.victim = 0;
+        rejects<u::LeadDamage>("ufo K_DAMAGE host victim", enc(z));
+        z = d;
+        z.victim = z.leader;
+        rejects<u::LeadDamage>("ufo K_DAMAGE self victim", enc(z));
+        z = d;
+        z.dmg = -0.5f;
+        rejects<u::LeadDamage>("ufo K_DAMAGE negative damage", enc(z));
+        z = d;
+        z.dmg = NAN;
+        rejects<u::LeadDamage>("ufo K_DAMAGE NaN damage", enc(z));
+        z = d;
+        z.dir[0] = NAN;
+        rejects<u::LeadDamage>("ufo K_DAMAGE NaN dir", enc(z));
+    }
+    {
+        u::Leads l;
+        l.rows = {{0x01654C05u, 0x80000042u, 2}, {0x01654C05u, 0x41000009u, 3}};
+        golden("ufo K_LEADS", l, "03 02 054c6501 42000080 02 054c6501 09000041 03", nullptr);
+        auto b = enc(l);
+        u::Leads back;
+        net::Reader rb(b.data(), b.size());
+        CHECK(back.read(rb) && back.rows.size() == 2 && back.rows[1].leader == 3 && back.rows[1].world == 0x41000009u,
+              "ufo K_LEADS round trip");
+        golden("ufo K_LEADS empty", u::Leads{}, "03 00", nullptr);
+        rejects<u::Leads>("ufo K_LEADS cut", cut(b, 1));
+        auto bad = b;
+        bad[0] = u::K_STATE;
+        rejects<u::Leads>("ufo K_LEADS wrong kind", bad);
+        u::Leads z = l;
+        z.rows[0].leader = 0;
+        rejects<u::Leads>("ufo K_LEADS host leader", enc(z));
+        z = l;
+        z.rows[1].leader = 0xFF;
+        rejects<u::Leads>("ufo K_LEADS no leader", enc(z));
+        z = l;
+        z.rows[0].world = 0;
+        rejects<u::Leads>("ufo K_LEADS world 0", enc(z));
+        net::Writer many;
+        many.u8(u::K_LEADS);
+        many.u8((uint8_t)(u::kMaxLeads + 1));
+        for (int i = 0; i <= u::kMaxLeads; i++) {
+            many.u32(0x01654C05u); many.u32(0x80000001u + i); many.u8(1);
+        }
+        rejects<u::Leads>("ufo K_LEADS too many rows", many.data);
+    }
+    // the families: a 0.7.16.1 peer (space 1.2, or no CAP_FAMILIES) is never sent MSG_UFO_LEAD
+    std::vector<net::FamilyRev> old_fam = {{1, 1, 2}, {u::kFamily, 1, 2}};
+    std::vector<net::FamilyRev> new_fam = {{1, 1, 2}, {u::kFamily, 1, u::kMinor}};
+    std::vector<net::FamilyRev> future_minor = {{u::kFamily, 1, (uint16_t)(u::kMinor + 1)}};
+    std::vector<net::FamilyRev> wrong_rev = {{u::kFamily, 2, u::kMinor}};
+    CHECK(!u::supports(false, new_fam), "ufo supports requires CAP_FAMILIES");
+    CHECK(!u::supports(true, old_fam), "ufo supports rejects space 1.2");
+    CHECK(u::supports(true, new_fam), "ufo supports accepts space 1.3");
+    CHECK(u::supports(true, future_minor), "ufo supports accepts space 1.4+");
+    CHECK(!u::supports(true, wrong_rev), "ufo supports rejects space 2.x");
+    uint8_t k = 0;
+    net::Reader empty(nullptr, 0);
+    CHECK(!u::peek_kind(empty, k), "ufo peek_kind rejects empty reader");
+}
+
 int main()
 {
     printf("wire golden bytes\n");
@@ -950,6 +1111,7 @@ int main()
     test_space_allies();
     test_space_planets();
     test_space_eco();
+    test_space_ufo();
     test_shared_res();
     test_fields_wire();
     test_space_map();

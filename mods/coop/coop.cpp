@@ -79,6 +79,7 @@
 #include "creation_props.h"
 #include "creations.h"
 #include "species_line.h"
+#include "history.h"
 #include "designs.h"
 #include "notify.h"
 #include "hud_portrait.h"
@@ -999,6 +1000,7 @@ static void frame_observe(double now)
     world_id_tick();          // BUG-1141 (BUG-0217, BUG-0223, BUG-1055): the world changed: its hooks and WORLD_STATE resets
     creations::tick(now);
     species::tick(now); // WP-0 (BUG-1270): the species line (after the creations: it reads their keys)
+    history::tick(now); // WP-H1 (BUG-1470): every player's own stage history
     designs::tick(now); // BUG-1272: a guest's own outfit to its species line
     civedit::tick(now); // WP-C3 (BUG-1275): a guest's own Civ editors' results into its line
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
@@ -2811,6 +2813,7 @@ static void init_tribe_and_creations()
     };
     creations::init(H, M, std::move(crc));
     species::init(H, M, &g_sess); // WP-0 (BUG-1270)
+    history::init(H, M, &g_sess); // WP-H1 (BUG-1470, BUG-1471)
     civedit::init(H, M, &g_sess); // WP-C3 (BUG-1275)
     civ_arrival_init();           // WP-X1 (BUG-1276)
     modes::g_species_for_player = [](uint8_t id) { return creations::player_species(id); };
@@ -2909,6 +2912,24 @@ static void init_civ_and_space()
     sqc.with_host = [] {
         auto it = g_remotes.find(0);
         return it != g_remotes.end() && !it->second.buf.empty() && same_place(it->second.buf.latest());
+    };
+    sqc.my_place = []() -> squadron_logic::Place { return {g_mode, g_world}; }; // BUG-1288
+    sqc.peer_places = [] {
+        std::vector<squadron_logic::PeerPlace> v;
+        for (auto& [id, r] : g_remotes) {
+            if (r.echo)
+                continue;
+            squadron_logic::PeerPlace p;
+            p.id = id;
+            if (!r.buf.empty()) {
+                const auto& ls = r.buf.latest();
+                p.has_state = true;
+                p.mode = ls.mode;
+                p.world = ls.world;
+            }
+            v.push_back(p);
+        }
+        return v;
     };
     sqc.puppet_owner = [](void* u) -> int {
         for (auto& [id, r] : g_remotes)
