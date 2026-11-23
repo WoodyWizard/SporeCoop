@@ -495,4 +495,8 @@ anchor so other docs can link to it:
   says "not active" while the guest's cell stands still is open (docs/tickets BUG-1408).
 * Next steps: read the game's view box and the tile keys of the guest at a fall (`coop.pool areas`, the cull's last
   tile `g_last_tile`), then a mod fix with a switch; own_cell_steady is its test.
+* 2026-11-23 (fix/w85-cell-pool): cause found: the tiles of entering the own world were made ~15 ms before the guest's
+  own pool started, so their population was refused and never came (the game populates a tile only when it makes it);
+  only a few edge tiles had cells. Fix `cell.solo_refill` (docs/re/cell.md#cell-own-pool-refill), waiting for the night
+  run of own_cell_steady and its twin own_cell_steady_refill_off.
 * Ticket: BUG-1408

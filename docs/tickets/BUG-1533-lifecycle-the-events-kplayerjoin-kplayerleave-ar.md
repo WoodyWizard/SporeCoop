@@ -9,11 +9,12 @@ source: feat/w69-progress code read 2026-11-23
 role: host,guest
 versions: 0.7.16.1
 fixed_in:
-branch:
-commits:
-tests:
+branch: fix/w85-cell-pool
+commits: 7a81dbc3
+tests: lifecycle_player, lifecycle_player_off, core_tests lifecycle_hooks
 signature:
-docs:
+docs: docs/01-architecture.md, docs/06-testing.md#testing-lifecycle-player
+switch: core.player_events
 related:
 ---
 
@@ -26,16 +27,30 @@ session_glue.cpp's `cb.player_join` / leave callbacks. Reproduce: grep `lifecycl
 hook on kPlayerJoin and join a guest: its `calls=0` in `coop.lifecycle`.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (code): the C2 migration of 0.7.15 (docs/01-architecture.md, step 3 "the player callbacks fire kPlayerJoin /
+kPlayerLeave") was never done: lifecycle::fire had two callers (end_session, world_id_tick), and lifecycle::pump_game
+(the queue of needs_game hooks fired inside g_sess.update()) had none. The registry, its order and its queue were
+correct and unit-tested; only the firing was missing.
 
 ## Fix
-Not fixed (not part of WP-P1): own_progress.cpp uses the hand-written calls (on_player_join / on_player_leave from
-session_glue.cpp) like every other module. Either fire the two events from the join / leave callbacks or drop them from
-lifecycle.h so nobody relies on them.
+* (feat/w69-progress) Not fixed there (not part of WP-P1): own_progress.cpp used hand calls from session_glue.cpp.
+* fix/w85-cell-pool, `coop.fix core.player_events` (session_glue.cpp): the player callbacks fire kPlayerJoin /
+  kPlayerLeave through `lifecycle::fire_player(fix, event, id)` (lifecycle.h; inside g_sess.update(): game_ok false)
+  after player_life::forget_all, the leave for every leaver (also one without a Remote, before the early return);
+  coop.cpp frame_receive calls lifecycle::pump_game() right after g_sess.update() (game calls allowed there), so a
+  needs_game hook of these events runs in the same frame. Moved onto hooks: own_progress.player (join, leave; order 0)
+  and revive.player (leave; order 10), both mod state only (no game call, not in player_life, independent of the
+  other modules' order); their `lifecycle-exempt` marks go. The other modules' hand calls stay (each has an order
+  written next to it: settings first, species after creations, ...; moving them is the architecture plan's step 3).
+  Off: no event fired, the hand calls of 0.7.16.1 in their old places.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Open, waiting for the lab run (pending night run: lifecycle_player, lifecycle_player_off):
+`SPORE_DETECTOR=20 python3 tools/lab.py run lifecycle_player --lane N --retry 0 --no-build` must PASS; twin
+`SPORE_DETECTOR=20 python3 tools/lab.py run lifecycle_player_off --lane N --retry 0 --no-build` must FAIL (join=0,
+leave=0). Unit: core_tests lifecycle_hooks (fire_player fires both events with the player id, queues a needs_game hook
+until pump_game, fires nothing with the switch off) passes in make test.
 
 ## History
 - 2026-11-23: opened.
+- 2026-11-23: fix/w85-cell-pool: the events fired from the player callbacks (core.player_events), own_progress and revive on hooks; waiting for the night run.

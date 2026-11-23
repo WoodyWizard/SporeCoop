@@ -497,6 +497,30 @@ static void lineage_rules()
     CHECK(withdrawn(c, 2, 0) && withdrawn(c, 2, 0x7B000001u) && !withdrawn(c, 2, 0x7B000002u) && !withdrawn(c, 1, 0));
 }
 
+static void solo_refill()
+{
+    // BUG-1408: the tiles made while the population was the host's are noted, a tile populated later is not
+    RefusedTiles r;
+    r.on_populated(5, true);
+    r.on_populated(6, true);
+    r.on_populated(7, false);
+    CHECK(r.has(5) && r.has(6) && !r.has(7));
+    r.on_populated(6, false); // populated again with the own pool (a level change repopulates every tile)
+    CHECK(!r.has(6));
+    r.on_populated(0x10005, true);
+    r.prune([](uint32_t i) { return i != 5; }); // tile 5 freed, its slot reused by 0x10005
+    CHECK(!r.has(5) && r.has(0x10005) && r.idx.size() == 1);
+    // the solo start refills only when the pool has none of the host's cells; off: never (0.7.16.1)
+    CHECK(solo_refill_due(true, 0, false));
+    CHECK(solo_refill_due(true, 12, true));
+    CHECK(!solo_refill_due(true, 12, false)); // the host's mirrors became our cells: those are the tiles' population
+    CHECK(!solo_refill_due(false, 0, true));
+    // a few tiles per pass, none over the budget
+    CHECK(solo_refill_take(40, 4, 1, 1100) == 4);
+    CHECK(solo_refill_take(3, 4, 1, 1100) == 3);
+    CHECK(solo_refill_take(40, 4, 1100, 1100) == 0);
+}
+
 int main(int argc, char** argv)
 {
     for (int i = 1; i < argc; i++)
@@ -520,6 +544,7 @@ int main(int argc, char** argv)
     own_cell_follow();
     audit_0717();
     lineage_rules();
+    solo_refill();
     if (g_fail) {
         printf("cell_tests: %d FAILED\n", g_fail);
         return 1;

@@ -396,6 +396,12 @@ Migration (the core agent first: switch `core.world_id`; then each module `<modu
    "before BUG-0033" ones, B1) go; block 3's globals move into SESSION_STATE entries.
 3. The player callbacks: `fire({kPlayerJoin / kPlayerLeave, id})`; `player_life::forget_all` becomes the hook
    "core.player_life" at order 0; the duplicated `g_ready.erase` and the hand call of `npc::on_player_leave` go.
+   Done in part (2026-11-23, fix/w85-cell-pool, BUG-1533, switch `core.player_events`): session_glue.cpp's player
+   callbacks fire both events through `lifecycle::fire_player(fix, event, id)` (inside `g_sess.update()`: game_ok
+   false; coop.cpp frame_receive calls `lifecycle::pump_game()` right after the update, which nothing called before),
+   after `player_life::forget_all`, for every leaver; `own_progress.player` (join, leave) and `revive.player` (leave)
+   are the first hooks. The other modules' hand calls stay (their order is written next to them; moving them is step 3's
+   rest). Before, the events were declared and listed but never fired.
 4. Each module registers its `on_world_change` / `on_session_end` as a hook and drops its own detector:
    `tribe::world_check` + `g_world_watch` + `g_world_left`, the same in civ, the `editor_world_fix` /
    `world_epoch_fix` branches of avatar_change_check. Its plain clears go into LIFECYCLE_STATE.

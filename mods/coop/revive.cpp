@@ -128,7 +128,7 @@ static void forget()
 }
 LIFECYCLE_HOOK("revive", lifecycle::kSessionEnd | lifecycle::kWorldChange, -46, [](const lifecycle::Ctx&) { forget(); }, false);
 
-// lifecycle-exempt: called from session_glue.cpp's leave callback (the registry never fires kPlayerLeave, BUG-1533)
+// registered below (kPlayerLeave, BUG-1533); with core.player_events off session_glue.cpp's leave callback calls it
 void on_player_leave(uint8_t id)
 {
     if (id < kMaxPlayers && g_watch[id].active) {
@@ -137,6 +137,8 @@ void on_player_leave(uint8_t id)
         g_lines_next = 0;
     }
 }
+// BUG-1533: mod state only (no game call)
+LIFECYCLE_HOOK("revive.player", lifecycle::kPlayerLeave, 10, [](const lifecycle::Ctx& c) { on_player_leave(c.player); }, false);
 
 bool down() { return g_body != nullptr || g_kill_body != nullptr; }
 

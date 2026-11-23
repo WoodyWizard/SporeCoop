@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <deque>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace cell_logic {
@@ -538,6 +539,44 @@ inline bool plant_shrink(int level, int new_level, const float* sizes, float& fa
         return false;
     factor = sizes[new_level] / sizes[level];
     return std::isfinite(factor) && factor > 0.f;
+}
+
+// BUG-1408: a guest's game made its tiles while its population was the host's (h_Populate refuses the gameplay
+// markers while the guest mirrors the host): a guest that starts its own pool (the host away, a Cell world of its own)
+// keeps those tile objects, and the game populates a tile only when it makes it, so they stay empty (the own pool held
+// only the cells of the few tiles made later at the edge, and lost them all when those tiles went). The tiles whose
+// population was refused are noted; the guest's own pool populates them again when it starts with none of the host's
+// cells (no mirror released, or another world), a few per tile pass.
+struct RefusedTiles {
+    std::unordered_set<uint32_t> idx; // tile objects (pool G+0x38 indices) made while the population was refused
+
+    // one PopulateTile call ended: `refused` when a gameplay marker of it was refused, else the tile has its own cells
+    void on_populated(uint32_t tile, bool refused)
+    {
+        if (refused)
+            idx.insert(tile);
+        else
+            idx.erase(tile);
+    }
+    bool has(uint32_t tile) const { return idx.count(tile) != 0; }
+    // drop the indices `alive` refuses (tile objects freed since; the pool reuses slots)
+    template <class Alive> void prune(Alive alive)
+    {
+        for (auto it = idx.begin(); it != idx.end();)
+            it = alive(*it) ? std::next(it) : idx.erase(it);
+    }
+};
+
+// BUG-1408: the solo start refills the refused tiles when the guest's pool holds none of the host's cells: no mirror
+// became a cell of its own game (released 0), or it plays another Cell world (the load dropped the host's)
+inline bool solo_refill_due(bool fix, uint32_t released, bool elsewhere) { return fix && (released == 0 || elsewhere); }
+
+// BUG-1408: how many refused tiles one tile pass populates: at most `per_pass`, none at or above the pool budget
+inline uint32_t solo_refill_take(uint32_t pending, uint32_t per_pass, uint32_t live, uint32_t cap)
+{
+    if (live >= cap)
+        return 0;
+    return std::min(pending, per_pass);
 }
 
 } // namespace cell_logic

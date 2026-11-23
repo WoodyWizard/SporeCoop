@@ -586,6 +586,10 @@ void guest_tick(double now);
 void solo_reset();
 void solo_send();
 void solo_tick();
+// cellsync_tiles.cpp (BUG-1408): the guest's tiles made while its population was the host's
+void solo_refill_start(uint32_t released, bool elsewhere);
+void solo_refill_stop();
+std::string solo_refill_status();
 
 // cellsync_kin.cpp (BUG-1257): the wild kin of every player's species
 void kin_init();

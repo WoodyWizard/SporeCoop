@@ -1808,11 +1808,11 @@ std::string away_status()
     }
     if (!C.sess || C.sess->role() != net::Role::Client)
         return "";
-    char e[200];
+    char e[320];
     snprintf(e, sizeof e, "cell_away: solo=%d send_due=%d solo_times=%u released=%u solo_spawns=%u kept_meat=%d kept_plant=%d "
-             "kept_sent=%u kept_lost=%u\n",
+             "kept_sent=%u kept_lost=%u%s\n",
              (int)g_solo, (int)g_solo_owed, g_n.solo_times, g_n.solo_released, g_n.solo_spawns, g_solo_food[0], g_solo_food[1],
-             g_n.solo_sent, g_n.solo_dropped);
+             g_n.solo_sent, g_n.solo_dropped, solo_refill_status().c_str());
     return e;
 }
 

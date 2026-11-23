@@ -9,11 +9,12 @@ source: lab rel/0.7.16 20261121-003202 own_cell
 role: 
 versions: 0.7.15.1, unreleased
 fixed_in:
-branch: fix/w84-tests
-commits: 9cebc645 454c040a
-tests: own_cell, own_cell_steady
+branch: fix/w84-tests, fix/w85-cell-pool
+commits: 9cebc645 454c040a 9a6f66d1
+tests: own_cell, own_cell_steady, own_cell_steady_refill_off, cell_tests solo_refill
 signature:
-docs:
+docs: docs/re/cell.md#cell-own-pool-refill
+switch: cell.solo_refill
 related: BUG-0797
 ---
 
@@ -47,6 +48,19 @@ empty pool for ~20 s every ~45 s; not reported by players.
   game's view box, the tile keys after a world scale step) is open. Not fixed here (WP-T1 is test-only); needs a mod
   ticket owner.
 
+* 2026-11-23 (fix/w85-cell-pool), found: observed in the guest logs of all four runs (20261122-193406 #1 / #2,
+  20261122-194210, 20261123-023643): the guest's first tile pass of its own world made the 40 tiles of its screen at s
+  34.75-34.78 and left the cell pool at 1/4096; "host away: the guest plays its own pool (0 cells released)" came 11-19 ms
+  later (solo_tick runs in the next tick). So h_Populate (a guest that is not solo mirrors the host) refused every
+  gameplay marker of those tiles. The game populates a tile only when it makes it, so the 40 tiles stayed empty while
+  they stayed active (pool 1 until s 64.8 in every run). The 150-180 cells came from the 1-6 tiles the idle cell's
+  drifting camera made later at the edge of the active range (40 -> 41..46); when those tiles left it again (43 -> 38)
+  the tile cull took every cell of the pool at once (175 -> 1 by 0xE7C3E6). The host's own pool in the same runs swings
+  by whole tiles too (377 -> 180, 297 -> 132; the game's own behaviour), but its other tiles keep their cells. Inferred:
+  the cull itself is correct (objdump of ShouldCullCell / IsTileActive: the cell's tile from its own level and position,
+  the guest's view box and food did not change); the defect is the empty core tiles. RE notes in
+  docs/re/cell.md#cell-own-pool-refill.
+
 ## Fix
 None yet (cause not found). The test now prints, at each fall of the pool by half from 40 or more, the game's
 DestroyCell calls by caller since the sample before (`coop.pool orphans`: "DestroyCell from") and the guest's
@@ -57,6 +71,15 @@ cell_tiles / cell_away lines, so the next run names the destroyer. The check is 
   `own_cell_steady` (coop_own_cell.py --steady, extended, 90 s): once the pool has 40 cells it keeps 10 or more in every
   later read; it FAILS until BUG-1408 is fixed.
 
+* fix/w85-cell-pool: `coop.fix cell.solo_refill` (cellsync_tiles.cpp): h_PopTile notes on a guest every gameplay tile
+  object whose population h_Populate refused (cell_logic::RefusedTiles; a tile populated later with the own pool is
+  dropped from it); solo_start, when it released no mirror or the guest plays another Cell world
+  (cell_logic::solo_refill_due), lets the guest's next tile passes populate the refused tiles still in its list, 4 per pass
+  (cell_logic::solo_refill_take), none at or above kPopCap and none while the world scale moves; the host's return stops
+  it and purges them as strays. Off: those tiles stay empty (0.7.16.1). A host away in the host's world with mirrors
+  released keeps the old way (the mirrors are those tiles' cells). `coop.pool` cell_away: `solo_refill=<tiles>/<starts>`.
+  No wire change. own_cell_steady also asks for the pool filled in the first read (~25 s after the load).
+
 ## Verification
 Lab (shows the cause): `SPORE_DETECTOR=20 python3 tools/lab.py run own_cell --repeat 4 --lane N --retry 0
 --no-build`: the line "the guest's own pool fell ... DestroyCell by
@@ -66,8 +89,13 @@ Lab (shows the cause): `SPORE_DETECTOR=20 python3 tools/lab.py run own_cell --re
   `SPORE_LAB_FIXOFF="own_cell=cell.solo_elsewhere" SPORE_DETECTOR=20 python3 tools/lab.py run own_cell --lane M --retry 0 --no-build` FAILS; `SPORE_DETECTOR=20 python3 tools/lab.py run own_cell_steady
   --repeat 2 --lane M --retry 0 --no-build` FAIL expected (the defect; with the DestroyCell callers). The ticket stays
   open for the mod fix.
+- fix/w85-cell-pool: open, waiting for the lab run (pending night run: own_cell_steady, own_cell_steady_refill_off, own_cell):
+  `SPORE_DETECTOR=20 python3 tools/lab.py run own_cell_steady --repeat 3 --lane N --retry 0 --no-build` must PASS 3 of 3;
+  twin `SPORE_DETECTOR=20 python3 tools/lab.py run own_cell_steady_refill_off --repeat 2 --lane M --retry 0 --no-build`
+  must FAIL 2 of 2 (the first read 0); `own_cell` PASS. Unit: cell_tests solo_refill (make test).
 
 ## History
 - 2026-11-21: opened from the third final check of 0.7.16 (fix/w62-flake-cc); diagnostics added to the test.
 - 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.
 - 2026-11-23: fix/w84-tests (WP-T1 of 0.7.17): own_cell judges the populate on any read; the defect gets own_cell_steady (454c040a). Kind stays bug: a real defect.
+- 2026-11-23: fix/w85-cell-pool: cause found (the tiles of entering the own world populated while refused), fix cell.solo_refill; waiting for the night run.
