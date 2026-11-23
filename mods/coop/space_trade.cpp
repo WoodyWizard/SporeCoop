@@ -177,6 +177,7 @@ COOP_FIX("trade.offer_answer", "BUG-1491", g_offer_answer_fix,
          "space rivals: an offer the partner can not hold is declined, and one never answered comes back");
 static uint32_t g_offers_declined_full, g_cancel_unknown, g_offers_unanswered;
 static size_t g_offer_limit = kMaxOffers; // tests (BUG-1491): `coop.space trade offerlimit <n>`
+static double g_offer_life = kOfferLife;  // tests (BUG-1485): `coop.space trade offerlife <s>` (both games of a test)
 static uint32_t g_kept_at_end;
 static uint32_t g_owed_paid, g_owed_dropped;
 static uint32_t g_owed_kept;        // BUG-0225: owed items kept for another game (as last decided)
@@ -1036,7 +1037,7 @@ static void handle(uint8_t kind, uint8_t origin, net::Reader& r)
         for (auto& of : g_offers)
             if (of.id == id && of.from == origin)
                 return; // this offer again
-        if (g_offers.size() >= (g_offer_answer_fix ? g_offer_limit : kMaxOffers)) { // the page shows a few; an answer frees a place
+        if (g_offers.size() >= g_offer_limit) { // the page shows a few; an answer frees a place
             if (g_offer_answer_fix) { // BUG-1491: the seller's spice comes back
                 g_offers_declined_full++;
                 decline_offer(origin, id);
@@ -1781,7 +1782,7 @@ static void tick(double now)
         }
     // a partner who left before answering: what was on its way comes back
     for (size_t i = 0; i < g_out.size();) {
-        if (g_offer_answer_fix && g_out[i].kind == K_OFFER && spacelogic::offer_unanswered(g_out[i].t, now, kOfferLife)) {
+        if (g_offer_answer_fix && g_out[i].kind == K_OFFER && spacelogic::offer_unanswered(g_out[i].t, now, g_offer_life)) {
             Out o = g_out[i]; // BUG-1491: the partner never took it (its own list declines an offer after kOfferLife)
             g_out.erase(g_out.begin() + i);
             g_offers_unanswered++;
@@ -1802,7 +1803,7 @@ static void tick(double now)
             continue;
         }
         // unanswered for too long, or the host ended rivals mode (one budget again: nothing to pay)
-        if (now - g_offers[i].t > kOfferLife || !spaceext::rivals()) {
+        if (now - g_offers[i].t > g_offer_life || !spaceext::rivals()) {
             answer_offer(g_offers[i].id, false); // erases it
             continue;
         }
@@ -2146,6 +2147,11 @@ static std::string debug(const std::vector<std::string>& a)
     }
     if (a[0] == "money") {
         snprintf(b, sizeof b, "money %d\n", money());
+        return b;
+    }
+    if (a[0] == "offerlife" && a.size() > 1) { // tests (BUG-1485): an offer waits this long (kOfferLife), on both games
+        g_offer_life = std::clamp(atof(a[1].c_str()), 10.0, 3600.0);
+        snprintf(b, sizeof b, "offer life %.0f s\n", g_offer_life);
         return b;
     }
     if (a[0] == "offerlimit" && a.size() > 1) { // tests (BUG-1491): the partners' offers this game holds at most
