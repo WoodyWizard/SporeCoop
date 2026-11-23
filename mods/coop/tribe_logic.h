@@ -234,4 +234,55 @@ inline bool makeway_skip(bool fix, bool citizen, const void* tribe) { return fix
 // (its walk ended once, put where the host's body lies); off: driven on by mirror_step as a living mirror
 inline bool body_still(bool fix, bool host_body, bool detached) { return fix && host_body && detached; }
 
+// ---------------- audit 0.7.15.5 TR items and the save's taken members (0.7.17 WP-B1) ----------------
+
+// BUG-1494 (TR-8, `coop.fix tribe.tree_mask`): a Flora tree has fruit left to gather: cTreeData +0x48 (`left`, a bit
+// per fruit) is not 0. `slots` is +0x4C (every fruit slot: 0x07 small, 0x1F big, never 0). Off: the two read as one
+// u64 (0.7.16.1), so every tree passed, an empty one too
+inline bool tree_has_fruit(bool fix, uint32_t left, uint32_t slots)
+{
+    return fix ? left != 0 : ((uint64_t)slots << 32 | left) != 0;
+}
+
+// BUG-1493 (TR-7, `coop.fix tribe.air_release`): a member mirror's air hold (BUG-0946) goes when nothing places the
+// mirror from the host's air list any more: the host is away or this guest elsewhere (`local`: its own game plays the
+// mirror), or no snapshot came for 3 s (`stale`). Off: the hold stays (re-placed at the old height until the host is
+// back)
+inline bool air_release(bool fix, bool held, bool local, bool stale) { return fix && held && (local || stale); }
+
+// BUG-1495 (TR-9 part 2, `coop.fix tribe.elsewhere_anims`): a MSG_TRIBE_ANIM / MSG_NPC_ANIM kind a guest that plays
+// another world of the host's stage (`elsewhere`) drops: the host's theme music (4 play, 5 move) and party music (7
+// play), and the host's game-over caption or pause going up (20 / 21 with `up`). Stops (6, 8) and a caption's or
+// pause's end pass (they end only what the relay started, or a wait). Off: nothing dropped (0.7.16.1)
+inline bool elsewhere_drops(bool fix, bool elsewhere, uint8_t kind, bool up)
+{
+    if (!fix || !elsewhere)
+        return false;
+    if (kind == 4 || kind == 5 || kind == 7)
+        return true;
+    return (kind == 20 || kind == 21) && up;
+}
+
+// BUG-1496 (TR-11, `coop.fix tribe.theme_end`): what happens to a theme slot the relay plays on this guest when the
+// host stops it (kind 6) or the session ends. `in_tribe`: this game is in the Tribe stage with its theme manager.
+// Now: stop it in Tribe; outside Tribe (an editor) keep it for the stop at the return. Off (0.7.16.1): a stop outside
+// Tribe is lost, the session's end forgets the slots and stops nothing
+enum class ThemeEnd { Stop, Later, Lost };
+inline ThemeEnd theme_end(bool fix, bool in_tribe, bool session_end)
+{
+    if (!fix)
+        return in_tribe && !session_end ? ThemeEnd::Stop : ThemeEnd::Lost;
+    return in_tribe ? ThemeEnd::Stop : ThemeEnd::Later;
+}
+
+// BUG-1522 (`coop.fix tribe.save_took_listed`): a member a guest's save took out of a tribe's member or selectable
+// vector (BUG-0470) goes back at the save's end only while that tribe is still one of the world's, the citizen is
+// still in the game's list as the same object (its serial) and the vector does not have it already. The save's end
+// runs on the next frame, after that frame's network receive: the host's state may have removed the member meanwhile.
+// Off: every taken entry back (0.7.16.1)
+inline bool took_goes_back(bool fix, bool tribe_listed, bool citizen_listed, bool same_serial, bool in_vector)
+{
+    return !fix || (tribe_listed && citizen_listed && same_serial && !in_vector);
+}
+
 } // namespace tribe_logic

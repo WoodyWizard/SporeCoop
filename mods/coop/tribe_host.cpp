@@ -388,13 +388,20 @@ static bool g_fruit_order_fix = true;
 COOP_FIX("tribe.fruit_order", "BUG-0744", g_fruit_order_fix,
          "tribe: a guest's gather order on a fruit the host's game does not have there gathers the host's nearest fruit or fruit tree");
 uint32_t g_fruit_orders_moved;
+// BUG-1494 (audit TR-8): fruit_instead read cTreeData +0x48 and +0x4C as one u64; +0x4C is every fruit slot of the tree
+// (0x07 / 0x1F, never 0: docs/re/tribe.md CORRECTION 2026-11-13, two u32 masks), so a picked-empty tree passed and the
+// guest's members walked to it and gathered nothing. Now only +0x48 (the fruit left, as for_each_tree_pos reads it).
+// `coop.fix tribe.tree_mask off`: the u64 read (0.7.16.1).
+static bool g_tree_mask_fix = true;
+COOP_FIX("tribe.tree_mask", "BUG-1494", g_tree_mask_fix,
+         "tribe: a guest's gather order on a fruit the host lacks never goes to a tree with no fruit left");
 static void* fruit_instead(const net::Vec3& pos)
 {
     void* best = nullptr;
     float bd = 12.f;
     for_each_tree([&](void* t, const net::Vec3& p) {
         float d = net::dist(p, pos);
-        if (d < bd && F<uint64_t>(t, 0x48) != 0) {
+        if (d < bd && tribe_logic::tree_has_fruit(g_tree_mask_fix, F<uint32_t>(t, 0x48), F<uint32_t>(t, 0x4C))) {
             bd = d;
             best = t;
         }

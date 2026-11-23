@@ -1406,7 +1406,7 @@ std::string debug(const std::vector<std::string>& a)
         return o + "anims fix=1 sent=" + std::to_string(g_anim.anim_relay_sent) +
                " rx=" + std::to_string(g_anim.anim_relay_rx) + " played=" + std::to_string(g_anim.anim_relay_played) + " failed=" +
                std::to_string(g_anim.anim_relay_failed) + " snap_played=" + std::to_string(g_anim.anim_snap_played) + "\nair fix=" + std::to_string((int)g_mirror_air_fix) + " sent=" + std::to_string(g_anim.air_sent) +
-               " rx=" + std::to_string(g_anim.air_rx) + " placed=" + std::to_string(g_anim.air_placed) + " landed=" + std::to_string(g_anim.air_landed) + " culled_lifts=" + std::to_string(game::air_culled_lifts()) + " hunger_sets=" + std::to_string(g_hunger_sets) + "\nidle fix=" + std::to_string((int)g_mirror_idle_fix) +
+               " rx=" + std::to_string(g_anim.air_rx) + " placed=" + std::to_string(g_anim.air_placed) + " landed=" + std::to_string(g_anim.air_landed) + " released=" + std::to_string(g_air_released) + " culled_lifts=" + std::to_string(game::air_culled_lifts()) + " hunger_sets=" + std::to_string(g_hunger_sets) + "\nidle fix=" + std::to_string((int)g_mirror_idle_fix) +
                " sent=" + std::to_string(g_anim.idle_sent) + " refreshed=" + std::to_string(g_anim.idle_refreshed) + " played=" + std::to_string(g_anim.idle_played) +
                " stale_cut=" + std::to_string(g_anim.stale_cut) + "\nphase fix=" + std::to_string((int)g_mirror_phase_fix) +
                " sent=" + std::to_string(g_anim.phase_sent) + " rx=" + std::to_string(g_anim.phase_rx) + " set=" + std::to_string(g_anim.phase_set) + " unlooped=" + std::to_string(g_anim.phase_unlooped) +
@@ -1517,6 +1517,24 @@ std::string debug(const std::vector<std::string>& a)
             },
             &out);
         return (out.empty() ? "no markers\n" : out) + "markers_used=" + std::to_string(g_markers_used) + "\n";
+    }
+    if (a.size() >= 5 && a[0] == "untree") { // untree <x y z> <r>: tests (BUG-1494), every tree within r m of the point is
+        // picked empty here (cTreeData +0x48, the fruit left, = 0; +0x4C, its slots, stays): the trees and their fields
+        net::Vec3 at{(float)atof(a[1].c_str()), (float)atof(a[2].c_str()), (float)atof(a[3].c_str())};
+        float r = (float)atof(a[4].c_str());
+        std::string out;
+        int n = 0;
+        for_each_tree([&](void* t, const net::Vec3& p) {
+            float d = net::dist(p, at);
+            if (d > r)
+                return;
+            char b[128];
+            snprintf(b, sizeof b, "tree %p d=%.1f 48=%08X 4c=%08X -> 0\n", t, d, F<uint32_t>(t, 0x48), F<uint32_t>(t, 0x4C));
+            out += b;
+            F<uint32_t>(t, 0x48) = 0;
+            n++;
+        });
+        return out + "emptied " + std::to_string(n) + " trees\n";
     }
     if (!a.empty() && a[0] == "trees") { // trees near the village with their raw fields (RE)
         net::Vec3 at;
