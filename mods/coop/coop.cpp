@@ -1378,6 +1378,20 @@ uint32_t g_tags_drawn = 0;   // name tags over partners drawn in the last overla
 // when the chief is off screen (find_targets): the pointer gets no name. Off: the name at the pointer (0.7.11).
 bool g_tribe_tag_fix = true;
 COOP_FIX("tribe.pointer_tag", "BUG-0907", g_tribe_tag_fix, "tribe: a partner's name is over its chief and members only, not over the empty ground under its mouse pointer");
+// BUG-1526: a player never saw a partner's health in Creature: the game shows a creature's health in its rollover, and
+// the hover passes through a partner's creature (puppets.cpp h_HoverFilter, the pass-through and the social stance:
+// a click goes to the animal behind it). Now the partner's name tag carries its health as its own game has it (its
+// state's health / max, the numbers its own HUD shows). `coop.fix creature.tag_hp off`: the name alone (0.7.16.1)
+static bool g_tag_hp_fix = true;
+COOP_FIX("creature.tag_hp", "BUG-1526", g_tag_hp_fix, "creature: a partner's name tag shows its health (current / maximum) as its own game has it");
+static std::string tag_hp(const std::string& name, const net::PlayerState& s)
+{
+    if (!g_tag_hp_fix || !(s.max_health > 0) || !std::isfinite(s.health) || !std::isfinite(s.max_health))
+        return name;
+    char b[48];
+    snprintf(b, sizeof b, "  %d/%d", (int)std::ceil(std::max(0.f, s.health)), (int)std::lround(s.max_health));
+    return name + b;
+}
 
 // tribe stage: the owner's name over every member of the player tribe (own members in gold)
 void draw_owner_tags()
@@ -1715,6 +1729,8 @@ void on_overlay(void*, int, void*)
         }
         if (H->world_to_screen(w, sc)) {
             std::string tag = r.name;
+            if (ad->mode == modes::kCreature && !r.buf.empty()) // BUG-1526: the partner's health
+                tag = tag_hp(tag, r.buf.latest());
             float at[3] = {p.x, p.y, p.z};
             pfind::tag("player", id, tag, sc[0], sc[1], at, 0); // F2 colour, BUG-0949
             g_tags_drawn++;
@@ -2857,6 +2873,7 @@ static void init_player_modules()
     sc.blocked = [] { return g_menu_up.load() || coop_ui::is_open() || g_text_up.load(); };
     sc.pace = dna_pace_gain; // BUG-0510
     sc.elsewhere = [] { return guest_elsewhere(); }; // BUG-0420
+    sc.host_away = [] { return g_host_away; };        // BUG-1527
     social::init(H, M, sc);
     game::set_damage_filter(npc::damage_filter);
 }

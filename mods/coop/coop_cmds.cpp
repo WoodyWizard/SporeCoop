@@ -934,6 +934,10 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
         SAY("text_up=%d menu_up=%d", (int)g_text_up.load(), (int)g_menu_up.load());
         return 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "solo")) { // tests (BUG-1527)
+        SAY("%s", social::solo_dump().c_str());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "species")) {
         SAY("%s", social::species_dump().c_str());
         return 0;
@@ -1494,7 +1498,7 @@ void register_commands_core()
                    },
                    nullptr, MT);
     H->command_add(M, "coop.effects",
-                   "coop.effects [probe <hex key> | map | log on|off | load <n> [period_ms] [hex id]] - creature effects "
+                   "coop.effects [probe <hex key> | map | log on|off | load <n> [period_ms] [hex id] | nopuppet <player> [0|1]] - creature effects "
                    "relayed to the partners' puppets (BUG-0451); probe: the game's own effect pool of a key on the avatar "
                    "and every puppet; load: n effects per period at the local player (the frame-time measurement)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
@@ -1518,6 +1522,11 @@ void register_commands_core()
                                            (uint8_t)strtoul(argv[4], nullptr, 0), (uint8_t)strtoul(argv[5], nullptr, 0),
                                            (uint32_t)strtoul(argv[6], nullptr, 16), (uint32_t)strtoul(argv[7], nullptr, 0), p,
                                            argc > 11 ? (float)atof(argv[11]) : net::kNoAgl); // BUG-0608: agl
+                           SAY("%s", effects::status().c_str());
+                           return 0;
+                       }
+                       if (argc > 2 && !strcmp(argv[1], "nopuppet")) { // tests (BUG-1517): nopuppet <player> [0|1]
+                           effects::test_no_puppet((uint8_t)atoi(argv[2]), argc <= 3 || atoi(argv[3]) != 0);
                            SAY("%s", effects::status().c_str());
                            return 0;
                        }

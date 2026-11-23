@@ -75,9 +75,15 @@ static void* mirror(uint8_t space, uint16_t id)
 // a creature can make bursts of one-shot effects; 60 a second is far above a fight of a whole village
 static constexpr double kRate = 60.0;
 static double g_tokens = 30.0, g_tokens_at;
+static double g_drain_until; // tests (BUG-1516): the bucket held empty until then, as in a long fight
 static bool take_token()
 {
     double t = H->time_seconds();
+    if (t < g_drain_until) {
+        g_tokens = 0;
+        g_tokens_at = t;
+        return false;
+    }
     if (g_tokens_at <= 0)
         g_tokens_at = t;
     g_tokens += (t - g_tokens_at) * kRate;
@@ -93,11 +99,24 @@ static bool take_token()
 static uint32_t g_sent[3], g_rx[3], g_played[3], g_nomirror, g_dropped, g_bad;
 static std::map<uint64_t, uint32_t> g_rx_stops; // guest (tests, BUG-1049): stops received per (space, id, key)
 
-static void send(Kind k, const net::Writer& w, bool reliable)
+// BUG-1516 (UIFX-4): the limit dropped every kind, stops too, and the key of a stop is taken from the table before the
+// send, so a dropped stop was never sent again and the looped effect (or the sneak alpha, the sprint dust) stayed on
+// the guest's mirror; BUG-1252 fixed the same for a player's own effects (effects.stop_always). On: an end (a keyed
+// stop, an evicted key's stop, the off edge of a sneak or a sprint) costs a token when there is one and goes anyway
+// (at most one per start that went out). `coop.fix mirror.fx_stops off`: dropped like a start (0.7.16.1)
+static bool g_stops_fix = true;
+COOP_FIX("mirror.fx_stops", "BUG-1516", g_stops_fix, "tribe / creature: the end of an effect, sneak or sprint of a host's animal or member always reaches the guest's mirror (a burst of effects dropped it)");
+static uint32_t g_ends_unlimited; // ends sent past the empty limit
+
+// end: a stop / an off edge (BUG-1516)
+static void send(Kind k, const net::Writer& w, bool reliable, bool end = false)
 {
     if (!take_token()) {
-        g_dropped++;
-        return;
+        if (!end || !g_stops_fix) {
+            g_dropped++;
+            return;
+        }
+        g_ends_unlimited++;
     }
     for (auto& p : C.sess->players())
         if (p.id != 0) {
@@ -169,7 +188,7 @@ static void send_effect(uint8_t s, uint16_t id, bool stop, uint8_t pool, uint32_
 {
     net::Writer w;
     w.u8(K_EFFECT); w.u8(s); w.u16(id); w.u8(stop ? 1 : 0); w.u8(pool); w.u32(eid); w.u32(key);
-    send(K_EFFECT, w, pool != 3); // a one-shot is worth nothing late; starts and stops are a pair
+    send(K_EFFECT, w, pool != 3, stop); // a one-shot is worth nothing late; starts and stops are a pair
 }
 
 void on_creature_effect(void* c, const game::EffectEvent& ev)
@@ -221,7 +240,7 @@ static void SK_THISCALL h_Voice(void* c, bool enter, bool force)
     if (before != after && stage_ok() && !game::is_puppet(c) && ident(c, s, id)) {
         net::Writer w;
         w.u8(K_VOICE); w.u8(s); w.u16(id); w.u8(after ? 1 : 0);
-        send(K_VOICE, w, true);
+        send(K_VOICE, w, true, !after);
     }
 }
 static void SK_THISCALL h_Sprint(void* c, bool on)
@@ -238,7 +257,7 @@ static void SK_THISCALL h_Sprint(void* c, bool on)
     if (before != after && stage_ok() && !game::is_puppet(c) && ident(c, s, id)) {
         net::Writer w;
         w.u8(K_SPRINT); w.u8(s); w.u16(id); w.u8(after ? 1 : 0);
-        send(K_SPRINT, w, true);
+        send(K_SPRINT, w, true, !after);
     }
 }
 
@@ -305,14 +324,15 @@ std::string status()
     char b[400];
     snprintf(b, sizeof b,
              "mirror_fx: fix=%d hooks voice=%d sprint=%d sent effect=%u voice=%u sprint=%u rx %u/%u/%u played %u/%u/%u "
-             "no_mirror=%u dropped=%u bad=%u keys=%zu evicted=%u lost=%u\n",
+             "no_mirror=%u dropped=%u ends_unlimited=%u bad=%u keys=%zu evicted=%u lost=%u\n",
              (int)g_fix, o_Voice ? 1 : 0, o_Sprint ? 1 : 0, g_sent[0], g_sent[1], g_sent[2], g_rx[0], g_rx[1], g_rx[2],
-             g_played[0], g_played[1], g_played[2], g_nomirror, g_dropped, g_bad, g_keys_n, g_keys_evicted, g_keys_lost);
+             g_played[0], g_played[1], g_played[2], g_nomirror, g_dropped, g_ends_unlimited, g_bad, g_keys_n, g_keys_evicted,
+             g_keys_lost);
     return b;
 }
 
 // tests (BUG-1049): coop.mirrorfx fill <n> (host: n keyed starts of no creature into the table, as a long session
-// leaves them); key start|relay|stop <member> <effect> [key] [pool] (host: the game's pool start / stop of an effect on the
+// leaves them); drain <s> (host, BUG-1516: the rate limit held empty for s seconds, as a long fight empties it); key start|relay|stop <member> <effect> [key] [pool] (host: the game's pool start / stop of an effect on the
 // tribe member, relayed as the effect hook relays one; relay: only the relay, so the host's own update cannot stop it); has <member> <key> (guest: the game's effect of that key on
 // the member's mirror is active: 1 / 0)
 static int c_status(void*, int argc, const char* const* argv, SkOut* out)
@@ -322,6 +342,11 @@ static int c_status(void*, int argc, const char* const* argv, SkOut* out)
         for (int i = 0; i < n && i < (int)kKeys; i++)
             key_start(S_NPC, 0xFFF0, 0x10000u + (uint32_t)i);
         H->out_printf(out, "keys=%zu evicted=%u lost=%u\n", g_keys_n, g_keys_evicted, g_keys_lost);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "drain") && is_host()) { // BUG-1516: the limit empty for <s> s
+        g_drain_until = H->time_seconds() + atof(argv[2]);
+        H->out_printf(out, "drained for %.1f s dropped=%u ends_unlimited=%u\n", atof(argv[2]), g_dropped, g_ends_unlimited);
         return 0;
     }
     if (argc > 4 && !strcmp(argv[1], "key") && is_host()) {
@@ -367,7 +392,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a, (void*)h_Voice, (void**)&o_Voice);
     if (uintptr_t a = H->sym("SporeCoop::Creature_SetSprint"))
         H->hook_create(M, (void*)a, (void*)h_Sprint, (void**)&o_Sprint);
-    H->command_add(M, "coop.mirrorfx", "coop.mirrorfx [fill <n> | key start|relay|stop <member> <effect> [key] [pool] | has <member> <key>] - the host's creature effects, sprints and voices played on a guest's mirrors (BUG-0600; tests BUG-1049)",
+    H->command_add(M, "coop.mirrorfx", "coop.mirrorfx [fill <n> | drain <s> | key start|relay|stop <member> <effect> [key] [pool] | has <member> <key>] - the host's creature effects, sprints and voices played on a guest's mirrors (BUG-0600; tests BUG-1049)",
                    c_status, nullptr, 0);
 }
 

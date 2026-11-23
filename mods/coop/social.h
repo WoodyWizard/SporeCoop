@@ -27,6 +27,7 @@ struct Ctx {
     std::function<bool()> blocked;                     // a menu / the co-op window takes the keys
     std::function<float(float)> pace;                  // host: a gain's share of the party total (BUG-0510)
     std::function<bool()> elsewhere;                   // guest: plays another world of the host's stage (BUG-0420)
+    std::function<bool()> host_away;                   // guest: the host is away (its editor, a load: BUG-1527)
 };
 
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx);
@@ -41,6 +42,7 @@ std::string status();
 // social stance (it plays a social game: a hit then killed the Kook it was impressing)
 bool drop_social_hit(uint16_t proxy_id);
 std::string species_dump(); // coop.social species (tests)
+std::string solo_dump();    // coop.social solo (tests, BUG-1527): the guest's own species events kept while the host is away
 extern unsigned g_stage_msg_win; // 0x60B4123 (a social win) seen by the creature-stage handler (tests)
 std::string games_dump(); // coop.social games (tests, BUG-0831): the host's social games, their prompts' animations
 std::string meter_dump(); // coop.social meter (tests, BUG-0179): the game's social meter object

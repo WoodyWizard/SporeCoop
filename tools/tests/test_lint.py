@@ -40,6 +40,8 @@ COUNTER_ALLOW = {
         'paid once: the DNA on both games is checked next (the game\'s value); the counter tells "once" apart',
     ('coop_creature_social_meter.py', 'visible_at_win'):
         'read from the game\'s meter window at the win message (the mod samples the game\'s flag)',
+    ('coop_creature_social_meter.py', 'visible_after_win'):
+        'read from the game\'s meter window half a second after the win (the mod samples the game\'s flag, BUG-1515)',
     ('coop_creature_social_meter.py', 'stage_win_msgs'):
         'the game\'s own message reached the game\'s handler (counted in the hook); the meter state is checked next',
     ('coop_creature_social_meter.py', 'open_for'):

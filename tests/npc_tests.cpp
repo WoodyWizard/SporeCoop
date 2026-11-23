@@ -24,6 +24,7 @@
 #include "npc_logic.h"
 #include "npc_proxy_rules.h"
 #include "max_hp_rule.h"
+#include "social_logic.h"
 
 static int g_fail = 0;
 #define CHECK(c)                                                         \
@@ -884,10 +885,47 @@ static void test_walk_gait()
     CHECK(speed(i.vel) < 0.01f && (fix ? i.walk_sp == 0.f : i.walk_sp == 3.f));
 }
 
+// BUG-1527 / BUG-1515: social_logic.h
+static void test_social_logic()
+{
+    using namespace social_logic;
+    SoloEvents s;
+    uint32_t a[3] = {0x067A24D5u, 0x2B978C46u, 0x40626200u}, b[3] = {0x24E813CDu, 0x2B978C46u, 0x40626200u};
+    CHECK(!s.add(a, 2) && !s.add(a, 6) && !s.add(a, 7) && s.empty()); // attacked and egg events are not kept
+    CHECK(s.add(a, 0) && s.add(a, 0) && s.add(b, 0) && s.add(a, 3));
+    CHECK(s.v.size() == 3 && s.v[0].count == 2 && s.v[1].count == 1 && s.v[2].event == 3);
+    for (int i = 0; i < 100; i++)
+        s.add(b, 5);
+    CHECK(s.v.back().count == kSoloCountMax && s.dropped == 100 - kSoloCountMax);
+    SoloEvents f;
+    for (uint32_t i = 0; i < kSoloMax + 5; i++) {
+        uint32_t k[3] = {i + 1, 0, 0};
+        f.add(k, 0);
+    }
+    CHECK(f.v.size() == kSoloMax && f.dropped == 5);
+    // kept only by a guest, while the host is away, for its own game's creatures, with the fix
+    CHECK(keep_own(true, true, true, false));
+    CHECK(!keep_own(false, true, true, false) && !keep_own(true, false, true, false) && !keep_own(true, true, false, false) &&
+          !keep_own(true, true, true, true));
+    // the host's table: never while away (fix), held after a send until a newer table or kSoloHoldS
+    CHECK(enforce_now(false, true, 10, -1, 0));
+    CHECK(!enforce_now(true, true, 10, -1, 0));
+    CHECK(enforce_now(true, false, 10, -1, 0));
+    CHECK(!enforce_now(true, false, 10, 9.5, 9.0));
+    CHECK(enforce_now(true, false, 10, 9.5, 9.8));
+    CHECK(enforce_now(true, false, 10, 6.0, 5.0));
+    SoloEvent ok{{1, 2, 3}, 0, 4}, bad1{{1, 2, 3}, 2, 4}, bad2{{1, 2, 3}, 0, 0}, bad3{{0, 2, 3}, 0, 1}, bad4{{1, 2, 3}, 3, 51};
+    CHECK(entry_ok(ok) && !entry_ok(bad1) && !entry_ok(bad2) && !entry_ok(bad3) && !entry_ok(bad4));
+    // BUG-1515: a won meter closes after the hold
+    CHECK(!meter_close_due(true, 10.0, 10.5, 1.5) && meter_close_due(true, 10.0, 11.6, 1.5));
+    CHECK(meter_close_due(false, 10.0, 10.1, 1.5) && meter_close_due(true, -1, 10.1, 1.5));
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
     test_share_wait();
+    test_social_logic();
     test_busy_gate();
     test_stage_epoch();
     test_own_height();

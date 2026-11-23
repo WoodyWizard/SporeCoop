@@ -5461,3 +5461,103 @@ were not re-checked by us yet (no game run by day): `~` until the night run of `
   where it fell each frame, so a fall should not start. The test row `creature_revive_paths` records it.
 * Negative: no new game function or field is used (game::health / set_health / stop / teleport / apply_damage / hit,
   SetEvolutionPoints and AddEvolutionPoints are known): no new symbol.
+
+
+## Interactive ornament fade-out after digging and tier bone cleanup (2026-11-23, fix/w82-creature; from fix/agy-open-bugs 2026-11-20)
+<a id="creature-ornament-fadeout"></a>
+
+BUG-1261, ported from the outside agent's fix/agy-open-bugs 576df657 (its static findings, re-checked by the 0.7.17 review; extends `#creature-world-objects` and `#creature-ornament-models`). Disassembly of GOG 2024 `SporeApp.exe`
+(`objdump`, 2026-11-20):
+
+* ✔ Interact BT node Update `0xD869B0` (state `1 -> 2`, `0xD86B6C..0xD86BB8`): calls `cInteractiveOrnament_NextModel`
+  `0xC40360`, clears `[orn+0xA3] = 0` (unclickable), writes node state `2`, posts reward message `0xD3353638`
+  (`{creature, ornament, 0}` -> `reward+0x10 = 0`, `reward+0x24 = 1`), and returns `1`. On the next tick, state `2`
+  returns `0` (`0xD86B31..0xD86B3A`), which runs Interact BT node Exit `0xD868C0`.
+* ✔ Interact BT node Exit `0xD868C0` (when node state == `2`, `0xD868DF..0xD86926`): calls `0xB531B0(spatial, 0)`,
+  clears `spatial+0x70` (`orn+0xA4 = 0`), casts `spatial` via `vt 0xB8(0x03A25119)` to `cInteractiveOrnament*`, and at
+  `0xD86921` calls `SporeCoop::cInteractiveOrnament_FadeOut` (`0x00C40990`, `thiscall void(orn, float delay_s, bool destroy) ret 8`)
+  with `(orn, 0.5f, true)`.
+* ✔ `SporeCoop::cInteractiveOrnament_FadeOut` (`0x00C40990`): clamps `delay_s` to `[0.0f, FLT_MAX]`, multiplies by
+  `1000.0f` (`0x148BA68`), and writes `delay_ms` to `[orn+0x240]`. If `delay_ms > 0`, sets `[orn+0x238] |= 2`; else
+  clears bit `1`. If `destroy != 0`, clears `[orn+0x238] &= ~4`; else sets bit `2` and shows model `[orn+0xD0]` via
+  `vt 0x16C(model, 1)`. Resets `[model+0x58]` alpha to `1.0f` (`0x1453740`). Calling it again while a fade is already
+  running resets `+0x240` and resets alpha to `1.0f`. Direct callers in `SporeApp.exe`: `0xD86921` (interact Exit,
+  `0.5f, 1`), `0xD409D7` (`TierBoneCleanup`, `0.5f, 1`), and `0xC926AA` (`destroy = 0`, hide mode).
+* ✔ `cInteractiveOrnament::Update` (`0x00C40A50`, `thiscall void(orn, uint32_t dt_ms) ret 4`), called every tick for
+  every `0x03A2511E` instance by `cCreatureGame::Update` at `0xD4598E`:
+  * If `[orn+0xA9] == 0` (initialized to `1` in `cSpatialObject` ctor `0xC898F1`), hides the model and returns without
+    updating fade.
+  * Returns immediately if `[orn+0x238] & 1` is set (set in `0xC40960`) or `[orn+0x238] & 2` is clear.
+  * Counts down `[orn+0x240]` (500 ms delay); when it reaches `<= 0`, sets `[orn+0x240] = 0` and `[orn+0x244] = 0xBB8`
+    (3000 ms fade duration).
+  * Counts down `[orn+0x244]`: if model `[orn+0xD0]` is non-null and `+0x244 > 0`, decays `[model+0x58]` alpha
+    exponentially (`0.1^(dt_ms * 0.001) * alpha + (1 - ...) * 0.01`, sets `[model+4] |= 2`); when `+0x244 <= 0` (or
+    immediately when `[orn+0xD0] == nullptr`), with bit `2` clear (`destroy = true`), calls
+    `cGameNounManager::DestroyInstance(orn)` (`0xB22560`) at `0xC40B1A` and zeroes `[orn+0x244]`. Total lifetime after a
+    real dig: **3.5 s**.
+* ✔ `TierBoneCleanup` (`0x00D408E0`): when a part tier completes, iterates all `cInteractiveOrnament` instances of sort
+  `2` (`+0x110 == 2`) whose `+0x28` matches the tier id (`0x57F31D0B`..`0x57F31D0E`). If on-screen (`spatial vt 0x48`
+  at `0xD409AC`), calls `NextModel` (`0xC40360`), sets `[orn+0xA3] = 0`, and calls
+  `cInteractiveOrnament_FadeOut(orn, 0.5f, true)` at `0xD409D7` (without touching the reward); if off-screen, calls
+  `DestroyInstance(orn)` (`0xB22560`) directly at `0xD409E3`.
+* ✔ Why `BUG-1261` happened:
+  1. `worldobj.cpp` `orn_use` only called `NextModel`, marked the reward used, and cleared `+0xA3 = 0` without calling
+     `cInteractiveOrnament_FadeOut`: 3.5 s after a nearby host dig, the host's bone was destroyed while the guest's
+     copy stayed forever as an unclickable bone (`+0xA3 == 0`).
+  2. `"interactive_ornament"` ignored `host == kGone` (`orn_behind` returned false on `kGone`) and had `drop_own = false`:
+     any bone the host dug while the guest was beyond the 90 m snapshot radius (or before join) or destroyed via
+     `TierBoneCleanup` stayed alive and clickable on the guest, letting the guest dig a fossil over empty host grass.
+* Fix (`wobj.ornament_fade`, `mods/coop/worldobj_orn.h`, `mods/coop/worldobj.cpp`): `orn_state` carries bit 1
+  (`kFading = 2u`, when `(+0x238 & 7) == 2`) alongside bit 0 (`kUsed = 1u`, wire-compatible with 0.7.15). When the
+  remote peer is fading or `kGone` (bound immediately, unbound inside the snapshot's covered `inner = S.r - tol`
+  radius after `kOwnGrace` snapshots; bones outside `inner` are never dropped), the local copy is marked unclickable
+  and faded once via `cInteractiveOrnament_FadeOut(o, 0.5f, true)` (never restarting an active fade; fallback to
+  `game::destroy_instance` if `+0xA9 == 0` or `+0x238 & 1`). `coop.wobj use <orn>` without `fade` stays non-fading so
+  `wobj_ornament` and `wobj_ornament_model` (which rely on `ornlist` static buffers not being freed) remain unaffected;
+  `coop.wobj use <orn> fade` runs the full Update + Exit fade-out sequence for tests. ~ Not run in the lab yet (night
+  run: ornament_fade_dig / _gone / _settle and the twins).
+* Added in the port (the review's findings 6 and 7): a guest takes the host's kGone only from a host of creature 1.3
+  (`wobj_orn::kFadeMinor`; a 0.7.16.1 host may send an empty list before its reward handler exists, and its orn_act
+  marks any reported state used) and only `kGoneSettleS` (10 s) after the host was away, the world changed or the
+  guest was out of the stage (`gone_trusted`, counted `gone_held=` in `coop.wobj`); a guest reports fades only to such
+  a host. The host sends no ornament list while its reward handler is not there. `coop.wobj ornkill <orn>` (tests):
+  DestroyInstance as TierBoneCleanup's off-screen path.
+
+## WP-C1 of 0.7.17: the meter's finish, FX ends, one-shots on the relay, kills while the host is away, the partner's health (2026-11-23, fix/w82-creature)
+<a id="creature-meter-hold"></a>
+
+Static reading and the 2026-11-22 world-switch report (A as a guest on B's Creature world, 0.7.15.5, Steam). No game
+run by day; the night runs named in each ticket check the claims.
+
+* ~ (static, BUG-1515) The game hides its social meter at the session end 0xD9F7A0, after the win's reaction; the
+  guest's meter closed one frame after `SocialMeter_Finish` (K_RESULT ends the engagement, meter_tick queued op 3).
+  `social.meter_hold` keeps the finished meter up 1.5 s (kWinHold, a guess: the reaction's length is not measured).
+  `coop.social meter` prints `visible_after_win=`: the layout's visible byte 0.5 s after the win.
+* ✔ (static, BUG-1516) mirror_fx.cpp's limit (60/s) dropped stops too, and the key was taken from the table before the
+  send: a dropped stop never went again. Ends (stops, evictions, the off edge of K_VOICE / K_SPRINT) now pass the empty
+  limit (`mirror.fx_stops`, `ends_unlimited=` in `coop.mirrorfx`; tests: `coop.mirrorfx drain <s>`).
+* ✔ (static, BUG-1517) effects.cpp checked a pool-3 one-shot's bone against the receiver's puppet before the host's
+  relay: a host without a puppet of guest 1 dropped guest 1's one-shots for guests 2-3. The bone is now checked on the
+  puppet that plays it (`effects.bone_local`; tests: `coop.effects nopuppet <player> [0|1]`).
+* ✔ (report log, BUG-1527) While the host was in its editor (host_away=1 for 3 minutes) the guest killed its own game's
+  animals: `social: relationship event 0 species ... (npc -1): killed 0 -> 1` four times for the same species, each
+  time from 0: social.cpp enforce_table wrote the host's last table over the guest's record every 0.5 s (its log line
+  is capped at 400, so the resets were silent). Now the guest keeps its record while the host is away and keeps the
+  events 0 / 3 / 5 (social_logic.h), sends them when the host is back (MSG_SOCIAL K_SOLO = 6, a host of creature 1.3)
+  and the host replays each through ApplyEvent 0xBA49E0 with no creature (the egg node's way): the extinction, the
+  alliance and the cards follow in the host's game. `coop.social solo` prints the kept events.
+* ✔ (static, BUG-1526) A player sees a creature's health in the game's rollover; puppets.cpp h_HoverFilter lets the
+  hover pass through a partner's creature (the pass-through and the social stance), so no player ever saw the
+  partner's health. The partner's name tag now carries it (`creature.tag_hp`): the partner's state's health / max,
+  the numbers of its own game's HUD.
+* ✔ (report, BUG-1524) The report's module list has SporeApp.exe at 0x00CF0000 (not 0x00400000): Windows relocated
+  the exe, so 0.7.15.5's portrait fix compared a raw vtable that never matched (BUG-1426, fixed in 0.7.16.1 with the
+  symbol `UTFWin::ImageDrawable::vftable`). The HUD portrait kept the Cell creature for that reason.
+* ✔ (report log, BUG-1525) "100 % Cell progress at once": the host started Cell on a planet whose Cell save was at the
+  end (`cell: DNA on entering Cell: food=1000 ... budget=15` on the guest at the load, the host's vote for Creature 80 s
+  later): an old planet of the other player's galaxy played from the co-op copy (BUG-1434). No mod path gives or takes a
+  DNA bonus for legs (no code names one); the guest entered Creature with the world's 65 DNA and spent 60 in its own
+  editor into 0.7.15.5's shared pool. ? Not known: whether the game gives the first Creature editor a bonus.
+* ? (report, BUG-1523) "the host's creature not visible at first": the guest's log has the host's puppet made and
+  shown 2-10 m away from 14:14:11 (`puppet=shown d=2`, `puppet_hp=10/10`) and the mark at 14:15:11; every mark's
+  screenshot has the co-op window over the middle of the screen. Not reproduced; no further lead.

@@ -7,14 +7,15 @@ stage: Creature
 reported: 2026-11-18
 source: owner: players' video, second analysis (split from BUG-1251)
 role: guest
-versions: <0.7.15
+versions: <0.7.17
 fixed_in:
-branch:
-commits:
-tests:
+branch: fix/w82-creature
+commits: f447d4f0, 9a4c9bc3
+tests: tools/tests/coop_ornament_fade.py (ornament_fade_dig, ornament_fade_gone, ornament_fade_settle; twins ornament_fade_dig_off, ornament_fade_gone_off), tests/core_tests.cpp (ornament_fade_rules)
 signature:
-docs:
+docs: docs/re/creature.md#creature-ornament-fadeout
 related: BUG-1251
+switch: wobj.ornament_fade
 ---
 
 ## Report
@@ -24,15 +25,32 @@ guest digs a fossil where the host sees empty grass.
 ## Root cause
 Not reproduced (fix/w53-advorn, 2026-11-18): the creature fixture has the same 12 interactive ornaments in both games
 (from the save: the same serials, places and model keys, `coop.wobj orns`), and a copied dig changes the same fields as
-the game's own (+0xA3, the reward's +0x10 / +0x24). Not looked at: the bone pile an eaten body may leave, ornaments of
-a planet the guest loaded from an older save. See docs/known-issues.md#issue-creature-bones-guest-only.
+the game's own (+0xA3, the reward's +0x10 / +0x24).
+
+Inferred from the game's code (fix/agy-open-bugs 576df657, an outside agent; its static findings re-checked by the
+0.7.17 review, docs/re/creature.md#creature-ornament-fadeout): after a real dig the interact node's Exit 0xD868C0 calls
+cInteractiveOrnament_FadeOut 0xC40990 (0.5 s, destroy): the game destroys the bone 3.5 s later; a part tier's
+TierBoneCleanup 0xD408E0 fades the bones on screen and destroys the others at once. The copy of a dig on the other game
+only marked the reward used (an unclickable bone stayed for good), and a bone the host's game no longer had (kGone) was
+left on the guest, clickable: the players' "bones the host does not have".
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Ported from fix/agy-open-bugs 576df657 with the review's fixes (worldobj_orn.h, worldobj.cpp): the ornament state carries
+the game's fade bit (kFading, +0x238 & 7 == 2); a copied fade runs FadeOut once (never restarted; DestroyInstance when
+the game would not fade it); a bone the host's snapshot lacks inside its inner radius fades on the guest (bound at
+once, unbound after kOwnGrace snapshots) only from a host of creature 1.3 and kGoneSettleS (10 s) after the host was
+away, the world changed or the guest was out of the stage (review finding 6: a host load / editor return among bones);
+a guest reports fades only to such a host (finding 7: a 0.7.16.1 host would mark the bone used); the host sends no
+ornament list without its reward handler. Switch `wobj.ornament_fade` (off: 0.7.16.1). Test hooks `coop.wobj use <orn>
+fade`, `coop.wobj ornkill <orn>`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Open, waiting for the lab run (pending night run: ornament_fade_dig, ornament_fade_dig_off, ornament_fade_gone,
+ornament_fade_gone_off, ornament_fade_settle; regression wobj_ornament, wobj_ornament_model).
+* Wanted PASS: `SPORE_DETECTOR=20 python3 tools/lab.py run ornament_fade_dig ornament_fade_gone ornament_fade_settle --lane N --retry 0 --no-build`.
+* Wanted FAIL: `SPORE_DETECTOR=20 python3 tools/lab.py run ornament_fade_dig_off ornament_fade_gone_off --lane N --retry 0 --no-build` (the guest's bone stays).
+* Unit: tests/core_tests.cpp ornament_fade_rules (the outside agent's cases plus gone_trusted and the old-host gate).
 
 ## History
 - 2026-11-18: opened (split from BUG-1251 on fix/w53-advorn; that ticket fixed the dug-up model).
+- 2026-11-23: fix (port of fix/agy-open-bugs 576df657 with the review's fixes) and tests on fix/w82-creature (f447d4f0); waiting for the night lab run.

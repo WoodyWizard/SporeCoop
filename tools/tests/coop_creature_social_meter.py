@@ -12,14 +12,19 @@ social.guest_meter off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-23
 
 --meter-null N (BUG-1058): the guest's first N meter tasks find no meter window (`coop.social meter_null N`, as an
 engagement in a frame the creature HUD is not up yet); the meter must still open for the engaged Kook.
-SPORE_FIX_OFF=social.meter_retry with --meter-null: never opened for that game (FAIL)."""
+SPORE_FIX_OFF=social.meter_retry with --meter-null: never opened for that game (FAIL).
+
+BUG-1515 (CR-13): the finished meter stays up for a moment after the win (the game's own visible byte of the meter
+window, read by the guest 0.5 s after the win's Finish, `visible_after_win=1`); the key frame
+meter_finish shows the full arc with the face. SPORE_FIX_OFF=social.meter_hold: hidden the frame after
+the win (`visible_after_win=0`, FAIL, twin creature_social_meter_hold_off)."""
 import re
 import sys
 import time
 
 from coop_creature_social import KOOK, num, social
 from coop_creature_social_ally import engage, guest_list, host_list, pos
-from twoinst import Checks, shot, start
+from twoinst import Checks, keyframe, shot, start
 
 SING = (550, 1020)  # the social row's first button (1440x1080 test window)
 
@@ -51,7 +56,7 @@ def main():
     print(f'  guest before: {m0.strip()}', flush=True)
     w0 = num(r'stage_win_msgs=(\d+)', m0, 0)
     o0 = num(r'opened=(\d+)', m0, 0)
-    done = opened = first = None
+    done = opened = first = finish = None
     for nid in kooks[:3]:
         if not engage(guest, nid, 40):
             print(f'  #{nid}: not engaged', flush=True)
@@ -76,7 +81,12 @@ def main():
             guest.call(f'move {SING[0]} {SING[1]}')
             time.sleep(0.3)
             guest.call(f'click {SING[0]} {SING[1]}')
-            time.sleep(3)
+            t1 = time.time()
+            while time.time() - t1 < 3:  # BUG-1515: the frame of the finish, while the meter shows it
+                time.sleep(0.2)
+                if finish is None and num(r'stage_win_msgs=(\d+)', meter(guest), 0) > w0:
+                    finish = keyframe('meter_finish', "the guest's screen: the social meter's full arc with the "
+                                      "relation face, the finish of the won game (not hidden yet)", {'guest': guest}, settle=0)
             if host_list(host).get(nid, (0, 0, 0, False))[3]:
                 break
         print(f'  #{nid}: guest {social(guest).strip()}', flush=True)
@@ -93,6 +103,8 @@ def main():
         print(f'  guest after: {m2.strip()}', flush=True)
         shot(guest, 'social_meter_guest_won.png')
         ck(num(r'visible_at_win=(-?\d+)', m2, 0) == 1, f"the game's meter was up on the guest's screen when the win came ({m2.strip()})")
+        ck(num(r'visible_after_win=(-?\d+)', m2, -1) == 1,  # BUG-1515
+           f"the game's meter still showed its finish 0.5 s after the win ({m2.strip()[-24:]})")
         ck(num(r'stage_win_msgs=(\d+)', m2, 0) > w0,
            "the guest's creature-stage handler got the game's social win message 0x60B4123")
         ck(num(r'open_for=(-?\d+)', m2, 0) < 0 and num(r' visible=(-?\d+)', m2, 1) == 0, "the game's meter is hidden after the result")

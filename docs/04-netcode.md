@@ -995,6 +995,17 @@ sends or gets the type and dies of a lethal hit as before. A guest whose host ne
 after it ran out. The price itself travels on the existing paths (the own wallet in MSG_DNA, the shared total, the debt
 in MSG_PROGRESS kDebt). Codecs: tests/revive_tests.cpp.
 
+## MSG_SOCIAL K_SOLO: a guest's own species events of the host's away time (2026-11-23, fix/w82-creature)
+<a id="netcode-social-solo"></a>
+
+BUG-1527 (WP-C1 of 0.7.17). A new kind of MSG_SOCIAL (51, creature family 1.3, no new id): `u8 6 (K_SOLO), u16 0 (the
+kinds' common id), u8 n (at most 32), n x (u8 event (0 adult killed, 3 impressed, 5 young killed), u32 species key
+instance / type / group (the host's key: creations::host_species), u16 count (1..50))`, guest -> host, reliable, once
+when the host is back from an away time in which the guest's own game made such events. The host replays each event
+`count` times through the game's ApplyEvent 0xBA49E0 with no creature (docs/re/creature.md#creature-meter-hold); an
+entry out of bounds is refused (`coop.social solo`: `refused=`). Old peers: a guest sends it only to a host of creature
+1.3 (`host_families`, `social_logic::kSoloMinor`), else drops the events (0.7.16.1: the host's table wins); a 0.7.16.1
+host would ignore the unknown kind. The creature family has no wire file, so the lock does not change.
 ## MSG_CREATION kinds 10 and 11: the captains (2026-11-23, feat/w74-captain)
 <a id="netcode-creation-captains"></a>
 
