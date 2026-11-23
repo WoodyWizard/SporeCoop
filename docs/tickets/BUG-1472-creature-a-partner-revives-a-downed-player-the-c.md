@@ -10,7 +10,7 @@ role: both
 versions: 0.7.17
 fixed_in:
 branch: feat/w71-revive
-commits: 32d709bf
+commits: 32d709bf, b6834a2e
 tests: creature_revive, creature_revive_price_wallet, creature_revive_price_progress, creature_revive_price_shared, creature_revive_first_line, creature_revive_wipe, creature_revive_paths, creature_revive_old, creature_respawn
 signature:
 docs: docs/03-gameplay.md#gameplay-revive, docs/04-netcode.md#netcode-rescue, docs/re/creature.md#creature-revive, docs/06-testing.md#testing-revive
