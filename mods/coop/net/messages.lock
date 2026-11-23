@@ -1,14 +1,14 @@
 # The wire lock of each message family (B6 of 0.7.15, BUG-1137): family rev minor hash. Written by
 # tools/msg_manifest.py lock after a bump; `make test` (msg_manifest.py check) fails when a family's rows
 # or wire files changed and its rev / minor in net/messages.def did not.
-session 1 3 8afcc6d23fc5550b
+session 1 3 c4216b30c8171e12
 world 1 1 ea800256062e0a48
 creature 1 3 d2962b7a29c4fcb8
 npc 1 2 7a6dd3c2ea2ecf5a
 cell 1 2 81ca1ff89546a75e
 tribe 1 1 97d372dc1ab7a351
 civ 1 2 48e0f86eae490081
-space 1 3 33ee7e052e3b21e3
+space 1 3 37a0044a7dcd973b
 shared 1 0 c29c6202f6ae9b35
 creations 1 2 9712a7469bf10e2d
 # rebased space: C6 (BUG-1133): the Space wire structs join the lock; golden bytes identical (tests/wire_tests.cpp)
@@ -16,3 +16,5 @@ creations 1 2 9712a7469bf10e2d
 # rebased creations: feat/w54-shims: species_line_core.h gets the Cell / Creature rule creation_counts (no wire change, golden bytes of tests/species_tests.cpp identical); MSG_CREATION kind 9 of WP-C2 (never released) removed: the designs ride MSG_SPECIES_LINE; still 1.1, unreleased
 # rebased session: NpcFlags NF_ALPHA (64) is a new bit of MSG_NPC_STATE / NPC_SPAWN flags (npc family, older peers ignore it); no session message changed
 # rebased creature: WP-P1/P2: MSG 76 PROGRESS (own progress, BUG-1469); unreleased creature 1.3 of 0.7.17
+# rebased session: WP-H1: MSG 75 PLAYER_HISTORY (wire/history.h joins the family's wire files); unreleased session 1.3 of 0.7.17
+# rebased space: WP-S1: MSG_UFO_LEAD 78 and wire/space_ufo.h (guest-led NPC fleets, BUG-1288); unreleased space 1.3 of 0.7.17

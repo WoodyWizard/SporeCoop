@@ -25,11 +25,15 @@
 #include "fixes.h"
 #include "creations.h"
 #include "savestrip.h"
+#include "space_ext.h"
+#include "wire/space_ufo.h"
 
 using skg::thiscall;
 using skg::vcall;
 
 namespace squadron {
+
+static_assert(squadron_logic::kSpaceMode == modes::kSpace, "squadron_logic.h: the Space mode id");
 
 static const SkHost* H;
 static SkMod* M;
@@ -49,6 +53,31 @@ static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
 static bool in_space() { return g_ok && game::mode_id() == modes::kSpace; }
+
+// ---------------- BUG-1288: a guest leader for a place without the host ----------------
+// Two or more guests in a star system or planet the host is not in each played their own game's NPC ships (other ships,
+// other fights; their hits on each other's ships went to the host, which does not have them). Now the host names one of
+// them the leader of that place (squadron_logic.h step_leads: sticky, the first one there; MSG_UFO_LEAD K_LEADS), the
+// leader plays the host's part of 0.7.16 there (its ships' state and shots, its NPC hits on a partner) and the others
+// mirror it, every message through the host (K_STATE, K_HIT, K_DAMAGE). The host's place is exactly 0.7.16; so is a
+// place with one guest, a peer before space 1.3 (never named, never sent K_*) and Rivals (no leaders: a War between the
+// guests is not modelled here). A follower that becomes the leader drops its mirrors (no promotion: the ships pop once).
+// Idea and first version: the outside branch fix/agy-open-bugs (review out/research/agy-review-space.md).
+// `coop.fix fleet.leader off`: no guest leaders, the host relays nothing (0.7.16.1).
+static bool g_leader_fix = true;
+COOP_FIX("fleet.leader", "BUG-1288", g_leader_fix,
+         "space: two or more guests in a star system or planet without the host see the same NPC ships (one of them leads)");
+static squadron_logic::FleetRole g_role = squadron_logic::FleetRole::None;
+static uint8_t g_leader = squadron_logic::kNoLeader;
+static squadron_logic::Place g_cur_place{};
+static std::vector<squadron_logic::Lead> g_leads; // host: its table; guest: the rows the host announced
+static double g_leads_sent = -100;
+static uint32_t g_handovers, g_leads_tx, g_leads_rx, g_lead_state_tx, g_lead_state_rx, g_lead_relayed, g_lead_dropped,
+    g_lead_hits_tx, g_lead_hits_rx, g_lead_damage_tx, g_lead_damage_rx;
+
+static bool guest_leader() { return is_guest() && g_role == squadron_logic::FleetRole::Leader; }
+static bool leads_fleet() { return is_host() || guest_leader(); }
+static bool guest_led() { return g_leader != squadron_logic::kHostId && g_leader != squadron_logic::kNoLeader; }
 
 static void* player_ufo()
 {
@@ -262,6 +291,48 @@ bool shot_is_cosmetic(void* att)
     return true;
 }
 
+// BUG-1288: a follower's hit on a mirror of the guest leader's ship (K_HIT), the guest leader's NPC hit on a follower's
+// puppet (K_DAMAGE): to the host, which checks them against its table and passes them on
+static void send_lead_hit(uint16_t ship, float dmg, int type, const float* dir)
+{
+    if (!g_cur_place.valid())
+        return;
+    wire::space_ufo::LeadHit m;
+    m.leader = g_leader;
+    m.mode = g_cur_place.mode;
+    m.world = g_cur_place.world;
+    m.shooter = C.sess->my_id();
+    m.ship_id = ship;
+    m.dmg = net::sane_damage(dmg, wire::space_ufo::kMaxDamage);
+    m.type = type;
+    for (int i = 0; i < 3; i++)
+        m.dir[i] = dir && std::isfinite(dir[i]) ? dir[i] : 0.f;
+    net::Writer w;
+    m.write(w);
+    C.sess->send_reliable_to(0, net::MSG_UFO_LEAD, w);
+    g_lead_hits_tx++;
+}
+
+static void send_lead_damage(uint8_t victim, float dmg, int type, const float* dir, uint16_t attacker)
+{
+    if (!g_cur_place.valid() || victim == squadron_logic::kHostId || victim == C.sess->my_id())
+        return;
+    wire::space_ufo::LeadDamage m;
+    m.leader = C.sess->my_id();
+    m.mode = g_cur_place.mode;
+    m.world = g_cur_place.world;
+    m.victim = victim;
+    m.dmg = net::sane_damage(dmg, wire::space_ufo::kMaxDamage);
+    m.type = type;
+    for (int i = 0; i < 3; i++)
+        m.dir[i] = dir && std::isfinite(dir[i]) ? dir[i] : 0.f;
+    m.attacker = attacker;
+    net::Writer w;
+    m.write(w);
+    C.sess->send_reliable_to(0, net::MSG_UFO_LEAD, w);
+    g_lead_damage_tx++;
+}
+
 // ---------------- hooks ----------------
 using TakeDamage_t = int(SK_THISCALL*)(void*, float, uint32_t, int, const float*, void*);
 static TakeDamage_t o_TakeDamage;
@@ -285,12 +356,16 @@ static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int t
         if (it != g_mirror_of.end()) { // a mirror is hit: only our shots count, the host applies them
             g_mirror_hits++;
             if (me && att == me && type != 10) {
-                net::Writer w;
-                w.u16(it->second);
-                w.f32(dmg);
-                w.u32((uint32_t)type);
-                w.f32(dir ? dir[0] : 0); w.f32(dir ? dir[1] : 0); w.f32(dir ? dir[2] : 0);
-                C.sess->send_reliable_to(0, net::MSG_UFO_HIT, w);
+                if (g_role == squadron_logic::FleetRole::Mirror && guest_led()) // BUG-1288: to the leader, through the host
+                    send_lead_hit(it->second, dmg, type, dir);
+                else {
+                    net::Writer w;
+                    w.u16(it->second);
+                    w.f32(dmg);
+                    w.u32((uint32_t)type);
+                    w.f32(dir ? dir[0] : 0); w.f32(dir ? dir[1] : 0); w.f32(dir ? dir[2] : 0);
+                    C.sess->send_reliable_to(0, net::MSG_UFO_HIT, w);
+                }
                 g_hits_sent++;
             }
             return 0;
@@ -306,7 +381,7 @@ static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int t
             return 0;
         }
     }
-    if (is_host() && C.puppet_owner) {
+    if (leads_fleet() && C.puppet_owner) { // BUG-1288: a guest leader too (its partners there are guests)
         int owner = C.puppet_owner(u);
         bool own = owner > 0 && att && C.puppet_owner(att) < 0 && att != me && friendly(att) && !war_with((uint8_t)owner);
         if (own)
@@ -315,13 +390,18 @@ static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int t
             g_war_hits_out++; // BUG-1032: an escort's hit on a War player's puppet
         if (owner > 0 && att && C.puppet_owner(att) < 0 && att != me && !own) {
             // an NPC ship hit a guest's ship: the guest takes it on its own ship
-            net::Writer w;
-            w.f32(dmg);
-            w.u32((uint32_t)type);
-            w.f32(dir ? dir[0] : 0); w.f32(dir ? dir[1] : 0); w.f32(dir ? dir[2] : 0);
             auto it = g_hid.find(att);
-            w.u16(it == g_hid.end() ? 0xFFFF : it->second);
-            C.sess->send_reliable_to((uint8_t)owner, net::MSG_UFO_DAMAGE, w);
+            uint16_t aid = it == g_hid.end() ? 0xFFFF : it->second;
+            if (!is_host())
+                send_lead_damage((uint8_t)owner, dmg, type, dir, aid); // BUG-1288: through the host
+            else {
+                net::Writer w;
+                w.f32(dmg);
+                w.u32((uint32_t)type);
+                w.f32(dir ? dir[0] : 0); w.f32(dir ? dir[1] : 0); w.f32(dir ? dir[2] : 0);
+                w.u16(aid);
+                C.sess->send_reliable_to((uint8_t)owner, net::MSG_UFO_DAMAGE, w);
+            }
             g_damage_out++;
         }
     }
@@ -331,7 +411,7 @@ static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int t
 // BUG-0677 (host): a shot one of the listed NPC ships made
 static void ship_fired(void* tool, void* u, const float* aim, int dp, int a5, void* target)
 {
-    if (!g_shots_fix || !is_host() || !in_space() || !aim)
+    if (!g_shots_fix || !leads_fleet() || !in_space() || !aim) // BUG-1288: a guest leader's ships too
         return;
     auto it = g_hid.find(u);
     if (it == g_hid.end()) {
@@ -350,7 +430,7 @@ static void ship_fired(void* tool, void* u, const float* aim, int dp, int a5, vo
     if (target) {
         void* t = (uint8_t*)target - kLoco;
         auto th = g_hid.find(t);
-        int owner = t == player_ufo() ? 0 : C.puppet_owner ? C.puppet_owner(t) : -1;
+        int owner = t == player_ufo() ? (int)C.sess->my_id() : C.puppet_owner ? C.puppet_owner(t) : -1;
         if (th != g_hid.end()) {
             s.tkind = 1;
             s.tid = th->second;
@@ -558,8 +638,35 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     return true;
 }
 
-// ---------------- host ----------------
-static void host_tick(double now)
+// ---------------- the leader: the host, or a guest leader (BUG-1288) ----------------
+// BUG-1288: a guest leader's MSG_UFO_STATE body goes to the host in K_STATE, which passes it to the followers
+static void send_lead_state(const net::Writer& body)
+{
+    if (!g_cur_place.valid() || body.data.empty() || body.data.size() > wire::space_ufo::kMaxStateBody)
+        return;
+    wire::space_ufo::LeadState m;
+    m.leader = C.sess->my_id();
+    m.mode = g_cur_place.mode;
+    m.world = g_cur_place.world;
+    m.body = body.data;
+    net::Writer w;
+    m.write(w);
+    C.sess->send_unreliable_to(0, net::MSG_UFO_LEAD, w);
+    g_lead_state_tx++;
+}
+
+static void send_ships(const net::Writer& w)
+{
+    if (!is_host()) {
+        send_lead_state(w);
+        return;
+    }
+    for (auto& pl : C.sess->players())
+        if (pl.id != 0)
+            C.sess->send_unreliable_to(pl.id, net::MSG_UFO_STATE, w);
+}
+
+static void leader_tick(double now)
 {
     if (now - g_last_send < 0.1)
         return;
@@ -621,14 +728,12 @@ static void host_tick(double now)
             g_drop_left--;
             continue;
         }
-        for (auto& pl : C.sess->players())
-            if (pl.id != 0)
-                C.sess->send_unreliable_to(pl.id, net::MSG_UFO_STATE, w);
+        send_ships(w);
     }
 }
 
 // BUG-0677: the shots of the last second, every 0.2 s, a new one at once (at most every 0.05 s)
-static void host_send_shots(double now)
+static void leader_send_shots(double now)
 {
     bool soon = g_shot_new && now - g_shots_sent_at >= 0.05;
     if (!g_shots_fix || (now - g_shots_sent_at < kShotSend && !soon))
@@ -658,9 +763,7 @@ static void host_send_shots(double now)
             w.u8(s.tkind); w.u16(s.tid); w.u32(s.tnoun);
             w.f32(s.tpos.x); w.f32(s.tpos.y); w.f32(s.tpos.z);
         }
-        for (auto& pl : C.sess->players())
-            if (pl.id != 0)
-                C.sess->send_unreliable_to(pl.id, net::MSG_UFO_STATE, w);
+        send_ships(w);
         g_shots_tx++;
     }
 }
@@ -905,12 +1008,13 @@ static void guest_fire(double now)
     }
 }
 
-static void guest_state(net::Reader& r)
+static bool mirror_here();
+static void guest_state(net::Reader& r, bool guest_led_body = false)
 {
     uint16_t cycle = r.u16();
     uint8_t chunk = r.u8(), chunks = r.u8(), n = r.u8();
-    if (!r.ok() || !C.with_host || !C.with_host())
-        return; // the host's ships are mirrored only where the host is
+    if (!r.ok() || (guest_led_body ? !mirror_here() : !C.with_host || !C.with_host()))
+        return; // the host's ships are mirrored only where the host is (BUG-1288: a guest leader's where it is)
     if (chunk == kShotChunk && chunks == 0) { // BUG-0677: a shot list
         guest_shots(r, n);
         return;
@@ -1055,9 +1159,23 @@ static void guest_state(net::Reader& r)
     }
 }
 
+// the place's leader is where this game is: the host (0.7.16: Ctx::with_host), or (BUG-1288) the guest leader as this
+// game has its latest state (a leader zoomed out to the galaxy or in an editor: its mirrors go, as the host's do)
+static bool mirror_here()
+{
+    if (g_role != squadron_logic::FleetRole::Mirror || !guest_led())
+        return C.with_host && C.with_host();
+    if (!C.peer_places || !g_cur_place.valid())
+        return false;
+    for (const auto& p : C.peer_places())
+        if (p.id == g_leader)
+            return squadron_logic::in_place(p, g_cur_place);
+    return false;
+}
+
 static void guest_tick(double now)
 {
-    bool here = C.with_host && C.with_host();
+    bool here = mirror_here();
     for (auto& [id, m] : g_mirrors) {
         if (id == g_hold_mirror)
             continue; // tests: the one frame between the free and this tick, held open
@@ -1100,28 +1218,328 @@ static void guest_tick(double now)
     }
 }
 
+// ---------------- BUG-1288: the host's table, the roles ----------------
+static std::vector<squadron_logic::PeerPlace> session_peers() // the other players in the session, their places
+{
+    std::vector<squadron_logic::PeerPlace> out;
+    if (!C.sess || !C.peer_places)
+        return out;
+    auto pls = C.sess->players();
+    for (auto p : C.peer_places())
+        for (const auto& pl : pls)
+            if (pl.id == p.id && p.id != C.sess->my_id()) {
+                out.push_back(p);
+                break;
+            }
+    return out;
+}
+
+static squadron_logic::Place current_place() { return C.my_place ? C.my_place() : squadron_logic::Place{}; }
+
+// host: itself and every guest, `capable` from the families its HELLO listed (space 1.3 or newer: BUG-1282's gate)
+static std::vector<squadron_logic::PeerPlace> host_peers()
+{
+    squadron_logic::Place hp = current_place();
+    std::vector<squadron_logic::PeerPlace> out{{squadron_logic::kHostId, hp.mode, hp.world, true, true}};
+    for (auto p : session_peers()) {
+        bool has = false;
+        std::vector<net::FamilyRev> fam;
+        p.capable = C.sess->peer_families(p.id, has, fam) && wire::space_ufo::supports(has, fam);
+        out.push_back(p);
+    }
+    return out;
+}
+
+static bool host_reads_leads() // guest: the host's build names guest leaders (space 1.3 or newer)
+{
+    bool has = false;
+    std::vector<net::FamilyRev> fam;
+    return C.sess && C.sess->host_families(has, fam) && wire::space_ufo::supports(has, fam);
+}
+
+static void send_leads(const std::vector<squadron_logic::Lead>& rows, const std::vector<squadron_logic::PeerPlace>& peers)
+{
+    wire::space_ufo::Leads m;
+    for (const auto& l : rows)
+        m.rows.push_back({l.place.mode, l.place.world, l.leader});
+    net::Writer w;
+    m.write(w);
+    for (const auto& p : peers)
+        if (p.id != squadron_logic::kHostId && p.capable) {
+            C.sess->send_reliable_to(p.id, net::MSG_UFO_LEAD, w);
+            g_leads_tx++;
+        }
+}
+
+// host, every frame wherever it is (an editor, the galaxy view, another star): the leaders of the places without it;
+// told to the capable guests when the announced rows change, and every 2 s while there are any (a rejoin)
+static void host_leads_tick(double now)
+{
+    if (!is_host())
+        return;
+    auto peers = host_peers();
+    auto next = squadron_logic::step_leads(g_leads, peers, now, g_leader_fix && !spaceext::rivals());
+    bool changed = !squadron_logic::same_announced(g_leads, next);
+    g_leads = std::move(next);
+    auto rows = squadron_logic::announced(g_leads);
+    if (changed || (!rows.empty() && now - g_leads_sent > 2.0)) {
+        if (changed)
+            H->log(M, SK_INFO, "space: %u guest-led place(s) (fleet.leader)", (unsigned)rows.size());
+        send_leads(rows, peers);
+        g_leads_sent = now;
+    }
+}
+
+static void drop_all_mirrors()
+{
+    for (auto& [id, m] : g_mirrors)
+        if (m.u)
+            destroy_mirror(m.u, false);
+    g_mirrors.clear();
+    g_mirror_of.clear();
+    g_ship_shots_in.clear();
+    g_shot_at_me_until = -100;
+    g_hold_mirror = 0xFFFF;
+}
+
+static void clear_leader_ids()
+{
+    g_hid.clear();
+    g_hid_rev.clear();
+    g_ship_shots.clear();
+    g_shot_counts.clear();
+    g_shot_new = false;
+}
+
+// this game's role from the host's table (a guest) and what changes with it (squadron_logic.h step_role: the
+// host-led changes of 0.7.16 do nothing here)
+static void sync_role()
+{
+    if (!C.sess || !C.sess->connected())
+        return;
+    squadron_logic::Place place = current_place();
+    bool host_here = is_guest() && C.with_host && C.with_host();
+    auto ch = squadron_logic::local_role(is_host(), C.sess->my_id(), place, host_here, g_leader_fix, host_reads_leads(),
+                                         g_leads);
+    auto tr = squadron_logic::step_role(g_role, g_leader, g_cur_place, ch.role, ch.leader, place);
+    if (!tr.changed)
+        return;
+    if (tr.drop_mirrors || tr.clear_leader || tr.reset_rx) {
+        g_handovers++;
+        H->log(M, SK_INFO, "space: fleet %s(%d) -> %s(%d) in %08X%s%s", squadron_logic::role_name(g_role),
+               g_leader == squadron_logic::kNoLeader ? -1 : (int)g_leader, squadron_logic::role_name(ch.role),
+               ch.leader == squadron_logic::kNoLeader ? -1 : (int)ch.leader, (unsigned)place.world,
+               tr.drop_mirrors ? ", mirrors dropped" : "", tr.clear_leader ? ", ship ids new" : "");
+    }
+    if (tr.drop_mirrors)
+        drop_all_mirrors();
+    if (tr.clear_leader)
+        clear_leader_ids();
+    if (tr.reset_rx) {
+        g_rx.reset();
+        g_cycle_ids.clear();
+        g_rx_cycle = 0xFFFF;
+    }
+    g_role = ch.role;
+    g_leader = ch.leader;
+    g_cur_place = place;
+}
+
 void tick(double now)
 {
     modes::space_retired_tick(); // BUG-0218 (reads the UFO list only, before it touches a ship)
+    if (C.sess && C.sess->connected())
+        host_leads_tick(now); // BUG-1288 (the host: in any mode)
     if (!in_space() || !C.sess || !C.sess->connected() || !player_ufo())
-        return;
+        return; // (0.7.16: the mirrors and ids stay across an editor; the role changes when this game is back)
     g_loco_vt = *(void**)((uint8_t*)player_ufo() + kLoco); // BUG-0479 (h_SetScale)
-    if (is_host()) {
-        host_tick(now);
-        host_send_shots(now); // BUG-0677
+    sync_role();
+    if (leads_fleet()) {
+        leader_tick(now);
+        leader_send_shots(now); // BUG-0677
     } else if (is_guest()) {
         guest_tick(now);
-        if (C.with_host && C.with_host())
+        if (mirror_here())
             guest_fire(now); // BUG-0677
         else
             g_ship_shots_in.clear();
     }
 }
 
+// a partner's hit on one of this game's (the leader's) NPC ships: MSG_UFO_HIT on the host, K_HIT on a guest leader
+static void apply_hit(uint8_t from, uint16_t id, float dmg, int t, float dir[3])
+{
+    auto it = g_hid_rev.find(id);
+    if (it == g_hid_rev.end() || !live(it->second) || F<int>(it->second, kState) == 2)
+        return;
+    bool war = war_with(from); // BUG-1032: a guest at War with the host (its shots at the escorts count)
+    if (friendly(it->second) && !war) { // BUG-0420: a guest's shot at a ship of the players' own empire (an escort)
+        g_friendly_dropped++;
+        return;
+    }
+    if (war && friendly(it->second))
+        g_war_hits_in++;
+    dmg = net::sane_damage(dmg, 100000.f); // a guest's report: finite and not negative
+    if (!net::finite3(dir))
+        dir[0] = dir[1] = dir[2] = 0;
+    void* puppet = hit_puppet(from);
+    uint32_t mine = skg::cdecl_call<uint32_t>(a_PlayerEmpireID);
+    // BUG-1032: the game applies no hit whose attacker political id (the argument) is the victim's (BUG-0705):
+    // a War guest's hit on our empire's ship goes in with no empire (-1); any other with ours, as before (with
+    // -1 a hit on a pirate, -1 itself, was dropped: lab 20261113-012657)
+    uint32_t apol = war && F<uint32_t>(it->second, kPol) == mine ? 0xFFFFFFFFu : mine;
+    {
+        callguard::Hold applying(g_applying);
+        o_TakeDamage((uint8_t*)it->second + kCombat, dmg, apol, t, dir, puppet ? (uint8_t*)puppet + kCombat : nullptr);
+    }
+    g_hits_in++;
+}
+
+// the leader's NPC ship hit this game's ship there: MSG_UFO_DAMAGE from the host, K_DAMAGE from a guest leader
+static void apply_damage(uint8_t leader, float dmg, int t, float dir[3], uint16_t att)
+{
+    void* me = player_ufo();
+    if (!me)
+        return;
+    auto it = g_mirrors.find(att);
+    void* a = hit_attacker(it != g_mirrors.end() ? it->second.u : nullptr);
+    g_hold_mirror = 0xFFFF;
+    // through the hook (g_applying: straight to the game after the own-ship filter): a lethal hit
+    // next to a partner only disables the ship (spacecoop rescue). Calling the original here
+    // skipped that, and the guest's ship died in real fights with the partner next to it.
+    uint32_t apol = a ? F<uint32_t>(a, kPol) : 0xFFFFFFFFu;
+    if (war_with(leader)) { // BUG-1032: the host's escort's hit; its empire id is ours in this game (the host's save)
+        apol = 0xFFFFFFFFu;
+        g_war_damage_in++;
+    }
+    {
+        callguard::Hold applying(g_applying);
+        h_TakeDamage((uint8_t*)me + kCombat, dmg, apol, t, dir, a ? (uint8_t*)a + kCombat : nullptr);
+    }
+    g_damage_in++;
+}
+
+// BUG-1288, the host: a guest's MSG_UFO_LEAD, checked against the table (a leader of an active row, a follower in that
+// place, the victim there; squadron_logic.h can_forward_*) and passed on. Wherever the host is: the guests elsewhere.
+static void host_relay(uint8_t from, net::Reader& r)
+{
+    namespace u = wire::space_ufo;
+    uint8_t kind = 0;
+    if (!g_leader_fix || from == 0 || !u::peek_kind(r, kind)) {
+        g_lead_dropped++;
+        return;
+    }
+    auto peers = host_peers();
+    net::Writer w;
+    if (kind == u::K_STATE) {
+        u::LeadState m;
+        if (!m.read(r) || !squadron_logic::can_forward_state(from, m.leader, {m.mode, m.world}, g_leads)) {
+            g_lead_dropped++;
+            return;
+        }
+        squadron_logic::Place pl{m.mode, m.world};
+        m.write(w);
+        for (const auto& p : peers)
+            if (squadron_logic::should_forward_state_to(p, pl, from)) {
+                C.sess->send_unreliable_to(p.id, net::MSG_UFO_LEAD, w);
+                g_lead_relayed++;
+            }
+    } else if (kind == u::K_HIT) {
+        u::LeadHit m;
+        if (!m.read(r) || !squadron_logic::can_forward_hit(from, m.leader, {m.mode, m.world}, g_leads, peers)) {
+            g_lead_dropped++;
+            return;
+        }
+        m.shooter = from; // who shot is the sender, whatever it wrote
+        m.write(w);
+        C.sess->send_reliable_to(m.leader, net::MSG_UFO_LEAD, w);
+        g_lead_relayed++;
+    } else if (kind == u::K_DAMAGE) {
+        u::LeadDamage m;
+        if (!m.read(r) ||
+            !squadron_logic::can_forward_damage(from, m.leader, m.victim, {m.mode, m.world}, g_leads, peers)) {
+            g_lead_dropped++;
+            return;
+        }
+        m.write(w);
+        C.sess->send_reliable_to(m.victim, net::MSG_UFO_LEAD, w);
+        g_lead_relayed++;
+    } else
+        g_lead_dropped++; // (K_LEADS is the host's own)
+}
+
+// BUG-1288, a guest: the host's table (in any mode: it is read when this game is in Space again) and the relayed
+// state, hits and damage of the place this game is in
+static void guest_lead(uint8_t from, net::Reader& r)
+{
+    namespace u = wire::space_ufo;
+    uint8_t kind = 0;
+    if (from != 0 || !u::peek_kind(r, kind)) {
+        g_lead_dropped++;
+        return;
+    }
+    if (kind == u::K_LEADS) {
+        u::Leads m;
+        if (!m.read(r)) {
+            g_lead_dropped++;
+            return;
+        }
+        g_leads.clear();
+        for (const auto& x : m.rows)
+            g_leads.push_back({{x.mode, x.world}, x.leader, 2, -1});
+        g_leads_rx++;
+        return;
+    }
+    if (!g_leader_fix || !in_space() || !player_ufo()) {
+        g_lead_dropped++;
+        return;
+    }
+    sync_role();
+    const uint8_t me = C.sess->my_id();
+    using squadron_logic::FleetRole;
+    if (kind == u::K_STATE) {
+        u::LeadState m;
+        if (!m.read(r) || g_role != FleetRole::Mirror || g_leader != m.leader || g_cur_place != squadron_logic::Place{m.mode, m.world}) {
+            g_lead_dropped++;
+            return;
+        }
+        net::Reader body(m.body.data(), m.body.size());
+        guest_state(body, true);
+        g_lead_state_rx++;
+    } else if (kind == u::K_HIT) {
+        u::LeadHit m;
+        if (!m.read(r) || g_role != FleetRole::Leader || m.leader != me || g_cur_place != squadron_logic::Place{m.mode, m.world}) {
+            g_lead_dropped++;
+            return;
+        }
+        apply_hit(m.shooter, m.ship_id, m.dmg, (int)m.type, m.dir);
+        g_lead_hits_rx++;
+    } else if (kind == u::K_DAMAGE) {
+        u::LeadDamage m;
+        if (!m.read(r) || g_role != FleetRole::Mirror || g_leader != m.leader || m.victim != me ||
+            g_cur_place != squadron_logic::Place{m.mode, m.world}) {
+            g_lead_dropped++;
+            return;
+        }
+        apply_damage(m.leader, m.dmg, (int)m.type, m.dir, m.attacker);
+        g_lead_damage_rx++;
+    } else
+        g_lead_dropped++;
+}
+
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
+    if (type == net::MSG_UFO_LEAD) { // BUG-1288 (before the Space check: the host relays from anywhere)
+        if (is_host())
+            host_relay(from, r);
+        else if (is_guest())
+            guest_lead(from, r);
+        return;
+    }
     if (!in_space() || !player_ufo())
         return;
+    if (is_guest())
+        sync_role(); // BUG-1288: the host's state only once this game mirrors the host (a guest leader's ids went first)
     if (type == net::MSG_UFO_STATE && is_guest()) {
         guest_state(r);
     } else if (type == net::MSG_UFO_HIT && is_host()) {
@@ -1129,54 +1547,15 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         float dmg = r.f32();
         int t = (int)r.u32();
         float dir[3] = {r.f32(), r.f32(), r.f32()};
-        auto it = g_hid_rev.find(id);
-        if (!r.ok() || it == g_hid_rev.end() || !live(it->second) || F<int>(it->second, kState) == 2)
-            return;
-        bool war = war_with(from); // BUG-1032: a guest at War with the host (its shots at the escorts count)
-        if (friendly(it->second) && !war) { // BUG-0420: a guest's shot at a ship of the players' own empire (an escort)
-            g_friendly_dropped++;
-            return;
-        }
-        if (war && friendly(it->second))
-            g_war_hits_in++;
-        dmg = net::sane_damage(dmg, 100000.f); // a guest's report: finite and not negative
-        if (!net::finite3(dir))
-            dir[0] = dir[1] = dir[2] = 0;
-        void* puppet = hit_puppet(from);
-        uint32_t mine = skg::cdecl_call<uint32_t>(a_PlayerEmpireID);
-        // BUG-1032: the game applies no hit whose attacker political id (the argument) is the victim's (BUG-0705):
-        // a War guest's hit on our empire's ship goes in with no empire (-1); any other with ours, as before (with
-        // -1 a hit on a pirate, -1 itself, was dropped: lab 20261113-012657)
-        uint32_t apol = war && F<uint32_t>(it->second, kPol) == mine ? 0xFFFFFFFFu : mine;
-        {
-            callguard::Hold applying(g_applying);
-            o_TakeDamage((uint8_t*)it->second + kCombat, dmg, apol, t, dir, puppet ? (uint8_t*)puppet + kCombat : nullptr);
-        }
-        g_hits_in++;
+        if (r.ok())
+            apply_hit(from, id, dmg, t, dir);
     } else if (type == net::MSG_UFO_DAMAGE && is_guest()) {
         float dmg = r.f32();
         int t = (int)r.u32();
         float dir[3] = {r.f32(), r.f32(), r.f32()};
         uint16_t att = r.u16();
-        void* me = player_ufo();
-        if (!r.ok() || !me)
-            return;
-        auto it = g_mirrors.find(att);
-        void* a = hit_attacker(it != g_mirrors.end() ? it->second.u : nullptr);
-        g_hold_mirror = 0xFFFF;
-        // through the hook (g_applying: straight to the game after the own-ship filter): a lethal hit
-        // next to a partner only disables the ship (spacecoop rescue). Calling the original here
-        // skipped that, and the guest's ship died in real fights with the partner next to it.
-        uint32_t apol = a ? F<uint32_t>(a, kPol) : 0xFFFFFFFFu;
-        if (war_with(0)) { // BUG-1032: the host's escort's hit; its empire id is ours in this game (the host's save)
-            apol = 0xFFFFFFFFu;
-            g_war_damage_in++;
-        }
-        {
-            callguard::Hold applying(g_applying);
-            h_TakeDamage((uint8_t*)me + kCombat, dmg, apol, t, dir, a ? (uint8_t*)a + kCombat : nullptr);
-        }
-        g_damage_in++;
+        if (r.ok())
+            apply_damage(0, dmg, t, dir, att);
     }
 }
 
@@ -1199,6 +1578,13 @@ void on_session_end()
     g_cycle_ids.clear();
     g_rx.reset(); // (its counters stay)
     g_drop_left = 0;
+    // BUG-1288: the mirrors of a guest leader went above with the host's, wherever this game is (an editor too: the
+    // review of the agy branch); its own ships stay, they are its game's
+    g_role = squadron_logic::FleetRole::None;
+    g_leader = squadron_logic::kNoLeader;
+    g_cur_place = {};
+    g_leads.clear();
+    g_leads_sent = -100;
 }
 LIFECYCLE_HOOK("squadron.session", lifecycle::kSessionEnd, -42, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session
 
@@ -1215,7 +1601,23 @@ std::string status()
              g_shots_fix ? 1 : 0, g_shots_seen, g_shots_tx, g_shots_untracked, g_shots_rx, g_shots_fired, g_shots_refused,
              g_shots_nomirror, g_shots_notool, g_shots_notarget, g_shots_released, g_shot_hits_dropped,
              g_shot_nullhits_dropped);
-    return status_ships() + sc + sh;
+    char sl[360]; // BUG-1288
+    snprintf(sl, sizeof sl,
+             "space leader: fix=%d role=%s leader=%d place=%08X leads=%u ships=%u handovers=%u leads_tx=%u leads_rx=%u "
+             "state_tx=%u state_rx=%u relayed=%u hits_tx=%u hits_rx=%u dmg_tx=%u dmg_rx=%u dropped=%u\n",
+             g_leader_fix ? 1 : 0, squadron_logic::role_name(g_role),
+             g_leader == squadron_logic::kNoLeader ? -1 : (int)g_leader, (unsigned)g_cur_place.world,
+             (unsigned)squadron_logic::announced(g_leads).size(), (unsigned)g_hid.size(), g_handovers, g_leads_tx,
+             g_leads_rx, g_lead_state_tx, g_lead_state_rx, g_lead_relayed, g_lead_hits_tx, g_lead_hits_rx,
+             g_lead_damage_tx, g_lead_damage_rx, g_lead_dropped);
+    std::string rows;
+    for (const auto& l : squadron_logic::announced(g_leads)) {
+        char b[80];
+        snprintf(b, sizeof b, "space lead %08X %u%s\n", (unsigned)l.place.world, (unsigned)l.leader,
+                 l.away_since >= 0 ? " away" : "");
+        rows += b;
+    }
+    return status_ships() + sc + sh + sl + rows;
 }
 
 static std::string status_ships()
@@ -1300,7 +1702,7 @@ static void track_rows(double t, bool clock_ok)
         int owner = C.puppet_owner ? C.puppet_owner(u) : -1;
         if (owner >= 0)
             row('p', (uint16_t)owner, u);
-        else if (is_host() && g_hid.count(u))
+        else if (leads_fleet() && g_hid.count(u)) // (BUG-1288: a guest leader's ships too)
             row('s', g_hid[u], u);
         else if (is_guest() && g_mirror_of.count(u))
             row('s', g_mirror_of[u], u);
@@ -1360,7 +1762,7 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 3 && a[0] == "shoot") { // shoot <id> <dmg>: our ship hits ship #id (through the hook)
         void* t = nullptr;
         uint16_t id = (uint16_t)atoi(a[1].c_str());
-        if (is_guest()) {
+        if (is_guest() && !guest_leader()) { // (BUG-1288: a guest leader's own ships are its game's)
             auto it = g_mirrors.find(id);
             t = it == g_mirrors.end() ? nullptr : it->second.u;
         } else {
@@ -1377,8 +1779,8 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 2 && a[0] == "fire") { // tests (BUG-1046, host): ship #id fires its NPC weapon at our ship once
         auto it = g_hid_rev.find((uint16_t)atoi(a[1].c_str()));
         void* u = it == g_hid_rev.end() ? nullptr : it->second;
-        if (!is_host() || !u || !live(u) || !me || !a_ToolMgrGet)
-            return "no such ship (host only)";
+        if (!leads_fleet() || !u || !live(u) || !me || !a_ToolMgrGet)
+            return "no such ship (the place's leader only)";
         std::string have; // the slots with a weapon (0..5, 255: the combatant's)
         for (uint8_t sl : {(uint8_t)0, (uint8_t)1, (uint8_t)2, (uint8_t)3, (uint8_t)4, (uint8_t)5, (uint8_t)0xFF})
             if (weapon_in(u, sl))
@@ -1512,7 +1914,7 @@ std::vector<syncdbg::Entry> sync_entries()
     };
     auto ufos = all_ufos();
     auto live = [&](void* x) { return std::find(ufos.begin(), ufos.end(), x) != ufos.end(); };
-    if (C.sess && C.sess->role() == net::Role::Host) {
+    if ((C.sess && C.sess->role() == net::Role::Host) || guest_leader()) { // BUG-1288: a guest leader's ships too
         for (auto& [u, id] : g_hid)
             if (live(u))
                 v.push_back({"s" + std::to_string(id), pos_of(u), rot(u)});

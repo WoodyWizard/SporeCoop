@@ -3605,3 +3605,27 @@ data/symbols/overrides_dc04aee5.sym.
   new archetype id is mission +0x1F4; it calls SetArchetype(cSimulatorSpaceGame::Get(), false, true) at 0xC4DC14.
 * ✔ (objdump) `Empire_SetSpacecraftKey` 0xC358A0: thiscall(cEmpire*, const ResourceKey*) `ret 4`; writes +0xB8/+0xBC/+0xC0
   only when the key differs, then refreshes the empire's ships (0xC372E0). Upgraded from the fork's "not checked by us".
+
+## Guest leaders of a place without the host: what the fleet relay relies on (2026-11-23, fix/w73-fleet)
+<a id="space-guest-leaders"></a>
+
+BUG-1288 (WP-S1 of 0.7.17): a guest the host names plays the host's part of squadron.cpp in a star system or planet
+the host is not in (squadron_logic.h, MSG_UFO_LEAD, docs/04-netcode.md#netcode-ufo-lead). No game was run for this
+(no lab by day); the marks say what the design takes from earlier findings and what is open.
+* ✔ (earlier, §1 and BUG-0054) the game frees every NPC UFO, mirrors included, on a context switch (DestroyNPCUFOs):
+  a zoom to the galaxy view or a jump leaves a leader with fresh natives and its followers without their mirrors. So
+  the followers drop the mirrors (no explosion) as soon as the leader is no longer in their place, as they do for the
+  host, and a returning leader's ships come as new mirrors (new ids; the 6 s grace keeps only who leads).
+* ? A mirror "promoted" to a ship of the follower's own (the agy branch: kAtDest 0, its political id back) was never seen
+  to fly, aim or die normally: a mirror is pinned every frame (modes::space_pin, kAtDest 1, kNextVel 0, kHp forced, the
+  controller update skipped while pinned) and what the game's AI does with such a ship after the pin stops is unknown.
+  Not used: a follower that becomes the leader drops its mirrors. A runtime look would be the first step to keep a
+  place's ships across a handover.
+* ~ The leader's ship list holds its escort (type 3, the posse: DestroyNPCUFOs keeps exactly type 3): the followers
+  mirror the leader's escort like the host's, and keep their own (BUG-0084). On a handover the leader's escort mirrors go
+  with the rest; nothing of an escort is ever made another game's ship.
+* ? The key of a guest leader's ships goes through creations::host_design on the followers like the host's (BUG-0724):
+  right for the NPC empires (the shared galaxy's keys) and the players' empire (the host's save); a guest leader's own
+  escort design, if its game gives it one of its own creations, would show the host's creation of that id or the
+  BUG-0323 fallback model. The key frame of the lab test shows it.
+* Negative: the 2-player case never reaches this path (a place with one guest has no announced row), Rivals neither.

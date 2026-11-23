@@ -15,6 +15,7 @@
 #include "store.h"
 #include "species_line.h"
 #include "own_progress.h"
+#include "history.h"
 #include "designs.h"
 #include "net/compat.h"
 #include "net/manifest.h"
@@ -1238,6 +1239,9 @@ void setup_callbacks()
             own_progress::on_message(from, r);
             return;
         }
+        case net::Route::History: // WP-H1 (BUG-1470): every player's own stage history
+            history::on_message(from, r);
+            return;
         case net::Route::Tribe: {
             tribe::on_message(type, from, r);
             return;

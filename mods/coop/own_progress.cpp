@@ -762,6 +762,7 @@ static void on_session_end()
     g_ask_at = -100;
 }
 LIFECYCLE_HOOK("own_progress.session", lifecycle::kSessionEnd, -10, [](const lifecycle::Ctx&) { on_session_end(); }, false);
+// lifecycle-exempt: called from session_glue.cpp cb.player_join (the registry never fires kPlayerJoin, BUG-1533)
 void on_player_join(uint8_t id)
 {
     if (!is_host())
@@ -770,6 +771,7 @@ void on_player_join(uint8_t id)
     g_left_food.erase(id);
 }
 
+// lifecycle-exempt: called from session_glue.cpp's leave callback (the registry never fires kPlayerLeave, BUG-1533)
 void on_player_leave(uint8_t id)
 {
     auto it = g_live.find(id);

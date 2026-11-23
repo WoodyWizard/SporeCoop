@@ -131,18 +131,20 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | 71 | `TRIBE_ANIM` | RU | host | Module | Tribe (guest) | tribe | u8 kind (wire/tribe_anim.h), payload: the tribe members' animations, holds, air height, the theme and party music, the game-over and pause waits (MSG_NPC_ANIM's kinds 2-16, 20, 21 for a peer before tribe 1.1, BUG-1160) |
 | 72 | `CELL_MATE` | RU | guest | HostWorld | Cell (host) | cell | u8 kind: 0 (unreliable, 5 Hz) the pose of the mate its mating call brought: u32 res instance, u32 key[3], u8 level, f32 size, vec3 pos, f32 vx, vy, quat, f32 world scale; 1 (reliable) it is gone (BUG-1246) |
 | 73 | `SPECIES_LINE` | R | any | Session | SpeciesLine | creations | u8 kind (species_line_core.h): a player's species line row, its stored row, a piece of a line creation (the host relays it; WP-0, BUG-1270) |
+| 75 | `PLAYER_HISTORY` | R | any | Session | History | session | u8 kind (wire/history.h): 1 host -> guest its own stage history (cards, trait progress), 2 guest -> host its own game's Cell card (WP-H1, BUG-1470) |
 | 76 | `PROGRESS` | R | any | HostWorld | Progress | creature | own progress (all.shared_dna 2, own_progress_logic.h): u8 kind: guest ask / report of its own values, host values back / the players' table / a gain its game paid for the guest's deed (WP-P1/P2 of 0.7.17, BUG-1469) |
+| 78 | `UFO_LEAD` | RU | any | Module | Squadron | space | u8 kind (wire/space_ufo.h): 0 a guest leader's ship state, 1 a follower's hit, 2 the leader's NPC hit on a follower, 3 the host's table of guest leaders per place; the NPC ships of a star system or planet without the host (the host relays; BUG-1288) |
 
 | Family | Id | Rev | Used in | Covers |
 |---|---|---|---|---|
-| session (session) | 1 | 1.3 | every stage and the menus | `HELLO`, `WELCOME`, `REJECT`, `PLAYER_JOIN`, `PLAYER_LEAVE`, `PLAYER_STATE`, `CHAT`, `PING`, `PONG`, `BYE`, `ABILITY`, `PING_MARK`, `READY`, `LOBBY`, `NOTICE`, `DIAG`, `SETTINGS`, `COLORS`, `REPORT`, `HOST_WORLD`, `HOST_BUSY` |
+| session (session) | 1 | 1.3 | every stage and the menus | `HELLO`, `WELCOME`, `REJECT`, `PLAYER_JOIN`, `PLAYER_LEAVE`, `PLAYER_STATE`, `CHAT`, `PING`, `PONG`, `BYE`, `ABILITY`, `PING_MARK`, `READY`, `LOBBY`, `NOTICE`, `DIAG`, `SETTINGS`, `COLORS`, `REPORT`, `HOST_WORLD`, `HOST_BUSY`, `PLAYER_HISTORY` |
 | world (world transfer) | 2 | 1.1 | every stage and the menus | `WORLD_OFFER`, `WORLD_FILE`, `WORLD_CHUNK`, `WORLD_DONE` |
 | creature (Creature) | 3 | 1.3 | Creature | `ANIM`, `WORLD_TIME`, `DNA`, `DNA_ADD`, `VOTE`, `SPECIES`, `SOCIAL`, `NEST`, `PARTS`, `EFFECT`, `PROGRESS` |
 | npc (mirrored creature and world state) | 4 | 1.2 | Creature, Tribe, Civilization | `DAMAGE`, `NPC_STATE`, `NPC_SPAWN`, `NPC_DESPAWN`, `DAMAGE_REQ`, `WOBJ`, `FIELDS`, `NPC_RESYNC`, `NPC_ANIM`, `WSTATE`, `PLAYER_RULE`, `MIRROR_FX`, `NPC_MEAT` |
 | cell (Cell) | 5 | 1.2 | Cell | `CELL_STATE`, `CELL_HIT`, `CELL_EAT`, `CELL_FOOD`, `CELL_KO`, `CELL_BITTEN`, `CELL_MATE` |
 | tribe (Tribe) | 6 | 1.1 | Tribe | `TRIBE_STATE`, `TRIBE_CMD`, `TRIBE_ANIM` |
 | civ (Civilization) | 7 | 1.2 | Civilization, Space | `CIV_STATE`, `CIV_CMD`, `CIV_BUILD`, `ROLE`, `CIV_ALARM` |
-| space (Space) | 8 | 1.3 | Space | `UFO_STATE`, `UFO_HIT`, `UFO_DAMAGE`, `SPACE` |
+| space (Space) | 8 | 1.3 | Space | `UFO_STATE`, `UFO_HIT`, `UFO_DAMAGE`, `SPACE`, `UFO_LEAD` |
 | shared (shared resources) | 9 | 1.0 | Tribe, Civilization, Space | `RES`, `RES_ADD` |
 | creations (creations) | 10 | 1.2 | every stage and the menus | `CREATION`, `SPECIES_LINE` |
 
@@ -856,3 +858,68 @@ WP-0 of docs/plan-0.7.17.md. Parallel branches collided on message ids before (B
   1.x of 0.7.17"` (feat/w54-shims did the same for creations 1.1 in 0.7.16). Two WPs of one family both re-lock;
   the merge takes either lock line and runs the rebase once more on the merged tree.
 * Settings and store: docs/07-modes.md#modes-reserved-0717, docs/01-architecture.md#arch-player-store.
+
+## MSG_PLAYER_HISTORY: every player's own stage history (2026-11-23, feat/w70-history)
+<a id="netcode-player-history"></a>
+
+WP-H1 of docs/plan-0.7.17.md (BUG-1470), the reserved id 75 of #netcode-reserved-0717, family session 1.3 (the bump of
+WP-0; `wire/history.h` joins the family's wire files). Reliable, both directions, class Session, route History
+(history.cpp). Body: u8 kind, then:
+
+* `K_RECORD` 1 (host -> one guest): u8 flags (1: the record is the guest's own; 0: it plays the shared history again),
+  5 x u32 the cards (cPlayer +0x10FC.. order, 0 = stage not done), f32 social, f32 combat (the trait progress). Sent
+  when it changed and every 5 s; the guest writes it into its own cPlayer while it plays the host's world.
+* `K_CELL` 2 (guest -> host): u32 the Cell card the guest's own game decides now (Cell_GetConsequenceTrait), on a change
+  while it plays Cell (every 2 s at most).
+
+Old-peer guard: the host sends K_RECORD only to a guest whose families have session 1.3 or newer (`peer_families`,
+history_logic.h `peer_reads`, `kSessionMinor`); a guest sends K_CELL only to a host with session 1.3 (`host_families`).
+A 0.7.16.1 peer (session 1.2) plays the shared history exactly as before: no record, the wsync row "stages" writes the
+host's cards, its kills raise the host's progress (no redirect for a peer that cannot read its own). A 0.7.16.1 peer
+ignores type 75 (an unknown type). Decoders: tests/fuzz_decoders.cpp; codecs: tests/validate_tests.cpp test_history.
+
+## MSG_UFO_LEAD: guest leaders of the Space NPC ships (2026-11-23, fix/w73-fleet)
+<a id="netcode-ufo-lead"></a>
+
+BUG-1288, WP-S1 of 0.7.17: id 78 (the WP-0 reservation), family space 1.3, wire/space_ufo.h, everything through the host.
+Two or more guests in a star system or planet without the host share one guest's NPC ships (the leader); the host's
+place keeps MSG_UFO_STATE / MSG_UFO_HIT / MSG_UFO_DAMAGE of 0.7.16 byte for byte.
+
+| Kind | Direction | Reliable | Body |
+|---|---|---|---|
+| 0 K_STATE | leader -> host -> followers | no | u8 leader, u32 mode, u32 world, u16 n, n bytes: an MSG_UFO_STATE body (ship chunk or shot list) of the leader's game, at most 1150 |
+| 1 K_HIT | follower -> host -> leader | yes | u8 leader, u32 mode, u32 world, u8 shooter (written by the host), u16 ship id, f32 damage (0..100000), i32 type, vec3 dir |
+| 2 K_DAMAGE | leader -> host -> victim | yes | u8 leader, u32 mode, u32 world, u8 victim, f32 damage, i32 type, vec3 dir, u16 attacker ship id |
+| 3 K_LEADS | host -> guests | yes | u8 n (at most 16), n x (u32 mode, u32 world, u8 leader): the announced rows of the host's table |
+
+* The host decides (squadron_logic.h `step_leads`): per valid place without the host where a capable guest is, the
+  first guest there leads and keeps it while it stays (6 s while it is in no place); a row is announced only with a
+  follower. K_LEADS goes on a change and every 2 s while there are rows. A guest only reads it (`local_role`): with the
+  host in its place it mirrors the host whatever the table says.
+* The host relays a K_* only when it fits its table: K_STATE from the leader of an active row to the capable guests in
+  that place; K_HIT from a capable guest in the place to its leader; K_DAMAGE from the leader to a capable guest there.
+  It relays from wherever it is (an editor, the galaxy view).
+* Old peers: the host asks `peer_families` (space 1.3 or newer: `wire::space_ufo::supports`, `kMinor` 3) before naming
+  a guest or sending it anything; a guest asks `host_families` before it takes a role from the table. A 0.7.16.1 peer on
+  either side: no table, no K_*, every guest away from the host plays its own NPC ships (as 0.7.16.1).
+* Off: `coop.fix fleet.leader off` (no table, nothing relayed). Rivals: no rows.
+
+## MSG_PROGRESS: own progress (2026-11-23, feat/w69-progress)
+<a id="netcode-progress"></a>
+
+WP-P1 / P2 of docs/plan-0.7.17.md (BUG-1469), the reserved id 76 of #netcode-reserved-0717, family creature 1.3 (the
+WP-0 bump; the gate also needs cell 1.2). Reliable, both directions, class HostWorld (a guest in another world drops
+it), route Progress (own_progress.cpp). Body: u8 kind (own_progress_logic.h), then:
+
+| Kind | Direction | Body |
+|---|---|---|
+| 1 kAsk | guest -> host | u32 stage mode: a copy of the host's world opened here (a join, a rejoin, a reload, another stage) |
+| 2 kSet | host -> guest | u32 mode, u8 has, Values when has (u32 mode, f32 DNA, f32 bar, i32 food, i32 spent, u8 brain level): its own values of this world and stage back |
+| 3 kReport | guest -> host | Values: every second while it plays the host's stage, at once on a change (0.25 s apart at most) |
+| 4 kTable | host -> guests | u8 flags (1: own progress is played), u8 n (at most 16), n x (u8 id, u32 mode, u8 flags 1 known / 2 full, u8 percent, i32 Cell food): every second and on a change |
+| 5 kGain | host -> one guest | f32 DNA its game paid for that guest's deed, u8 cause (1 hunt, 2 friend, 3 Actor scope) |
+
+Old peers: the host plays own progress only when every peer has creature 1.3 and cell 1.2 (`peer_families`,
+`own_progress::peer_reads`); else value 2 is refused at the start (own wallet, a notice names the players) and a late
+joiner below it is kicked with "update SporeCoop to 0.7.17". A guest plays it only on the host's kTable flag from a host
+with those minors (`host_families`). A 0.7.16.1 peer ignores type 76 (an unknown type). Codecs: tests/dna_tests.cpp.

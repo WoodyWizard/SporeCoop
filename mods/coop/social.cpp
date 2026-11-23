@@ -2,7 +2,9 @@
 #include "own_progress.h"
 #include "lifecycle.h"
 #include "mouse.h"
+#include "actor_scope.h"
 #include "fixes.h"
+#include "history.h"
 #include "creations.h"
 
 #include <algorithm>
@@ -864,10 +866,18 @@ static void apply_success(uint8_t player, uint16_t id)
     int rel = a_RelGet ? thiscall<int>(a_RelGet, mgr, key, c, av) : 0;
     int mode = social_mode(c);
     uint32_t anim = reaction_anim(rel);
-    thiscall<void>(a_RelEvent, mgr, 3, key, c);
+    {
+        // WP-H1 (BUG-1471): the impress event's species goal (its trait progress, the alliance) is this guest's act
+        actor::Scope act(player);
+        thiscall<void>(a_RelEvent, mgr, 3, key, c);
+    }
     float dna = 0;
     if (mode != 4 && a_DnaWorth) {
         dna = thiscall<float>(a_DnaWorth, c, 1);
+        // BUG-1471: the game's social win adds the creature's DNA worth to the winner's social progress (0xD9BD36);
+        // this replica of it paid nobody's: now the guest's own (own history) or the party's (core.trait_credit)
+        if (dna > 0 && dna < 10000)
+            history::social_win(player, dna);
         if (dna > 0 && dna < 10000 && C.pace)
             dna = C.pace(dna); // BUG-0510: the party's pace (a guest's friend, as the host's own are in on_dna)
         if (dna > 0 && dna < 10000 && !own_progress::active())
