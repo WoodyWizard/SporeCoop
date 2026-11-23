@@ -171,4 +171,35 @@ Not covered (risks): the hunt credit's 2.5 s window credits a host's own kill in
 WP-H1 is the exact way); a lower brain level written back keeps the avatar's larger size and health until its next brain
 upgrade (PR #209's runtime note); a Cell food a guest ate that another player ate first is not taken back (the host's
 total no longer corrects a guest's food); BUG-1261 nit 7 (a guest's TierBoneCleanup) is not checked under own progress
-yet; the debt column of `progress` is WP-R1's.
+yet; the debt column of `progress` is WP-R1's ([revive](#gameplay-revive), BUG-1472: a revive's price under own progress).
+
+## Revive a downed player (2026-11-23, feat/w71-revive)
+<a id="gameplay-revive"></a>
+
+WP-R1 of docs/plan-0.7.17.md, BUG-1472. The rule header (the window, the revive distance and time, give-up, the party
+wipe clock), the K_DOWN / K_RESULT / K_LINES flow, the "DOWN 55 s" tags and the pausing caption's kill retries come
+from PR #214 by IltonBJSilva (its Creature part); the price is ours (the downed player's own, not 10 % of the host's
+DNA), the respawn is the game's at the shared nest (not #208's own nest), the pack rescue stays the first line. Code:
+`mods/coop/revive_logic.h` (portable, tests/revive_tests.cpp), `revive.cpp`, `give_up.h`; the order in
+`teamplay.cpp` on_own_damage; the debt in `own_progress.cpp`; tags and arrows in `coop.cpp`; the save hold in `vote.cpp`
+save_blocker.
+
+| Question | Answer |
+|---|---|
+| The setting | `creature.revive` (Creature, session): on by default (provisional, `settings::kReviveDefault`, owner question 4); off: the hit kills as in 0.7.16.1 |
+| Who catches a lethal hit | every game guards its own creature (teamplay::on_own_damage: the host's own hits, a guest's own hits, the host's MSG_DAMAGE on a guest). First the pack rescue (BUG-0099: a partner within 15 m, once a minute: 40 % health). Else, with a partner playing in the same world (a fresh state, its creature in it) and, on a guest, a host of creature 1.3: down (`revive_logic.h` catch_hit). Alone: the game's death |
+| Down | 1 health, stopped, put back where it fell when it moves more than 0.4 m (not during a cinematic), no hit lands (switch `creature.revive_hold`), no pack regen; 60 s. "X is down! Stand next to them within 60 s to revive them." to everybody |
+| Revive | a standing partner (not down) within 6 m for 1.5 s (the host's own creature or any partner's state, measured on the host): up with 40 % of its maximum health, 2 s without hits after it |
+| No revive | the window runs out, its player holds G for a second (gives up, `coop.revive giveup` in tests) or the game kills it another way (a path past the damage filter): the game's own death (the caption, the respawn at the nest). While a pausing caption keeps the game from taking damage, the lethal hit is tried again every second (kill retries, PR #214's lane D finding) |
+| The price (host) | `revive_logic.h` price_for, 10 % of the downed player's own DNA rounded up (`kCostShare`, owner question 4): own wallet: its own wallet (the host's game DNA, a guest's book through dna_own_spend; the next MSG_DNA carries it); shared: the shared pool (the host's total); own progress: a debt on its bar (the `progress` record's debt column): its next own gains pay it first (DNA and bar, on_dna and take_gain), "Your revive debt: your next N DNA pay it first". Switch `creature.revive_debt` off: PR #214's rule, 10 % of the host's DNA |
+| Party wipe | every player down for 2 s: every window ends at once (each dies the game's way) |
+| What everybody sees | over a downed partner "DOWN 55s: Bob (30%)" in red (also with name tags off), its arrow "Bob (DOWN 55s)"; the downed player's own screen a red line "DOWN 55s: a partner next to you revives you. Hold G to give up." |
+| Saves | no world save of the host while a window is open ("a player is down: wait for the revive or the respawn"; shares, autosave and `coop.save` wait) |
+| Old peers | MSG_RESCUE 77 is creature 1.3 (`revive::kMinor`): a guest goes down only under a host that reads it (else it dies as before), the host ignores K_DOWN of an older peer and sends its lines only to peers that read them. A 0.7.16.1 peer plays as before; it can still revive a downed 0.7.17 player (the host measures its position) |
+| Switches | the setting, `creature.revive_hold`, `creature.revive_debt` |
+| Tests | tools/tests/coop_creature_revive.py (suite `creature_revive*` and the twins `creature_revive_setting_off`, `creature_revive_hold_off`, `creature_revive_debt_off`); tests/revive_tests.cpp |
+
+Not covered (risks): damage paths past the damage filter during the window (drowning / the sea monster, falls, an epic's
+stomp) end it with the game's own death (paths row of the test: a fall is held, deep water either held or the game's
+death that ends the window); a downed creature in a cinematic is not put back (BUG-1173's class); the debt of a guest is
+restored only for the same world (its record's world); the hunt credit of a downed player is not stopped.

@@ -943,8 +943,30 @@ it), route Progress (own_progress.cpp). Body: u8 kind (own_progress_logic.h), th
 | 3 kReport | guest -> host | Values: every second while it plays the host's stage, at once on a change (0.25 s apart at most) |
 | 4 kTable | host -> guests | u8 flags (1: own progress is played), u8 n (at most 16), n x (u8 id, u32 mode, u8 flags 1 known / 2 full, u8 percent, i32 Cell food): every second and on a change |
 | 5 kGain | host -> one guest | f32 DNA its game paid for that guest's deed, u8 cause (1 hunt, 2 friend, 3 Actor scope) |
+| 6 kDebt | both | WP-R1 (BUG-1472), the revive's progress debt: u8 op, f32 amount. Host -> guest: 1 add (a price charged), 2 set (the record's debt of this world, after its kAsk); guest -> host: 2 set (its debt after its gains paid some of it, at most once a second) |
 
 Old peers: the host plays own progress only when every peer has creature 1.3 and cell 1.2 (`peer_families`,
 `own_progress::peer_reads`); else value 2 is refused at the start (own wallet, a notice names the players) and a late
 joiner below it is kicked with "update SporeCoop to 0.7.17". A guest plays it only on the host's kTable flag from a host
 with those minors (`host_families`). A 0.7.16.1 peer ignores type 76 (an unknown type). Codecs: tests/dna_tests.cpp.
+
+## MSG_RESCUE: a downed creature and its revive (2026-11-23, feat/w71-revive)
+<a id="netcode-rescue"></a>
+
+WP-R1 of docs/plan-0.7.17.md (BUG-1472; the flow of PR #214 by IltonBJSilva, its id 95 there), the reserved id 77 of
+#netcode-reserved-0717, family creature 1.3 (the WP-0 bump, shared with MSG_PROGRESS). Reliable, both directions, class
+HostWorld (a guest in another world drops it), route Rescue (revive.cpp). Body: u8 kind, u32 world (the sender's
+modes::current_world: a message of another world is dropped), then (revive_logic.h):
+
+| Kind | Direction | Body |
+|---|---|---|
+| 0 K_DOWN | guest -> host | u32 knockout (counting up per game): its own creature is down; repeated every second while it waits |
+| 1 K_GIVE_UP | guest -> host | u32 knockout: its player gave up (hold G) or its game killed the creature another way |
+| 2 K_RESULT | host -> that guest | u32 knockout, u8 result (1 revived, 2 not), u8 price kind (0 none, 1 shared pool, 2 own wallet, 3 debt), f32 price |
+| 3 K_LINES | host -> guests | u8 n (at most 4), n x (u8 player, u16 tenths of a second left, u8 revive %): every second while a window is open, once with n = 0 when the last one closed |
+
+Old peers: a guest goes down only under a host of creature 1.3 (`host_families`, `revive::peer_reads`); the host takes
+K_DOWN only from a peer of creature 1.3 (`peer_families`) and sends K_LINES only to such peers. A 0.7.16.1 peer never
+sends or gets the type and dies of a lethal hit as before. A guest whose host never answers ends its own window 10 s
+after it ran out. The price itself travels on the existing paths (the own wallet in MSG_DNA, the shared total, the debt
+in MSG_PROGRESS kDebt). Codecs: tests/revive_tests.cpp.

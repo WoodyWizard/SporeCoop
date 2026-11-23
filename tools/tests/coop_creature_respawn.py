@@ -10,7 +10,8 @@ hatchling for good (half the health, the egg shell on its head, W did not move i
 
 Rounds: the host dies (`coop.team die`, the game's damage path), the guest dies the same way, then
 each one takes lethal hits through the mod's damage filter next to the partner (`coop.team hit`:
-the first one is the pack rescue, the second one kills). After each death the
+the first one is the pack rescue, the second one downs it (creature.revive, BUG-1472) and its player gives
+up: the game's death). After each death the
 caption's OK is pressed; the creature must respawn, grow up (age 1, full health) and walk under W.
 
   SPORE_LANE=3 python3 tools/tests/coop_creature_respawn.py [--no-creations]
@@ -139,6 +140,10 @@ def main():
         ck(saved > 0 and r0 and r1 and int(r1.group(1)) == int(r0.group(1)) + 1,
            f'{name}: the pack rescued it from the first lethal hit (hp {saved})')
         con.call('coop.team hit 100000')
+        # BUG-1472 (creature.revive, on by default): the second lethal hit next to the partner downs the creature (the
+        # partner would revive it); its player gives up (as holding G): the game's death, as before the revive
+        if 'is_down=1' in (con.call('coop.revive')['out'] or ''):
+            con.call('coop.revive giveup')
         respawn(ck, con, f'{name} (after a rescue)', full[name])
     print(' ', guest.call('coop.npc')['out'].splitlines()[0][:200])
     ck.faults(host=host, guest=guest)

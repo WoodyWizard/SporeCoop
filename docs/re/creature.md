@@ -5437,3 +5437,27 @@ out/lane3/track/npc_walk_creature_20261120-204929.json of the rel/0.7.16 tree, p
   game::place instead of game::teleport and no on_own_ground there. No walked idle frame of the BUG-1360 tracks was on a
   mound (the case is the stale speed above), and a placing without the teleport mark is undone by the game's next
   update (BUG-0440: proxies pushed back 6-7 m/s), so it would bring back BUG-0562 (drawn inside the mound).
+
+## A downed creature held at 1 health, its revive, the pausing caption (2026-11-23, feat/w71-revive)
+<a id="creature-revive"></a>
+
+BUG-1472 (WP-R1 of 0.7.17), the revive of [gameplay-revive](../03-gameplay.md#gameplay-revive). The findings below are
+PR #214's (IltonBJSilva, its BUG-9283, lane D 2026-11-20, the Steam build on Windows, the same code as GOG 2024); they
+were not re-checked by us yet (no game run by day): `~` until the night run of `creature_revive*` confirms them.
+* ~ (PR #214 runtime) A lethal hit on a player's own creature through the damage filter (teamplay::on_own_damage: the
+  host's own hits, a guest's own hits, the host's MSG_DAMAGE on a guest) can be dropped and the creature set to 1 health,
+  stopped (`game::stop`) and put back when it moved more than 0.4 m (`game::teleport`): it stays alive, further hits
+  dropped. A guest of maximum health 15 had 6 after the revive (40 %).
+* ~ (PR #214 runtime) The game takes no damage while a caption that pauses it is up (the brain upgrade caption after a
+  DNA gain, the death caption): `game::apply_damage(avatar, 1e6)` left the creature at its health. Hence the kill retries
+  (the lethal hit again every second until the game takes it, the creature held still but not at 1 health: 1 health
+  every frame undid the game's death of the lethal hit, which is not always at once).
+* ~ (PR #214 runtime) Right after a respawn the game ignores hits for a few seconds (a lethal hit of 55 left a respawned
+  creature at 5.0 / 5.0). Tests wait about 10 s after a respawn before the next hit.
+* ~ (PR #214 runtime) A tag over the own creature did not show on the guest's game (pfind's layout); a line in the middle
+  of the screen does. Ours draws the own creature's countdown as that line.
+* ? Not known: what the game does to a creature held at 1 health in deep water (the sea monster's death, cause 9, is
+  not a TakeDamage: BUG-0465, coop_creature_sea_monster.py), under an epic's stomp, or after a fall; the hold puts it back to
+  where it fell each frame, so a fall should not start. The test row `creature_revive_paths` records it.
+* Negative: no new game function or field is used (game::health / set_health / stop / teleport / apply_damage / hit,
+  SetEvolutionPoints and AddEvolutionPoints are known): no new symbol.
