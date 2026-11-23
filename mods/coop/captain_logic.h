@@ -212,7 +212,7 @@ inline double captain_retry(unsigned tries)
 // the bake at most kWait after the key was first wanted (the load's 3 s settle wait runs at the same time; a change of
 // the own creature in a running world has none of its own). bake: 1 baked, 0 not yet, -1 no bake manager, -2 not
 // asked yet.
-constexpr double kAskEvery = 0.5, kWait = 3.5;
+constexpr double kAskEvery = 0.5, kWait = 5.0;
 inline bool swap_waits(bool fix, int bake, double wanted_for) { return fix && (bake == 0 || bake == -2) && wanted_for < kWait; }
 
 // ---- BUG-1475 (#217 a): a guest's own captain on its own game in Space ----
@@ -224,13 +224,24 @@ inline bool swap_waits(bool fix, int bake, double wanted_for) { return fix && (b
 // and ours after it: the save holds the host's captain only.
 constexpr double kSettle = 5.0;
 enum class Own : uint8_t { kNone, kSet, kAdopt, kHold };
-// cur: the empire's captain now; mine: the one we set (0: none yet); orig: the world's; want: the own creation
+// cur: the empire's captain now; mine: the one we set (0: none yet); orig: the world's (read once the world has run
+// kSettle seconds); want: the own creation. A world without a captain (orig 0) is left to the game's "Name Your Captain"
+// (BUG-1111's path): the captain the player names there is its own.
 inline Own own_step(bool fix, bool eligible, double in_world, uint32_t cur, uint32_t mine, uint32_t orig, uint32_t want)
 {
-    if (!fix || !eligible || !want || in_world < kSettle)
+    if (!fix || !eligible || in_world < kSettle)
         return Own::kNone;
-    if (!mine)
+    if (!mine) {
+        if (want && cur == want)
+            return Own::kHold;
+        if (cur && cur != orig)
+            return Own::kAdopt; // the game made a captain for this player since (named, outfitted)
+        if (!orig || !want)
+            return Own::kNone;
         return cur == want ? Own::kHold : Own::kSet;
+    }
+    if (!want && cur == mine)
+        return Own::kHold;
     if (cur == mine)
         return Own::kHold;
     if (cur == orig || !cur)

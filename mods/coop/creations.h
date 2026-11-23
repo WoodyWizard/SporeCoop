@@ -66,6 +66,7 @@ void* player_species(uint8_t player);
 // BUG-1262: a partner's adventure captain registered here (0x7A......) and baked by this game ({} / nullptr: none yet,
 // not baked yet, or adventure.partner_captain off: the puppet stays this game's own captain)
 Key player_captain_key(uint8_t player);
+void captain_list_recheck(); // tests (BUG-1279, coop.captain plant): the host reads its captain's list again now
 void* player_captain_species(uint8_t player);
 
 // Species of the host's world that a guest's game does not have (creatures of the host's own My

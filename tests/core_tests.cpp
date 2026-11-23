@@ -912,6 +912,8 @@ static void captain_rules()
     CHECK(own_step(true, true, 4, 0x10, 0, 0x10, 0x20) == Own::kNone); // the world's own start first
     CHECK(own_step(false, true, 6, 0x10, 0, 0x10, 0x20) == Own::kNone && own_step(true, false, 6, 0x10, 0, 0x10, 0x20) == Own::kNone);
     CHECK(own_step(true, true, 6, 0x10, 0, 0x10, 0) == Own::kNone);     // nothing of its own
+    CHECK(own_step(true, true, 6, 0, 0, 0, 0x20) == Own::kNone);        // no captain in the world: "Name Your Captain"
+    CHECK(own_step(true, true, 6, 0x40, 0, 0, 0x20) == Own::kAdopt);    // the captain the player named there
     CHECK(own_step(true, true, 6, 0x20, 0x20, 0x10, 0x20) == Own::kHold);
     CHECK(own_step(true, true, 6, 0x10, 0x20, 0x10, 0x20) == Own::kSet); // the world's again: ours again
     CHECK(own_step(true, true, 6, 0, 0x20, 0x10, 0x20) == Own::kSet);

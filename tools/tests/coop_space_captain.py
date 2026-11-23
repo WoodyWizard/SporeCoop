@@ -112,6 +112,8 @@ def accept_route(guest, ck):
 def main():
     host, guest = start('space', planet=fz.fixture_planet())
     ck = Checks()
+    for c in (host, guest):  # BUG-1475: the guest keeps the fixture's captain (no species profile there: BUG-1278's twin)
+        c.call('coop.fix space.own_captain off')
     time.sleep(3)
     fz.get_drive(guest, 'guest', ck)
 

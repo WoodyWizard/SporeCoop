@@ -495,6 +495,8 @@ void captain_tick(double now)
         }
 }
 
+void captain_list_recheck() { g_list_next = 0; }
+
 void captain_join(uint8_t id)
 {
     g_list_sent.erase(id);

@@ -48,6 +48,7 @@ static uint32_t g_epoch, g_world;     // the Space world they belong to
 static double g_since, g_next;
 static bool g_saving;                 // the save hooks put the world's captain in
 static bool g_adopted;                // g_mine is a captain the game made for this player
+static bool g_orig_read;              // g_orig holds the world's captain
 static unsigned g_sets, g_adopts, g_saves, g_puts, g_shadowed, g_unknown;
 static const char* g_why = "";
 
@@ -126,7 +127,7 @@ void tick(double now)
         g_world = modes::current_world();
         g_since = now;
         g_orig = g_mine = {};
-        g_adopted = false;
+        g_adopted = g_orig_read = false;
     }
     uint8_t* e = space ? empire() : nullptr;
     if (!e)
@@ -137,13 +138,24 @@ void tick(double now)
         return;
     }
     const K3 cur = at(e);
-    if (!g_mine.i && !g_orig.i)
+    if (now - g_since < captain::kSettle)
+        return; // (the world's own start: its captain is set at the Space enter, "Name Your Captain" may ask)
+    if (!g_orig_read) {
         g_orig = cur;
-    const K3 want = wanted();
-    if (g_mine.i && !g_adopted && want.i && want.i != g_mine.i && same(cur, g_mine)) {
-        g_mine = {}; // another own creature chosen: it becomes the captain (below)
+        g_orig_read = true;
     }
-    switch (captain::own_step(true, true, now - g_since, cur.i, g_mine.i, g_orig.i, want.i)) {
+    const K3 want = wanted();
+    if (!want.i && g_mine.i && !g_adopted) { // no own creature any more (host mode, another choice): the world's
+        put_back();
+        return;
+    }
+    if (g_mine.i && !g_adopted && want.i && want.i != g_mine.i && same(cur, g_mine)) {
+        write(e, want); // another own creature chosen: it is the captain now
+        g_mine = want;
+        g_sets++;
+        return;
+    }
+    switch (captain::own_step(true, want.i || g_mine.i, now - g_since, cur.i, g_mine.i, g_orig.i, want.i)) {
     case captain::Own::kSet:
         write(e, want);
         g_mine = want;
