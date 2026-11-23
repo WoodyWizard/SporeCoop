@@ -1146,6 +1146,11 @@ int c_uistate(void*, int argc, const char* const* argv, SkOut* out)
                                       argc > 5 && !hide ? (float)atof(argv[5]) : 0.f).c_str()); // [dw]: BUG-1065's twin
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "fullscreen")) { // tests (BUG-1528): the report's full-screen answer
+        coop_ui::set_test_fullscreen(!strcmp(argv[2], "auto") ? -1 : atoi(argv[2]));
+        SAY("ui: full screen for the report: %s", argv[2]);
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "color")) { // tests / layout shots: a colour for players without one
         coop_ui::set_test_color((uint32_t)strtoul(argv[2], nullptr, 16));
         SAY("ui: test colour %s", argv[2]);

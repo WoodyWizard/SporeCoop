@@ -748,6 +748,34 @@ static double g_report_wait_until;  // > 0: the report waits for its screenshot
 static bool g_report_queued;        // finish_report is queued outside the frame
 static int g_report_shot;           // what report_shot answered (1 requested, 0 not, -1 off)
 
+// BUG-1528 (the tearing report, out/research/dc-report-tearing-20261116.md): "Report a problem" opened Explorer with the
+// archive selected; in exclusive full screen Explorer took the foreground and the game minimized itself (its own focus
+// pause): the report's own log then showed a 20-30 s "freeze", and the player had to Alt+Tab back. On: while the game
+// window fills its monitor (exclusive or borderless full screen) the folder is not opened; the status names it. Off
+// (`coop.fix core.report_no_explorer off`): Explorer opens in every mode (0.7.16.1). tests: `coop.uistate fullscreen
+// 1|0|auto` forces the answer (the lab plays windowed)
+static bool g_report_fs_fix = true;
+COOP_FIX("core.report_no_explorer", "BUG-1528", g_report_fs_fix,
+         "ui: Report a problem does not open Explorer while the game fills the screen (it minimized the game)");
+static int g_test_fullscreen = -1; // tests: 1 / 0 forces the answer, -1 the game window decides
+static bool game_fills_screen()
+{
+    if (g_test_fullscreen >= 0)
+        return g_test_fullscreen == 1;
+    HWND w = H->game_window ? (HWND)H->game_window() : nullptr;
+    if (!w || IsIconic(w))
+        return false;
+    MONITORINFO mi{};
+    mi.cbSize = sizeof mi;
+    RECT r;
+    if (!GetWindowRect(w, &r) || !GetMonitorInfoW(MonitorFromWindow(w, MONITOR_DEFAULTTONEAREST), &mi))
+        return false;
+    bool caption = (GetWindowLongW(w, GWL_STYLE) & WS_CAPTION) == WS_CAPTION;
+    return !caption && r.left <= mi.rcMonitor.left && r.top <= mi.rcMonitor.top && r.right >= mi.rcMonitor.right &&
+           r.bottom >= mi.rcMonitor.bottom;
+}
+void set_test_fullscreen(int v) { g_test_fullscreen = v; }
+
 static void finish_report(void*)
 {
     g_report_queued = false;
@@ -777,6 +805,16 @@ static void finish_report(void*)
         MultiByteToWideChar(CP_UTF8, 0, p.c_str(), -1, w.data(), n);
         w.resize(n - 1);
     }
+    if (g_report_fs_fix && game_fills_screen()) { // BUG-1528: Explorer would minimize the game
+        H->log(M, SK_INFO, "ui: report: the folder is not opened: the game fills the screen (BUG-1528)");
+        set_status(std::string(T("Report saved in SporebinEP1\\mods\\logs: ", "Отчёт сохранён в SporebinEP1\\mods\\logs: ")) +
+                       p.substr(p.find_last_of("\\/") + 1) +
+                       T(" (the folder is not opened while the game is in full screen)",
+                         " (папка не открывается, пока игра во весь экран)"),
+                   kGreen);
+        return;
+    }
+    H->log(M, SK_INFO, "ui: report: the folder opens in Explorer");
     std::wstring args = L"/select,\"" + w + L"\"";
     ShellExecuteW(nullptr, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
 }
