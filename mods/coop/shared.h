@@ -15,6 +15,9 @@ namespace shared {
 
 void init(const SkHost* host, SkMod* mod);
 void set_feed(std::function<void(const std::string&)> f); // BUG-0696: the notices of whose change it was
+// host (BUG-1236): the game's passive income of resource `res_id` (Civ cities, spice, trade deliveries) is no host
+// earning in the cause notices; the total still carries it
+void note_passive(uint8_t res_id, double delta);
 // elsewhere: the guest plays another world of the host's stage (coop.cpp guest_elsewhere(),
 // BUG-0231): the totals are held (res.elsewhere), nothing is applied or sent
 void tick(net::Session& s, uint32_t mode, double now, bool elsewhere = false);

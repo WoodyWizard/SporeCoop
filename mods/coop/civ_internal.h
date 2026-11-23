@@ -110,6 +110,7 @@ struct Counters {
     uint32_t cities_founded = 0, cities_in = 0, cities_blocked = 0, cities_caught_up = 0;
     uint32_t roads_sent = 0, roads_in = 0, roads_added = 0, roads_failed = 0;
     uint32_t income_blocked = 0;
+    uint32_t world_cmds_dropped = 0; // host: BUG-1478 superweapon / city purchase / capture of a guest elsewhere
     uint32_t ai_spawns_blocked = 0;
     uint32_t credit_by[4] = {}; // host: captures credited by command, hit, siege, nearest vehicle
     uint32_t away_captures_sent = 0;
@@ -435,6 +436,9 @@ bool is_guest();
 bool is_host();
 void kill_local(void* v);
 bool local_play();
+bool guest_holds();                // BUG-1478 (CIV-5): a guest in the host's Civ world (civlogic::guest_holds)
+extern bool g_local_play_gate_fix; // civ.local_play_gate
+extern bool g_income_cause_fix;    // civ.income_cause (BUG-1236)
 void* local_vehicle(uint16_t id);
 bool movie_playing();
 void* nm();

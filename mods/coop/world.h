@@ -19,6 +19,8 @@ bool share_with(uint8_t peer, std::string& err, bool save_first = false, uint32_
 // planet had no file after 3 saves. Called from tick(); not for shares dropped with their player
 void set_share_failed(void (*f)(uint8_t peer, uint32_t tag, bool planet_missing));
 bool share_now(uint8_t peer, std::string& err);
+// host (BUG-1434): the guest takes a share of the played planet alone (its world family 1.1 or newer, coop.cpp)
+void set_planet_only_probe(bool (*probe)(uint8_t peer));
 // host (BUG-0754): seconds since a world share to this guest was asked for (the save, the transfer and the guest's load
 // follow), a large number when none
 double since_share(uint8_t peer);
@@ -62,6 +64,13 @@ void slot_tick(bool guest);
 // BUG-1434: the slot the save database points to is a co-op copy: its folder name (GameN), whose world, the planet it
 // was made for, and whether it is the player's own now (as slot_tick last saw it)
 bool copy_origin(std::string& slot, std::string& host, std::string& planet, bool& own);
+// BUG-1434: that copy's planet files other than the planet it was made for (0: a share of one planet, 0.7.17)
+int copy_old_planets();
+// BUG-1434 (world.continue_coop): the co-op world played last, to continue as a host: the slot folder (GameN), whose
+// world, its planet (no ".spo"); false when there is none or the switch is off
+bool last_coop_world(std::string& slot_name, std::string& host, std::string& planet);
+// loads it from the galaxy menu (the player's own load, as coop.load); `said` for the window / the console
+bool continue_coop(std::string& said);
 // guest: handle MSG_WORLD_* messages
 void on_message(uint8_t type, net::Reader& r, const std::string& host_name);
 std::string status();

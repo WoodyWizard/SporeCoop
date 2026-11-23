@@ -1,5 +1,8 @@
 #include "civ.h"
 #include "civ_internal.h"
+#include "civ_wallet.h"
+#include "own_world.h"
+#include "host_busy.h"
 
 namespace civ {
 
@@ -31,6 +34,14 @@ bool g_fix_away = true;
 COOP_FIX("civ.away", "BUG-0151", g_fix_away, "civ: while the host is away the guest's vehicles run their own AI");
 bool local_play() { return civlogic::local_play(g_fix_away, is_guest(), C.host_away && C.host_away()); }
 bool active() { return g_ok && C.sess && C.sess->connected() && game::mode_id() == modes::kCiv; }
+// BUG-1478 (CIV-5): the guest plays the host's Civ world here; its hooks that hand the player civilization's income, the
+// NPC growth and founding, the AI's vehicles, captures, city purchases and superweapons to the host hold only then
+// (civlogic::guest_holds). A guest in another Civ world of its own plays it with its own game. Off: they hold in every
+// Civ world, the host takes those commands from a guest elsewhere too (0.7.16.1).
+bool g_local_play_gate_fix = true;
+COOP_FIX("civ.local_play_gate", "BUG-1478", g_local_play_gate_fix,
+         "civ: a guest playing another Civ world of its own keeps its own income, growth, captures and superweapons");
+bool guest_holds() { return civlogic::guest_holds(g_local_play_gate_fix, is_guest(), game::mode_id() == modes::kCiv, own_world::elsewhere()); }
 
 void* nm() { return game::noun_manager(); }
 std::vector<void*> vec_of(void* v)
@@ -894,8 +905,7 @@ static CreateBuilding_t o_CreateBuilding;
 static void* SK_THISCALL h_CreateBuilding(void* city, uint32_t noun, uint32_t type)
 {
     uintptr_t ret = (uintptr_t)__builtin_return_address(0);
-    if (!g_applying && is_guest() && game::mode_id() == modes::kCiv &&
-        (ret == a_GrowthRetBudget || ret == a_GrowthRetNew)) {
+    if (!g_applying && guest_holds() && (ret == a_GrowthRetBudget || ret == a_GrowthRetNew)) {
         g_n.growth_blocked++;
         return nullptr; // both callers ignore the result (the host's growth comes as MSG_CIV_BUILD)
     }
@@ -925,7 +935,7 @@ COOP_FIX("civ.instant_found", "BUG-0624", g_instant_found_fix,
          "civ: a city the host founds instantly is founded instantly on the guests at once, not by the catch-up seconds later");
 static bool SK_THISCALL h_SpawnNextCity(void* ex, int instant, void* who)
 {
-    if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
+    if (!g_applying && guest_holds()) { // (BUG-1478: a guest in its own world founds its own)
         g_n.cities_blocked++;
         return false; // both callers ignore the result
     }
@@ -1079,15 +1089,71 @@ void guest_roads(net::Reader& r)
 // income) ran too and every local gain went to the host as a shared-money delta (+80..+100 every few
 // seconds: the treasury grew about twice as fast with a guest). Guests ignore AddMoney for the player
 // civilization; their spending still reaches the host (SpendMoney is another function).
+// BUG-1236: the game's passive income of the player civilization on the host (the 6 s city and spice derrick tick, the
+// two automatic trade deliveries: docs/re/civ.md#civ-income-addmoney) is told to shared.cpp so that it is no
+// "<host> earned N money (shared)" notice on every guest every 6 s; the total still carries it. The same three callers
+// are the income civ.own_money splits by cities (BUG-1468, civ_wallet.cpp): one classifier for both.
+// `coop.fix civ.income_cause off`: the passive income counted as the host's earning (0.7.16.1).
+bool g_income_cause_fix = true;
+COOP_FIX("civ.income_cause", "BUG-1236", g_income_cause_fix,
+         "civ: the cities' passive income on the host is not shown on the guests as the host's earning every 6 s");
+static constexpr uintptr_t kCivWealth = 0x98;
+static uintptr_t g_passive_income_ret[3]; // SporeCoop::CivIncome_AddMoney_Ret, CivTrade_CityAddMoney_Ret, CivTrade_TraderAddMoney_Ret
+static uint32_t g_passive_noted;          // tests
+static bool is_passive_income_ret(uintptr_t ret)
+{
+    for (uintptr_t a : g_passive_income_ret)
+        if (a && a == ret)
+            return true;
+    return false;
+}
 AddMoney_t o_AddMoney;
 static void SK_THISCALL h_AddMoney(void* civ, float amount, int difficulty)
 {
-    bool in_civ = game::mode_id() == modes::kCiv, guest = is_guest();
-    if (civlogic::guest_income_blocked(g_applying, guest, in_civ, guest && in_civ && civ == player_civ(), amount)) {
+    uintptr_t ret = (uintptr_t)__builtin_return_address(0);
+    // BUG-1478: a guest in another Civ world of its own keeps its own income
+    bool in_civ = game::mode_id() == modes::kCiv, guest = is_guest(), holds = guest_holds();
+    if (civlogic::guest_income_blocked(g_applying, guest, holds, guest && in_civ && civ == player_civ(), amount)) {
         g_n.income_blocked++;
         return;
     }
+    bool passive = !g_applying && in_civ && is_host() && civ && is_passive_income_ret(ret) && civ == player_civ() &&
+                   skg::readable(civ, kCivWealth + sizeof(float));
+    if (!passive) {
+        o_AddMoney(civ, amount, difficulty);
+        return;
+    }
+    double before = (double)F<float>(civ, kCivWealth);
     o_AddMoney(civ, amount, difficulty);
+    double gain = (double)F<float>(civ, kCivWealth) - before; // the game's difficulty and its cap are in it
+    if (!std::isfinite(gain) || gain == 0.0)
+        return;
+    double out = civ_wallet::host_income(civ, gain); // BUG-1468: the guests' parts by their cities
+    if (g_income_cause_fix) {
+        shared::note_passive(2, gain - out); // the guests' parts leave the money: what stays is still passive
+        g_passive_noted++;
+    }
+}
+
+// BUG-1461: an NPC nation's AI update (Civilization_AI 0xBFBD30, every second) moves all of its money (+0x98) into its
+// domestic and expansion budgets (+0x4AC / +0x4B0) in CivAI_WealthToBudgets (docs/re/civ.md#civ-npc-money-budgets). On a
+// guest the money is the host's (the wsync row civ_money writes +0x98 every 0.5 s); while the host's world stands (a
+// caption) the host's AI does not run, the guest's does: it moved the copied money into its budgets at once (the
+// guest read 0, the host 1500) and the row put it back again and again. On: while the host's world stands, a guest's
+// NPC nations keep their money where the row put it. Off: they move it (0.7.16.1).
+static bool g_npc_money_hold_fix = true;
+COOP_FIX("civ.npc_money_hold", "BUG-1461", g_npc_money_hold_fix,
+         "civ: while the host's world stands a guest's NPC nations keep the money the host's game gave them");
+static uint32_t g_npc_money_held; // tests
+using WealthToBudgets_t = void(__fastcall*)(void*);
+static WealthToBudgets_t o_WealthToBudgets;
+static void __fastcall h_WealthToBudgets(void* civ)
+{
+    if (g_npc_money_hold_fix && !g_applying && guest_holds() && civ && civ != player_civ() && host_busy::host_stands()) {
+        g_npc_money_held++;
+        return;
+    }
+    o_WealthToBudgets(civ);
 }
 
 // Vehicles the game spawns on a guest by itself (BUG-0188): the other nations' AI (city tick,
@@ -1106,7 +1172,7 @@ static uintptr_t g_ai_spawn_ret[6];
 static void* SK_THISCALL h_SpawnVehicle(void* city, int purpose, int loco, uint32_t k0, uint32_t k1, uint32_t k2, int space)
 {
     uintptr_t ret = (uintptr_t)__builtin_return_address(0);
-    if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
+    if (!g_applying && guest_holds()) { // (BUG-1478)
         g_local_spawns[ret - H->image_base() + 0x400000]++;
         if (g_fix_aispawn)
             for (uintptr_t a : g_ai_spawn_ret)
@@ -1139,7 +1205,7 @@ COOP_FIX("civ.away_capture", "BUG-0878", g_fix_away_capture,
 static std::unordered_set<void*> g_away_capture_sent; // guest: cities sent this absence
 int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int a4, int a5)
 {
-    if (is_guest() && game::mode_id() == modes::kCiv && !g_applying) {
+    if (guest_holds() && !g_applying) { // (BUG-1478: a guest in its own world captures there)
         void* pc = player_civ();
         if (g_fix_away_capture && local_play() && pc && pol == pol_of(pc) && !g_away_capture_sent.count(city)) {
             int ci = host_index_of_city(city);
@@ -1252,7 +1318,7 @@ CityBuy_t o_CityBuy;
 static void SK_THISCALL h_CityBuy(void* city, uint32_t pol, float price)
 {
     void* pc = g_fix_buy_city && game::mode_id() == modes::kCiv && !g_applying ? player_civ() : nullptr;
-    if (pc && pol == pol_of(pc) && is_guest()) {
+    if (pc && pol == pol_of(pc) && guest_holds()) { // (BUG-1478: a guest in its own world buys there)
         int ci = host_index_of_city(city);
         if (ci < 0) {
             if (C.notice)
@@ -1715,6 +1781,8 @@ bool SK_THISCALL h_FireSW(void* civ, int type, const float* target)
         return o_FireSW(civ, type, target);
     }
     float pos[3] = {target ? target[0] : 0, target ? target[1] : 0, target ? target[2] : 0};
+    if (is_guest() && !guest_holds()) // BUG-1478: a guest in another Civ world of its own fires its own
+        return o_FireSW(civ, type, target);
     if (is_guest()) { // the host asks everybody
         net::Writer w;
         w.u8(5 /* CMD_SUPER */);
@@ -1742,6 +1810,22 @@ bool SK_THISCALL h_FireSW(void* civ, int type, const float* target)
     return false;
 }
 
+// BUG-1468: a guest's superweapon is paid from its own money (civ.own_money; FireSuperweapon takes its cost from
+// mWealth +0x98 itself, docs/re/civ.md): the game's own check refuses it when that money is short
+static uint32_t g_sw_paid_own, g_sw_short_own; // tests
+static void sw_fire_for(uint8_t from, void* pc, int type, const float* pos)
+{
+    civ_wallet::PayAs pay(from);
+    bool fired = o_FireSW(pc, type, pos);
+    if (!pay.paying())
+        return;
+    (fired ? g_sw_paid_own : g_sw_short_own)++;
+    if (!fired && C.sess) {
+        net::Writer nw;
+        nw.str8("superweapon: not fired (not enough money of your own, or it cannot fire now)");
+        C.sess->send_reliable_to(from, net::MSG_NOTICE, nw);
+    }
+}
 void host_superweapon_request(uint8_t from, net::Reader& r)
 {
     int type = (int)r.u32();
@@ -1755,17 +1839,17 @@ void host_superweapon_request(uint8_t from, net::Reader& r)
         {
             callguard::Hold sw_bypass(g_sw_bypass);
             g_sw_fired = type;
-            o_FireSW(pc, type, pos);
+            sw_fire_for(from, pc, type, pos);
         }
         g_n.sw_unvoted++;
         return;
     }
     std::array<float, 3> p{pos[0], pos[1], pos[2]};
-    if (C.vote(C.sess->name_of(from) + " wants to fire a superweapon", "the superweapon fires", [pc, type, p] {
+    if (C.vote(C.sess->name_of(from) + " wants to fire a superweapon", "the superweapon fires", [pc, type, p, from] {
             {
                 callguard::Hold sw_bypass(g_sw_bypass);
                 g_sw_fired = type;
-                o_FireSW(pc, type, p.data());
+                sw_fire_for(from, pc, type, p.data());
             }
         }))
         g_n.votes++;
@@ -2001,6 +2085,9 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_CreateBuilding, (void*)h_CreateBuilding, (void**)&o_CreateBuilding);
     H->hook_create(M, (void*)a_SpawnNextCity, (void*)h_SpawnNextCity, (void**)&o_SpawnNextCity);
     H->hook_create(M, (void*)a_AddMoney, (void*)h_AddMoney, (void**)&o_AddMoney);
+    g_passive_income_ret[0] = H->sym("SporeCoop::CivIncome_AddMoney_Ret"); // BUG-1236 (docs/re/civ.md#civ-income-addmoney)
+    g_passive_income_ret[1] = H->sym("SporeCoop::CivTrade_CityAddMoney_Ret");
+    g_passive_income_ret[2] = H->sym("SporeCoop::CivTrade_TraderAddMoney_Ret");
     {
         static const char* rets[6] = {"SporeCoop::CivAI_CityTick_SpawnVehicle_Ret", "SporeCoop::CivAI_CityOrders_SpawnVehicle_Ret",
                                       "SporeCoop::CivAI_BF9960_SpawnVehicle_Ret", "SporeCoop::CivAI_BF9FB0_SpawnVehicle_Ret",
@@ -2026,6 +2113,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     for (auto& o : opts)
         if (uintptr_t a = H->sym(o.name))
             H->hook_create(M, (void*)a, o.hook, o.orig);
+    if (uintptr_t a = H->sym("SporeCoop::CivAI_WealthToBudgets")) // BUG-1461 (optional)
+        H->hook_create(M, (void*)a, (void*)h_WealthToBudgets, (void**)&o_WealthToBudgets);
     // BUG-0484 (optional): the turret growth of a guest's cities, the host's turrets
     a_AddTurret = H->sym("SporeCoop::City_AddTurret");
     a_RemoveTurret = H->sym("SporeCoop::City_RemoveTurret");
@@ -2612,6 +2701,11 @@ std::string status()
     char tr[120];
     snprintf(tr, sizeof tr, "tribe_ruins: tx=%u rx=%u removed=%u\n", g_n.tribes_tx, g_n.tribes_rx, g_n.tribes_removed);
     lf += tr;
+    char mo[320]; // BUG-1236, BUG-1461, BUG-1478
+    snprintf(mo, sizeof mo, "money: npc_money_held=%u passive_noted=%u income_cause=%d local_play_gate=%d holds=%d world_cmds_dropped=%u sw_paid_own=%u sw_short_own=%u\n",
+             g_npc_money_held, g_passive_noted, (int)g_income_cause_fix, (int)g_local_play_gate_fix, (int)guest_holds(), g_n.world_cmds_dropped,
+             g_sw_paid_own, g_sw_short_own);
+    lf += mo;
     char tu[160];
     snprintf(tu, sizeof tu, "turrets: tx=%u rx=%u blocked=%u added=%u removed=%u\n", g_n.turret_tx, g_n.turret_rx,
              g_n.turrets_blocked, g_n.turrets_added, g_n.turrets_removed);

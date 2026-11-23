@@ -333,6 +333,7 @@ void register_commands_stages();
 void register_commands_ui();
 
 // ---- defined in dna.cpp ----
+extern uint32_t g_own_totals_ignored, g_own_gains_kept, g_own_deeds_given; // BUG-1469 (coop.progress)
 extern bool g_away_dna_fix;
 extern bool g_dna_seen_ok;
 extern bool g_solo_await_fix;
@@ -397,6 +398,8 @@ alignas(16) extern uint8_t g_blank_e84[0x1000];
 extern BlockingErrors_t o_BlockingErrors;
 extern CellToCreature_t o_CellToCreature;
 extern CellStageEnd_t o_CellStageEnd;
+unsigned own_end_held_count();           // BUG-1469 (tests): Cell stage-end clicks held for the partners' bars
+void own_progress_resume(bool at_end); // BUG-1469 (vote.cpp): the host's kept click on History's check runs now
 extern CreatureGameMsg_t o_CreatureGameMsg;
 extern ReqImage g_editreq_game;
 extern SelectUI_t o_SelectUI;
@@ -489,6 +492,8 @@ uint32_t* SK_THISCALL h_BlockingErrors(void* ed, uint32_t* out, void* res, void*
 unsigned game_busy();
 bool editor_coming(double now); // C3 (BUG-1142)
 void SK_CDECL h_CellToCreature();
+extern unsigned g_quit_switch_dropped; // BUG-1436 (tests): the game's own switches to Creature dropped while leaving Cell
+extern bool g_cellswitch_after_quit;   // BUG-1436 (tests, coop.cellswitch quit)
 void SK_CDECL h_CellStageEnd();
 void SK_CDECL h_SelectUI(void* sel, void* a2, void* a3, uint32_t a4, float a5);
 void drop_vote(const char* why);

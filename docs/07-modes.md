@@ -251,6 +251,7 @@ to know them. A module reads a value with `settings::on(settings::kX)` / `settin
 | `cell.regen` | Cell | on | live | - | cellsync.cpp symbiosis_tick (twin switch `settings.cell_regen`) |
 | `all.partner_arrows` | All stages | on (off in Rivals) | live | - | find.cpp arrows_on (F2) |
 | `all.dna_pace` | All stages | on | session | `dna_pace` | coop.cpp dna_pace_announce (BUG-0510) |
+| `all.shared_dna` | All stages | own wallet (own wallet / shared / own progress; own wallet in Rivals) | session | - | dna.cpp own_dna_on, own_progress.cpp (`get()`, never `on()`: value 2 is own progress, BUG-1469; [own progress](03-gameplay.md#gameplay-own-progress)) |
 | `creature.npcs_target_partners` | Creature | on | session | `npcs_target_partners` | npc.cpp ai_target |
 | `creature.pack_rescue` | Creature | on | session | `teamplay` | teamplay.cpp on_own_damage |
 | `creature.pack_heal` | Creature | on | live | `teamplay` | teamplay.cpp tick |
@@ -271,6 +272,7 @@ to know them. A module reads a value with `settings::on(settings::kX)` / `settin
 | `civ.roles` | Civilization | on | session | - | civ.cpp role() (every role bonus) |
 | `civ.joint_siege` | Civilization | on | session | - | civ.cpp h_AddCapture |
 | `civ.superweapon_vote` | Civilization | on | session | - | civ.cpp h_FireSW, host_superweapon_request |
+| `civ.own_money` | Civilization | off (provisional, `settings::kCivOwnMoneyDefault`, owner question 1 of docs/plan-0.7.17.md) | session | - | civ_wallet.cpp (BUG-1468, PR #205 by IltonBJSilva): civ.cpp h_AddMoney (the cities' income by owner), civ_host.cpp host_buy / CMD_BUYCITY / refund_build / trade_tick, civ.cpp sw_fire_for (PayAs), shared.cpp own_budget (a guest with a wallet) |
 | `space.disable` | Space | on | session | - | spacecoop.cpp filter_own_damage |
 | `space.trade`, `space.contracts`, `space.diplomacy`, `space.allies`, `space.finale`, `space.rivals` | Space | on | session | - | space_ext.cpp (tick, messages, overlay, page rows of the feature), space_finale h_Enter, space_diplomacy sharing() |
 
@@ -374,8 +376,8 @@ Defaults are provisional: the owner's questions of the plan are open.
 
 | Key | Group | Values (default first) | Scope | WP (branch) | Plan |
 |---|---|---|---|---|---|
-| `civ.own_money` | Civilization | off / on (question 1) | session | WP-M1 (feat/w68-wallet) | item 1 |
-| `all.shared_dna` (existing) | All stages | 0 own wallet (default, as 0.7.16), 1 shared, 2 own progress (new); the lobby row becomes "DNA and progress" with three names; the ini key stays | session | WP-P1 / P2 (feat/w69-progress) | item 2, question 2 |
+| `civ.own_money` | Civilization | off / on (question 1) | session | WP-M1 (feat/w68-wallet): declared (row above, BUG-1468) | item 1 |
+| `all.shared_dna` (existing) | All stages | 0 own wallet (default, as 0.7.16), 1 shared, 2 own progress (new); the lobby row becomes "DNA and progress" with three names; the ini key stays. **Declared** (feat/w69-progress, BUG-1469): kDefs max 2, names `own wallet|shared|own progress` (console also `own_progress` or 2), default the one constant `settings::kSharedDnaDefault` | session | WP-P1 / P2 (feat/w69-progress) | item 2, question 2 |
 | `creature.revive` | Creature | on or off (question 4; pack rescue stays the first line) | session | WP-R1 (feat/w71-revive) | item 4 |
 | `all.party_difficulty` | All stages | 100 % (default), 125, 150, 200, auto (+25 % per player over two; question 5) | session | WP-D1 (feat/w72-difficulty) | item 5 |
 | `cell.lineage_cells` | Cell | off / on | session | WP-L2 (feat/w81-cell) | item 9 |
