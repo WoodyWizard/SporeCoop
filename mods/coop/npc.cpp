@@ -173,6 +173,16 @@ static uint16_t g_next_id = 1;
 static double g_last_state = 0;
 static double g_frozen_since = 0;                       // host: no creature updates since then
 static std::unordered_set<void*> g_seen_now;            // creatures alive this frame
+// CR-2 (BUG-9313): a guest's MSG_DAMAGE_REQ / MSG_NPC_RESYNC is read in frame_receive, before this frame's host pass
+// rebuilt g_seen_now (and with no pass at all while the host has no avatar or is in its editor): the creature the id
+// names can be one the host's game removed since (a decayed or eaten body, a far animal culled). hn_obj has no liveness
+// check, so the hit went to TakeDamage on a freed creature (BUG-0453 class) and the resync read it. On: the handlers
+// ask host_npc (the entry's object listed now with its serial, as the social handlers do). Off: 0.7.16.
+static bool g_msg_live_fix = true;
+COOP_FIX("npc.msg_live", "BUG-9313", g_msg_live_fix,
+         "creature: a guest's hit on an animal the host's game just removed is dropped, not applied to the freed creature");
+static double g_test_pass_hold_until = 0; // tests (BUG-9313): no host pass until then, as in the host's editor
+static uint32_t g_msg_gone_refused = 0;   // guests' hits / resyncs refused: the NPC is not alive on the host now
 static bool g_reuse_fix = true; // coop.npc reusefix off: a reused creature object keeps its id (BUG-0044)
 static bool g_id_fix = true;    // coop.npc idfix off: ids wrap over ids in use (BUG-0023)
 // BUG-0169: a proxy that stays more than 2.5 m off for 3 s is put in place whatever the host's
@@ -687,7 +697,9 @@ static void npc_each(void (*cb)(uint16_t, void*, void*), void* u)
 {
     for (void* c : g_seen_now) {
         HostNpc* it = hn_of(c);
-        if (it && !game::is_destroyed(c))
+        // CR-2 (BUG-9313): g_seen_now is the last host pass's (none while the host has no avatar or is in its editor):
+        // a creature the game removed since is not read (its destroyed byte is freed memory then)
+        if (it && (g_msg_live_fix ? ref_alive(g_hreg.find(it->id)->ref) : !game::is_destroyed(c)))
             cb(it->id, c, u);
     }
 }
@@ -1341,6 +1353,20 @@ std::string debug_pool(uint16_t id)
     snprintf(b, sizeof b, "npc %u pooled: now at (%.1f %.1f %.1f) herd %p", id, p.x, p.y, p.z, game::herd_of(c));
     return b;
 }
+// tests (BUG-9313): the host's game removes NPC #id (its own DestroyInstance, no bookkeeping of ours) and the host's
+// pass does not run for secs (as in its editor or without an avatar): the entry and g_seen_now still name it
+std::string debug_gone(uint16_t id, float secs)
+{
+    void* c = host_npc(id);
+    if (!is_host() || !c)
+        return "no such host npc";
+    g_test_pass_hold_until = H->time_seconds() + std::clamp(secs, 0.f, 30.f);
+    game::destroy_untracked(c);
+    char b[120];
+    snprintf(b, sizeof b, "npc %u removed by the game; host pass held %.1f s; alive now %d", id, secs,
+             host_npc(id) != nullptr ? 1 : 0);
+    return b;
+}
 // tests (BUG-0281): the guest's proxy #id walks to p at speed with the game's locomotion for secs (no sync)
 std::string debug_pwalk(uint16_t id, const net::Vec3& p, float speed, float secs, int mode)
 {
@@ -1889,6 +1915,8 @@ static void host_tick(double now, const std::vector<void*>& creatures)
     const bool civ = civ_stage(); // BUG-0973: no centre, the whole planet
     bool rts = civ || (rts_stage() && C.stage_center && C.stage_center(center));
     if (!av && !rts)
+        return;
+    if (now < g_test_pass_hold_until) // tests (BUG-9313): the host's pass does not run (its editor, no avatar)
         return;
     // BUG-1174: no host pass for a while (its editor: not a world change since C2, the NPCs and their ids stay): that
     // time does not count as unseen, or every NPC was retired 2 s after the editor and spawned again under a new id
@@ -3372,6 +3400,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             // only what this guest mirrors (the host sends it states): others come with the relevance rule
             if (!r.ok() || !it || !known.count(id) || !g_seen_now.count(it))
                 continue;
+            if (g_msg_live_fix && !host_npc(id)) { // CR-2 (BUG-9313): removed since the last host pass
+                g_msg_gone_refused++;
+                continue;
+            }
             send_spawn(from, id, it);
             g_resync_sent++;
         }
@@ -3384,6 +3416,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         void* it = hn_obj(q.net_id);
         if (!it || !g_seen_now.count(it))
             return;
+        if (g_msg_live_fix && !host_npc(q.net_id)) { // CR-2 (BUG-9313): the game removed it since the last host pass
+            g_msg_gone_refused++;
+            return;
+        }
         void* npc = it;
         if (creature_hp::drop_partner_hit(npc)) // BUG-0374: the host's pack / family (npc.party_peace)
             break;
@@ -3609,10 +3645,10 @@ std::string status()
         for (auto& [c, pup] : g_ai_target)
             on_partner += g_seen_now.count(c) != 0;
         snprintf(b, sizeof b, "npc(host): tracked=%u alive=%u mirrored=%u hits_applied=%u guest_kills=%u strays_removed=%u "
-                 "hatch_helped=%u partner_targets=%d on_partner=%u partner_picks=%u ai_swaps=%u swaps_restored=%u ledger_restored=%u reused=%u hunt_targets=%u pooled=%u\n",
+                 "hatch_helped=%u partner_targets=%d on_partner=%u partner_picks=%u ai_swaps=%u swaps_restored=%u ledger_restored=%u reused=%u hunt_targets=%u pooled=%u msg_gone_refused=%u\n",
                  (unsigned)hn_count(), (unsigned)g_seen_now.size(), (unsigned)known, g_hits_applied,
                  g_kills_credited, g_strays_removed, g_hatch_helped, (int)g_partner_targets, (unsigned)on_partner,
-                 g_ai_partner_picks, game::ai_swaps(), game::swaps_restored(), game::swap_ledger_restored(), g_reused, (unsigned)teamplay::hit_targets(), g_pooled_retired);
+                 g_ai_partner_picks, game::ai_swaps(), game::swaps_restored(), game::swap_ledger_restored(), g_reused, (unsigned)teamplay::hit_targets(), g_pooled_retired, g_msg_gone_refused);
         char b2[320]; // BUG-0512
         snprintf(b2, sizeof b2, "npc(host) pack: partner_targets_cleared=%u partner_stimuli_cleared=%u frozen_s=%.1f frozen_spawns=%u frozen_despawns=%u frozen_retired=%u frozen_reused=%u frozen_moved=%u\n",
                  g_pack_targets_cleared, g_pack_stimuli_cleared, g_frozen_since > 0 ? H->time_seconds() - g_frozen_since : 0.0,

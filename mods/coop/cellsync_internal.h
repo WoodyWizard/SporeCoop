@@ -302,6 +302,8 @@ void mate_session_end();
 std::string mate_status();
 uint32_t mate_copy_of(int id);
 bool is_mate_copy(uint32_t idx);
+bool mate_copy_cell(const uint8_t* c);   // host (BUG-9317): c is the copy of a partner's mate (cell.mate_copy_safe on)
+bool mate_copy_refuse(const uint8_t* c); // the same, counted as an attack on it refused
 extern bool g_fix_goldie_keep; // BUG-1248
 void mirrors_after_step(); // tests (BUG-1247): right after each cell step (modes' SimUpdate hook)
 bool tutorial_cell(uint8_t* c, uint32_t idx); // BUG-1248: one of our own Goldie tutorial's two cells while it runs
@@ -347,6 +349,7 @@ extern bool g_solo;
 extern int g_solo_food[2];
 extern bool g_solo_owed;
 extern bool g_fix_solo_elsewhere;
+bool solo_keep_in_editor(); // guest (BUG-9318): the food eaten alone is kept through the editor
 extern bool g_fix_send_here;
 extern cell_logic::Rounds g_rounds;
 bool kill_send_first(uint32_t hidx, double now);
@@ -444,6 +447,7 @@ extern AddFood_t o_AddFood;
 extern std::vector<std::pair<double, std::function<void()>>> g_food_q;
 void food_in_step(std::function<void()> f);
 void food_drain(bool late_only);
+extern double g_test_food_hold_until; // tests (BUG-9316): coop.pool foodhold <secs>
 void SK_CDECL h_AddFood(int amount, bool plant);
 bool fin(const float* v, int n);
 unsigned cell_nonfinite(uint8_t* c);

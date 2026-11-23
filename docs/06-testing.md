@@ -10063,3 +10063,23 @@ over the gap itself, not wait for the game to make one.
   NPC cities, `coop.civ claims forget <city>` (host, tests) drops one city's claim and capture / gift marks (a Civ save
   played without co-op), the guest joins again. Twin `civ_solo_deal_off` (SPORE_FIX_OFF=civ.solo_claims).
   `coop.civ tables` line `solo_claims: fix= unclaimed= adopt_fix= adopt_owned=`.
+## Audit fixes of 0.7.16.1: test knobs for one-frame windows (2026-11-22, fix/w63-life)
+<a id="testing-w63-life-knobs"></a>
+
+Four audit items (BUG-9313, BUG-9316, BUG-9317, BUG-9318) are windows of a frame or two that a lab run does not hit
+by chance. Their tests open the window with a host knob that stands for the real cause:
+
+* `coop.npc gone <id> [secs]` (host, BUG-9313): the game removes NPC #id with its own DestroyInstance (no bookkeeping
+  of the mod, `game::destroy_untracked`) and the host's NPC pass does not run for secs (at most 30), as in the host's
+  editor or without an avatar: the host's tables still name the freed creature, the guest still has its proxy.
+  `coop.npc` prints `msg_gone_refused=` (guests' hits / resyncs dropped for such an NPC). coop_creature_hit_gone.py.
+* `coop.pool foodhold <secs>` (host, BUG-9316): the food queued for the next cell step (cell.food_in_step) waits up to
+  2 s, as while the cell step stands (a pause); the 0.5 s totals go out as usual. coop_cell_food_ack.py reads the
+  guest's food every ~0.1 s.
+* `coop.pool cellhp c<idx> <hp>` (host, BUG-9317): a cell's hp, so the game's own Bite takes its lethal branch
+  (BreakOrSwallow) at once; `coop.pool mate` prints `copy_refused=` and each copy's `hp=` / `dying=`.
+  coop_cell_mate_copy.py.
+* coop_cell_away.py `--guest-editor` (BUG-9318): the guest's own cell editor while the host is in the menu, by the
+  real mating call and `coop.pool mate tp`; `--shared` in these tests runs them with all.shared_dna on.
+* coop_tribe_owners_reload.py (BUG-9314, BUG-9315): the reload is the civ_owners_reload recipe (`coop.save`,
+  `coop.menu`, `coop.load` of played_slot() with the guest in the session).

@@ -66,6 +66,30 @@ bool is_mate_copy(uint32_t idx)
     return false;
 }
 
+// CELL-3 (BUG-9317): the copy was protected by +0x111 alone, which the game's lethal bite (Bite -> BreakOrSwallow),
+// a mouth's chunks (EatChunk, KillIfDead) and a swallow do not ask (docs/re/cell.md#cell-guest-hit-game): the host's
+// own cell, its NPCs and the other guests (MSG_CELL_HIT / MSG_CELL_EAT) killed it, every kill dropped the game's meat and
+// mate_in made it again 0.2 s later (free meat again and again), and the guest's mate died on the host only. On: the
+// copy is a picture like a partner's puppet: no collision pair, no damage, no death, no swallow, a guest's hit or kill
+// on it refused. Off: 0.7.16.
+static bool g_fix_mate_copy_safe = true;
+COOP_FIX("cell.mate_copy_safe", "BUG-9317", g_fix_mate_copy_safe,
+         "cell: the copy of a partner's mate cannot be bitten, eaten or killed in the host's game (it gave free meat again and again)");
+unsigned g_mate_copy_refused; // tests: attacks on a copy refused
+bool mate_copy_cell(const uint8_t* c)
+{
+    if (!g_fix_mate_copy_safe || !c || g_copies.empty() || !is_host() || !in_cell())
+        return false;
+    return is_mate_copy(F<uint32_t>((uint8_t*)c, 0));
+}
+bool mate_copy_refuse(const uint8_t* c)
+{
+    if (!mate_copy_cell(c))
+        return false;
+    g_mate_copy_refused++;
+    return true;
+}
+
 // host: a guest's MSG_CELL_MATE (in Cell with an avatar)
 void mate_in(int from, net::Reader& r)
 {
@@ -217,14 +241,15 @@ std::string mate_status()
 {
     std::string o;
     char b[200];
-    snprintf(b, sizeof b, " mate_sent=%u mate_gone_sent=%u copies=%u made=%u gone=%u poses_in=%u", g_mate_sent,
-             g_mate_gone_sent, (unsigned)g_copies.size(), g_copies_made, g_copies_gone, g_poses_in);
+    snprintf(b, sizeof b, " mate_sent=%u mate_gone_sent=%u copies=%u made=%u gone=%u poses_in=%u copy_refused=%u", g_mate_sent,
+             g_mate_gone_sent, (unsigned)g_copies.size(), g_copies_made, g_copies_gone, g_poses_in, g_mate_copy_refused);
     o = b;
     for (auto& [id, m] : g_copies) {
         uint8_t* c = m.local ? modes::cell_at(m.local) : nullptr;
         net::Vec3 p = c ? pos_of(c) : net::Vec3{};
-        snprintf(b, sizeof b, " copy(player=%d idx=%08X alive=%d gfx=%d at=(%.1f %.1f) model=%08X)", id, m.local,
-                 c ? 1 : 0, c && F<uint32_t>(c, 0x248) ? 1 : 0, p.x, p.y, c ? F<uint32_t>(c, kModelKey) : 0u);
+        snprintf(b, sizeof b, " copy(player=%d idx=%08X alive=%d gfx=%d at=(%.1f %.1f) model=%08X hp=%d dying=%d)", id, m.local,
+                 c ? 1 : 0, c && F<uint32_t>(c, 0x248) ? 1 : 0, p.x, p.y, c ? F<uint32_t>(c, kModelKey) : 0u,
+                 c ? F<int>(c, kHp) : 0, c && (F<uint8_t>(c, kDying) || F<uint8_t>(c, kDead)) ? 1 : 0);
         o += b;
     }
     return o;
