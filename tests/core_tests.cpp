@@ -15,6 +15,7 @@
 
 #include "arrival_rule.h"
 #include "busy_model.h"
+#include "captain_logic.h"
 #include "lifecycle.h"
 #include "mirror_registry.h"
 #include "net/snapshot_rx.h"
@@ -800,6 +801,124 @@ static void share_one_planet()
     CHECK(other_planets({"Szaros.spo", "Afrincsia.spo", "Old.spo"}, "Szaros") == 2);
 }
 
+// ---------------------------------------------------------------- WP-K1 (captain_logic.h): the per-player captain
+static void be32(std::vector<uint8_t>& v, uint32_t x)
+{
+    for (int i = 3; i >= 0; i--)
+        v.push_back((uint8_t)(x >> (8 * i)));
+}
+static void prop_head(std::vector<uint8_t>& v, uint32_t id, uint16_t type, uint16_t flags)
+{
+    be32(v, id);
+    v.push_back((uint8_t)(type >> 8)), v.push_back((uint8_t)type);
+    v.push_back((uint8_t)(flags >> 8)), v.push_back((uint8_t)flags);
+}
+// a captain's list as the game writes one: the item config (a key), the newer version link (a key), the name
+// (string16), an array of unlocked item keys, a bool
+static std::vector<uint8_t> captain_list(bool parent, bool newer)
+{
+    std::vector<uint8_t> v;
+    be32(v, (parent ? 0x80000000u : 0u) | (newer ? 5u : 4u));
+    if (parent)
+        for (int i = 0; i < 3; i++)
+            be32(v, 0x11111111u * (i + 1));
+    prop_head(v, captain::kPropItems, 0x20, 0);
+    for (int i = 0; i < 4; i++)
+        be32(v, 0xA0 + i);
+    if (newer) {
+        prop_head(v, captain::kPropNewer, 0x20, 0);
+        for (int i = 0; i < 4; i++)
+            be32(v, 0xB0 + i);
+    }
+    prop_head(v, 0x75ED3A1C, 0x13, 0);
+    be32(v, 3);
+    for (char c : std::string("Bob"))
+        v.push_back(0), v.push_back((uint8_t)c);
+    prop_head(v, 0xBEAC70B6, 0x20, 0x30); // an array of 2 keys, item size 16
+    be32(v, 2);
+    be32(v, 16);
+    for (int i = 0; i < 8; i++)
+        be32(v, 0xC0 + i);
+    prop_head(v, 0xC54C543B, 0x01, 0);
+    v.push_back(1);
+    return v;
+}
+static void captain_rules()
+{
+    using namespace captain;
+    CHECK(prop_group(0x40626200u) == 0x4062E500u && is_prop_key(kPropType, 0x4062E500u) && !is_prop_key(kPropType, 0x40626200u));
+    // the copy's key: 0x7A line, never 0x7A000000, the same on every game, another per owner and content
+    CHECK(is_copy(copy_instance(1, 0x12345678)) && copy_instance(1, 0x12345678) == copy_instance(1, 0x12345678));
+    CHECK(copy_instance(1, 0x12345678) != copy_instance(2, 0x12345678) && copy_instance(1, 1) != copy_instance(1, 2));
+    CHECK(!is_copy(0x7C123456) && !is_copy(0x7A000000));
+    for (bool parent : {false, true}) {
+        std::vector<uint8_t> in = captain_list(parent, true), out;
+        PropScan s;
+        CHECK(strip_prop(in, kPropNewer, out, &s) && s.dropped && s.items && !s.newer && s.count == 4);
+        CHECK(out.size() == in.size() - 24 && (out[0] & 0x80) == (parent ? 0x80 : 0) && out[3] == 4);
+        std::vector<uint8_t> again;
+        PropScan s2;
+        CHECK(strip_prop(out, kPropNewer, again, &s2) && again == out && !s2.dropped && s2.items); // nothing more to drop
+        std::vector<uint8_t> same;
+        CHECK(strip_prop(in, 0, same) && same == in); // drop nothing: the bytes as they were
+    }
+    std::vector<uint8_t> out;
+    std::vector<uint8_t> plain = captain_list(false, false);
+    PropScan s;
+    CHECK(strip_prop(plain, kPropNewer, out, &s) && !s.dropped && s.items);
+    // bytes this code does not take: cut, a byte too many, type 0x11, flags 0x40, a huge count, a string past the end
+    std::vector<uint8_t> cut(plain.begin(), plain.end() - 1), more = plain;
+    more.push_back(0);
+    CHECK(!strip_prop(cut, kPropNewer, out) && out.empty() && !strip_prop(more, kPropNewer, out));
+    std::vector<uint8_t> bad;
+    be32(bad, 1);
+    prop_head(bad, 1, 0x11, 0);
+    CHECK(!strip_prop(bad, 0, out));
+    bad.clear();
+    be32(bad, 1);
+    prop_head(bad, 1, 0x09, 0x40);
+    be32(bad, 0);
+    CHECK(!strip_prop(bad, 0, out));
+    bad.clear();
+    be32(bad, 5000);
+    CHECK(!strip_prop(bad, 0, out));
+    bad.clear();
+    be32(bad, 1);
+    prop_head(bad, 1, 0x12, 0);
+    be32(bad, 1000);
+    CHECK(!strip_prop(bad, 0, out) && !strip_prop({}, 0, out));
+    // BUG-1279: what a guest does with the host captain's list
+    CHECK(host_prop(true, 7, false, 0, false, false) == HostProp::kRegister);
+    CHECK(host_prop(true, 7, true, 7, true, true) == HostProp::kSame);
+    CHECK(host_prop(true, 8, true, 7, true, false) == HostProp::kRegister); // a newer list of ours
+    CHECK(host_prop(true, 7, false, 0, true, false) == HostProp::kSkipOwn);  // its own list of that key
+    CHECK(host_prop(true, 7, false, 0, false, true) == HostProp::kSkipOwn);  // its own creation of that id (BUG-0278)
+    CHECK(host_prop(false, 7, false, 0, false, false) == HostProp::kInvalid); // not a captain's list
+    // the save guard
+    CHECK(refuse_props_save(true, true, true, false, false));   // the host captain's list on a connected guest
+    CHECK(!refuse_props_save(true, false, true, false, false)); // after the session: the game's
+    CHECK(refuse_props_save(true, false, false, true, false));  // a creation of ours
+    CHECK(!refuse_props_save(true, true, true, true, true));    // its own creation now under that id
+    CHECK(!refuse_props_save(false, true, true, true, false));  // off: 0.7.16.1
+    // BUG-1262: the puppet shows the copy only when baked here
+    CHECK(puppet_shows_copy(true, true, 1) && !puppet_shows_copy(true, true, 0) && !puppet_shows_copy(true, true, -1));
+    CHECK(!puppet_shows_copy(false, true, 1) && !puppet_shows_copy(true, false, 1));
+    CHECK(captain_retry(0) == 2.0 && captain_retry(1) == 4.0 && captain_retry(3) == 16.0 && captain_retry(9) == 30.0);
+    // BUG-1237: the swap waits for the bake, not longer than kWait, not without the fix
+    CHECK(swap_waits(true, 0, 1.0) && swap_waits(true, -2, 3.0) && !swap_waits(true, 0, kWait));
+    CHECK(!swap_waits(true, 1, 0.1) && !swap_waits(true, -1, 0.1) && !swap_waits(false, 0, 0.1));
+    // BUG-1475: the own captain's steps (cur, mine, orig, want)
+    CHECK(own_step(true, true, 6, 0x10, 0, 0x10, 0x20) == Own::kSet);
+    CHECK(own_step(true, true, 4, 0x10, 0, 0x10, 0x20) == Own::kNone); // the world's own start first
+    CHECK(own_step(false, true, 6, 0x10, 0, 0x10, 0x20) == Own::kNone && own_step(true, false, 6, 0x10, 0, 0x10, 0x20) == Own::kNone);
+    CHECK(own_step(true, true, 6, 0x10, 0, 0x10, 0) == Own::kNone);     // nothing of its own
+    CHECK(own_step(true, true, 6, 0x20, 0x20, 0x10, 0x20) == Own::kHold);
+    CHECK(own_step(true, true, 6, 0x10, 0x20, 0x10, 0x20) == Own::kSet); // the world's again: ours again
+    CHECK(own_step(true, true, 6, 0, 0x20, 0x10, 0x20) == Own::kSet);
+    CHECK(own_step(true, true, 6, 0x30, 0x20, 0x10, 0x20) == Own::kAdopt); // the outfitter's new captain
+    CHECK(own_step(true, true, 6, 0x20, 0, 0x10, 0x20) == Own::kHold);
+}
+
 int main()
 {
     arrival_wait();
@@ -821,6 +940,7 @@ int main()
     busy_rows();
     busy_pump();
     share_one_planet();
+    captain_rules();
     if (g_fail) {
         printf("core_tests: %d FAILED\n", g_fail);
         return 1;

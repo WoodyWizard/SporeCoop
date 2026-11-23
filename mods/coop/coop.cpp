@@ -81,6 +81,7 @@
 #include "creations.h"
 #include "species_line.h"
 #include "history.h"
+#include "own_captain.h"
 #include "designs.h"
 #include "notify.h"
 #include "hud_portrait.h"
@@ -1003,6 +1004,7 @@ static void frame_observe(double now)
     creations::tick(now);
     species::tick(now); // WP-0 (BUG-1270): the species line (after the creations: it reads their keys)
     history::tick(now); // WP-H1 (BUG-1470): every player's own stage history
+    own_captain::tick(now); // WP-K1 (BUG-1475): a guest's own captain in Space
     designs::tick(now); // BUG-1272: a guest's own outfit to its species line
     civedit::tick(now); // WP-C3 (BUG-1275): a guest's own Civ editors' results into its line
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
@@ -2855,6 +2857,7 @@ static void init_tribe_and_creations()
     creations::init(H, M, std::move(crc));
     species::init(H, M, &g_sess); // WP-0 (BUG-1270)
     history::init(H, M, &g_sess); // WP-H1 (BUG-1470, BUG-1471)
+    own_captain::init(H, M, &g_sess); // WP-K1 (BUG-1475)
     civedit::init(H, M, &g_sess); // WP-C3 (BUG-1275)
     civ_arrival_init();           // WP-X1 (BUG-1276)
     modes::g_species_for_player = [](uint8_t id) { return creations::player_species(id); };

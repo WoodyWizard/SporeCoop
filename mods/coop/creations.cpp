@@ -1,4 +1,5 @@
 #include "creations_internal.h"
+#include "captain_logic.h"
 
 namespace creations {
 
@@ -6,7 +7,7 @@ using skg::cdecl_call;
 using skg::thiscall;
 
 const SkHost* H;
-static SkMod* M;
+SkMod* M; // (creations_captain.cpp too)
 Ctx C;
 
 const KindInfo kInfo[kKinds] = {
@@ -411,7 +412,7 @@ static Key ufo_key()
 }
 
 // a key some registered database has (RM FindRecord)
-static bool key_exists(const Key& k)
+bool key_exists(const Key& k)
 {
     void* rm = a_RmPtr ? *(void**)a_RmPtr : nullptr;
     uint32_t key[3] = {k.instance, k.type, k.group}, real[3] = {};
@@ -609,7 +610,7 @@ static uint32_t part_fallback(ModelKind k, int fe)
 // kPartDescGroup, which no game resource has) and the receiving game picks, among the parts IT has
 // (every part prop of the packages registered with its resource manager), the one of the same role
 // with the nearest abilities and size (net/partprops). docs/re/creations.md#creations-lookalike.
-constexpr uint32_t kPartDescGroup = 0x7C0DE5C1; // a part's description in a bundle (never registered)
+// (kPartDescGroup 0x7C0DE5C1: creations_internal.h)
 constexpr size_t kMaxDescBytes = 256u << 10;      // per bundle
 // BUG-0725 (class BUG-0424): the lookalike above ran only for the bundles of a player's creature, cell and UFO: the
 // host's vehicle, building and ship designs (BUG-0647 / BUG-0670 / BUG-0724) went out without the descriptions of
@@ -646,7 +647,7 @@ static bool is_part_group(uint32_t g)
     return g == kPartGroup || g == kCellPartGroup || g == kUfoPartGroup || g == 0x40636000;
 }
 
-static bool read_file_at(HANDLE f, uint64_t off, uint32_t n, std::vector<uint8_t>& buf)
+bool read_file_at(HANDLE f, uint64_t off, uint32_t n, std::vector<uint8_t>& buf)
 {
     buf.resize(n);
     LARGE_INTEGER li;
@@ -1217,7 +1218,7 @@ static void align_species_data(std::vector<dbpf::Record>& recs, ModelKind k, con
     }
 }
 
-static unsigned ensure_content(std::vector<dbpf::Record>& recs, ModelKind k, const std::string& whose)
+unsigned ensure_content(std::vector<dbpf::Record>& recs, ModelKind k, const std::string& whose)
 {
     // BUG-0559: the sender's part descriptions are never registered
     std::map<uint32_t, std::vector<uint8_t>> descs = take_part_descs(recs);
@@ -1389,7 +1390,7 @@ std::vector<uint8_t> pack(const Bundle& b)
     return w.data;
 }
 
-static bool unpack(const std::vector<uint8_t>& d, Bundle& b)
+bool unpack(const std::vector<uint8_t>& d, Bundle& b)
 {
     net::Reader r(d.data(), d.size());
     b.key.instance = r.u32(); b.key.type = r.u32(); b.key.group = r.u32();
@@ -1651,7 +1652,7 @@ void* package_for(std::wstring path, const std::vector<dbpf::Record>& recs, int 
     return db;
 }
 
-static void drop_package(void* db)
+void drop_package(void* db)
 {
     if (!db)
         return;
@@ -2140,7 +2141,7 @@ void want_species(const Key& kin)
 
 // ---- the host's own creations among its world's species (creations.h) ----
 static bool in_my_creations(const Key& k);
-static bool is_crt(const Key& k) { return k.type == kInfo[kCreature].type && k.group == kInfo[kCreature].group; }
+bool is_crt(const Key& k) { return k.type == kInfo[kCreature].type && k.group == kInfo[kCreature].group; }
 
 void host_species_out(uint8_t peer, const Key& k)
 {
@@ -2764,6 +2765,47 @@ COOP_FIX("creations.swap_after_cinematic", "BUG-1173", g_swap_cine_fix,
          "creations: the guest's own creature is applied only when no cinematic of the game plays (a brain upgrade's caption stayed away)");
 static unsigned g_swap_cine_waits; // tests: ticks the swap waited for a cinematic
 static bool g_swap_cine_waiting;
+// BUG-1237: SetSpecies of a creation this game has not baked yet starts the game's own bake (IBakeManager): the own
+// creature was drawn plain green for about 2 s after the swap (key frame S/050 of lab 20261117-154911). On: the bake is
+// asked (outside the frame, as civ_species does) as soon as the own key is known here and resolves to a species
+// (key_known + species_by_key: no bake request for a key without records, BUG-0341's class), every 0.5 s until it is
+// baked, and the swap waits for it at most captain::kWait after the key was wanted (the load's 3 s settle wait runs at
+// the same time; a change of the own creature in a running world has none). Off: no request, no wait (0.7.16.1); the
+// bake state is still read (no request) so the tests see it at the swap (`coop.creations status`: own prebake).
+static bool g_prebake_fix = true;
+COOP_FIX("creations.own_prebake", "BUG-1237", g_prebake_fix,
+         "creations: the own creature's model is baked before the swap, so it is not drawn plain green for seconds");
+static Key g_pre_key;
+static double g_pre_since, g_pre_next;
+static int g_pre_bake = -2, g_swap_bake = -3;
+static bool g_pre_queued;
+static unsigned g_pre_asks, g_pre_waits, g_swap_baked, g_swap_unbaked;
+static void prebake_task(void*)
+{
+    g_pre_queued = false;
+    Key k = g_pre_key;
+    if (game::mode_id() != modes::kCreature || !k.instance || !key_known(k))
+        return;
+    if (g_prebake_fix && !game::species_by_key({k.instance, k.type, k.group}))
+        return;
+    g_pre_bake = game::model_baked({k.instance, k.type, k.group}, g_prebake_fix);
+    g_pre_asks += g_prebake_fix && g_pre_bake == 0;
+}
+static void prebake_tick(const Key& k, double now, double seen_for)
+{
+    if (!(k == g_pre_key)) {
+        g_pre_key = k;
+        g_pre_since = now;
+        g_pre_bake = -2;
+        g_pre_next = now;
+    }
+    if (g_pre_queued || now < g_pre_next || seen_for < 1.0 || g_pre_bake == 1)
+        return;
+    g_pre_next = now + captain::kAskEvery;
+    g_pre_queued = true;
+    H->run_outside_frame(prebake_task, nullptr);
+}
+
 static void apply_own_avatar()
 {
     if (game::mode_id() == modes::kCell && C.sess && C.sess->connected()) {
@@ -2793,6 +2835,8 @@ static void apply_own_avatar()
         g_new_avatar_at = now; // BUG-0318: a new avatar's body is still being built
         g_new_avatar_frame = H->frame_index();
     }
+    if (!(avatar_species_key() == k)) // BUG-1237: the bake asked during the settle wait (and on a change)
+        prebake_tick(k, now, now - g_seen_since);
     if (now - g_seen_since < 3.0)
         return;
     if (av == g_swapped_avatar && epoch == g_swapped_epoch && k == g_swapped_key)
@@ -2814,6 +2858,12 @@ static void apply_own_avatar()
                       k.instance, cur.instance);
             return; // not resolvable (yet)
         }
+        if (k == g_pre_key && captain::swap_waits(g_prebake_fix, g_pre_bake, now - g_pre_since)) {
+            g_pre_waits++; // BUG-1237: not baked yet
+            return;
+        }
+        g_swap_bake = k == g_pre_key ? g_pre_bake : -2;
+        (g_swap_bake == 1 ? g_swap_baked : g_swap_unbaked)++;
         int age = *(int*)((uint8_t*)av + 0xB34);
         float hp0 = game::health(av), max0 = game::max_health(av);
         thiscall<bool>(a_SetSpecies, av, prof, age, true);
@@ -2821,7 +2871,8 @@ static void apply_own_avatar()
         g_swap_at = now;
         g_swap_frame = H->frame_index();
         g_swaps++;
-        H->log(M, SK_INFO, "creations: own avatar is now %08X", k.instance);
+        H->log(M, SK_INFO, "creations: own avatar is now %08X (bake %d, %.1f s after it was wanted, BUG-1237)", k.instance,
+               g_swap_bake, now - g_pre_since);
     }
     g_swapped_avatar = av;
     g_swapped_epoch = epoch;
@@ -2941,6 +2992,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_CellPreload = H->sym("Simulator::Cell::PreloadModel");
     a_BarPtr = H->sym("SporeCoop::AbilityBar_ptr");
     a_BarRebuild = H->sym("SporeCoop::AbilityBar_Rebuild");
+    captain_init(); // BUG-1279: the property list save guard
     return a_GetDb && a_OpNew && a_DbCtor && a_RmPtr;
 }
 
@@ -3141,6 +3193,7 @@ void tick(double now)
     apply_own_avatar();
     player_species_tick(); // BUG-0508
     bar_tick(); // BUG-0358
+    captain_tick(now); // BUG-1279, BUG-1262
 }
 
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
@@ -3167,10 +3220,16 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         }
         return;
     }
-    if ((kind == kWorldSpecies || kind == kOwnSpecies || kind == kOwnDesign) && (is_host() || from != 0))
+    if ((kind == kWorldSpecies || kind == kOwnSpecies || kind == kOwnDesign || kind == kKindHostProps) &&
+        (is_host() || from != 0))
+        return;
+    // WP-K1 (creations 1.2): the host captain's list (owner 0, host -> guest) and a player's adventure captain; with
+    // their switch off dropped as an unknown kind (0.7.16.1)
+    const bool cap_kind = kind == kKindHostProps || kind == kKindCaptain;
+    if (cap_kind && (!captain_kind_on(kind) || (kind == kKindHostProps && (owner != 0 || total > (512u << 10)))))
         return;
     if (!r.ok() ||
-        (kind >= kKinds && kind != kWorldSpecies && kind != kOwnSpecies && kind != kOwnDesign) ||
+        (kind >= kKinds && kind != kWorldSpecies && kind != kOwnSpecies && kind != kOwnDesign && !cap_kind) ||
         total > (8u << 20) ||
         (uint64_t)off + n > total)
         return;
@@ -3202,6 +3261,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         apply_own_design(owner, data);
         return;
     }
+    if (cap_kind) { // BUG-1279, BUG-1262 (creations_captain.cpp)
+        captain_message(kind, owner, id, data);
+        return;
+    }
     if (is_host()) { // keep it for players joining later and pass it on
         g_store[{owner, kind}] = data;
         for (auto& p : C.sess->players())
@@ -3220,6 +3283,7 @@ void on_player_join(uint8_t id)
     for (auto& [ok, data] : g_store)
         if (ok.first != id)
             send_bundle(id, ok.first, (Kind)ok.second, fnv(data.data(), data.size()), data);
+    captain_join(id); // BUG-1279, BUG-1262
 }
 
 bool g_leave_fix = true;
@@ -3239,10 +3303,12 @@ void on_player_leave(uint8_t id)
     // package of the same content is found again by path if that player comes back
     owned(g_applied);
     g_own_sent.erase(id);
+    captain_leave(id); // BUG-1279, BUG-1262 (a partner's captain goes with it)
 }
 
 void on_session_end()
 {
+    captain_end(); // BUG-1279, BUG-1262
     g_own_told.clear(); // BUG-0345: the notice again in the next session
     // the host's creations registered under their original keys (priority 2000, above the guest's
     // own My Creations): after the session a guest's own creation of the same id (ids are per
@@ -3276,6 +3342,8 @@ void on_session_end()
     for (auto it = g_applied.begin(); it != g_applied.end();)
         it = g_applied.erase(it);
     g_swapped_avatar = nullptr;
+    g_pre_key = {}; // BUG-1237
+    g_pre_bake = -2;
     g_cell_set = {};
 }
 // BUG-1289: a choice made outside a world waits for the world of this session only
@@ -3389,6 +3457,10 @@ std::string status()
     snprintf(b, sizeof b, "  swap waits for a cinematic: %u ticks (BUG-1173)\n", g_swap_cine_waits);
     s += b;
     snprintf(b, sizeof b, "  own ship key: fix=%d unshadowed=%u (BUG-1301)\n", (int)g_ufo_own_fix, g_ufo_unshadowed);
+    s += b;
+    s += captain_status(); // BUG-1279, BUG-1262
+    snprintf(b, sizeof b, "  own prebake: fix=%d asks=%u waits=%u swap_bake=%d baked=%u unbaked=%u (BUG-1237)\n",
+             (int)g_prebake_fix, g_pre_asks, g_pre_waits, g_swap_bake, g_swap_baked, g_swap_unbaked);
     s += b;
     snprintf(b, sizeof b, "  packages: open=%zu closing=%zu closed=%u kept=%u renamed=%u close_fix=%d\n", g_pkgs.size(),
              g_closing.size(), g_pkgs_closed, g_pkgs_close_kept, g_pkg_renames, (int)g_pkg_close_fix); // BUG-0996

@@ -452,8 +452,11 @@ static void* scenario_spawn(const net::PlayerState& s, void* av)
     if (!herd || !own)
         return nullptr;
     // (not the partner's captain species by its key: the captains' species keys are made per game, the same key is a
-    // different captain in each game: 2927BD73 a green and a robot captain in lab 20261118-131729; BUG-1262)
-    void* p = game::spawn_creature(s.pos, own, herd);
+    // different captain in each game: 2927BD73 a green and a robot captain in lab 20261118-131729). BUG-1262: the
+    // partner's own captain once its creation is registered and baked here (creations_captain.cpp, the puppet is made
+    // again then), this game's own captain until then and with adventure.partner_captain off; always in the avatar's herd
+    void* cap = creations::player_captain_species(s.id);
+    void* p = game::spawn_creature(s.pos, cap ? cap : own, herd);
     if (!p)
         return nullptr;
     game::puppet_register(p);
@@ -462,8 +465,9 @@ static void* scenario_spawn(const net::PlayerState& s, void* av)
     game::set_scale(p, body * kPuppetBodyK);
     puppet_alive_note(p);
     if (g_host_for_modes)
-        g_host_for_modes->log(g_mod_for_modes, SK_INFO, "adventure: the partner (its captain %08X there) shown as this game's captain, in the "
-                              "avatar's herd, size %.2f (BUG-1254)", s.species, body * kPuppetBodyK);
+        g_host_for_modes->log(g_mod_for_modes, SK_INFO, "adventure: the partner (its captain %08X there) shown as %s, in the avatar's herd, "
+                              "size %.2f (%s)", s.species, cap ? "its own captain" : "this game's captain",
+                              body * kPuppetBodyK, cap ? "BUG-1262" : "BUG-1254");
     return p;
 }
 static void scenario_drive(void* p, const net::PlayerState& s, drive::State& ds, double now)
