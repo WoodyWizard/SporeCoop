@@ -762,20 +762,21 @@ static void on_session_end()
     g_ask_at = -100;
 }
 LIFECYCLE_HOOK("own_progress.session", lifecycle::kSessionEnd, -10, [](const lifecycle::Ctx&) { on_session_end(); }, false);
-LIFECYCLE_HOOK("own_progress.players", lifecycle::kPlayerJoin | lifecycle::kPlayerLeave, 0,
-               [](const lifecycle::Ctx& c) {
-                   if (c.event == lifecycle::kPlayerJoin) {
-                       if (is_host())
-                           g_join_check.push_back(c.player); // host: an older mod is not let in while it is played
-                       g_left_food.erase(c.player);
-                       return;
-                   }
-                   auto it = g_live.find(c.player);
-                   if (it != g_live.end() && it->second.reported && it->second.v.mode == modes::kCell)
-                       g_left_food[c.player] = it->second.v.food; // its record stays, by key
-                   g_live.erase(c.player);
-               },
-               false);
+void on_player_join(uint8_t id)
+{
+    if (!is_host())
+        return;
+    g_join_check.push_back(id); // checked in the tick (an older mod is not let in while own progress is played)
+    g_left_food.erase(id);
+}
+
+void on_player_leave(uint8_t id)
+{
+    auto it = g_live.find(id);
+    if (it != g_live.end() && it->second.reported && it->second.v.mode == modes::kCell)
+        g_left_food[id] = it->second.v.food; // the level line keeps it (it comes back to the same pool)
+    g_live.erase(id);
+}
 
 void resync()
 {

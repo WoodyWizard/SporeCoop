@@ -30,6 +30,8 @@ struct Ctx {
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx);
 void tick(double now); // every frame (main thread)
 void on_message(uint8_t from, net::Reader& r); // MSG_PROGRESS
+void on_player_join(uint8_t id);  // host: a newcomer (session_glue)
+void on_player_leave(uint8_t id); // a player left
 
 // this game plays own progress now (the host: the setting, the fix, every peer reads it; a guest: the host's word)
 bool active();

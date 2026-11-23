@@ -5391,3 +5391,28 @@ BUG-1426 (UIFX-3 of the 0.7.15.5 audit; the same as BUG-9269 of PR #208 by Ilton
 * ✔ (PE header) SporeApp.exe is DYNAMIC_BASE (DllCharacteristics 0x8140) and has a .reloc directory (0xC2C04 bytes):
   Windows may load it elsewhere (PR #208: 0x00320000 on Windows 11, every address -0xE0000), Wine never does. A raw
   game address in the code is right under Wine and wrong on such a Windows PC; ask H->sym (rebased).
+
+## Own progress: the brain level global and the stage end (2026-11-23, feat/w69-progress)
+<a id="creature-own-progress"></a>
+
+BUG-1469 (own progress, all.shared_dna 2). Our check of the GOG 2024 `.text` (objdump) and the runtime notes of PR #209
+(IltonBJSilva, Steam build = the GOG 2024 code, lane B on Windows; data, not re-run by us yet: marked "PR #209").
+* ✔ (asm, objdump of SporebinEP1/SporeApp.exe dc04aee5) `SporeCoop::g_BrainLevel` 0x169E370 is an int global:
+  `cCreatureAnimal_Level` 0xC02A60 (creature vt 0xD8) returns `[0x169E370]` (0xC02AA4) for the avatar (+0xB58 bit 9) or
+  a pack member (bit 8), 0 for others (adventures: 0xC02A10). The only writer in that unit is 0xC02AB0 (avatar vt 0xDC,
+  thiscall(creature, int) `ret 4`): `mov ds:0x169E370, ecx` (0xC02AC1) only with +0xB58 bit 9; CreatureBrainUpgrade
+  0xD3FCA0 calls it with the new level.
+* ✔ (PR #209) `coop.dna gain 3000` on a fresh Creature stage takes the brain 0 -> 4 in one pass of upgrades (the
+  captions CRG_BrainUpgrade1..4 queued); level 4 is "fully grown" and the History button then offers the stage end (tag
+  0x64AA168, #creature-editor-tags-runtime); the bar was 3100 at level 4.
+* ✔ (PR #209) The host's stage-end request refused in h_Submit (not submitted, BUG-0920's flag cleared) leaves History
+  open; Esc closes it, the game plays on with the full bar; a later request works (5 refusals, then the vote, the editor
+  and Tribe).
+* ✔ (PR #209) Writing `[0x169E370]` lower (a guest's own level after a load of the host's save with level 4): vt 0xD8
+  reads the new level at once; the avatar keeps its larger size and health until its next brain upgrade (~ inferred: the
+  upgrade sets the size and the max health, they are not read every frame).
+* ✔ (PR #209) A guest's kill of a host NPC (`coop.npc hit <id> 100000` on the guest) is paid by the host's
+  AddEvolutionPoints within the hunt credit's 2.5 s (npc.cpp `dna_ledger::g_credit`): own progress takes it off the host
+  and sends it to the guest (`own_progress::give_gain`).
+* ? Not checked: whether the herds' brain ranges (CreatureGame_NestHerdFor, Relevance_Update: "the herd brain range vs
+  0x169E370") follow a level written lower before the next nest tick.

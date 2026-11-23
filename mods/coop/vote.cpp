@@ -1119,6 +1119,14 @@ void SK_CDECL h_CellStageEnd()
 {
     if (own_end_hold(true))
         return;
+    // BUG-1469, cell.end_click off (the twin): the order of 0.7.15 / PR #209's BUG-9266, the host's end sequence first
+    // (its white picture), the hold at the switch after it; the switch vote does not start before every bar is full
+    if (!g_end_go && !g_switch_go && g_sess.role() == net::Role::Host && game::mode_id() == modes::kCell &&
+        own_progress::active() && !own_progress::end_click_fix() && !g_vote.active && !own_progress::all_full()) {
+        LOG("the Creature stage: the end sequence runs, the switch waits for every player's bar after it (cell.end_click off)");
+        o_CellStageEnd();
+        return;
+    }
     if (!g_switch_world_fix || g_end_go || g_switch_go || !switch_hold(true, __builtin_return_address(0))) {
         g_end_go = false;
         o_CellStageEnd();
