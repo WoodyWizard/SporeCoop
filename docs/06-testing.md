@@ -5663,7 +5663,7 @@ by side and the creatures in them counted.
 * Review of the 0.7.16 final check (lab 20261122-194210 on 5376d388, 80 sheets plus 35 frame pairs of the own-species
   and editor tests the 80 left out: civ_role_row, dna_own*, own_editor_*, late_species*, civ_guest_editors,
   civ_own_designs, species_line, tribe_species_probe, space_own_ship_key, cell_kin_species, nest_species;
-  fix/w66-frames): the own species hold on both games in every stage (guest members, babies' tribes, Civ citizens of the
+  fix/w66-frames): the own species hold on both games in every stage (guest members in Tribe, the Civ citizens of the
   guest's city painted, the guest's vehicle and houses, the ship); new: BUG-1456 (Civ city decorations differ per game),
   BUG-1457 (after a capture the guest's city citizens at other places on the guest), BUG-1458 (BUG-1072 again: the
   chief in the same animation stands another way), BUG-1459 (unjudgeable frames: baby views behind the hut, an NPC offer
