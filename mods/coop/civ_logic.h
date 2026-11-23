@@ -96,6 +96,12 @@ inline bool took_goes_back(bool civ_listed, bool vehicle_listed, bool same_seria
 {
     return civ_listed && vehicle_listed && same_serial;
 }
+// BUG-9302 (audit CIV-7): a guest's planner building goes to the host once the planner closed only when it is still in
+// the city's building list (the same block, the same noun): a drop off a free plot adds it and takes it away again
+inline bool planner_kept(bool city_listed, bool in_buildings, bool same_noun)
+{
+    return city_listed && in_buildings && same_noun;
+}
 // the waiting removals, once a frame: one the game removed first (not in its list, dead) is dropped, a held one waits
 inline bool pump_waits(bool listed, bool dead, bool held) { return listed && !dead && held; }
 inline bool pump_kills(bool listed, bool dead) { return listed && !dead; }

@@ -542,6 +542,9 @@ void save_start();
 void took_clear();          // BUG-9301: the world or session ended between a save's start and end
 std::string took_status();  // BUG-9301 (coop.civ tables)
 void took_debug_kill(bool on); // BUG-9301 tests (coop.civ savekill)
+bool planner_send_holds(void* city); // BUG-9302: its planner building went to the host a moment ago
+void planner_out_clear();
+std::string planner_out_status();   // BUG-9302 (coop.civ tables)
 extern uintptr_t a_AddBuilding;
 extern uintptr_t a_CinematicMgr;
 extern uintptr_t a_CreateInstance;

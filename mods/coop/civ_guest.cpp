@@ -30,8 +30,8 @@ std::unordered_map<void*, int> g_bfix_seen;
 static void reconcile_buildings(void* city, size_t n,
                                 const std::function<void(size_t, uint32_t&, net::Vec3&, bool&)>& host_b)
 {
-    if (planner_holds(city)) { // BUG-0493: after the planner closes (the next snapshot)
-        g_n.planner_held++;
+    if (planner_holds(city) || planner_send_holds(city)) { // BUG-0493: after the planner closes (the next snapshot);
+        g_n.planner_held++;                                 // BUG-9302: and the host has the building it kept
         g_bfix_seen[city] = 0;
         return;
     }

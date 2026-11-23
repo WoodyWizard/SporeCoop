@@ -114,7 +114,7 @@ std::string debug(const std::vector<std::string>& a)
                           std::to_string(g_rx.cut) + " abandoned=" + std::to_string(g_rx.abandoned) + " bad=" +
                           std::to_string(g_rx.bad) +
                           "\n"; // C1 (BUG-1140)
-        return std::string(b) + k + sp + cl + c + reg + took_status();
+        return std::string(b) + k + sp + cl + c + reg + took_status() + planner_out_status();
     }
     if (!a.empty() && a[0] == "fakeveh") { // tests (BUG-0469): fakeveh <hex design instance|off> [<hex type> <hex group>]
         // every mirror vehicle is built with that design key (the guest's own civ design otherwise)

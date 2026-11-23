@@ -92,6 +92,9 @@ static void test_holds()
     // BUG-9301 (CIV-1): a mirror taken out for a save goes back only while its civilization and the same vehicle live
     CHECK(took_goes_back(true, true, true));
     CHECK(!took_goes_back(true, false, false) && !took_goes_back(true, true, false) && !took_goes_back(false, true, true));
+    // BUG-9302 (CIV-7): the planner building is sent only when the closed planner kept it
+    CHECK(planner_kept(true, true, true));
+    CHECK(!planner_kept(true, false, true) && !planner_kept(true, true, false) && !planner_kept(false, true, true));
     // BUG-0151
     CHECK(local_play(true, true, true));
     CHECK(!local_play(false, true, true) && !local_play(true, false, true) && !local_play(true, true, false));
