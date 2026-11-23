@@ -16,6 +16,7 @@
 #include "store.h"
 #include "species_line.h"
 #include "own_progress.h"
+#include "revive.h"
 #include "history.h"
 #include "designs.h"
 #include "net/compat.h"
@@ -1249,6 +1250,9 @@ void setup_callbacks()
             own_progress::on_message(from, r);
             return;
         }
+        case net::Route::Rescue: // WP-R1 of 0.7.17 (BUG-1472): a downed creature and its revive
+            revive::on_message(from, r);
+            return;
         case net::Route::History: // WP-H1 (BUG-1470): every player's own stage history
             history::on_message(from, r);
             return;
@@ -1312,6 +1316,7 @@ void setup_callbacks()
         creations::on_player_leave(id); // BUG-0076: the next player of this id is not shown as this one
         npc::on_player_leave(id);       // BUG-0125
         own_progress::on_player_leave(id); // BUG-1469: its live values go (its record stays, by key)
+        revive::on_player_leave(id);       // BUG-1472: its window ends without a price
         views::forget(id);              // BUG-0280
         pfind::on_player_leave(id);     // F2: its colour is free again
         if (g_player_forget_fix)

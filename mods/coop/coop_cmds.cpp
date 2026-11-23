@@ -5,6 +5,7 @@
 #include "civ_wallet.h"
 #include "coop_state.h"
 #include "own_progress.h"
+#include "revive.h"
 #include "cocoon.h"
 #include "net/compat.h"
 #include "net/kick.h"
@@ -2177,6 +2178,14 @@ void register_commands_stages()
         },
         nullptr, SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.team", "coop.team [on|off] - co-op mechanics (joint hunt, rescue, pack regen)", c_team,
+                   nullptr, MT);
+    H->command_add(M, "coop.revive",
+                   "coop.revive [down | giveup] - the Creature stage's downed creatures (BUG-1472); down: a lethal hit on the own "
+                   "creature through the game's damage path (tests); giveup: the own downed creature gives up (as holding G)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) -> int {
+                       SAY("%s", revive::command(std::vector<std::string>(argv, argv + argc)).c_str());
+                       return 0;
+                   },
                    nullptr, MT);
 }
 
