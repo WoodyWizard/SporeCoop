@@ -144,7 +144,7 @@ static void claims_refresh()
 }
 
 // the game saves: the claims by position into the store (world record civ.owners v1: city spots, vehicle spots)
-static void claims_save(pstore::Store& s, int64_t)
+static void claims_save(pstore::Store& s, int64_t now)
 {
     if (!g_store_fix || !g_claims_serial || g_claims_serial != store::serial() || &s != store::world() ||
         game::mode_id() != modes::kCiv)
@@ -170,6 +170,11 @@ static void claims_save(pstore::Store& s, int64_t)
     claims::put_spots(o, cs);
     claims::put_spots(o, vs);
     s.put_world("civ.owners", 1, o.d);
+    std::vector<std::string> keys; // BUG-1500: the owners keep their names in the store
+    for (auto* v : {&cs, &vs})
+        for (auto& sp : *v)
+            keys.push_back(sp.key);
+    store::mark_owners(s, "civ.owner", keys, now);
 }
 // BUG-1418 (CIV-6 B): the adopted player (here now with the key `to`) owns its claimed cities (not the capital) and
 // vehicles at once
@@ -199,6 +204,7 @@ static void adopt_owners(const std::string& to)
             }
     H->log(M, SK_INFO, "civ: the adopted player %d owns its claimed cities and vehicles now (BUG-1418)", id);
 }
+static void claims_opened(); // NET-3 (BUG-1499), below
 static bool g_claims_reg = store::add({"civ.owners", claims_save, [](const std::string& from, const std::string& to) {
                                            for (auto* m : {&g_city_claim, &g_veh_claim})
                                                for (auto& [o, k] : *m)
@@ -209,7 +215,7 @@ static bool g_claims_reg = store::add({"civ.owners", claims_save, [](const std::
                                                    if (sp.key == from)
                                                        sp.key = to;
                                            adopt_owners(to); // BUG-1418
-                                       }});
+                                       }, claims_opened});
 std::string solo_status()
 {
     char b[160];
@@ -695,6 +701,17 @@ static void refund_build(uint8_t from, float paid, const char* why)
     C.sess->send_reliable_to(from, net::MSG_NOTICE, nw);
     H->log(M, SK_INFO, "civ: building of player %u not built here (%s): %.0f back to the money (BUG-0807)", (unsigned)from,
            why ? why : "", back);
+}
+
+// NET-3 (BUG-1499): the save opened the world's store itself: its claims are read and matched now and follow the
+// owners of this moment (as the next ticks would), so this save writes them
+static void claims_opened()
+{
+    if (!active() || !is_host() || game::mode_id() != modes::kCiv)
+        return;
+    claims_tick();
+    if (g_fix_owners_kept)
+        claims_refresh();
 }
 
 void host_tick(double now)

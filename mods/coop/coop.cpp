@@ -286,6 +286,15 @@ bool g_away_dna_stage_fix = true;
 COOP_FIX("core.away_dna_stage", "BUG-0233", g_away_dna_stage_fix, "core: DNA kept while the host was away stays in its stage and world");
 uint32_t g_solo_mode = 0;      // guest: the stage mode g_solo_dna was earned in
 uint32_t g_dna_owed_world = 0; // host: the stage world g_dna_owed was owed in
+// CORE-14 (BUG-1506): a guest's spend that arrived while the host had no creature (g_dna_spend_owed, BUG-0466) was taken
+// off the host's DNA in any Creature world with an avatar: a host that loaded another Creature world meanwhile paid it
+// there. On: tagged with the world it was owed in and dropped in another stage or world, as g_dna_owed (BUG-0233). Off
+// (`coop.fix creature.spend_owed_world off`): 0.7.16.1
+bool g_spend_owed_world_fix = true;
+COOP_FIX("creature.spend_owed_world", "BUG-1506", g_spend_owed_world_fix,
+         "creature: a guest's DNA spend owed while the host was in an editor or a load is taken off only in that world");
+uint32_t g_dna_spend_owed_world = 0; // host: the stage world g_dna_spend_owed was owed in
+uint32_t g_spend_owed_dropped = 0;   // tests
 uint32_t g_stage_world = 0;    // the world of the last stage this machine played
 uint32_t g_solo_dropped = 0, g_owed_dropped = 0; // tests
 // why the host is not playing our stage: 'm' main menu, 'e' editor, 'l' loading, 0 it is (or unknown)
@@ -628,11 +637,23 @@ void host_away_tick(double now)
             g_owed_dropped++;
         }
     }
-    if (g_dna_spend_owed < 0 && g_sess.role() == net::Role::Host && g_mode == modes::kCreature && game::avatar()) {
-        float d = std::max(g_dna_spend_owed, -game::dna()); // BUG-0466: never below 0
-        dna_host_gain({dna_ledger::Cause::Earned, 0, d}, game::dna());
-        game::dna_add_raw(d);
-        g_dna_spend_owed = 0;
+    if (g_dna_spend_owed < 0 && g_sess.role() == net::Role::Host) {
+        // CORE-14 (BUG-1506): the spend is taken off in the world it was owed in only (as g_dna_owed, BUG-0233)
+        auto o = g_spend_owed_world_fix
+                     ? dna_route::owed(true, g_mode, stage_mode(g_mode), game::avatar() != nullptr, g_world,
+                                       g_dna_spend_owed_world, modes::kCreature)
+                     : (g_mode == modes::kCreature && game::avatar() ? dna_route::Owed::Pay : dna_route::Owed::Keep);
+        if (o == dna_route::Owed::Pay) {
+            float d = std::max(g_dna_spend_owed, -game::dna()); // BUG-0466: never below 0
+            dna_host_gain({dna_ledger::Cause::Earned, 0, d}, game::dna());
+            game::dna_add_raw(d);
+            g_dna_spend_owed = 0;
+        } else if (o == dna_route::Owed::Clear) {
+            LOG("owed spend %.1f dropped: owed in world %08X, now mode %08X world %08X (BUG-1506)", g_dna_spend_owed,
+                g_dna_spend_owed_world, g_mode, g_world);
+            g_dna_spend_owed = 0;
+            g_spend_owed_dropped++;
+        }
     }
     if (g_dna_pending >= 0 && g_sess.role() == net::Role::Client && host_here() && game::avatar() && !g_host_away) {
         float d = g_dna_pending - game::dna(); // the host's total, once we play its world
@@ -776,8 +797,8 @@ static void stall_note(double since)
     }
     std::string wins;
     EnumThreadWindows(GetCurrentThreadId(), stall_window, (LPARAM)&wins);
-    LOG("keepalive: no frame for %.1f s, the main thread runs a message loop (BUG-0687): chain%s", H->time_seconds() - since,
-        chain.c_str());
+    LOG("keepalive: no frame for %.1f s, the main thread runs a message loop (BUG-0687)%s: chain%s",
+        H->time_seconds() - since, support::window_note().c_str(), chain.c_str()); // BUG-1529: the window's state
     LOG("keepalive: the main thread's windows%s", wins.c_str());
 }
 
@@ -2737,6 +2758,10 @@ static void init_player_modules()
         sc.playing = [] { return stage_mode(g_mode) && g_local != nullptr; };
         sc.world_name = [] { return modes::current_world_name(); };
         sc.rivals = [] { return spaceext::rivals() || pfind::g_test_rivals; }; // (tests: coop.find rivals 1)
+        sc.holds_world = [] { // BUG-1502: an editor or a load keeps the world (and the session) started
+            uint32_t m = game::mode_id();
+            return m == modes::kEditor || m == modes::kEdit || m == modes::kLoad;
+        };
         sc.feed = feed;
         settings::init(H, M, sc);
         store::Ctx stc; // E1 (BUG-1149): the per-player store on the host's disk

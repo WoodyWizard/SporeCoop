@@ -699,6 +699,7 @@ struct PendingShare {
 static void (*g_share_failed)(uint8_t peer, uint32_t tag, bool planet_missing);
 void set_share_failed(void (*f)(uint8_t peer, uint32_t tag, bool planet_missing)) { g_share_failed = f; }
 static bool g_fail_next; // tests (coop.worldfix failnext): the next share_now fails once, not as planet-missing
+static int g_fail_peer = -1; // tests (coop.worldfix failpeer <id>, BUG-1505): the next share_now to that peer fails once
 static std::vector<PendingShare> g_pending;
 extern bool g_share_reset_fix;
 
@@ -821,11 +822,40 @@ uint32_t host_reloads() { return g_host_reloads; }
 // Off (`coop.fix tribe.host_reload_reset off`): kept until a share goes out (0.7.13).
 static bool g_reload_reset_fix = true;
 COOP_FIX("tribe.host_reload_reset", "BUG-1054", g_reload_reset_fix, "tribe: the host's reload after the live Tribe change is forgotten when the host's world changes before its share went out");
-WORLD_STATE("world.host_reload", &g_reload_reset_fix, [] { g_reload_due = false; }, []() -> size_t { return g_reload_due ? 1 : 0; });
+// CORE-13 (BUG-1505): the reload ran only when a share succeeded and nothing was pending after it. A guest that left with
+// its share still pending (erased by the leave loop) or a last share that failed left it due although other guests
+// had loaded the save: the host kept the live ground they do not have (BUG-0332) until a later share. On: once a share
+// of this reload went out, the reload runs when nothing is pending any more, whatever ended the last one. Off
+// (`coop.fix world.reload_after_any off`): 0.7.16.1
+static bool g_reload_any_fix = true;
+COOP_FIX("world.reload_after_any", "BUG-1505", g_reload_any_fix,
+         "world: the host's reload after the live Tribe change also runs when the last pending share failed or its "
+         "guest left");
+static bool g_reload_shared; // a share went out while the reload was due
+WORLD_STATE("world.host_reload", &g_reload_reset_fix, [] { g_reload_due = false; g_reload_shared = false; },
+            []() -> size_t { return g_reload_due ? 1 : 0; });
 // BUG-0332: from the reload's start until the host plays Tribe again (at most 60 s): the guests are told why the
 // host left (PF_RESYNC), not "left for the main menu"
 static double g_reload_at = -1;
 static bool g_reload_left;
+// BUG-0332: the host loads its own share save (it went out), as the guests did
+static void host_reload_now()
+{
+    g_reload_due = false;
+    g_reload_shared = false;
+    std::string planet, lerr;
+    bool miss = false;
+    std::wstring slot = game::mode_id() == modes::kTribe ? current_slot(planet, miss) : std::wstring();
+    if (!slot.empty() && !planet.empty() && !miss && load_slot(slot, planet, lerr, std::string())) {
+        g_host_reloads++;
+        g_reload_at = H->time_seconds();
+        g_reload_left = false;
+        H->log(M, SK_INFO, "world: the host loads its own share save of the new Tribe stage (%s), as the guests do: "
+               "one ground for everybody (BUG-0332)", planet.c_str());
+    } else {
+        H->log(M, SK_WARN, "world: the host could not load its own Tribe share save (%s)", lerr.c_str());
+    }
+}
 bool host_reloading()
 {
     if (g_reload_at < 0)
@@ -923,8 +953,9 @@ bool share_now(uint8_t peer, std::string& err)
 {
     std::string cur_planet;
     std::wstring slot = current_slot(cur_planet, g_planet_missing);
-    if (g_fail_next) { // tests: a failure other than "planet file missing" (BUG-0231)
+    if (g_fail_next || g_fail_peer == (int)peer) { // tests: a failure other than "planet file missing" (BUG-0231)
         g_fail_next = false;
+        g_fail_peer = -1;
         g_planet_missing = false;
         err = "test failure (coop.worldfix failnext)";
         return false;
@@ -1979,21 +2010,16 @@ void tick(net::Session& s)
         g_pending.erase(g_pending.begin() + i); // p is invalid from here
         if (failed && g_share_failed)
             g_share_failed(fpeer, ftag, missing); // BUG-0231: coop.cpp retries
-        if (g_reload_due && !failed && g_pending.empty()) { // BUG-0332: the save has gone out to every guest
-            g_reload_due = false;
-            std::string planet, lerr;
-            bool miss = false;
-            std::wstring slot = game::mode_id() == modes::kTribe ? current_slot(planet, miss) : std::wstring();
-            if (!slot.empty() && !planet.empty() && !miss && load_slot(slot, planet, lerr, std::string())) {
-                g_host_reloads++;
-                g_reload_at = H->time_seconds();
-                g_reload_left = false;
-                H->log(M, SK_INFO, "world: the host loads its own share save of the new Tribe stage (%s), as the guests do: "
-                       "one ground for everybody (BUG-0332)", planet.c_str());
-            } else {
-                H->log(M, SK_WARN, "world: the host could not load its own Tribe share save (%s)", lerr.c_str());
-            }
-        }
+        if (g_reload_due && !failed)
+            g_reload_shared = true; // BUG-1505
+        if (g_reload_due && !failed && g_pending.empty()) // BUG-0332: the save has gone out to every guest
+            host_reload_now();
+    }
+    // BUG-1505: the last pending share failed or its guest left (the loops above) after another one went out
+    if (g_reload_any_fix && g_reload_due && g_reload_shared && g_pending.empty()) {
+        H->log(M, SK_INFO, "world: the last pending share ended without going out; the reload is due for the guests that "
+               "got the save (BUG-1505)");
+        host_reload_now();
     }
     for (auto& o : g_out) {
         if (o.done)
@@ -2495,6 +2521,11 @@ static int c_worldfix(void*, int argc, const char* const* argv, SkOut* out)
             share_with((uint8_t)atoi(argv[i]), err, true);
         }
         H->out_printf(out, "queued %d share(s)\n", argc - 2);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "failpeer")) { // tests (BUG-1505): the next share_now to that peer fails once
+        g_fail_peer = atoi(argv[2]);
+        H->out_printf(out, "the next share to player %d fails once\n", g_fail_peer);
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "failnext")) { // tests (BUG-0231): the next share_now fails once

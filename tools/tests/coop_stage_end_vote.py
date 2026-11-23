@@ -22,7 +22,12 @@ default (the host ends the stage):
      the editor-pending flag 0) and the host's game too; the guest's panels say that the host moves everybody on.
   SPORE_FIX_OFF=core.editor_now_tag: the guest's editor opens and its game leaves for Tribe alone: FAILS at 2.
 
-  SPORE_LANE=6 python3 tools/tests/coop_stage_end_vote.py [--guest]
+--host-mode (CORE-4 of the audit, BUG-1503): the default case with the session setting creature.mode host (one
+  creature for everyone, `coop.settings force creature.mode host`): the stage end still waits for the vote (2 and 3 as
+  above). SPORE_FIX_OFF=core.host_mode_vote: the host's editor opens at once (creature.mode host skipped the stage-end
+  and vote checks): FAILS at 2.
+
+  SPORE_LANE=6 python3 tools/tests/coop_stage_end_vote.py [--guest | --host-mode]
 """
 import re
 import sys
@@ -32,6 +37,8 @@ from harness import mode_strip as mode
 import lane
 from coop_campaign import CAPTION_OK, EDITOR_DONE, HISTORY_BTN, HISTORY_OK
 from coop_ui import Ui
+import settings_lib as sl
+import twoinst
 from twoinst import Checks, keyframe, start
 
 READY = ("I'm ready", 'Я готов')
@@ -166,10 +173,20 @@ def guest_case(host, guest, ck):
 
 
 def main():
+    host_mode = '--host-mode' in sys.argv
+    if host_mode:
+        twoinst.forget_settings()
     host, guest = start('creature')
     ck = Checks()
     time.sleep(3)
-    (guest_case if '--guest' in sys.argv else host_case)(host, guest, ck)
+    try:
+        if host_mode:  # BUG-1503: one creature for everyone
+            ck(sl.force(host, [guest], 'creature.mode', 'host'), 'the guest plays with creature.mode host')
+        (guest_case if '--guest' in sys.argv else host_case)(host, guest, ck)
+    finally:
+        if host_mode:
+            sl.reset([host, guest], ('creature.mode',))
+            twoinst.forget_settings()
     ck.faults(host=host, guest=guest)
     return ck.result()
 

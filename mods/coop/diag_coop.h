@@ -131,6 +131,9 @@ void sync_on_session_end();
 void stats_tick(double now);
 void stats_session_start();
 std::string stats_status();
+// BUG-1529: " (window minimized M, foreground F[: the game's own pause])" from the poll thread's last look; "" with
+// diag.hitch_pause off
+std::string window_note();
 std::string sync_status();
 std::string summary_line(const char* why);
 void write_summary(const char* why); // the summary line into the log, the report headline and a file

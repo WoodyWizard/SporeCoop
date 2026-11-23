@@ -139,8 +139,9 @@ int c_status(void*, int, const char* const*, SkOut* out)
         SAY("evolve in place: kept %u, sent after all %u, saves %u, checking %u\n", g_evo_inplace, g_evo_fallback,
             g_evo_saves, checking); // BUG-0508
     }
-    SAY("away dna: solo_mode=%08X solo_dropped=%u owed_world=%08X owed_dropped=%u\n", g_solo_mode, g_solo_dropped,
-        g_dna_owed_world, g_owed_dropped); // BUG-0233
+    SAY("away dna: solo_mode=%08X solo_dropped=%u owed_world=%08X owed_dropped=%u spend_owed_world=%08X spend_dropped=%u\n",
+        g_solo_mode, g_solo_dropped, g_dna_owed_world, g_owed_dropped, g_dna_spend_owed_world,
+        g_spend_owed_dropped); // BUG-0233, BUG-1506
     SAY("strays: pending=%u removed=%u\n", (unsigned)g_strays.size(), g_strays_removed);
     SAY("labels: menu_up=%d window=%d hidden_frames=%u cinematic_frames=%u name_tags=%u\n", (int)g_menu_up.load(),
         (int)coop_ui::is_open(), g_menu_hidden, g_cine_hidden, g_tags_drawn);
@@ -1145,6 +1146,11 @@ int c_uistate(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", coop_ui::test_nudge(argv[2], argc > 3 && !hide ? (float)atof(argv[3]) : 0.f,
                                       argc > 4 && !hide ? (float)atof(argv[4]) : 0.f, hide,
                                       argc > 5 && !hide ? (float)atof(argv[5]) : 0.f).c_str()); // [dw]: BUG-1065's twin
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "fullscreen")) { // tests (BUG-1528): the report's full-screen answer
+        coop_ui::set_test_fullscreen(!strcmp(argv[2], "auto") ? -1 : atoi(argv[2]));
+        SAY("ui: full screen for the report: %s", argv[2]);
         return 0;
     }
     if (argc > 2 && !strcmp(argv[1], "color")) { // tests / layout shots: a colour for players without one

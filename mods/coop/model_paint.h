@@ -54,7 +54,11 @@ inline bool effects_strict(const std::vector<uint8_t>& m, uint32_t eff[3], size_
 // BUG-0852: the ids with the runs decoded (a model whose coat and detail are 0 is written `00 FE 07`: the strict
 // reader gave up on the whole model, so its base paint was never checked or substituted). patch[k]: layer k's four
 // bytes are written byte by byte (at / len say where): only those can be rewritten in place.
-inline bool effects_read(const std::vector<uint8_t>& m, uint32_t eff[3], size_t at[3], size_t len[3], bool patch[3])
+// CORE-8 (BUG-1504, run_guard): a layer whose last byte is followed by a run (`FE N`, N != 0) is not patchable either:
+// the run repeats that byte, so rewriting it rewrote the next layers too (the part reader's guard, creations.cpp
+// decode_run's `safe`). run_guard false: 0.7.16.1
+inline bool effects_read(const std::vector<uint8_t>& m, uint32_t eff[3], size_t at[3], size_t len[3], bool patch[3],
+                         bool run_guard = true)
 {
     size_t dec = 0, p = 0;
     size_t first[12] = {}, last[12] = {};
@@ -102,16 +106,19 @@ inline bool effects_read(const std::vector<uint8_t>& m, uint32_t eff[3], size_t 
         patch[k] = lit[4 * k] && lit[4 * k + 1] && lit[4 * k + 2] && lit[4 * k + 3];
         at[k] = first[4 * k];
         len[k] = last[4 * k + 3] - first[4 * k];
+        size_t nx = last[4 * k + 3];
+        if (run_guard && patch[k] && nx + 1 < m.size() && m[nx] == 0xFE && m[nx + 1] != 0)
+            patch[k] = false; // BUG-1504: the next token repeats this layer's last byte
     }
     return true;
 }
 
 // the reader the mod uses: with runs_fix the decoded one, else the strict one (every layer patchable)
 inline bool effects(const std::vector<uint8_t>& m, uint32_t eff[3], size_t at[3], size_t len[3], bool patch[3],
-                    bool runs_fix)
+                    bool runs_fix, bool run_guard = true)
 {
     if (runs_fix)
-        return effects_read(m, eff, at, len, patch);
+        return effects_read(m, eff, at, len, patch, run_guard);
     patch[0] = patch[1] = patch[2] = true;
     return effects_strict(m, eff, at, len);
 }

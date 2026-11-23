@@ -942,6 +942,15 @@ WP-X1 of 0.7.17 (docs/re/space.md#space-audit-0717). No new id or kind; the spac
   (an ACK for an offer it no longer waits for is ignored).
 * MSG_SPACE spacecoop K_TERRA 4: the receiver refuses a message with a non-finite delta and clamps a finite one to +-1
   (BUG-1489); the bytes are unchanged.
+## The rejoin slot names its host and name (2026-11-23, fix/w80-net)
+<a id="netcode-rejoin-slot-pair"></a>
+
+The rejoin slot file (`<AppData>\SporeCoop\rejoin-<instance>-<slot>.txt`, BUG-0235) holds `<token> <pair>` since 0.7.17:
+the pair is a hash of the host address and the player name (rejoin_kept.h `SlotLine`, KeptFile::key under a fixed salt;
+no plain address on disk). A join sends the slot's token only to the host and under the name it was written for, so a
+join that failed at once (an address that does not parse) or a crash with another host no longer beats the token a clean
+leave kept for this host (BUG-1498, NET-2 of the 0.7.15.5 audit, `net.rejoin_slot_pair`). A slot an older version wrote
+(the token alone) counts for any join, as before. Nothing on the wire changes.
 
 ## MSG_PROGRESS: own progress (2026-11-23, feat/w69-progress)
 <a id="netcode-progress"></a>
