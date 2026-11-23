@@ -1895,3 +1895,24 @@ BUG-9329, decision 7Z A. Runtime on TITAN's QA copy; the test profiles' caches r
   0001-01-01 (0x0ED6A3DF8C = 2020-07-17 18:06, consistent with the profile's save files of July/August 2020), +0x44
   u32 0, +0x48 author ID (FFFFFFFF FFFFFFFE), +0x50 author and then the name as u32 count + UTF-16BE. A quick way to
   date a profile's creations before banning any: read its EditorSaves.package (DBPF, RefPack) for these records.
+
+## The editor's snapshot message and a bake (2026-11-22, feat/lineages-alpha)
+<a id="creations-editor-snapshot-message"></a>
+
+Found for BUG-9341 (Ghidra on the Steam 3010a413 dump, code read live on TITAN):
+* ✔ A bake's render (0x410DC0, called from 0x40E800) takes its picture (render target, Raster_Lock, Extract) and, when its
+  +0x424 is set, posts message 0x3FC3F13 (IMessageManager vt 0x14, no data); else 0x29D57F4.
+* ✔ Every initialized cEditor listens to 0x3FC3F13 (cEditor::Initialize 0x584300 adds it, cEditor::Dispose 0x576C50
+  drops it), also while no editor is shown. Its handler (cEditor::HandleMessage 0x591FA0, thiscall(this, id, msg) ret 8;
+  the case at +0x108) calls Resource::GetDatabaseByID([this + 0x29C]) and vt 0x28 on the result, then
+  EditorModel::GetCreationName([this + 0x88]): no null check on either.
+* ✔ On a galaxy planet a Creature host crashed ~6 s after era visitors' bake ask of another era's model: null database
+  (+0x11E) in the death caption and in plain play, null model (+0x147) just after the first-creature editor. Fixed by
+  skipping the message for such an editor (switch `galaxy.editor_snapshot_guard`).
+* CORRECTION (2026-11-22): #creations-bake-in-tribe's inferred cause of BUG-9296 ("the bake's end reports to an editor
+  the Tribe stage does not have") is this message: the Tribe crash had the same address (+0x11E). With the guard, the
+  Tribe stage's "no bake asked" rule may no longer be needed (not tested).
+* Pitfall: crash reports print the exe's addresses as loaded (base 0x370000 on TITAN, ASLR) while their names and
+  tools/qa_win/dis.py use the 0x400000 base: crash 0x005020BE is 0x005920BE in the .sym files and in dis.py; a raw
+  `mem.read` takes the loaded address.
+
