@@ -694,6 +694,11 @@ static void up_facts()
     }
 }
 
+// BUG-9348 (above start_upload)
+static bool g_space_hint = true;
+COOP_FIX("galaxy.space_save_hint", "BUG-9348", g_space_hint, "galaxy: a Space era host at its planet is told the world is saved once the ship is in the solar system");
+static std::string g_space_hint_for;
+static unsigned g_space_hints;
 static void start_upload()
 {
     if (g_upstep != kUpIdle || g_hstep != kHosting || is_crossing(g_planet)) // (BUG-9278: a crossing is not stored)
@@ -707,6 +712,13 @@ static void start_upload()
     if (!world::silent_save(err)) { // (an editor, a cinematic, Space on a planet: again soon)
         g_next_upload = H->time_seconds() + 15;
         H->log(M, SK_INFO, "galaxy: no save for the upload now: %s", err.c_str());
+        // BUG-9348: Spore saves Space only in a solar system or the galaxy: a planet's Space era waits for the ship to
+        // leave the planet (the upload retries); the player is told once per planet. Off: no word
+        if (g_space_hint && game::mode_id() == modes::kSpace && g_space_hint_for != g_planet && !g_leave_after) {
+            g_space_hint_for = g_planet;
+            g_space_hints++;
+            say(era_display(g_planet) + " is saved to the galaxy once your ship is out in the solar system.");
+        }
         if (g_leave_after)
             say("Waiting to save " + era_display(g_planet) + ": " + err);
         return;
