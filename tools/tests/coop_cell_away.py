@@ -21,13 +21,25 @@ mate with `coop.pool mate tp`; its editor opens at once (BUG-1263; a vote, if an
 stays in its pool; cancel after the checks). It counts as away after 4 s (in Cell since
 BUG-0205; BUG-0233 had left Cell out because nothing played on there).
 
+--guest-editor (CELL-5, BUG-9318): the host is in the main menu; after its meal the guest opens its own cell editor
+(its mating call by a real click, then onto its mate with `coop.pool mate tp`), the host loads its world again
+while the guest is still in its editor, then the guest leaves its editor (the red cross). The food it ate alone must
+still reach the host's total. SPORE_FIX_OFF=cell.solo_editor: the food is dropped when the guest's editor opens (the
+host's next total takes it back from the guest): FAIL.
+
 pool.away off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-001911-fix-w9-cell-away:cell_away) (the frozen pool of 0.7.3.1: no creature moves, the 10 points are lost).
 
-  SPORE_LANE=3 python3 tools/tests/coop_cell_away.py [--editor]
+--shared: the same with the session setting all.shared_dna on (`coop.settings force`; the default is own DNA per
+player, 0.7.16).
+
+  SPORE_LANE=3 python3 tools/tests/coop_cell_away.py [--editor | --guest-editor] [--shared]
 """
 import re
 import sys
 import time
+
+import settings_lib
+import twoinst
 
 from harness import num, waiter
 from twoinst import Checks, lane_state, start
@@ -60,9 +72,37 @@ def away_line(con):
     return m.group(0) if m else '(no cell_away line)'
 
 
+def own_editor(con, name):
+    """con's mating call (a real click on the heart), then onto its mate: its own cell editor opens"""
+    for _ in range(3):
+        con.call('coop.pool mate button')
+        time.sleep(1)
+        con.call('click %d %d' % HEART)
+        time.sleep(3)
+        if 'alive=1' in con.call('coop.pool mate')['out']:
+            break
+    print(f'  {name} mate: ' + con.call('coop.pool mate tp')['out'].strip()[:200])
+    # its editor opens at once (BUG-1263, cell.editor_now); with a vote (core.editor_now off): "Start now"
+    return wait(lambda: 'Editor' in mode(con) or (con.call('coop.vote go') and False), 60, 2)
+
+
 def main():
     editor = '--editor' in sys.argv
     host, guest = start('cell', guest_creations=False) if editor else start('cell')
+    shared = '--shared' in sys.argv
+    try:
+        if shared and not settings_lib.force(host, [guest], 'all.shared_dna', 'on'):
+            ck = Checks()
+            ck(False, 'the guest plays with all.shared_dna on')
+            return ck.result()
+        return run(host, guest, editor, '--guest-editor' in sys.argv)
+    finally:
+        if shared:
+            settings_lib.reset([host, guest], ('all.shared_dna',))
+            twoinst.forget_settings()
+
+
+def run(host, guest, editor, guest_editor):
     ck = Checks()
     ck(wait(lambda: (num(guest.call('coop.pool')['out'], 'mirrors') or 0) > 5, 30), 'the guest mirrors the host pool')
     ck(wait(lambda: food(host) is not None and food(host) == food(guest), 10), 'the same food total')
@@ -113,6 +153,10 @@ def main():
     g1 = food(guest)
     print(f'  guest food {g0} -> {ga} (its own meals while the host is away) -> {g1}; {away_line(guest)}')
     ck(ga is not None and g1 == ga + 10, f'the guest\'s game counts its meal while the host is away ({ga} -> {g1})')
+    if guest_editor:  # CELL-5 (BUG-9318): the guest's own cell editor before the host is back
+        if not ck(own_editor(guest, 'guest'), f'the guest\'s own cell editor opens ({mode(guest).strip()})'):
+            return ck.result()
+        print(f'  guest in its editor; {away_line(guest)}')
 
     # 4. the host is back
     if editor:
@@ -123,6 +167,13 @@ def main():
         if lst.get('slot', 9) != 9:
             slot = f'Game{lst["slot"]}'
         print(' ', host.call(f'coop.load {slot} {name}')['out'].strip())
+    if guest_editor:  # the host plays its pool again while the guest is still in its editor; then the guest's red cross
+        ck(wait(lambda: 'not in the cell stage' not in host.call('coop.pool')['out'] and 'Cell' in mode(host), 150, 1),
+           'the host plays its pool again (the guest still in its editor)')
+        time.sleep(3)
+        print(f'  guest still in {mode(guest).strip()}; {away_line(guest)}')
+        guest.call('click %d %d' % CANCEL)
+        ck(wait(lambda: 'Cell' in mode(guest), 60, 1), f'the guest left its editor ({mode(guest).strip()})')
     lows = []  # the guest's total while the host comes back: no dip below its own (BUG-0239's dip)
 
     def sample():
