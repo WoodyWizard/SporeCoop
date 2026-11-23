@@ -37,6 +37,7 @@
 #include "net/validate.h"
 #include "fields_wire.h"
 #include "wire/common.h"
+#include "wire/history.h"
 #include "wire/shared_res.h"
 #include "wire/space_allies.h"
 #include "wire/space_badges.h"
@@ -1101,6 +1102,8 @@ static const WireDec kWireDecoders[] = {
     wire_dec<wire::space_eco::Eco>,
     // wire/shared_res.h, fields_wire.h
     wire_dec<wire::shared_res::Res>, wire_dec<wire::shared_res::ResAdd>, wire_dec<FieldsPacket>,
+    // wire/history.h (MSG_PLAYER_HISTORY, WP-H1)
+    wire_dec<wire::history::Record>, wire_dec<wire::history::Cell>,
 };
 
 // fuzz_struct with a rule per prefix length instead of one base length (MSG_RES: the head alone is an older host's

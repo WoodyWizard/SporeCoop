@@ -17,6 +17,7 @@
 #include "off_main.h"
 #include "stage_epoch.h"
 #include "swap_ledger.h"
+#include "actor_scope.h"
 #include "fixes.h"
 #include "gamefixes.h"
 #include "bone_rules.h"
@@ -1435,6 +1436,10 @@ COOP_FIX("core.call_guard_reset", "BUG-1047", g_call_guard_fix, "core: a module'
 static void reset_call_guards()
 {
     callguard::reset(g_call_guard_fix);
+    // WP-H1 (actor_scope.h): an Actor scope a caught fault unwound past ends here, so a guest is never credited for the
+    // host's own acts of the next frames (core.call_guard_reset, as the modules' guards)
+    if (g_call_guard_fix && actor::reset())
+        g_guards_reset++;
     if (!g_lend_ledger_fix)
         return;
     // BUG-1134: g_in_puppet_anim and g_in_relay are registered call guards now (callguard::reset above clears them,
