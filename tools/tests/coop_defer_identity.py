@@ -31,10 +31,13 @@ after the destroy), 4 had a target whose chunk before was free (header 16A8: the
 starts at its address, docs/re/creature.md#creature-reuse-merged) and 1 was freed and missed by the 20 creations one a
 frame with the misses destroyed. So the hunt (`xf40B4KM`): still one creature a frame destroyed at once until the free
 (creations are what lets the game let go of the block: 0 of 17 freed without them), from the free on 4 a frame with the
-misses kept (BUG-1099's recipe: 21 of 27 reused), 40 tries; a target that merges backward ends its round at once (M);
-1500 frames (the late frees came at 1026-1295).
+misses kept (BUG-1099's recipe: 21 of 27 reused), 40 tries; a target that merges backward ends its round at once (M).
+CORRECTION (2026-11-23, BUG-1453): the "late frees" at 1026-1295 frames were the cinematic's end (a block the game holds
+is freed 5-8 frames after the Enter that ends it: fix-off twin 20261122-192135, 32 rounds of 1500 frames, 0 freed inside
+the hunt), not a time effect; since 0.7.14 every block the game let go of during the cinematic was free 9-19 frames after
+the destroy (all 8 reuses). So 300 frames and many short rounds (60 within --minutes) instead of 16 of 1500 frames.
 
-  SPORE_LANE=6 python3 tools/tests/coop_defer_identity.py [--tries 16] [--minutes 9]"""
+  SPORE_LANE=6 python3 tools/tests/coop_defer_identity.py [--tries 60] [--minutes 9] [--frames 300]"""
 import argparse
 import os
 import re
@@ -54,10 +57,10 @@ def hunt(con):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--tries', type=int, default=int(os.environ.get('SPORE_DEFER_TRIES', '16')))
+    ap.add_argument('--tries', type=int, default=int(os.environ.get('SPORE_DEFER_TRIES', '60')))  # BUG-1453: rounds of ~8 s
     ap.add_argument('--minutes', type=float, default=9)
     ap.add_argument('--flags', default=os.environ.get('SPORE_DEFER_FLAGS', 'xf40B4KM'))  # BUG-1406 (was xf20)
-    ap.add_argument('--frames', type=int, default=1500)  # BUG-1406 (was 900)
+    ap.add_argument('--frames', type=int, default=int(os.environ.get('SPORE_DEFER_FRAMES', '300')))  # BUG-1453 (was 1500, 900)
     ap.add_argument('--staleref', action='store_true', default=os.environ.get('SPORE_DEFER_STALEREF') == '1', help='RE: who still points into the destroyed puppet 10 s after it')
     a = ap.parse_args()
     t_end = time.time() + a.minutes * 60

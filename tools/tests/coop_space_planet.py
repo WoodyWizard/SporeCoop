@@ -6,8 +6,15 @@ docs/re/space.md#space-planet-life, docs/06-testing.md#testing-space-planet).
                    near the guest stand in the guest's game at the same spots (3 m) at the same size (12 %)
                    (SPORE_FIX_OFF=space.citizens fails: 15-20 % elsewhere, every size its own). BUG-1404: the misses
                    left (2.7-4.3 m, every one a bound copy) were runners whose start or stop reached the guest a
-                   0.5 s snapshot late; SPORE_FIX_OFF=space.citizen_lead (0.5 s snapshots) failed in about half of
-                   the runs (4 of 9 on rel/main before the fix, 3-6 of 57 elsewhere)
+                   0.5 s snapshot late. CORRECTION (2026-11-23, BUG-1454): this case cannot show space.citizen_lead
+                   (0.5 s snapshots: 2 of 9 runs over its 5 % since BUG-1210, 11 misses in 513 samples; the twin
+                   passed 4 of 4 in 20261122-192851); the "about half" was before BUG-1210, a
+                   different cause. --case runners measures it
+  --case runners   the same landing; waits until host citizens run near the guest, then RUN_ROUNDS rounds of host,
+                   guest, host dumps: each running host citizen (by serial, over RUN_SPEED m/s between the two host
+                   dumps) taken at the guest's moment and its nearest guest citizen; at most RUN_SHARE of those samples
+                   over RUN_OFF m (BUG-1404: what space.citizen_lead changes; SPORE_FIX_OFF=space.citizen_lead fails);
+                   fewer than RUN_SAMPLES runner samples: INCONCLUSIVE (no runners, nothing measured)
   --case vehicles  the same planet: the colony's 40 vehicles (~20 m/s) are where the host's are (15 m)
                    (SPORE_FIX_OFF=space.vehicles fails: about 60 % elsewhere)
   --case spice     the host lands, the guest leaves the star system and comes back (its game collects the
@@ -27,6 +34,17 @@ from twoinst import Checks, shot, start
 
 CITIZEN, VEHICLE, ARTIFACT = 0x018EB4B7, 0x018C6DE8, 0x02DD8C42
 HOME_STAR = 4587573
+# BUG-1404 (--case runners): --case citizens reads 19 mostly standing citizens 3 times; a runner turning at one of those
+# moments is luck (with 0.5 s snapshots after BUG-1210: 11 misses in 513 samples on 9 runs, 2 of 9 runs over its 5 %).
+# This case measures only the runners, where space.citizen_lead (0.25 s snapshots) acts
+RUN_SPEED = 2.0  # m/s between the two host dumps of a round (runners ~5 m/s, docs/re/space.md#space-planet-life)
+RUN_FAST = 30.0  # m/s: faster is a put, not a run
+RUN_WAIT = 240  # s at most until RUN_MIN host citizens run near the guest (most stand right after the landing)
+RUN_MIN = 2
+RUN_ROUNDS = 60
+RUN_SAMPLES = 40  # fewer runner samples: INCONCLUSIVE
+RUN_OFF = 2.5  # m: a runner's copy this far from the host's citizen at the same moment is behind
+RUN_SHARE = 0.10  # at most this share of the runner samples behind (provisional: the lab measurement of BUG-1404 sets it)
 
 
 def place(con):
@@ -119,8 +137,71 @@ def case_citizens(host, guest, ck):
     ck(n >= 15, f'the host has citizens near the guest ({n} over 3 rounds)')
     ck(n and far <= 0.05 * n, f'the guest\'s game shows the host\'s citizens where they stand ({far} of {n} elsewhere, at most 5 %)')
     ck(n and size <= 0.05 * n, f'... at the host\'s size ({size} of {n} of another size, at most 5 %)')
-    print('  ', [ln for ln in guest.call('coop.wobj')['out'].splitlines() if 'space_citizen' in ln])
+    print('  ', [ln for ln in guest.call('coop.wobj')['out'].splitlines() if 'space_citizen' in ln or 'space citizens' in ln])
     shot(guest, 'space_planet_citizens.png')
+
+
+def timed_citizens(con, c):
+    """(the moment of the read on the test's clock, the citizens within 400 m of c): one PC, one clock for both games"""
+    t0 = time.monotonic()
+    _, rows = objs(con, CITIZEN, c, 400)
+    t1 = time.monotonic()
+    return (t0 + t1) / 2, [x for x in rows if math.dist(x['pos'], c) < 400]
+
+
+def runners_round(host, guest, c):
+    """host, guest, host: for each host citizen running between the two host reads, the distance of its place at the
+    guest's read (linear between the two) to the nearest guest citizen"""
+    ta, ha = timed_citizens(host, c)
+    tg, g = timed_citizens(guest, c)
+    tb, hb = timed_citizens(host, c)
+    if tb - ta < 0.05 or not g:
+        return []
+    a = {x['ser']: x['pos'] for x in ha if x['ser']}
+    f = (tg - ta) / (tb - ta)
+    out = []
+    for x in hb:
+        p0 = a.get(x['ser'])
+        if p0 is None:
+            continue
+        v = math.dist(p0, x['pos']) / (tb - ta)
+        if v < RUN_SPEED or v > RUN_FAST:
+            continue
+        at = tuple(u + (w - u) * f for u, w in zip(p0, x['pos']))
+        out.append(min(math.dist(at, y['pos']) for y in g))
+    return out
+
+
+def case_runners(host, guest, ck):
+    land_both(host, guest, ck)
+    gw, gc = objs(guest, CITIZEN)
+    if not gw.me or not gc:
+        ck(False, f'the guest has citizens ({len(gc)}) and a position ({gw.me})')
+        return None
+    c = ground(gw.me, gc[0]['pos'])
+    t0, most = time.monotonic(), 0
+    while time.monotonic() - t0 < RUN_WAIT:
+        most = max(most, len(runners_round(host, guest, c)))
+        if most >= RUN_MIN:
+            break
+        time.sleep(2)
+    print(f'  {most} host citizens running near the guest after {time.monotonic() - t0:.0f} s', flush=True)
+    s = []
+    for _ in range(RUN_ROUNDS):
+        s += runners_round(host, guest, c)
+        time.sleep(0.2)
+    s.sort()
+    behind = sum(1 for d in s if d > RUN_OFF)
+    if s:
+        print(f'  runner samples {len(s)}: p50 {s[len(s) // 2]:.2f} m, p90 {s[int(len(s) * 0.9)]:.2f} m, max {s[-1]:.2f} m; '
+              f'{behind} over {RUN_OFF} m', flush=True)
+    print('  ', [ln for ln in guest.call('coop.wobj')['out'].splitlines() if 'space_citizen' in ln or 'space citizens' in ln])
+    if len(s) < RUN_SAMPLES:
+        return f'{len(s)} runner samples (at least {RUN_SAMPLES}): no host citizens ran near the guest'
+    ck(behind <= RUN_SHARE * len(s), f'the guest\'s game shows running citizens where the host\'s are at the same moment '
+       f'({behind} of {len(s)} runner samples over {RUN_OFF} m, at most {RUN_SHARE:.0%})')
+    shot(guest, 'space_planet_runners.png')
+    return None
 
 
 def case_vehicles(host, guest, ck):
@@ -184,14 +265,14 @@ def case_spice(host, guest, ck):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--case', choices=('citizens', 'vehicles', 'spice'), required=True)
+    ap.add_argument('--case', choices=('citizens', 'runners', 'vehicles', 'spice'), required=True)
     a = ap.parse_args()
     host, guest = start('space')
     ck = Checks()
     time.sleep(5)
-    {'citizens': case_citizens, 'vehicles': case_vehicles, 'spice': case_spice}[a.case](host, guest, ck)
+    why = {'citizens': case_citizens, 'runners': case_runners, 'vehicles': case_vehicles, 'spice': case_spice}[a.case](host, guest, ck)
     ck.faults(host=host, guest=guest)
-    return ck.result()
+    return ck.inconclusive(why) if why else ck.result()
 
 
 if __name__ == '__main__':

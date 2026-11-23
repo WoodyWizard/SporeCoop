@@ -10077,3 +10077,9 @@ over the gap itself, not wait for the game to make one.
   what each unanswered click hit (BUG-1448).
 * tribe_held_item: the grip check leaves out samples in which the host's member holds too (tribe.mirror_hold) and
   checks that the host's leader is still the host's member (BUG-1449, BUG-1450).
+* defer_identity: CORRECTION (2026-11-23, BUG-1453) of the reuse hunt above: the frees 1026-1295 frames after the
+  destroy were the cinematic's end (5-8 frames after the Enter that ends it), not a late free; a block the game lets go
+  of during the cinematic is free 9-19 frames after the destroy. The hunt is 300 frames, up to 60 rounds in 9 minutes.
+* space_planet_citizens cannot show space.citizen_lead (it reads mostly standing citizens); `--case runners` (suite
+  space_planet_runners) compares only running host citizens at the guest's moment (host, guest, host dumps by serial);
+  its limits are provisional until both arms are measured (BUG-1454).
