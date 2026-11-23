@@ -88,7 +88,7 @@ def outfitter_route(guest, ck, gk0, own0, mine0):
     d, out = designs(guest)
     print(f'  guest after the badge: mode {mode(guest)}; {d}', flush=True)
     if not ck(mode(guest) == EDITOR, f'the guest\'s own Tribal Outfitter opens ({mode(guest)}, refused '
-              f'{re.search(r"refused=(\d+)", out).group(1) if "refused=" in out else "?"})'):
+              f'{re.search(r"refused=([0-9]+)", out).group(1) if "refused=" in out else "?"})'):
         close_planner(guest)
         time.sleep(3)
         print(f'  guest busy after: {busy(guest) or "-"}', flush=True)
