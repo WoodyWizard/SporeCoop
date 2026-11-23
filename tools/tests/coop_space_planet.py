@@ -13,7 +13,8 @@ docs/re/space.md#space-planet-life, docs/06-testing.md#testing-space-planet).
   --case runners   the same landing; waits until host citizens run near the guest, then RUN_ROUNDS rounds of host,
                    guest, host dumps: each running host citizen (by serial, over RUN_SPEED m/s between the two host
                    dumps) taken at the guest's moment and its nearest guest citizen; at most RUN_SHARE of those samples
-                   over RUN_OFF m (BUG-1404: what space.citizen_lead changes; SPORE_FIX_OFF=space.citizen_lead fails);
+                   over RUN_OFF m and their p90 at most RUN_P90 (BUG-1404: what space.citizen_lead changes;
+                   SPORE_FIX_OFF=space.citizen_lead fails: twin space_planet_runners_lead_off);
                    fewer than RUN_SAMPLES runner samples: INCONCLUSIVE (no runners, nothing measured)
   --case vehicles  the same planet: the colony's 40 vehicles (~20 m/s) are where the host's are (15 m)
                    (SPORE_FIX_OFF=space.vehicles fails: about 60 % elsewhere)
@@ -44,7 +45,12 @@ RUN_MIN = 2
 RUN_ROUNDS = 60
 RUN_SAMPLES = 40  # fewer runner samples: INCONCLUSIVE
 RUN_OFF = 2.5  # m: a runner's copy this far from the host's citizen at the same moment is behind
-RUN_SHARE = 0.10  # at most this share of the runner samples behind (provisional: the lab measurement of BUG-1404 sets it)
+# BUG-1454, set from both arms of the 0.7.16.1 final check (4 runs each): fix on (lab 20261123-111347) 0 / 3 / 0 / 0
+# of 443 / 211 / 355 / 429 samples over 2.5 m (at most 1.4 %), p90 0.90-1.28 m, p50 0.47-0.48 m; SPORE_FIX_OFF=
+# space.citizen_lead (lab 20261123-121417) 32 / 18 / 20 / 30 of 406 / 249 / 328 / 303 (6.1-9.9 %), p90 2.03-2.48 m,
+# p50 0.71-0.78 m, max 4.3-5.2 m. The old provisional 10 % let all 4 off runs pass. Both limits sit between the arms
+RUN_SHARE = 0.035  # at most this share of the runner samples behind (on <= 1.4 %, off >= 6.1 %)
+RUN_P90 = 1.6  # m: the runner samples' p90 at most this (on <= 1.28 m, off >= 2.03 m)
 # BUG-1454: a console read is answered within a frame or two (~20 ms): back to back, the two host reads of a round were
 # under 0.05 s apart (60 rounds in ~17 s, lab 20261123-023643) and every round was dropped: 0 samples in 4 runs.
 # The reads of a round are RUN_GAP s apart (a runner moves ~1.5 m between the host reads: 0.1 m print steps are 0.3 m/s)
@@ -220,7 +226,9 @@ def case_runners(host, guest, ck):
     if len(s) < RUN_SAMPLES:
         return f'{len(s)} runner samples (at least {RUN_SAMPLES}): no host citizens ran near the guest'
     ck(behind <= RUN_SHARE * len(s), f'the guest\'s game shows running citizens where the host\'s are at the same moment '
-       f'({behind} of {len(s)} runner samples over {RUN_OFF} m, at most {RUN_SHARE:.0%})')
+       f'({behind} of {len(s)} runner samples over {RUN_OFF} m, at most {RUN_SHARE:.1%})')
+    p90 = s[int(len(s) * 0.9)]
+    ck(p90 <= RUN_P90, f'the guest\'s running citizens are close behind the host\'s (p90 {p90:.2f} m, at most {RUN_P90} m)')
     shot(guest, 'space_planet_runners.png')
     return None
 

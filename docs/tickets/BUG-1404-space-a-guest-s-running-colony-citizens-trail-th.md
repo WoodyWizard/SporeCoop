@@ -55,3 +55,4 @@ Open, waiting for the lab run:
 - 2026-11-21: opened; fixed on fix/w62-flake-tcs (space.citizen_lead), waiting for the lab run.
 - 2026-11-23: BUG-1454: the twin passed 4 of 4 (20261122-192851): space_planet_citizens cannot show this switch (2 of 9 runs fail at 0.5 s snapshots, the "about half" was before BUG-1210); the claim moves to the new space_planet_runners (limits to be measured).
 - 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.
+- 2026-11-23: fix/w69-triage2: space_planet_runners shows the switch (BUG-1454): fix on 0-1.4 % of runner samples over 2.5 m and p90 0.90-1.28 m (20261123-111347), off 6.1-9.9 % and p90 2.03-2.48 m (20261123-121417); new limits 3.5 % / p90 1.6 m and twin space_planet_runners_lead_off.

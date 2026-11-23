@@ -83,3 +83,4 @@ tribe_body_teardown tribe_body_menu --lane N --retry 0 --no-build` PASS (the bod
 
 ## History
 - 2026-11-23: opened (fix/w65-tests triage).
+- 2026-11-23: fix/w69-triage2 (0.7.16.1 final check triage): campaign_tribe_noclick#2 of 20261123-111750 stuck at goal bar 1/5 is not this fault: no exception line in any of its 12 game logs (no 0x00C8F6D3, faults 0); the host's raid click failed (BUG-1535, the BUG-1091 driver class, also before 0.7.16.1). The makeway_null skipped= count is only in coop.status, not logged: unknown for that run; the campaign now keeps coop.status with each finding.
