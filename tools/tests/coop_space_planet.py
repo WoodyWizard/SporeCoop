@@ -45,6 +45,10 @@ RUN_ROUNDS = 60
 RUN_SAMPLES = 40  # fewer runner samples: INCONCLUSIVE
 RUN_OFF = 2.5  # m: a runner's copy this far from the host's citizen at the same moment is behind
 RUN_SHARE = 0.10  # at most this share of the runner samples behind (provisional: the lab measurement of BUG-1404 sets it)
+# BUG-1454: a console read is answered within a frame or two (~20 ms): back to back, the two host reads of a round were
+# under 0.05 s apart (60 rounds in ~17 s, lab 20261123-023643) and every round was dropped: 0 samples in 4 runs.
+# The reads of a round are RUN_GAP s apart (a runner moves ~1.5 m between the host reads: 0.1 m print steps are 0.3 m/s)
+RUN_GAP = 0.15
 
 
 def place(con):
@@ -149,12 +153,21 @@ def timed_citizens(con, c):
     return (t0 + t1) / 2, [x for x in rows if math.dist(x['pos'], c) < 400]
 
 
-def runners_round(host, guest, c):
-    """host, guest, host: for each host citizen running between the two host reads, the distance of its place at the
-    guest's read (linear between the two) to the nearest guest citizen"""
+def runners_round(host, guest, c, st=None):
+    """host, guest, host (RUN_GAP s apart): for each host citizen running between the two host reads, the distance of
+    its place at the guest's read (linear between the two) to the nearest guest citizen. st: counts of what the rounds
+    saw (why no runner was found)"""
     ta, ha = timed_citizens(host, c)
+    time.sleep(RUN_GAP)
     tg, g = timed_citizens(guest, c)
+    time.sleep(RUN_GAP)
     tb, hb = timed_citizens(host, c)
+    if st is not None:
+        st['rounds'] += 1
+        st['dt'] = (min(st['dt'][0], tb - ta), max(st['dt'][1], tb - ta))
+        st['host'] = max(st['host'], len(hb))
+        st['short'] += tb - ta < 0.05
+        st['no_guest'] += not g
     if tb - ta < 0.05 or not g:
         return []
     a = {x['ser']: x['pos'] for x in ha if x['ser']}
@@ -165,6 +178,10 @@ def runners_round(host, guest, c):
         if p0 is None:
             continue
         v = math.dist(p0, x['pos']) / (tb - ta)
+        if st is not None:
+            st['matched'] += 1
+            st['moving'] += v >= 0.5
+            st['vmax'] = max(st['vmax'], v if v <= RUN_FAST else 0.0)
         if v < RUN_SPEED or v > RUN_FAST:
             continue
         at = tuple(u + (w - u) * f for u, w in zip(p0, x['pos']))
@@ -180,12 +197,16 @@ def case_runners(host, guest, ck):
         return None
     c = ground(gw.me, gc[0]['pos'])
     t0, most = time.monotonic(), 0
+    st = dict(rounds=0, dt=(1e9, 0.0), host=0, short=0, no_guest=0, matched=0, moving=0, vmax=0.0)
     while time.monotonic() - t0 < RUN_WAIT:
-        most = max(most, len(runners_round(host, guest, c)))
+        most = max(most, len(runners_round(host, guest, c, st)))
         if most >= RUN_MIN:
             break
         time.sleep(2)
-    print(f'  {most} host citizens running near the guest after {time.monotonic() - t0:.0f} s', flush=True)
+    print(f'  {most} host citizens running near the guest after {time.monotonic() - t0:.0f} s ({st["rounds"]} rounds, '
+          f'host reads {st["dt"][0]:.2f}-{st["dt"][1]:.2f} s apart, {st["short"]} under 0.05 s, {st["no_guest"]} without '
+          f'guest citizens; at most {st["host"]} host citizens near, {st["matched"]} matched by serial, {st["moving"]} '
+          f'over 0.5 m/s, fastest {st["vmax"]:.1f} m/s)', flush=True)
     s = []
     for _ in range(RUN_ROUNDS):
         s += runners_round(host, guest, c)
