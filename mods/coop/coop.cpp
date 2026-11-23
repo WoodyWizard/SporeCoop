@@ -1059,6 +1059,8 @@ static void frame_world_ticks(double now)
         world::tick(g_sess);
     else
         world::guest_tick(); // a received world waiting for the player to leave its editor
+    world::slot_tick(g_sess.role() == net::Role::Client); // BUG-1434
+    copy_notice_tick();                                     // BUG-1434
     savestrip::tick();
     npc::tick(now);
     player_rules::tick(now); // BUG-0558: the host's UFO on the guests

@@ -370,6 +370,51 @@ static bool load_wait(uint8_t id, Remote& r, uint32_t mode, double now)
     return false;
 }
 
+// BUG-1434 (b): after a role swap the new host's galaxy menu showed its co-op copy of the first host's world (the
+// galaxy menu shows the slot the save database points to: the one loaded last, BUG-0676), the whole galaxy with the
+// first host's old planets, and nothing said so: the new host started one of those old planets instead of the world
+// played together. Now a host whose save database points to a co-op copy of another player's world is told, once per
+// copy and planet in a session, in the co-op window and a notification: whose copy it is, the planet it was made for,
+// and, in a stage, whether the planet played is that one. `coop.fix world.copy_notice off`: nothing said (0.7.16).
+bool g_copy_notice_fix = true;
+COOP_FIX("world.copy_notice", "BUG-1434", g_copy_notice_fix, "world: a host playing from a co-op copy of another player's world is told whose copy it is and which planet it was made for");
+void copy_notice_tick()
+{
+    static std::string told; // the copy (and planet) told in this session
+    if (!g_copy_notice_fix || g_sess.role() != net::Role::Host) {
+        told.clear();
+        return;
+    }
+    bool stage = stage_mode(g_mode);
+    if (!stage && g_mode != modes::kMenu)
+        return;
+    std::string slot, host, planet;
+    bool own = false;
+    if (!world::copy_origin(slot, host, planet, own) || host.empty() || host == g_name)
+        return;
+    std::string cur = stage ? modes::current_world_name() : std::string();
+    if (cur.size() > 4 && cur.compare(cur.size() - 4, 4, ".spo") == 0)
+        cur.resize(cur.size() - 4);
+    if (stage && cur.empty())
+        return;
+    std::string key = slot + "|" + cur;
+    if (key == told)
+        return;
+    told = key;
+    std::string text;
+    if (!stage)
+        text = "This galaxy (" + slot + ") is your copy of " + host + "'s world, made for the planet " + planet +
+               ". Its other planets are " + host + "'s older games; " + host + "'s own save is on " + host + "'s PC";
+    else if (cur == planet)
+        text = "You host " + planet + " from your copy of " + host + "'s world (" + slot + "). " + host +
+               "'s own save of " + planet + " is on " + host + "'s PC" +
+               (own ? ": this copy is your own save now" : ": your progress here is saved in this copy");
+    else
+        text = "You host " + cur + " from your copy of " + host + "'s world (" + slot + "): the copy was made for " +
+               planet + ", " + cur + " is one of " + host + "'s older games, not the world you played together";
+    feed_kind(text, "info");
+}
+
 // The host decides when a phase ends: when the host plays a stage and a guest stays in another
 // stage (or its editor) for a few seconds, the host world is sent again and the guest loads it.
 void follow_phase(double now)

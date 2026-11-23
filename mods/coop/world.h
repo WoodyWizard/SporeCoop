@@ -57,6 +57,11 @@ extern bool g_share_reset_fix; // tests: `coop.fix core.share_reset off` = the o
 // host: stream queued transfers (call every frame)
 void tick(net::Session& s);
 void guest_tick(); // guests: load a world that arrived while in an editor
+// every frame, every role (BUG-1434): a save in a co-op copy while not a guest makes it the player's own (once a second)
+void slot_tick(bool guest);
+// BUG-1434: the slot the save database points to is a co-op copy: its folder name (GameN), whose world, the planet it
+// was made for, and whether it is the player's own now (as slot_tick last saw it)
+bool copy_origin(std::string& slot, std::string& host, std::string& planet, bool& own);
 // guest: handle MSG_WORLD_* messages
 void on_message(uint8_t type, net::Reader& r, const std::string& host_name);
 std::string status();

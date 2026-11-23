@@ -12,6 +12,8 @@ namespace slotfs {
 bool g_busy_fix = true, g_match_fix = true, g_write_fix = true;
 bool g_fallback_fix = true, g_cleanup_fix = true;
 bool g_staged_move_fix = true, g_collect_fix = true;
+bool g_own_fix = true;
+std::wstring g_kept_backup;
 std::function<void(const std::wstring&)> g_test_before_move;
 uint64_t g_test_move_denied_until;
 unsigned g_move_retries;
@@ -74,6 +76,80 @@ static std::string marker_field(const std::string& m, const char* key)
         p = e + 1;
     }
     return {};
+}
+
+Marker marker(const std::wstring& slot)
+{
+    Marker r;
+    std::string m = read_text(slot + L"\\sporecoop.txt");
+    if (m.find("host_slot") == std::string::npos)
+        return r;
+    r.coop = true;
+    r.own = !marker_field(m, "own_save").empty();
+    r.host = marker_field(m, "host");
+    r.planet = marker_field(m, "planet");
+    return r;
+}
+
+static bool write_time(const std::wstring& p, uint64_t& t)
+{
+    WIN32_FILE_ATTRIBUTE_DATA a;
+    if (!GetFileAttributesExW(p.c_str(), GetFileExInfoStandard, &a))
+        return false;
+    t = ((uint64_t)a.ftLastWriteTime.dwHighDateTime << 32) | a.ftLastWriteTime.dwLowDateTime;
+    return true;
+}
+
+bool own_progress(const std::wstring& slot)
+{
+    Marker m = marker(slot);
+    if (!m.coop)
+        return false;
+    if (m.own)
+        return true;
+    // a slot of an older version: a planet other than the marker's saved after the marker (the copy's files are all
+    // written before it: slotfs::write). 2 s of slack for the file system's time steps
+    uint64_t at = 0;
+    if (!write_time(slot + L"\\sporecoop.txt", at))
+        return false;
+    std::wstring mine = widen(m.planet + ".spo");
+    for (auto& c : mine)
+        c = towlower(c);
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW((slot + L"\\*.spo").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        return false;
+    bool found = false;
+    do {
+        std::wstring n = fd.cFileName;
+        for (auto& c : n)
+            c = towlower(c);
+        if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || n == mine || n == L"snapshot.spo")
+            continue;
+        uint64_t t = ((uint64_t)fd.ftLastWriteTime.dwHighDateTime << 32) | fd.ftLastWriteTime.dwLowDateTime;
+        if (t > at + 2ull * 10000000ull)
+            found = true;
+    } while (!found && FindNextFileW(h, &fd));
+    FindClose(h);
+    return found;
+}
+
+static std::wstring stamp();
+bool mark_own(const std::wstring& slot, const std::string& planet)
+{
+    Marker m = marker(slot);
+    if (!m.coop)
+        return false;
+    if (m.own)
+        return true;
+    HANDLE f = CreateFileW((slot + L"\\sporecoop.txt").c_str(), FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                           FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (f == INVALID_HANDLE_VALUE)
+        return false;
+    std::string line = "own_save " + narrow(stamp().substr(1)) + " " + (planet.empty() ? "?" : planet) + "\n";
+    DWORD w = 0;
+    bool ok = WriteFile(f, line.data(), (DWORD)line.size(), &w, nullptr) && w == line.size();
+    return CloseHandle(f) && ok;
 }
 
 // BUG-0847: the old read (0.7.12): _wfopen, a failure or a short read only drops the file
@@ -252,6 +328,8 @@ std::wstring pick(const std::wstring& dir, const std::wstring& busy, const std::
         std::string m = read_text(p + L"\\sporecoop.txt");
         if (m.find("host_slot") == std::string::npos)
             continue;
+        if (g_own_fix && own_progress(p))
+            continue; // BUG-1434: the player's own progress: not reused, not even as a last resort
         // the same host world: update it. Before (BUG-0087) any co-op slot was taken, also one of
         // another host, and the new files were mixed with the old ones. The world id (a crc of
         // the files) changes with every save, so the host's name and the planet identify it.
@@ -270,7 +348,8 @@ std::wstring pick(const std::wstring& dir, const std::wstring& busy, const std::
             if (!exists(p + L"\\" + widen(planet_spo)))
                 continue;
             // keep the other copy of this planet outside the Games folder
-            bool coop = read_text(p + L"\\sporecoop.txt").find("host_slot") != std::string::npos;
+            bool coop = read_text(p + L"\\sporecoop.txt").find("host_slot") != std::string::npos &&
+                        !(g_own_fix && own_progress(p)); // BUG-1434: a copy played on by the player is its own save
             std::wstring bdir = dir + L"-sporecoop-backup";
             CreateDirectoryW(bdir.c_str(), nullptr);
             std::wstring dst = bdir + L"\\Game" + std::to_wstring(k) + stamp();
@@ -303,6 +382,8 @@ int tidy(const std::wstring& dir, const std::wstring& kept, const std::wstring& 
         std::string m = read_text(p + L"\\sporecoop.txt");
         if (m.find("host_slot") == std::string::npos || marker_field(m, "host") != host || marker_field(m, "planet") != planet)
             continue;
+        if (g_own_fix && own_progress(p))
+            continue; // BUG-1434: the player played on in it: it stays where the galaxy menu shows it
         std::wstring bdir = dir + L"-sporecoop-backup";
         CreateDirectoryW(bdir.c_str(), nullptr);
         if (!held(p) && MoveFileW(p.c_str(), (bdir + L"\\Game" + std::to_wstring(k) + stamp()).c_str()))
@@ -440,6 +521,7 @@ bool write(const std::wstring& slot, const std::vector<const File*>& files, cons
 {
     if (why)
         *why = WriteFail::None;
+    g_kept_backup.clear();
     if (!g_write_fix || !g_cleanup_fix)
         return write_locked(slot, files, host, planet, world_id, err, why);
     // one writer per machine: another instance on the same profile must not see this one's aside
@@ -519,6 +601,7 @@ static bool write_locked(const std::wstring& slot, const std::vector<const File*
         return false;
     }
     bool had = exists(slot);
+    bool keep = had && g_own_fix && own_progress(slot); // BUG-1434: never deleted (pick does not choose it: a guard)
     if (had && (held(slot) || !MoveFileW(slot.c_str(), aside.c_str()))) {
         err = "cannot replace " + narrow(slot) + " (a file in it is in use, error " +
               std::to_string(held(slot) ? 32 : GetLastError()) + ")";
@@ -539,7 +622,13 @@ static bool write_locked(const std::wstring& slot, const std::vector<const File*
         rmtree(tmp);
         return false;
     }
-    if (had)
+    if (keep) {
+        std::wstring bdir = parent + L"-sporecoop-backup", dst = bdir + L"\\" + name + stamp();
+        CreateDirectoryW(bdir.c_str(), nullptr);
+        if (MoveFileW(aside.c_str(), dst.c_str()))
+            g_kept_backup = dst;
+        // (a failed move leaves it in Games-sporecoop-tmp as an aside copy: cleanup_leftovers moves it to the backup)
+    } else if (had)
         rmtree(aside);
     RemoveDirectoryW(tmproot.c_str()); // only when empty
     return true;

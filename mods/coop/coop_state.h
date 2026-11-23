@@ -593,6 +593,7 @@ extern std::string g_space_key;
 extern uint32_t g_evo_keys_set;
 extern uint32_t g_share_retries;
 extern unsigned g_load_waits, g_load_wait_timeouts; // BUG-1435 (session_glue.cpp)
+void copy_notice_tick(); // BUG-1434: a host playing from a co-op copy is told whose it is (session_glue.cpp)
 extern uint32_t g_space_load_shares;
 extern uint8_t g_give_pick;
 extern unsigned g_evo_fallback;
