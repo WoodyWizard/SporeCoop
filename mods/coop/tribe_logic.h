@@ -56,10 +56,13 @@ inline uint8_t resplit_owner(int claim, const std::vector<uint8_t>& players, uin
 
 // E1 (BUG-1154): a player here without a member gets an even share (total / players) from the player with the most,
 // one at a time, its plain members first (`plain(m)`: not born for its player, not a gift), never taking the giver
-// below the share. `by`: owner -> its members in member order (updated); returns the moves (member, new owner)
-template <class M, class Plain>
+// below the share. `by`: owner -> its members in member order (updated); returns the moves (member, new owner).
+// BUG-1450: `fixed(m)` members never move (the game's leader, the host's chief with the staff: the first plain member
+// in member order, it went to a guest whose claims were lost at its rejoin); a giver with only fixed members left
+// gives no more. The 4-argument form moves any member (0.7.16).
+template <class M, class Plain, class Fixed>
 std::vector<std::pair<M, uint8_t>> balance(std::map<uint8_t, std::vector<M>>& by, const std::vector<uint8_t>& players,
-                                           size_t total, Plain plain)
+                                           size_t total, Plain plain, Fixed fixed)
 {
     std::vector<std::pair<M, uint8_t>> moves;
     if (players.empty())
@@ -75,12 +78,17 @@ std::vector<std::pair<M, uint8_t>> balance(std::map<uint8_t, std::vector<M>>& by
             if (rich == p || by[rich].size() <= share)
                 break;
             auto& v = by[rich];
-            auto pick = v.begin();
+            auto pick = v.end();
             for (auto it = v.begin(); it != v.end(); ++it)
-                if (plain(*it)) {
+                if (!fixed(*it) && plain(*it)) {
                     pick = it;
                     break;
                 }
+            for (auto it = v.begin(); pick == v.end() && it != v.end(); ++it)
+                if (!fixed(*it))
+                    pick = it;
+            if (pick == v.end())
+                break;
             M m = *pick;
             v.erase(pick);
             by[p].push_back(m);
@@ -88,6 +96,12 @@ std::vector<std::pair<M, uint8_t>> balance(std::map<uint8_t, std::vector<M>>& by
         }
     }
     return moves;
+}
+template <class M, class Plain>
+std::vector<std::pair<M, uint8_t>> balance(std::map<uint8_t, std::vector<M>>& by, const std::vector<uint8_t>& players,
+                                           size_t total, Plain plain)
+{
+    return balance(by, players, total, plain, [](const M&) { return false; });
 }
 
 // ---------------- member hold (host) ----------------

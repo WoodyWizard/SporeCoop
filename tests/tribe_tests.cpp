@@ -79,6 +79,34 @@ static void balance_share()
     CHECK(balance(b4, std::vector<uint8_t>{}, 5, [](int) { return true; }).empty());
 }
 
+// BUG-1450: the game's leader (the host's chief #1, first in member order and plain) never moves; off (the 4-argument
+// form, tribe.balance_leader off) it is the first one given
+static void balance_leader()
+{
+    printf("owner dealing: the balance keeps the leader (BUG-1450)\n");
+    std::vector<uint8_t> pl = {0, 1};
+    auto plain = [](int) { return true; };
+    auto lead = [](int m) { return m == 1; };
+    // the guest's rejoin with its claims lost: the host holds all 7 (#1 the leader first), the guest has none
+    std::map<uint8_t, std::vector<int>> by = {{0, {1, 2, 3, 4, 5, 6, 7}}};
+    auto mv = balance(by, pl, 7, plain, lead);
+    CHECK(mv.size() == 3 && mv[0].first == 2 && mv[1].first == 3 && mv[2].first == 4);
+    CHECK(std::find(by[0].begin(), by[0].end(), 1) != by[0].end() && by[1].size() == 3);
+    std::map<uint8_t, std::vector<int>> old = {{0, {1, 2, 3, 4, 5, 6, 7}}};
+    auto mo = balance(old, pl, 7, plain);
+    CHECK(mo.size() == 3 && mo[0].first == 1 && mo[0].second == 1); // off: the leader goes to the guest (the bug)
+    // the leader the only plain one (the rest born or given): the next member is given, not the leader
+    std::map<uint8_t, std::vector<int>> b2 = {{0, {1, 2, 3, 4}}};
+    auto m2 = balance(b2, pl, 4, [](int m) { return m == 1; }, lead);
+    CHECK(m2.size() == 2 && m2[0].first == 2 && m2[1].first == 3);
+    // only the leader left above the share: nothing (no endless loop, no leader)
+    std::map<uint8_t, std::vector<int>> b3 = {{0, {1}}};
+    CHECK(balance(b3, std::vector<uint8_t>{0, 1}, 2, plain, lead).empty() && b3[0].size() == 1);
+    std::map<uint8_t, std::vector<int>> b4 = {{0, {1, 2, 3}}};
+    auto m4 = balance(b4, std::vector<uint8_t>{0, 1}, 3, plain, [](int m) { return m == 1 || m == 2; });
+    CHECK(m4.size() == 1 && m4[0].first == 3);
+}
+
 // BUG-0620: the host keeps a dead member's body while the game does, at most kBodyMax s
 static void bodies()
 {
@@ -279,6 +307,7 @@ int main(int argc, char** argv)
     hand_bone();
     owners();
     balance_share();
+    balance_leader();
     bodies();
     apply();
     anim_type();
