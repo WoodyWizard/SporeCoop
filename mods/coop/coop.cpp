@@ -794,8 +794,8 @@ static void stall_note(double since)
     }
     std::string wins;
     EnumThreadWindows(GetCurrentThreadId(), stall_window, (LPARAM)&wins);
-    LOG("keepalive: no frame for %.1f s, the main thread runs a message loop (BUG-0687): chain%s", H->time_seconds() - since,
-        chain.c_str());
+    LOG("keepalive: no frame for %.1f s, the main thread runs a message loop (BUG-0687)%s: chain%s",
+        H->time_seconds() - since, support::window_note().c_str(), chain.c_str()); // BUG-1529: the window's state
     LOG("keepalive: the main thread's windows%s", wins.c_str());
 }
 

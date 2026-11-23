@@ -42,25 +42,92 @@ static int g_sec_frames = 0, g_min_frames = 0;
 static double g_min_fps_min = 1e9, g_frame_max = 0;
 static int g_hitches_min = 0, g_hitch_lines_min = 0;
 
+// BUG-1529 (the tearing report, out/research/dc-report-tearing-20261116.md): Spore stops drawing and pauses itself while
+// its window is minimized or not in the foreground (an Alt+Tab, an overlay, Explorer over a full-screen game); every such
+// stop was logged as `perf: hitch N ms` and counted in the minute's min fps and longest frame like a freeze, so reports
+// could not tell a pause from a freeze. On: a poll thread notes every 100 ms whether the game window is minimized or not
+// in the foreground; a gap in which it was is logged as `perf: pause N ms (window minimized / unfocused: the game's own
+// pause)`, counted as a pause, and kept out of min fps and the longest frame; the keepalive's BUG-0687 line names the
+// window state. Off (`coop.fix diag.hitch_pause off`): 0.7.16.1. tests: `coop.diag pausemark 1|0` (the poll takes the
+// window as unfocused) with `coop.stalltest <s>`
+static bool g_hitch_pause_fix = true;
+COOP_FIX("diag.hitch_pause", "BUG-1529", g_hitch_pause_fix,
+         "diag: a stop while the game window is minimized or unfocused is logged as the game's own pause, not a hitch, "
+         "and kept out of min fps and the longest frame");
+static std::atomic<uint64_t> g_unfocused_seen{0}; // GetTickCount64 when the poll last saw the window minimized / unfocused
+static std::atomic<int> g_window_state{0};        // the poll's last look: bit 0 minimized, bit 1 not in the foreground
+static std::atomic<int> g_test_unfocused{0};      // tests: the poll takes the window as unfocused
+static std::atomic<bool> g_poll_stop{false};
+static HANDLE g_poll_thread;
+static uint64_t g_last_frame_ms = 0;
+static int g_pauses_min = 0;
+static bool g_sec_paused = false; // this 1 s window held a pause: no min fps from it
+
+static DWORD WINAPI focus_poll(void*)
+{
+    while (!g_poll_stop.load()) {
+        HWND w = g_H && g_H->game_window ? (HWND)g_H->game_window() : nullptr;
+        int st = 0;
+        if (w) {
+            if (IsIconic(w))
+                st |= 1;
+            if (GetForegroundWindow() != w)
+                st |= 2;
+        }
+        if (g_test_unfocused.load())
+            st |= 2;
+        g_window_state = st;
+        if (st)
+            g_unfocused_seen = GetTickCount64();
+        Sleep(100);
+    }
+    return 0;
+}
+
+std::string window_note()
+{
+    if (!g_hitch_pause_fix)
+        return "";
+    int st = g_window_state.load();
+    char b[96];
+    snprintf(b, sizeof b, " (window minimized %d, foreground %d%s)", st & 1, (st & 2) ? 0 : 1,
+             st ? ": the game's own pause" : "");
+    return b;
+}
+
 static void perf_frame(double now)
 {
+    uint64_t now_ms = GetTickCount64();
     if (g_last_frame >= 0) {
         double dt = now - g_last_frame;
-        g_frame_max = std::max(g_frame_max, dt);
-        if (dt > kHitch) {
-            g_hitches_min++;
-            if (g_detail >= 1 && g_hitch_lines_min++ < 8) // the rest only counted in the minute's line
-                SLOG("perf: hitch %d ms (%s)", (int)(dt * 1000), g_P.activity ? g_P.activity().c_str() : "?");
+        // BUG-1529: the window was minimized / unfocused during this gap: the game paused itself
+        bool pause = g_hitch_pause_fix && dt > kHitch && g_poll_thread && g_unfocused_seen.load() >= g_last_frame_ms;
+        if (pause) {
+            g_pauses_min++;
+            g_sec_paused = true;
+            if (g_detail >= 1 && g_hitch_lines_min++ < 8)
+                SLOG("perf: pause %d ms (window minimized / unfocused: the game's own pause, not a freeze; %s)",
+                     (int)(dt * 1000), g_P.activity ? g_P.activity().c_str() : "?");
+        } else {
+            g_frame_max = std::max(g_frame_max, dt);
+            if (dt > kHitch) {
+                g_hitches_min++;
+                if (g_detail >= 1 && g_hitch_lines_min++ < 8) // the rest only counted in the minute's line
+                    SLOG("perf: hitch %d ms (%s)", (int)(dt * 1000), g_P.activity ? g_P.activity().c_str() : "?");
+            }
         }
     }
     g_last_frame = now;
+    g_last_frame_ms = now_ms;
     if (g_sec_start < 0)
         g_sec_start = g_min_start = now;
     g_sec_frames++;
     g_min_frames++;
     if (now - g_sec_start >= 1.0) {
         double fps = g_sec_frames / (now - g_sec_start);
-        g_min_fps_min = std::min(g_min_fps_min, fps);
+        if (!g_sec_paused)
+            g_min_fps_min = std::min(g_min_fps_min, fps);
+        g_sec_paused = false;
         g_sec_frames = 0;
         g_sec_start = now;
     }
@@ -486,6 +553,9 @@ void stats_tick(double now)
                      "free, largest free block %d MB | %s",
                      avg, fps, (int)(g_frame_max * 1000), g_hitches_min, fr, (int)g_mem_total_mb, bl,
                      g_P.activity ? g_P.activity().c_str() : "?");
+            if (g_detail >= 1 && g_pauses_min) // BUG-1529 (a line of its own: tools/loggates.py parses the one above)
+                SLOG("perf: pauses %d this minute (window minimized / unfocused: the game's own pause, not in min fps "
+                     "and the longest frame)", g_pauses_min);
             // a 32-bit game: the largest block is what a big allocation (a planet, an editor) needs
             if (fr >= 0 && (fr < 300 || bl < 48) && g_fix_mem_reserve) {
                 if (g_reserve)
@@ -501,7 +571,7 @@ void stats_tick(double now)
                 SWARN("mem: the game's address space runs low: %d MB free, largest free block %d MB (a crash with "
                       "\"out of memory\" may follow; the 4GB patch / large-address flag helps)", fr, bl);
             }
-            g_min_frames = g_hitches_min = g_hitch_lines_min = 0;
+            g_min_frames = g_hitches_min = g_hitch_lines_min = g_pauses_min = 0;
             g_min_fps_min = 1e9;
             g_frame_max = 0;
             g_min_start = now;
@@ -514,10 +584,11 @@ std::string stats_status()
 {
     char b[500];
     snprintf(b, sizeof b,
-             "perf: this minute %d frames, min fps %.0f, longest frame %.0f ms, hitches %d\n"
+             "perf: this minute %d frames, min fps %.0f, longest frame %.0f ms, hitches %d, pauses %d\n"
              "mem: %d of %d MB free, largest block %d MB (%d regions walked in %.2f ms on a worker thread)\n"
              "diagnostics cost: avg %.4f ms/frame over %llu frames, max %.3f ms\n",
-             g_min_frames, g_min_fps_min < 1e8 ? g_min_fps_min : -1.0, g_frame_max * 1000, g_hitches_min, (int)g_mem_free_mb,
+             g_min_frames, g_min_fps_min < 1e8 ? g_min_fps_min : -1.0, g_frame_max * 1000, g_hitches_min, g_pauses_min,
+             (int)g_mem_free_mb,
              (int)g_mem_total_mb, (int)g_mem_block_mb, (int)g_mem_regions, g_mem_walk_us / 1000.0,
              g_cost_frames ? g_cost_sum / g_cost_frames * 1000 : 0.0, (unsigned long long)g_cost_frames, g_cost_max * 1000);
     std::string s = b;
@@ -552,6 +623,8 @@ void init(const SkHost* host, SkMod* mod, const Probe& probe)
         }
     reset_counters();
     reserve_take();
+    g_poll_stop = false;
+    g_poll_thread = CreateThread(nullptr, 0, focus_poll, nullptr, 0, nullptr); // BUG-1529
 }
 
 void tick(double now)
@@ -687,6 +760,12 @@ void on_unload()
         CloseHandle(g_mem_thread);
         g_mem_thread = nullptr;
     }
+    if (g_poll_thread) { // BUG-1529 (a hot reload frees this image: the thread ends first)
+        g_poll_stop = true;
+        WaitForSingleObject(g_poll_thread, 3000);
+        CloseHandle(g_poll_thread);
+        g_poll_thread = nullptr;
+    }
 }
 
 std::string command(const std::vector<std::string>& a)
@@ -768,6 +847,11 @@ std::string command(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "reserve: %s, %u MB, given back %u time(s), switch %s\n", g_reserve ? "kept" : "none",
                  (unsigned)kReserveMB, (unsigned)g_reserve_released, g_fix_mem_reserve ? "on" : "off");
         return b;
+    }
+    if (a.size() >= 2 && a[0] == "pausemark") { // tests (BUG-1529): the poll takes the window as unfocused
+        g_test_unfocused = a[1] == "1" || a[1] == "on";
+        return std::string("pausemark ") + (g_test_unfocused.load() ? "on" : "off") + " (hitch_pause " +
+               (g_hitch_pause_fix ? "on" : "off") + ")\n";
     }
     if (a.size() >= 1 && a[0] == "mem") {
         mem_start();
