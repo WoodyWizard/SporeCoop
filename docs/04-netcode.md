@@ -131,6 +131,7 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | 71 | `TRIBE_ANIM` | RU | host | Module | Tribe (guest) | tribe | u8 kind (wire/tribe_anim.h), payload: the tribe members' animations, holds, air height, the theme and party music, the game-over and pause waits (MSG_NPC_ANIM's kinds 2-16, 20, 21 for a peer before tribe 1.1, BUG-1160) |
 | 72 | `CELL_MATE` | RU | guest | HostWorld | Cell (host) | cell | u8 kind: 0 (unreliable, 5 Hz) the pose of the mate its mating call brought: u32 res instance, u32 key[3], u8 level, f32 size, vec3 pos, f32 vx, vy, quat, f32 world scale; 1 (reliable) it is gone (BUG-1246) |
 | 73 | `SPECIES_LINE` | R | any | Session | SpeciesLine | creations | u8 kind (species_line_core.h): a player's species line row, its stored row, a piece of a line creation (the host relays it; WP-0, BUG-1270) |
+| 74 | `CIV_WALLET` | R | any | HostWorld | CivWallet | civ | every player's own Civ money (civ_wallet.h, civ.own_money, BUG-1468): u8 kind; guest -> host 1 an ask, 4 a report (u32 last seq applied, f64 money); host -> guest 2 the wallet, 3 a change (u32 seq, f64); only between peers of civ 1.2 |
 | 75 | `PLAYER_HISTORY` | R | any | Session | History | session | u8 kind (wire/history.h): 1 host -> guest its own stage history (cards, trait progress), 2 guest -> host its own game's Cell card (WP-H1, BUG-1470) |
 | 76 | `PROGRESS` | R | any | HostWorld | Progress | creature | own progress (all.shared_dna 2, own_progress_logic.h): u8 kind: guest ask / report of its own values, host values back / the players' table / a gain its game paid for the guest's deed (WP-P1/P2 of 0.7.17, BUG-1469) |
 | 78 | `UFO_LEAD` | RU | any | Module | Squadron | space | u8 kind (wire/space_ufo.h): 0 a guest leader's ship state, 1 a follower's hit, 2 the leader's NPC hit on a follower, 3 the host's table of guest leaders per place; the NPC ships of a star system or planet without the host (the host relays; BUG-1288) |
@@ -143,7 +144,7 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | npc (mirrored creature and world state) | 4 | 1.2 | Creature, Tribe, Civilization | `DAMAGE`, `NPC_STATE`, `NPC_SPAWN`, `NPC_DESPAWN`, `DAMAGE_REQ`, `WOBJ`, `FIELDS`, `NPC_RESYNC`, `NPC_ANIM`, `WSTATE`, `PLAYER_RULE`, `MIRROR_FX`, `NPC_MEAT` |
 | cell (Cell) | 5 | 1.2 | Cell | `CELL_STATE`, `CELL_HIT`, `CELL_EAT`, `CELL_FOOD`, `CELL_KO`, `CELL_BITTEN`, `CELL_MATE` |
 | tribe (Tribe) | 6 | 1.1 | Tribe | `TRIBE_STATE`, `TRIBE_CMD`, `TRIBE_ANIM` |
-| civ (Civilization) | 7 | 1.2 | Civilization, Space | `CIV_STATE`, `CIV_CMD`, `CIV_BUILD`, `ROLE`, `CIV_ALARM` |
+| civ (Civilization) | 7 | 1.2 | Civilization, Space | `CIV_STATE`, `CIV_CMD`, `CIV_BUILD`, `ROLE`, `CIV_ALARM`, `CIV_WALLET` |
 | space (Space) | 8 | 1.3 | Space | `UFO_STATE`, `UFO_HIT`, `UFO_DAMAGE`, `SPACE`, `UFO_LEAD` |
 | shared (shared resources) | 9 | 1.0 | Tribe, Civilization, Space | `RES`, `RES_ADD` |
 | creations (creations) | 10 | 1.2 | every stage and the menus | `CREATION`, `SPECIES_LINE` |
@@ -858,6 +859,29 @@ WP-0 of docs/plan-0.7.17.md. Parallel branches collided on message ids before (B
   1.x of 0.7.17"` (feat/w54-shims did the same for creations 1.1 in 0.7.16). Two WPs of one family both re-lock;
   the merge takes either lock line and runs the rebase once more on the merged tree.
 * Settings and store: docs/07-modes.md#modes-reserved-0717, docs/01-architecture.md#arch-player-store.
+* WP-W1 (fix/w75-share, BUG-1434): world 1.1 changes no wire format: MSG_WORLD_OFFER and the chunks are as before, the
+  host leaves the slot's other planets' `.spo` files out of the file list for a guest whose world family is 1.1 or newer
+  (`share_logic::peer_takes_one`, `peer_families` on the host; `coop.fix world.share_planet`). A 0.7.16.1 guest (world
+  1.0) gets the whole slot as before. No lock change (the family has no wire file).
+
+## MSG_CIV_WALLET: every player's own Civ money (2026-11-23, feat/w68-wallet)
+<a id="netcode-civ-wallet"></a>
+
+WP-M1 of docs/plan-0.7.17.md, BUG-1468 (PR #205 by IltonBJSilva, ported on our code). Id 74, civ family 1.2 (the
+WP-0 bump; re-locked `--rebase civ`, unreleased). Reliable, both directions, class HostWorld (a guest elsewhere drops
+it at dispatch). civ_wallet.h has the payloads: u8 kind, then 1 K_ASK (guest, nothing), 2 K_SET (host: u32 seq, f64
+the wallet), 3 K_ADD (host: u32 seq, f64 a credit + or a charge -), 4 K_REPORT (guest: u32 last seq applied, f64 its
+game's money, every 2 s).
+
+* Only with the session setting `civ.own_money` on and only between a host and a guest of civ 1.2 or newer: the host
+  asks `peer_families(id)` (civwallet::kMinor = 2), a guest `host_families()`; each also checks its own announced civ
+  minor, so `coop.manifest plant civ 1 1` makes a game play as a 0.7.16.1 peer in the lab (civ_own_money_old). A
+  0.7.16.1 guest gets no K_SET, plays the host's shared money (shared.cpp MSG_RES / MSG_RES_ADD id 2) as before and its
+  cities' income stays with the host; a guest with a wallet neither takes the shared Civ money total nor sends its
+  changes (`own_budget`, switch `civ.wallet_row`). The host keeps broadcasting MSG_RES for any older guest.
+* The host gives a wallet only to a guest in its Civ world (`own_world::peer_elsewhere` false); a guest asks every 5 s
+  while it plays the host's Civ world without one; a load of another Civ world (stage epoch) asks again; a guest
+  elsewhere stops reporting and ignores K_SET / K_ADD.
 
 ## MSG_PLAYER_HISTORY: every player's own stage history (2026-11-23, feat/w70-history)
 <a id="netcode-player-history"></a>

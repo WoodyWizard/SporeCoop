@@ -1045,6 +1045,13 @@ static void build_dialog()
     });
     D.share_btn = add_button(L, "share", {260, 510, 480, 550}, T("Send my world", "Отправить мир"), [] {
         int why = share_blocked();
+        std::string planet, said;
+        if (why == 1 && A.resume && A.resume(planet) && A.resume_do) { // BUG-1434: Continue <planet>
+            bool ok = A.resume_do(said);
+            set_status(ok ? std::string(T("Loading ", "Загружается ")) + planet + "..." : said, ok ? kYellow : kRed, 8);
+            g_dirty = true;
+            return;
+        }
         if (why) { // BUG-0597: say why nothing is sent (the button is greyed out, a locked click still comes here)
             set_status(why == 1 ? T("Start or load a game first: friends who join get it by themselves",
                                     "Сначала начните игру: вошедшие друзья получат её сами")
@@ -1464,8 +1471,14 @@ static void refresh_lobby()
     else
         text(D.ready_btn, A.ready() ? T("Not ready", "Не готов") : T("I'm ready", "Я готов"));
     show(D.share_btn, host);
-    enable(D.share_btn, !share_why);
-    text(D.share_btn, A.vote_active && A.vote_active() ? T("Start now", "Начать сейчас") : T("Send my world", "Отправить мир"));
+    std::string resume; // BUG-1434: a host in the galaxy menu continues the co-op world it played last
+    bool can_resume = host && share_why == 1 && A.resume && A.resume(resume);
+    if (can_resume && resume.size() > 14)
+        resume = resume.substr(0, 13) + ".";
+    enable(D.share_btn, !share_why || can_resume);
+    text(D.share_btn, A.vote_active && A.vote_active() ? T("Start now", "Начать сейчас")
+                      : can_resume                    ? std::string(T("Continue ", "Продолжить ")) + resume
+                                                      : T("Send my world", "Отправить мир"));
     text(D.leave_btn, host ? T("Close session", "Закрыть сессию") : T("Leave", "Выйти"));
     show(D.ask_btn, host);
     // F4 (BUG-0767): the guest's question and the host's line about the round, in the status line

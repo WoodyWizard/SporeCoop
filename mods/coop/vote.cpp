@@ -733,7 +733,13 @@ int SK_THISCALL h_SimMsg(void* self, uint32_t id, void* data)
     }
     if (id == 0x4715068u) // BUG-0264: the game leaves the stage now (any source of the quit)
         game::stage_leaving("quit message handled");
-    return o_SimMsg(self, id, data);
+    int r = o_SimMsg(self, id, data);
+    if (id == 0x4715068u && g_cellswitch_after_quit && game::mode_id() == modes::kCell) { // tests (coop.cellswitch quit)
+        g_cellswitch_after_quit = false;
+        LOG("tests: the game's switch to the Creature stage right after the quit was handled (BUG-1436)");
+        h_CellToCreature();
+    }
+    return r;
 }
 
 // BUG-0466 (observed, lab 20261103-141812 editor_sync_guest): the guest's own editor of a vote
@@ -1104,11 +1110,37 @@ void own_progress_resume(bool at_end)
         nullptr);
 }
 
+
+// BUG-1436 (a player report, coop 0.7.15.5): a guest's game crashed 67 ms after the mod's quit had taken it from Cell to
+// the galaxy menu to load the host's Creature world: the game entered the Creature stage from the menu (OnModeEnter
+// GalaxyGameEntry -> CreatureGame, the App state's `mode CreatureGame` command, message 0xE11333) without a loaded game,
+// and its home planet setup used the null cPlayer (Player_SetProperty+0x14D, read 0x1188; docs/re/space.md
+// #space-menu-creature-switch). A Cell -> Creature switch of the game's own (SetMode 0x1654C01: the state
+// CreatureGameFromCellGame, whose mode command comes later) is the only path that queues that command: here the game's
+// own switch that came while our quit was under way (a guest's own switch passes when the host is no longer in its
+// world, as at that moment: the host had entered Creature). Now the game's switch is not taken while the mod leaves the
+// stage for the galaxy menu (game::leaving_stage): the received world brings the next stage. `coop.fix
+// world.quit_no_switch off`: taken (0.7.16.1).
+static bool g_quit_switch_fix = true;
+COOP_FIX("world.quit_no_switch", "BUG-1436", g_quit_switch_fix, "cell: the game's own switch to Creature is not taken while the mod leaves Cell for the galaxy menu (the game entered Creature from the menu without a game and crashed)");
+unsigned g_quit_switch_dropped; // tests
+bool g_cellswitch_after_quit;    // tests (coop.cellswitch quit): h_SimMsg calls the switch after the quit
+
 void SK_CDECL h_CellToCreature()
 {
-    if (!g_switch_go && own_end_hold(false))
+    if (game::leaving_stage() && !g_switch_go) {
+        LOG("the game's own switch to the Creature stage %s while the stage is left for the galaxy menu (from %p, BUG-1436)",
+            g_quit_switch_fix ? "is not taken" : "goes through (world.quit_no_switch off)", __builtin_return_address(0));
+        if (g_quit_switch_fix) {
+            g_quit_switch_dropped++;
+            return;
+        }
+    }
+    if (!g_switch_go && own_end_hold(false)) // BUG-1469
         return;
     if (g_switch_go || !switch_hold(false, __builtin_return_address(0))) {
+        if (!g_switch_go && g_sess.connected() && g_sess.role() == net::Role::Client)
+            LOG("the game's own switch to the Creature stage goes through on this guest (its own world, BUG-0315 / BUG-1436)");
         g_switch_go = false;
         o_CellToCreature();
     }

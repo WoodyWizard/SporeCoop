@@ -23,7 +23,12 @@ cycle, and founded cities up to the host's count.
      guest's, before any tick of its knows it plays another world (lab 20261120-133703: a loaded lab did this by itself,
      the guest's money became the host's 3000 one millisecond after the join). The money check of 4. decides.
 
+  6. --income (BUG-1478, CIV-5): the guest's own world keeps its own cities' income while it is in the session: its
+     game's money (+0x98) grows by the 6 s city tick in the 40 s (the guest hooks gated on the Civ mode only dropped
+     every income of the player civilization, its own world's too).
+
   coop_civ_other_world.py [--nofix]   (coop.fix core.world_gate off: must FAIL)
+  SPORE_FIX_OFF=civ.local_play_gate coop_civ_other_world.py --income   (its own income dropped: must FAIL)
   SPORE_FIX_OFF=res.elsewhere coop_civ_other_world.py   (the host's money total applied: must FAIL)
   SPORE_FIX_OFF=res.elsewhere_join coop_civ_other_world.py --slow-join   (the total of the join's frame taken: must FAIL)
 """
@@ -42,6 +47,7 @@ from twoinst import Checks, start
 def main():
     nofix = '--nofix' in sys.argv
     slow_join = '--slow-join' in sys.argv
+    income = '--income' in sys.argv
     host, guest = start('civ')
     ck = Checks()
     for con in (host, guest):
@@ -110,6 +116,12 @@ def main():
     # (a Civ planet's money moves with its own income: the 777 apart is what must stay)
     ck(gap is not None and gap > 500, f"the guest's own world keeps its own money, never the host's total (closest {gap})")
     ck(drift is not None and drift < 500, f"the host's money is not changed by the guest's world (drift {drift})")
+    if income:  # BUG-1478: the guest's own world's income in the session (its game's money, 5 s after the join on)
+        own = [g for g, h in pairs[5:]]
+        rise = max(own) - own[0] if own else None
+        print(f'  the guest\'s own world in the session: money {own[:1]} -> max {max(own) if own else None} (+{rise})', flush=True)
+        print('  guest:', next((ln for ln in guest.call('coop.civ')['out'].splitlines() if ln.startswith('money:')), ''), flush=True)
+        ck(rise is not None and rise >= 30, f"the guest's own world earns its own cities' income in the session (+{rise} in 35 s)")
 
     for con in (host, guest):
         con.call('coop.fix core.world_gate on')

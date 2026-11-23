@@ -492,6 +492,8 @@ uint32_t* SK_THISCALL h_BlockingErrors(void* ed, uint32_t* out, void* res, void*
 unsigned game_busy();
 bool editor_coming(double now); // C3 (BUG-1142)
 void SK_CDECL h_CellToCreature();
+extern unsigned g_quit_switch_dropped; // BUG-1436 (tests): the game's own switches to Creature dropped while leaving Cell
+extern bool g_cellswitch_after_quit;   // BUG-1436 (tests, coop.cellswitch quit)
 void SK_CDECL h_CellStageEnd();
 void SK_CDECL h_SelectUI(void* sel, void* a2, void* a3, uint32_t a4, float a5);
 void drop_vote(const char* why);

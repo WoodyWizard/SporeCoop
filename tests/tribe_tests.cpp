@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "tribe_logic.h"
+#include "drive_plan.h"
 #include "bone_rules.h"
 #include "tribe_editors.h"
 #include "wire/tribe_anim.h"
@@ -272,6 +273,59 @@ static void body_rules()
     CHECK(!body_still(fix, false, true) && !body_still(fix, true, false));
 }
 
+// BUG-1235 / item 12 of docs/plan-0.7.17.md (drive.lead_cap): the frame a walked member mirror draws = walk_place's
+// placing step (drive::walk_place_max_step) + the game's walk of the next frame at walk_sp. The lab's raw-path frames
+// (tribe_walk_player 20261123-023643 guest's view of member 8: 9 m/s, 2.74 m behind, the game walking 9 m/s, 32 ms;
+// 20261123-071312 member 1: a 12 m/s run, 1.40 m behind, the game at 7.74 m/s, 31 ms); the test's jump limit
+// 3 x 9 m/s x dt (the members' p95 speed 9). FAILS with --nofix.
+static float raw_frame(float sp, float err, float gv, float dt, bool fix)
+{
+    const float ls = mirror_lead_speed(true, true, -1.f, sp, false, 1.f, true, err, fix);
+    return drive::walk_place_max_step(sp, sp, gv, err, dt, 3.f, true, true, ls, false, fix) + sp * dt;
+}
+static void lead_cap()
+{
+    printf("member mirror frame bound: the raw lead's catch-up (BUG-1235, drive.lead_cap)\n");
+    const bool fix = !g_nofix;
+    CHECK(raw_frame(9.f, 2.74f, 9.15f, 0.032f, fix) < 3.f * 9.f * 0.032f);   // 0.64 m (0.93 m before)
+    CHECK(raw_frame(12.f, 1.40f, 7.74f, 0.031f, fix) < 3.f * 9.f * 0.031f);  // 0.68 m (0.92 m before)
+    CHECK(raw_frame(9.f, 2.74f, 9.15f, 0.032f, false) > 3.f * 9.f * 0.032f); // the 0.7.16.1 rule: the lab's jump
+    // the hard bound: never more than 2 x the body's speed + 3 m/s in a frame, whatever the error and the game's walk
+    for (float err : {0.5f, 1.5f, 3.f, 9.f})
+        for (float gv : {0.f, 4.f, 9.f})
+            CHECK(!fix || raw_frame(9.f, err, gv, 0.032f, true) <= (2.f * 9.f + 3.f) * 0.032f + 1e-4f);
+    // a big error (BUG-0674, 6-9 m after a switch) still closes fast: the frame at the body's speed + 12 m/s
+    CHECK(!fix || std::fabs(raw_frame(9.f, 9.f, 9.f, 0.032f, true) - 21.f * 0.032f) < 1e-3f);
+    // the smoothed path (catch_prop off) with BUG-1451's lag bound: unchanged over kSlowCapErr (body_trail_tribe_player
+    // 20261122-194210 t1: 3.3 m behind, the host at 2 m/s, the aim at 6 m/s): the placing's full (sp + 3) step
+    {
+        const float sp = 6.f, dt = 0.033f;
+        const float ls = mirror_lead_speed(true, true, 2.f, sp, false, 1.f, true, 3.3f, fix);
+        CHECK(std::fabs(drive::walk_place_max_step(sp, sp, sp, 3.3f, dt, 3.f, false, true, ls, false, fix) -
+                        (sp + 3.f) * dt) < 1e-4f);
+    }
+    // slow phases with a small error (the stop-and-go half: the guest's member 9 at 1.6 m/s, 0.46 m behind, drawn
+    // 4.8-5.0 m/s in 20261123-023643): whether the game's next walk comes (walk_sp) or not (0), the frame stays within the
+    // test's uneven line (the target's step +- half of it + 1 m/s)
+    for (float sp : {1.6f, 3.2f, 4.5f})
+        for (float next : {0.f, sp}) {
+            const float dt = 0.033f, ts = sp * dt;
+            const float ls = mirror_lead_speed(true, true, sp, sp, false, 1.f, true, 0.46f, fix);
+            const float drawn = drive::walk_place_max_step(sp, sp, sp * 0.8f, 0.46f, dt, 3.f, false, true, ls, false, fix) +
+                                next * dt;
+            CHECK(!fix || std::fabs(drawn - ts) <= 0.5f * ts + 1.f * dt);
+        }
+    // the lab's frame itself, the game walking 1.6 m/s next frame: 1.5 x 1.6 + 0.9 = 3.3 m/s (4.6 m/s placing + walk before)
+    CHECK(drive::walk_place_max_step(1.6f, 1.6f, 1.28f, 0.46f, 0.033f, 3.f, false, true, 1.6f, false, fix) + 1.6f * 0.033f <=
+          3.3f * 0.033f + 1e-4f);
+    // no bound asked (lead_speed 0: the NPC proxies, Creature and Civ): the old (sp + catch_up) step, switch on or off
+    CHECK(std::fabs(drive::walk_place_max_step(4.f, 4.f, 4.f, 2.f, 0.1, 3.f, true, true, 0.f, false, true) -
+                    (4.f + 7.f) * 0.1f) < 1e-4f); // catch_up min(2 / 0.25, 4 + 3)
+    // the switch off: the raw lead without a late catch-up has no bound (0.7.16.1)
+    CHECK(mirror_lead_speed(true, true, -1.f, 9.f, false, 1.f, true, 1.f, false) == 0.f);
+    CHECK(!fix || mirror_lead_speed(true, true, -1.f, 9.f, false, 1.f, true, 1.f, true) == 9.f);
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && !strcmp(argv[1], "--nofix");
@@ -284,6 +338,7 @@ int main(int argc, char** argv)
     anim_type();
     end_editors();
     smooth_bound();
+    lead_cap();
     body_rules();
     if (g_fail) {
         printf("tribe_tests: %d FAILED\n", g_fail);

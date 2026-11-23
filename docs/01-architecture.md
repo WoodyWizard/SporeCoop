@@ -585,6 +585,8 @@ world on its own disk, next to its save:
 | Civ owners of cities and vehicles (civ.cpp) | world `civ.owners` v1 (see civ.cpp) | store.civ_owners | BUG-1153 |
 | Tribe owners of members (tribe.cpp) | world `tribe.owners` v1 (see tribe.cpp) | store.tribe_owners | BUG-1154 |
 | Own DNA per player (dna.cpp, dna_own.h) | `dna.own` v1 per player: u32 Creature world, f32 budget, u32 Cell world, i32 spent count | creature.own_dna_store | BUG-1291 |
+| Own Civ money per player (civ_wallet.cpp, the setting `civ.own_money`) | `civ.wallet` v1 per player: i32 money (the guest's wallet when it left or the game saved; the host's own is its save's money); erased when a session plays the world with the setting off (back into the host's money once) or in Space (the Civ money ends) | the setting (`civ.wallet_row` for the guest side) | BUG-1468 |
+| Reserved for 0.7.17 (player_store.h kRecHistory, WP-H1): own stage history | `history` (layout: WP-H1) | (WP-H1) | BUG-1470 |
 | Reserved for 0.7.17 (player_store.h kRecCivWallet, WP-M1): own Civ money | `civ.wallet` (layout: WP-M1) | (WP-M1) | BUG-1468 |
 | Own stage history per player (history.cpp, history_logic.h; WP-H1) | `history` v1 per player: 5 x u32 the cards (cPlayer +0x10FC.. order), f32 social, f32 combat, u32 the own Cell card (32 bytes) | core.own_history | BUG-1470 |
 | Own progress (own_progress.cpp, own_progress_logic.h; all.shared_dna 2) | `progress` v1 per player (29 bytes): u32 world (the host's stage world, modes::current_world), u32 stage mode, f32 DNA, f32 bar, i32 Cell food, i32 Cell spent, u8 brain level, f32 debt (WP-R1's column, 0 until it); a guest's record is given back (MSG_PROGRESS kSet) only for the same world and stage | core.progress_restore | BUG-1469, BUG-1472 |

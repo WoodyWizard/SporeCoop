@@ -97,4 +97,14 @@ inline double shared_add(double cur, double change, bool floor)
 // and never reached the host. (The newcomer itself is reset while it joins: shared::tick.)
 inline bool reset_on_join(bool host, bool keep_fix) { return host || !keep_fix; }
 
+// BUG-1236 (civ.income_cause): the host's own change to name in a cause notice (MSG_RES causes[0]). `v - synced -
+// applied` is everything that changed on the host outside the guests' applied changes; in Civ that included the game's
+// passive city / spice income and the trade deliveries (40-380 every 6 s), so every guest got "<host> earned N money
+// (shared)" every 6 s. `passive` (measured on those AddMoney callers by civ.cpp, 0 with the switch off) is taken out
+// of the cause; the broadcast total `v` still carries it.
+inline double host_own_cause(double v, double synced, double applied, double passive)
+{
+    return v - synced - applied - passive;
+}
+
 } // namespace net

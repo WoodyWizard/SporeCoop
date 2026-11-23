@@ -44,6 +44,7 @@
 #include "audio.h"
 #include "census.h"
 #include "civ.h"
+#include "civ_wallet.h"
 #include "civ_editors.h"
 #include "autoupdate.h"
 #include "gamefixes.h"
@@ -67,6 +68,7 @@
 #include "cocoon.h"
 #include "social.h"
 #include "world.h"
+#include "share_logic.h"
 #include "find.h"
 #include "net/discovery.h"
 #include "net/fixes.h"
@@ -1193,6 +1195,7 @@ static void frame_stage_ticks(double now)
         }, &walk_done);
     cellsync::tick(now);
     civ::tick(now);
+    civ_wallet::tick(now); // BUG-1468: every player's own Civ money (civ.own_money)
     civ::planner_probe_tick(); // BUG-0682 tests (off unless `coop.civ planner_probe on`)
     squadron::tick(now);
     autoupdate::tick();
@@ -2224,6 +2227,22 @@ void init_ui()
         return g_offer_editor && !g_vote.active ? std::max(1, (int)(g_offer_until - H->time_seconds())) : 0;
     };
     a.share_state = [] { return !(g_adapter && g_local) ? 1 : g_sess.players().size() > 1 ? 0 : 2; };
+    a.resume = [](std::string& planet) { // BUG-1434: continue the co-op world played last (world.continue_coop)
+        if (g_sess.role() != net::Role::Host || game::mode_id() != modes::kMenu || world::load_queued())
+            return false;
+        static double next; // (the window asks every frame: the Games folder is read once a second)
+        static bool have;
+        static std::string last;
+        double now = H->time_seconds();
+        if (now >= next) {
+            next = now + 1.0;
+            std::string slot, host;
+            have = world::last_coop_world(slot, host, last);
+        }
+        planet = last;
+        return have;
+    };
+    a.resume_do = [](std::string& said) { return world::continue_coop(said); };
     a.say = [](const std::string& t) {
         if (support::chat_command(t)) // "/bug <text>" (docs/REPORTING.md#reporting-support)
             return;
@@ -2467,6 +2486,18 @@ static void init_world_share()
     world::init(H, M, feed);
     world::set_playing_probe([] { return g_local != nullptr; });
     world::set_place_probe([] { return g_world; });
+    world::set_planet_only_probe([](uint8_t peer) { // BUG-1434: the guest's world family 1.1 or newer
+        bool has = false;
+        std::vector<net::FamilyRev> v;
+        if (!g_sess.peer_families(peer, has, v))
+            return false;
+        const net::FamilyRev* t = nullptr;
+        for (auto& x : v)
+            if (x.family == (uint8_t)net::Family::world)
+                t = &x;
+        const net::FamilyInfo* mine = net::family_info((uint8_t)net::Family::world);
+        return share_logic::peer_takes_one(has, t != nullptr, t ? t->rev : 0, t ? t->minor : 0, mine ? mine->rev : 0);
+    });
     world::set_save_blocker(save_blocker);
     world::set_share_failed(share_failed); // BUG-0231
     // species of the host's own creations: sent ahead of its world (creations.h)
