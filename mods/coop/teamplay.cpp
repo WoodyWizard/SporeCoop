@@ -8,6 +8,7 @@
 #include "game.h"
 #include "hunt_hits.h"
 #include "net/interp.h"
+#include "revive.h"
 #include "settings.h"
 #include "trace.h"
 
@@ -90,19 +91,34 @@ static std::string nearest_partner(void* avatar, float max_dist, float* out_dist
     return best;
 }
 
+// the pack rescue first, the revive after it (WP-R1, BUG-1472; owner question 4 of docs/plan-0.7.17.md, provisional:
+// the order of revive_logic.h catch_hit)
 float on_own_damage(void* avatar, float damage)
 {
-    if (!g_on || !avatar || damage <= 0 || !settings::on(settings::kPackRescue))
+    if (!avatar || damage <= 0)
         return damage;
+    if (revive::guard(avatar, damage)) // down, or just revived: no hit lands (creature.revive_hold)
+        return damage;
+    if (pack_rescue(avatar, damage))
+        return damage;
+    revive::down_now(avatar, damage); // a lethal hit the pack did not take, a partner in the world: down (creature.revive)
+    return damage;
+}
+
+// BUG-0099: a lethal hit next to a partner leaves 40 % health, once a minute; true: it saved us (damage changed)
+bool pack_rescue(void* avatar, float& damage)
+{
+    if (!g_on || !avatar || damage <= 0 || !settings::on(settings::kPackRescue))
+        return false;
     float hp = game::health(avatar);
     if (hp <= 0 || hp - damage > 0)
-        return damage;
+        return false;
     double now = H->time_seconds();
     if (now - g_last_rescue < kRescueCooldown)
-        return damage;
+        return false;
     std::string partner = nearest_partner(avatar, kRescueDist);
     if (partner.empty())
-        return damage;
+        return false;
     g_last_rescue = now;
     g_rescues++;
     // the hit lands, but the pack pulls us up: 40 % health afterwards
@@ -111,13 +127,14 @@ float on_own_damage(void* avatar, float damage)
     game::set_health(avatar, before);
     if (C.notice)
         C.notice(partner + " saved " + C.my_name() + " from death");
-    return before - keep;
+    damage = before - keep;
+    return true;
 }
 
 void tick(void* avatar, double now)
 {
-    if (!g_on || !avatar || now - g_last_regen < 1.0 || !settings::on(settings::kPackHeal))
-        return;
+    if (!g_on || !avatar || now - g_last_regen < 1.0 || !settings::on(settings::kPackHeal) || revive::down())
+        return; // (a downed creature stays at 1 health: revive.cpp holds it)
     g_last_regen = now;
     float hp = game::health(avatar), mx = game::max_health(avatar);
     if (hp <= 0 || hp >= mx || nearest_partner(avatar, kRegenDist).empty())

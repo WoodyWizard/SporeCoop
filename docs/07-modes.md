@@ -254,6 +254,7 @@ to know them. A module reads a value with `settings::on(settings::kX)` / `settin
 | `all.shared_dna` | All stages | own wallet (own wallet / shared / own progress; own wallet in Rivals) | session | - | dna.cpp own_dna_on, own_progress.cpp (`get()`, never `on()`: value 2 is own progress, BUG-1469; [own progress](03-gameplay.md#gameplay-own-progress)) |
 | `creature.npcs_target_partners` | Creature | on | session | `npcs_target_partners` | npc.cpp ai_target |
 | `creature.pack_rescue` | Creature | on | session | `teamplay` | teamplay.cpp on_own_damage |
+| `creature.revive` | Creature | on (provisional, `settings::kReviveDefault`, owner question 4 of docs/plan-0.7.17.md) | session | - | revive.cpp (BUG-1472, PR #214 by IltonBJSilva): teamplay.cpp on_own_damage after the pack rescue; [revive](03-gameplay.md#gameplay-revive) |
 | `creature.pack_heal` | Creature | on | live | `teamplay` | teamplay.cpp tick |
 | `creature.joint_hunt` | Creature | on | session | `teamplay` | teamplay.cpp on_player_hit |
 | `all.name_tags` | All stages | on | live | - | coop.cpp on_overlay (puppets, tribe members, civ cities and vehicles) |
@@ -378,7 +379,7 @@ Defaults are provisional: the owner's questions of the plan are open.
 |---|---|---|---|---|---|
 | `civ.own_money` | Civilization | off / on (question 1) | session | WP-M1 (feat/w68-wallet): declared (row above, BUG-1468) | item 1 |
 | `all.shared_dna` (existing) | All stages | 0 own wallet (default, as 0.7.16), 1 shared, 2 own progress (new); the lobby row becomes "DNA and progress" with three names; the ini key stays. **Declared** (feat/w69-progress, BUG-1469): kDefs max 2, names `own wallet|shared|own progress` (console also `own_progress` or 2), default the one constant `settings::kSharedDnaDefault` | session | WP-P1 / P2 (feat/w69-progress) | item 2, question 2 |
-| `creature.revive` | Creature | on or off (question 4; pack rescue stays the first line) | session | WP-R1 (feat/w71-revive) | item 4 |
+| `creature.revive` | Creature | on (provisional) / off (question 4; pack rescue stays the first line) | session | WP-R1 (feat/w71-revive): declared (row above, BUG-1472) | item 4 |
 | `all.party_difficulty` | All stages | 100 % (default), 125, 150, 200, auto (+25 % per player over two; question 5) | session | WP-D1 (feat/w72-difficulty) | item 5 |
 | `cell.lineage_cells` | Cell | off / on | session | WP-L2 (feat/w81-cell) | item 9 |
 

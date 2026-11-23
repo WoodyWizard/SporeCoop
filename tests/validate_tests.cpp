@@ -607,6 +607,10 @@ static void test_settings()
     // BUG-1468: civ.own_money, a session switch of the Civilization group, provisional default off (owner question 1)
     CHECK(std::string(kDefs[kCivOwnMoney].key) == "civ.own_money" && kDefs[kCivOwnMoney].scope == Scope::Session &&
           std::string(kDefs[kCivOwnMoney].group) == "Civilization" && kDefs[kCivOwnMoney].max == 1 && kCivOwnMoneyDefault == 0);
+    // WP-R1 (BUG-1472): creature.revive, a session switch of the Creature group, its provisional default (owner question 4)
+    CHECK(std::string(kDefs[kRevive].key) == "creature.revive" && kDefs[kRevive].scope == Scope::Session &&
+          std::string(kDefs[kRevive].group) == "Creature" && kDefs[kRevive].max == 1 && kDefs[kRevive].def == kReviveDefault &&
+          kRevive == kPackRescue + 1 && !kDefs[kRevive].ini);
     // E2 (BUG-0864): the host's autosave: a choice of minutes, 10 by default, Live
     CHECK(kDefs[kAutosave].scope == Scope::Live && value_text(kAutosave, 2) == "10 min" && value_text(kAutosave, 0) == "off");
     CHECK(autosave_minutes(0) == 0 && autosave_minutes(2) == 10 && autosave_minutes(5) == 60 && autosave_minutes(9) == 10);
@@ -1319,8 +1323,8 @@ static void test_manifest()
     // types added after 0.7.14 (a 0.7.14 peer ignores them, B6): MSG_HOST_BUSY 70 (BUG-1142), MSG_TRIBE_ANIM 71 (C7,
     // BUG-1160), MSG_CELL_MATE 72 (BUG-1246), MSG_SPECIES_LINE 73 (WP-0 of 0.7.16, BUG-1270)
     // MSG_CIV_WALLET 74 (WP-M1 of 0.7.17, BUG-1468), MSG_PLAYER_HISTORY 75 (WP-H1, BUG-1470), MSG_PROGRESS 76 (WP-P1 / P2,
-    // BUG-1469), MSG_UFO_LEAD 78 (WP-S1 of 0.7.17, BUG-1288)
-    const std::set<int> added_types = {70, 71, 72, 73, 74, 75, 76, 78};
+    // BUG-1469), MSG_RESCUE 77 (WP-R1, BUG-1472), MSG_UFO_LEAD 78 (WP-S1 of 0.7.17, BUG-1288)
+    const std::set<int> added_types = {70, 71, 72, 73, 74, 75, 76, 77, 78};
     CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0] + added_types.size()));
     CHECK(MSG_HOST_BUSY == 70 && msg_info(70).known && msg_dir(70) == MsgDir::Host &&
           host_world::msg_class(70) == host_world::MsgClass::Session && dispatch_route(70, false) == Route::HostBusy &&
@@ -1350,6 +1354,11 @@ static void test_manifest()
     CHECK(MSG_PROGRESS == 76 && std::string(msg_info(76).name) == "PROGRESS" && msg_info(76).family == Family::creature &&
           msg_dir(76) == MsgDir::Any && host_world::msg_class(76) == host_world::MsgClass::HostWorld &&
           dispatch_route(76, true) == Route::Progress && dispatch_route(76, false) == Route::Progress);
+    // WP-R1 (BUG-1472): the revive, both directions, a guest elsewhere drops it at dispatch (HostWorld), creature 1.3
+    CHECK(MSG_RESCUE == 77 && std::string(msg_info(77).name) == "RESCUE" && msg_info(77).family == Family::creature &&
+          msg_dir(77) == MsgDir::Any && host_world::msg_class(77) == host_world::MsgClass::HostWorld &&
+          dispatch_route(77, true) == Route::Rescue && dispatch_route(77, false) == Route::Rescue &&
+          reserved_msg(77) && std::string(reserved_msg(77)->name) == "RESCUE");
     for (int t : added_types)
         for (auto& g : golden0714::kTypes)
             CHECK(g.id != t);

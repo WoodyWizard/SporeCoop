@@ -59,6 +59,13 @@ void take_gain(float dna, const char* why);
 // Cell (cell.level_together): an own meal of `amount` at food `cur`; the part the game takes now (the rest is banked)
 int clip_meal(int amount, int cur);
 
+// WP-R1 (BUG-1472): the revive's progress debt (the `progress` record's debt column, revive_logic.h). A death after a
+// knockout under own progress costs a debt on the player's bar instead of DNA: its next own gains pay it first
+float local_debt();             // this game's own debt (the host: its record "host"; a guest: the host's word)
+float pay_debt(float gain);     // an own gain of this game (on_dna, take_gain): what is left of it for the game
+void charge_debt(uint8_t player, float amount); // host: that player's debt grows (a guest is told: kDebt add)
+bool live_dna(uint8_t player, float& dna);      // host: a guest's own DNA of its last report (false: none)
+
 std::string status(); // coop.progress
 void resync();        // tests: a guest asks the host for its values again
 

@@ -590,7 +590,7 @@ world on its own disk, next to its save:
 | Reserved for 0.7.17 (player_store.h kRecHistory, WP-H1): own stage history | `history` (layout: WP-H1) | (WP-H1) | BUG-1470 |
 | Reserved for 0.7.17 (player_store.h kRecCivWallet, WP-M1): own Civ money | `civ.wallet` (layout: WP-M1) | (WP-M1) | BUG-1468 |
 | Own stage history per player (history.cpp, history_logic.h; WP-H1) | `history` v1 per player: 5 x u32 the cards (cPlayer +0x10FC.. order), f32 social, f32 combat, u32 the own Cell card (32 bytes) | core.own_history | BUG-1470 |
-| Own progress (own_progress.cpp, own_progress_logic.h; all.shared_dna 2) | `progress` v1 per player (29 bytes): u32 world (the host's stage world, modes::current_world), u32 stage mode, f32 DNA, f32 bar, i32 Cell food, i32 Cell spent, u8 brain level, f32 debt (WP-R1's column, 0 until it); a guest's record is given back (MSG_PROGRESS kSet) only for the same world and stage | core.progress_restore | BUG-1469, BUG-1472 |
+| Own progress (own_progress.cpp, own_progress_logic.h; all.shared_dna 2) | `progress` v1 per player (29 bytes): u32 world (the host's stage world, modes::current_world), u32 stage mode, f32 DNA, f32 bar, i32 Cell food, i32 Cell spent, u8 brain level, f32 debt (WP-R1: a revive's progress debt, paid from the player's next own gains; the host's own debt under the key `host`); a guest's record is given back (MSG_PROGRESS kSet) only for the same world and stage, its debt (kDebt set) for the same world | core.progress_restore, creature.revive_debt | BUG-1469, BUG-1472 |
 
   The Space kept stores (space_kept.h) are keyed by the same stable key (`spaceext::kept_key` = `store::key_of`), so
   `KeptStore::restore()` at world open puts the disk's values where the next join's first report finds them: the

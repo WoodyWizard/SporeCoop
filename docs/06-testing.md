@@ -10197,6 +10197,25 @@ by chance. Their tests open the window with a host knob that stands for the real
 * npc_nest_backoff (BUG-1530): its preconditions (NPCs at a nest, the roar backs them off, one inside the host's mound,
   on the guest's screen) end the test INCONCLUSIVE, not FAIL; only the drawn-inside and the 4 m follow checks fail it.
 
+## The revive tests (2026-11-23, feat/w71-revive)
+<a id="testing-revive"></a>
+
+BUG-1472 (WP-R1 of 0.7.17, [gameplay-revive](03-gameplay.md#gameplay-revive)). `tools/tests/coop_creature_revive.py`,
+creature fixture, one case per suite entry (all written by day, first run at night):
+
+| Entry | What | Twin (must FAIL) |
+|---|---|---|
+| `creature_revive` | a real NPC bite downs the guest (a host NPC provoked with `coop.npc hit`, the guest held one bite from death, the host 30 m away so the pack rescue does not take it): game health 1 and no dead flag on the guest, the host's puppet of it alive; 6 s of bites and `coop.team hit 50` not dealt; `coop.save` on the host refused; the host walks next to it: 40 % on both games | `creature_revive_setting_off` (`--setting off`: the bite kills), `creature_revive_hold_off` (`SPORE_FIX_OFF=creature.revive_hold`: the next bite kills) |
+| `creature_revive_price_wallet` / `_progress` / `_shared` | nobody comes: after 60 s the game's dead flag, the caption, the respawn away from where it fell; the game's DNA on both games: own wallet the guest -10 %, the host the same; shared both -10 %; own progress the guest's DNA stays, `coop.progress` debt = 10 %, its next `coop.dna add 30` raises its DNA by 30 - debt | `creature_revive_debt_off` (`SPORE_FIX_OFF=creature.revive_debt --case price --dna wallet`: the host pays) |
+| `creature_revive_first_line` | the host 4 m away: the first lethal hit is the pack rescue (40 %), the second within the minute downs (1 health), the host there revives it | - |
+| `creature_revive_wipe` | both down 30 m apart: both dead flags within 12 s, both respawn | - |
+| `creature_revive_paths` | the downed guest put 40 m up: held at 1 health where it fell; put into deep water (`deep_point` of coop_creature_sea_monster.py): held, or the game's own death closed the host's window | - |
+| `creature_revive_old` | the guest as a 0.7.16.1 peer (`coop.manifest plant creature 1 2`): its lethal hit kills at once, no window on the host | - |
+
+Seams: `coop.revive` (the own creature's game_hp / game_dead, the window, the last price; `down`: a lethal hit through
+the damage filter; `giveup`: as holding G). `coop_creature_respawn.py` gives up after its second lethal hit (it downs
+the creature now). Night run (4 lanes, about 1 h with the twins): `SPORE_DETECTOR=20 python3 tools/lab.py run
+creature_revive,creature_revive_price_wallet,creature_revive_price_progress,creature_revive_price_shared,creature_revive_first_line,creature_revive_wipe,creature_revive_paths,creature_revive_old,creature_respawn,team_real_damage,creature_revive_setting_off,creature_revive_hold_off,creature_revive_debt_off --lane 2 --lane 3 --lane 4 --lane 5 --retry 0 --branch feat/w71-revive` (build first, never lanes 1 and 8).
 ## Tribe audit fixes of 0.7.17 WP-B1 (2026-11-23, fix/w79-tribe)
 <a id="testing-tribe-audit-wp-b1"></a>
 

@@ -7,6 +7,7 @@
 #include "tribe_editors.h"
 #include "coop_state.h"
 #include "own_progress.h"
+#include "revive.h"
 #include "arrival_rule.h"
 #include "designs.h"
 #include "civ_editors.h"
@@ -709,6 +710,8 @@ const char* save_blocker()
         return "an editor is opening";
     if (mode_switch_pending())
         return "the game is switching modes";
+    if (mode == modes::kCreature && revive::pending()) // BUG-1472 (PR #214): never a world with a creature down
+        return "a player is down: wait for the revive or the respawn";
     if (tribe_graduating()) { // BUG-0849
         if (!g_graduation_refusals++)
             LOG("no world save in the end of Tribe (City Hall built, Civilization next): the world is sent in Civ");
