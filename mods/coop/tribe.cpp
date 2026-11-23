@@ -4635,6 +4635,16 @@ void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), 
         fn(k, g.buf.raw_lead(now), user);
         snprintf(k, sizeof k, "l%u", (unsigned)id);
         fn(k, net::Vec3{(float)g.buf.late_behind(now), g.buf.lead_off() ? 1.f : 0.f, g.ds.last_err}, user);
+        // BUG-1451: the walk's bound and speeds: lead_speed, the walk speed, the raw lead's (-1: the raw lead drives)
+        snprintf(k, sizeof k, "m%u", (unsigned)id);
+        fn(k, net::Vec3{g.diag_lead_speed, g.aim_speed, g.lead_sp}, user);
+        // and the late lead's rate, held (1: keep_lost's marked teleports), the smoothing's offset (m)
+        snprintf(k, sizeof k, "h%u", (unsigned)id);
+        fn(k, net::Vec3{g.buf.late_rate(), g.ds.held ? 1.f : 0.f, g.buf.smooth_off()}, user);
+        // and the game's own walk: the mirror's velocity, how fast it moved it from the last placing (m/s), the walk speed
+        // given (-1: the target's)
+        snprintf(k, sizeof k, "v%u", (unsigned)id);
+        fn(k, net::Vec3{g.diag_game_walk, g.diag_walked, g.diag_walk_speed}, user);
     });
 }
 

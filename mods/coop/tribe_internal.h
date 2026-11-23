@@ -206,6 +206,10 @@ struct GMember {
     bool jittery = false;    // BUG-0619 (diagnostics)
     float lead_sp = -1;      // BUG-0619: the raw lead's speed while the smoothed target drives it (-1: none)
     double held_since = 0, held_said = -1e9; // BUG-0386 (diagnostics)
+    float diag_lead_speed = 0; // coop.bodyrec diag (BUG-1451): the last walk's WalkPlace::lead_speed (0: no bound)
+    float diag_game_walk = 0;  // and the mirror's velocity in this game then (m/s)
+    float diag_walked = 0;     // and how fast the game moved it from the last placing (m/s)
+    float diag_walk_speed = -1; // and the walk speed given (WalkPlace::walk_speed, -1: the target's)
     double test_undo_until = 0; // tests (BUG-0386, `coop.tribe undo <id> <s>`): this game undoes the mirror's placing
     net::Vec3 test_undo_at{};   // and its walk: where it is held
     double anim_rx_at = 0, anim_fix_at = 0; // BUG-0569: the last relayed start, the last snapshot play

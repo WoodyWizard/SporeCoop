@@ -4904,6 +4904,23 @@ the player network) stood 3.1-3.6 m behind its aim while the host slowed to 1.6-
 no bound and closed at (sp + 3) x dt: 0.65-0.99 s. tribe.smooth_catch (tribe_logic::mirror_lead_speed): the bound is at
 least lag / 0.5 s, capped at 9 m/s (the bound BUG-1235 gives the lab's member: frames at most (2 x 9 + 3) x dt = 0.67 m
 at 32 ms); BUG-1235's own case (1-2 m behind) keeps the body's speed. Unit test tests/tribe_tests.cpp smooth_bound.
+* ✔ (lab `coop.bodyrec diag`, 2026-11-23, fix/w70-catch, BUG-1451) Raising `lead_speed` alone in `mirror_lead_speed` had
+  no proven effect (2/4 FAIL on vs 3/4 FAIL off) because three bottlenecks remained in `walk_place`:
+  1. While `late_time` catches up at 2x, `aim` runs at `sp` 12-17 m/s while the guest's game walks 0-0.8 m/s (walk start
+     and `keep_lost` teleports). Subtracting `walk_sp = sp` from `2 x lead_speed + 3` starved placing to 1.5-6.7 m/s
+     (even at `lag < 1 m`, down to 0.7 m/s in 125053 t1 at lag 0.95 m).
+  2. Reserving `walk_sp = 9 m/s` while `game_walk ~ 0` left only 12 m/s placing (+3 m/s net vs a 9 m/s host), which took
+     over 0.8 s after a 0.35 s network spike. Spore's `game::set_speed(p, walk_sp)` reliably caps next-frame game walk to
+     `walk_sp` within ~0.1 m/s while keeping walk gait active.
+  3. During a second loss burst while lagging, extrapolation decay drops `sp` to 1-4 m/s and `driver.h`'s `(sp + catch_up)`
+     clamped placing to 4.5-6 m/s (125710 t1, 125859 t7).
+  `tribe_logic::mirror_catch_bound` (under the same `tribe.smooth_catch` switch) caps `WalkPlace::walk_speed` at the body
+  speed whenever `sp > body` (`lag < 1 m` included), ramps the walk cap down from 9 m/s at `lag = 1.0 m` to 5 m/s at
+  `lag >= 1.5 m` (shifting up to 16 m/s into deterministic placing while keeping `walk + placing <= 21 m/s`, 0.67 m at
+  32 ms), and raises `WalkPlace::catch_up` when `sp` decayed so placing reaches up to `min(budget - walk, 18 m/s)`.
+  Verified on lanes 2-3: `body_trail_tribe_player` 6/6 PASS (0.67-0.92 s, median 0.75 s, lab 20261123-132907) vs off 3/4
+  FAIL (1.00-1.54 s, median 1.32 s, lab 20261123-133430), `tribe_walk_player` x4 0 jumps (20261123-133802), and 5/5 Tribe
+  regressions incl. `campaign_tribe_noclick` PASS (20261123-134309). Unit test `tests/tribe_tests.cpp` `late_catch`.
 ## A walking citizen with no tribe: the make-way stimulus faults at 0xC8F6D3 (2026-11-23, fix/w65-tests)
 <a id="tribe-makeway-null-tribe"></a>
 
