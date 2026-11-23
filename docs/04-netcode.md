@@ -994,3 +994,17 @@ K_DOWN only from a peer of creature 1.3 (`peer_families`) and sends K_LINES only
 sends or gets the type and dies of a lethal hit as before. A guest whose host never answers ends its own window 10 s
 after it ran out. The price itself travels on the existing paths (the own wallet in MSG_DNA, the shared total, the debt
 in MSG_PROGRESS kDebt). Codecs: tests/revive_tests.cpp.
+
+## MSG_CREATION kinds 10 and 11: the captains (2026-11-23, feat/w74-captain)
+<a id="netcode-creation-captains"></a>
+
+WP-K1 of docs/plan-0.7.17.md, creations 1.2 (no new message type; the family lock hashes species_line_core.h, unchanged).
+Both kinds are ordinary MSG_CREATION chunks (`owner, kind, id, total, off, n` + bytes), reassembled as every kind; the
+bundle is creations.cpp's `pack()` format. Sent only to a peer whose HELLO / WELCOME lists creations 1.2
+(`captain::kMinor`, `peer_families` on the host, `host_families` on a guest): a 0.7.16.1 peer drops a kind it does not know
+and gets nothing new. With its switch off a game drops the kind before reassembly, as 0.7.16.1 does.
+
+| Kind | Direction | Owner | Body (bundle) | Receiver |
+|---|---|---|---|---|
+| 10 kKindHostProps | host -> guest, in Space | 0 (only from the host, at most 512 KiB) | key = the captain's creature key; one record: its property list {captain, 0x00B1B104, group &#124; 0xE500} without 0x0D8A4BC9, only a list with the item config 0xC339D5C7 | registered under the host's key at priority 500 unless the guest has its own list or EditorSaves creation of that key (`creations.captain_props`, BUG-1279) |
+| 11 kKindCaptain | any -> host -> every guest of 1.2, in an adventure only | the sender (the host checks owner == from) | key = the sender's adventure captain; its model records, creaturedata, property list | the host keeps it for later joiners and relays it; every game registers it as a 0x7A...... copy (`captain::copy_instance`), bakes it, the puppet takes it once baked (`adventure.partner_captain`, BUG-1262) |
