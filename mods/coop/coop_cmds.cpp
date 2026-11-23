@@ -780,6 +780,10 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY(ok ? "joined the pack" : "no such npc or it cannot join");
         return ok ? 0 : 1;
     }
+    if (argc > 2 && !strcmp(argv[1], "gone")) { // host, tests (BUG-9313): gone <id> [secs]
+        SAY("%s", npc::debug_gone((uint16_t)atoi(argv[2]), argc > 3 ? (float)atof(argv[3]) : 3.f).c_str());
+        return 0;
+    }
     if (argc > 3 && !strcmp(argv[1], "hit")) {
         bool ok = npc::debug_hit((uint16_t)atoi(argv[2]), (float)atof(argv[3]));
         SAY(ok ? "hit sent through the damage filter" : "no such spawned proxy (a guest) or NPC (the host)");
@@ -1564,7 +1568,7 @@ void register_commands_core()
                        return 0;
                    },
                    nullptr, MT);
-    H->command_add(M, "coop.npc", "coop.npc [on|off|list|herds|hit <id> <dmg>|hosthit <id> <dmg> [push]|recruit <id>|spawn <hex>|cinedefer on|off] - host-authoritative NPC sync", c_npc, nullptr, MT);
+    H->command_add(M, "coop.npc", "coop.npc [on|off|list|herds|hit <id> <dmg>|gone <id> [secs]|hosthit <id> <dmg> [push]|recruit <id>|spawn <hex>|cinedefer on|off] - host-authoritative NPC sync", c_npc, nullptr, MT);
     H->command_add(M, "coop.res", "coop.res [[joinsim] add <food|money> <n> | fix reset|floor [0|1]] - shared resources", c_res, nullptr, MT);
     H->command_add(M, "coop.ping", "coop.ping - show everybody the place under your mouse / where you are", c_ping,
                    nullptr, MT);
