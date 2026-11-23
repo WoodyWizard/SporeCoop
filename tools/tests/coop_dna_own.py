@@ -49,7 +49,13 @@ SetEvolutionPoints, as the editor's result):
           guest's bar is the party's again (within the sync-check's half point). FAIL: SPORE_FIX_OFF=creature.bar_setback
           (the guest's bar stays 0.8 ahead until the next gain: the night's "bar: host 36.0, guest 36.9")
 
-  SPORE_LANE=2 python3 tools/tests/coop_dna_own.py [--case spend|shared|reload|rejoin|store|editors|host_editor|setback]
+  --case away_editor  BUG-9307 (audit CORE-9): the host evolves (`coop.vote evolve`: its editor at once), the guest
+          plays on alone (the host counts as away) and earns 20 (`coop.dna add 20`), then takes its Evolve now offer
+          (its own editor) and comes back while the host is still in its editor; then the host comes back: the host's
+          game has the guest's 20 (the party's gain) and the guest's still has them. FAIL:
+          SPORE_FIX_OFF=core.away_through_editor (the guest's editor ended the away state, its 20 were dropped)
+
+  SPORE_LANE=2 python3 tools/tests/coop_dna_own.py [--case spend|shared|reload|rejoin|store|editors|host_editor|setback|away_editor]
 """
 import os
 import re
@@ -367,6 +373,52 @@ def host_editor_case(host, guest, ck):
              f"{h1[0]:.0f}; the evolution bars equally full")
 
 
+def away_editor_case(host, guest, ck):
+    """BUG-9307 (audit CORE-9): the guest earns DNA while the host is away in its editor, then evolves in its own
+    editor (its Evolve now offer) before the host is back: that DNA reaches the host's game when the host is back"""
+    from coop_editor_sync import DONE, back, confirm_captions, in_editor, mode
+    from coop_ui import Ui
+    gu = Ui(guest, 'guest')
+    m0 = mode(host)
+    h0, g0 = prepare(host, guest, ck, need=60)
+    print(' ', host.call('coop.vote evolve')['out'].strip(), flush=True)
+    ok = ck(wait(lambda: in_editor(host), 60), "the host's editor opened (at once, the guest got an offer)")
+    away = wait(lambda: 'host_away=1' in (guest.call('coop.status')['out'] or ''), 30)
+    ok = ck(ok and away is not None, 'the guest plays on alone: the host in its editor counts as away') and ok
+    if not ok:
+        return
+    print('  guest:', guest.call('coop.dna add 20')['out'].strip(), flush=True)  # earned alone
+    time.sleep(3)
+    g1 = read(guest)
+    show('the guest earned 20 alone', read(host), g1)
+    ck(near(g1[0], g0[0] + 20), f"the guest's game has the 20 ({g0[0]} -> {g1[0]})")
+    gu.wait(lambda s: s['ready']['vis'], 10, 'Evolve now button')
+    gu.click('ready')
+    ok = ck(wait(lambda: in_editor(guest), 120), "the guest's own editor opened (its Evolve now) while the host is away")
+    if not ok:
+        shot(guest, 'dna_own_away_editor_guest.png')
+        return
+    guest.call('wait.frames 200 60000')
+    time.sleep(3)
+    guest.call('click %d %d' % DONE)  # no change
+    ck(back(guest, m0, 90), 'the guest is back in the stage, the host still in its editor')
+    time.sleep(4)
+    host.call('wait.frames 100 30000')
+    host.call('click %d %d' % DONE)
+    confirm_captions((host, guest), 20)
+    ck(back(host, m0, 90), 'the host is back in the stage')
+    confirm_captions((host, guest), 10)
+    time.sleep(8)
+    h2, g2 = calm(host, guest, 30)
+    show('after both editors', h2, g2)
+    wallets(host, guest)
+    ck(near(h2[0], h0[0] + 20), f"the 20 the guest earned while the host was away reached the host's game "
+       f"({h0[0]} -> {h2[0]})")
+    ck(near(g2[0], g0[0] + 20), f"the guest's game keeps them ({g0[0]} -> {g2[0]})")
+    keyframe('away_editor', f"Creature after both editors: the host's HUD about {h2[0]:.0f} DNA, the guest's about "
+             f"{g2[0]:.0f} (both with the guest's 20)")
+
+
 def avatar_hp(con):
     m = re.search(r'hp=([-\d.]+)/', con.call('coop.avatar')['out'] or '')
     return float(m.group(1)) if m else -1
@@ -416,7 +468,7 @@ def main():
     try:
         r = {'spend': spend_case, 'shared': shared_case, 'reload': reload_case, 'rejoin': rejoin_case,
              'store': store_case, 'editors': editors_case, 'host_editor': host_editor_case,
-             'setback': setback_case}[CASE](host, guest, ck)
+             'setback': setback_case, 'away_editor': away_editor_case}[CASE](host, guest, ck)
         if CASE == 'store' and r:
             host, guest = r
     finally:
