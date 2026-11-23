@@ -29,24 +29,37 @@ import census
 from twoinst import Checks, start
 
 NEAR = 50.0
+# BUG-1534: m inside NEAR where a missing proxy is only noted, not counted. The two censuses are read one after the
+# other and each against the guest's avatar as its own game has it, so an NPC that walks across the 50 m line between
+# the reads is "within 50 m" on the host and may not be listed on the guest in that very read (lab 20261123-023643:
+# n35 at 50 m missing in one read, there one second before and after). BUG-0611's drop is a proxy missing well inside.
+EDGE = 5.0
 
 
-def missing_near(host, guest, near=NEAR, pos_m=15.0):
-    """living host NPCs within `near` m of the guest's avatar that the guest's game lacks or has far off"""
+def missing_near(host, guest, near=NEAR, pos_m=15.0, edge=EDGE):
+    """living host NPCs within `near` m of the guest's avatar that the guest's game lacks or has far off; a missing one
+    in the outer `edge` m of the circle is printed as an edge read and not returned as bad (BUG-1534)"""
     hc, gc = census.dump(host), census.dump(guest)
     me = next((r['pos'] for r in gc.rows if r['own'] == 'avatar'), None)
     if me is None:
         return None, 0, ['the guest has no avatar']
     h, g = hc.by_id('c', ('npc',)), gc.by_id('c', ('proxy',))
-    bad, n = [], 0
+    bad, n, at_edge = [], 0, []
     for i, r in sorted(h.items()):
         if not r['alive'] or math.dist(r['pos'], me) > near:
             continue
         n += 1
         if i not in g:
-            bad.append(f'n{i} ({math.dist(r["pos"], me):.0f} m from the guest) not on the guest')
+            d = math.dist(r['pos'], me)
+            if d > near - edge:
+                at_edge.append(f'n{i} ({d:.1f} m)')
+            else:
+                bad.append(f'n{i} ({d:.0f} m from the guest) not on the guest')
         elif math.dist(g[i]['pos'], r['pos']) > pos_m:
             bad.append(f'n{i} {math.dist(g[i]["pos"], r["pos"]):.0f} m off on the guest')
+    if at_edge:
+        print(f'    (edge read, not counted: {", ".join(at_edge)} not on the guest, within {edge:g} m of the '
+              f'{near:g} m line; BUG-1534)', flush=True)
     return me, n, bad
 
 
