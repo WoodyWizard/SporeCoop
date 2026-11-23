@@ -10047,3 +10047,22 @@ over the gap itself, not wait for the game to make one.
   1026-1295 frames after the destroy, 4 merged backward, 1 freed and missed.
 * space_planet_citizens: its misses after BUG-1210 are bound copies of runners 2.7-4.3 m off; `space.citizen_lead`
   (BUG-1404) sends the kind every 0.25 s. The test's 3 m / 5 % limits are unchanged.
+## Test fixes of the fourth 0.7.16 final check (2026-11-22, fix/w65-night)
+<a id="testing-w65-night"></a>
+
+* evo_screens_switch (all variants): the host's evolution caption does not end by itself, the test's Enter ends it
+  (`confirm_captions()` in `good()`); it comes while the guest is still in its own editor or after it. `HostStand`
+  (ticked by every wait after both editors) keeps the host's caption up until the BUG-1396 move is done and 10 s more,
+  then confirms it and reads the copies 8 s after the host's game went on (BUG-1437). The move is a difference made on
+  purpose: `LAB-MARK sync-force` from the move to those reads (BUG-1438). No host animal 3-25 m away in any caption
+  stand is INCONCLUSIVE; no stand, or no guest copies of the host's near animals, stays a FAIL.
+* monitor_plant: the guest spawns its proxies 1 s after its world changed (BUG-0842); after a warm reset the list can be
+  empty; the test waits for a spawned proxy and checks that the proxies plant was issued (BUG-1439).
+* tribe_village_cadian (`--map`): the host's game forms NPC tribe 1 about 60-65 s into Tribe and its stamps land on both
+  games within 0.3 s; a map read (host's half, then guest's, ~75 s) across it compared the ground before the village
+  with the ground after. The maps are read point by point on both games after `live stamp calls=` (`coop.terrain`)
+  stood still 8 s on both, again when a count changed during the read; no still terrain in 240 s is a FAIL
+  (BUG-1440).
+* cell_kin_species: a knockout in the AI step respawns the host next to the guest; the host's place is taken before
+  that step, the way back is measured from the guest's position, a place within 2 r of the guest is replaced by one
+  `dist` away, and the kin there are sampled every 3 s for up to 45 s (BUG-1441).

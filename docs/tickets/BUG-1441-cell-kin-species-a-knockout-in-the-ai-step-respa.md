@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w65-night
-commits:
+commits: 68d86794
 tests: tools/tests/coop_cell_kin_species.py (cell_kin_species --editor)
 signature:
 docs:
@@ -46,8 +46,8 @@ is loosened.
 ## Verification
 Open, waiting for the lab run:
 - PASS expected: `SPORE_DETECTOR=20 python3 tools/lab.py run cell_kin_species --lane N --retry 0 --no-build`.
-- FAIL expected (the BUG-1257 twin): `SPORE_FIX_OFF=cell.kin_species SPORE_DETECTOR=20 python3 tools/lab.py run
-  cell_kin_species --lane M --retry 0 --no-build`.
+- FAIL expected (the BUG-1257 switch off): `SPORE_LAB_FIXOFF="cell_kin_species=cell.kin_species" SPORE_DETECTOR=20
+  python3 tools/lab.py run cell_kin_species --lane M --retry 0 --no-build`.
 no-fail-run: the knockout cannot be forced; the FAIL before is 20261122-194210 cell_kin_species.
 
 ## History

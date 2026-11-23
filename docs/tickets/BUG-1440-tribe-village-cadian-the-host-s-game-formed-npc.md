@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w65-night
-commits:
+commits: 1a9f358f
 tests: tools/tests/coop_tribe_village_ground.py (tribe_village_cadian, --map)
 signature:
 docs:

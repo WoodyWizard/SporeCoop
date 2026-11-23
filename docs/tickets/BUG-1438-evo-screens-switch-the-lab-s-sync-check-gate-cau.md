@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w65-night
-commits:
+commits: 5101d015
 tests: tools/tests/coop_evo_screens.py (evo_screens_switch and its variants)
 signature:
 docs:

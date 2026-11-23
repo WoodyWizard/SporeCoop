@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w65-night
-commits:
+commits: b32a56c9
 tests: tools/tests/coop_monitor_plant.py (monitor_plant)
 signature:
 docs:
