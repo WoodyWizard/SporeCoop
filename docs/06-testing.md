@@ -5660,6 +5660,16 @@ by side and the creatures in them counted.
   x3, find_partners creature_arrow, play_cell start, play_tribe start and mid, play_civ start's money). Not seen:
   BUG-0922, BUG-0938. New: BUG-0948 (the host's tag over empty grass on the guest, play_creature mid), BUG-0949 (arrow
   labels and tags over each other and over the HUD). creature_kills has no key frames.
+* Review of the 0.7.16 final check (lab 20261122-194210 on 5376d388, 80 sheets plus 35 frame pairs of the own-species
+  and editor tests the 80 left out: civ_role_row, dna_own*, own_editor_*, late_species*, civ_guest_editors,
+  civ_own_designs, species_line, tribe_species_probe, space_own_ship_key, cell_kin_species, nest_species;
+  fix/w66-frames): the own species hold on both games in every stage (guest members in Tribe, the Civ citizens of the
+  guest's city painted, the guest's vehicle and houses, the ship); new: BUG-1456 (Civ city decorations differ per game),
+  BUG-1457 (after a capture the guest's city citizens at other places on the guest), BUG-1458 (BUG-1072 again: the
+  chief in the same animation stands another way), BUG-1459 (unjudgeable frames: baby views behind the hut, an NPC offer
+  over line_stages_outfit, species_line next_session before the guest's swap). Seen again: BUG-1450 (tribe_held_item
+  after the rejoin: the host's chief labelled "Bob's chief"), BUG-1231 (Civ citizens' poses differ, e.g. lying on the
+  host and standing on the guest in line_stages_editors 09). space_captain failed without key frames.
 * Not done: Cell (no planet: the camera is the cell camera, docs/re/cell.md#cell-camera), Civ and Space (other
   cameras, other census rows).
 
