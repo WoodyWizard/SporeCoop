@@ -2,6 +2,64 @@
 
 ## [Unreleased]
 
+Thanks to IltonBJSilva, whose fork PRs #208, #212 and #216 found three of these bugs and whose notes gave twelve
+game addresses.
+
+### Fixed
+- A guest no longer drops out of the session when the host's editor takes more than 30 s to load on a slow PC; the
+  guest now waits up to 2 minutes for a host in an editor or a load (ported from PR #216). (BUG-1419)
+- A guest whose game hangs for 30 s, for example while its own editor loads, no longer holds up the host's vote: the
+  host removes it from the session and tells it why, and it can join again. A guest dropped by the 30 s timeout is
+  told as soon as its game runs again. (BUG-1420)
+- A guest that has not landed in the Creature stage yet when the first Creature editor's vote ends still gets its own
+  Creature editor once its creature is there. (BUG-1421)
+- DNA a guest earns while the host is in its editor is no longer lost when the guest opens its own editor before the
+  host is back. (BUG-1422)
+- Leaving a world for the galaxy menu no longer stalls for seconds while the world is torn down (a guest could time out
+  at a rejoin). Found and first fixed by IltonBJSilva in their fork (PR #212). (BUG-1427)
+- A save made from the pause menu right after one of the mod's saves (a guest joining, an autosave) is no longer lost:
+  it is made a moment later. (BUG-1413)
+- The host's saved player data is no longer lost when another program (a sync or backup tool, an antivirus) briefly
+  holds its store files. (BUG-1424)
+- A My Creations file larger than 256 MB no longer crashes the game; own creations are switched off with a log line
+  instead. (BUG-1423)
+- install.bat no longer puts SporeCoop's loader in place of a missing steam_api_orig.dll (the game would not start),
+  and it says so when a copy fails. (BUG-1425)
+- The Creature HUD portrait now follows the creature you play on Windows too (PR #208). (BUG-1426)
+- Cell: a guest's food bar no longer dips for a moment after a meal. (BUG-1431)
+- Cell: the copy of a partner's mate can no longer be bitten, eaten or killed in the host's game (it gave free meat
+  again and again). (BUG-1432)
+- Cell: food a guest ate while the host was away still reaches the party when the guest opens its own cell editor
+  first. (BUG-1433)
+- Creature: a guest's hit on an animal the host's game had just removed no longer reaches the removed creature (a rare
+  host crash). (BUG-1428)
+- Tribe: who owns which tribe member is kept when the host loads its world again, when a player joins and after an
+  adopt. (BUG-1429)
+- Tribe: after the host loads its world again, a player whose members were all claimed by others still gets its share.
+  (BUG-1430)
+- Civ: a guest's game no longer puts back a vehicle the host removed while the guest was saving (a rare crash after a
+  save). (BUG-1416)
+- Civ: a building a guest drops on a taken plot in its city planner no longer appears for free in the host's game.
+  (BUG-1417)
+- Civ: a player who joins a host that played alone gets a city of its own again; the host keeps the cities it bought,
+  captured or was given. (BUG-1418)
+- Space Rivals: switching back to Allies while a guest is in an editor or an adventure no longer gives the host its own
+  money a second time. (BUG-1414)
+- Space: gift spice, mission and contract reward tools and Steve's gift that reach a player who just rejoined are no
+  longer lost while its own cargo hold comes back; a partner reaching the galactic core no longer gives the Staff of
+  Life in a guest's own Space save. (BUG-1415)
+- Joining: the host no longer sends its world to a guest again and again (about every 50 s): a guest that passes
+  through the galaxy menu to load the world it was just sent is no longer taken for one that left to the main menu.
+  (BUG-1435)
+- Co-op copies of another player's world: a copy in which you saved your own progress (for example after the host
+  left and you played on alone, or after a role swap) is now yours: the next share no longer replaces or moves it, and
+  a write into it moves the old copy to Games-sporecoop-backup instead of deleting it. A host that starts from a co-op
+  copy of another player's world is told whose copy it is and which planet it was made for. (BUG-1434)
+- Tribe: a guest's copy of a tribe member that died no longer walks on after its death, and a member left without its
+  tribe no longer makes the guest's game fault when its way is blocked. (BUG-1460)
+- Tribe: on a laggy connection a guest's copy of a tribe member that started to walk late catches up with the host's
+  member again instead of trailing it by a few metres for a second. (BUG-1451)
+
 ## [0.7.16] - 2026-11-23
 
 Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and reverse-engineering notes for this version.
