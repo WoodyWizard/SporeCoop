@@ -49,6 +49,7 @@ enum Id : int {
     kCivRoles,       // Civ: the governors' roles (military, economic, religious) and their bonuses
     kCivSiege,       // Civ: two players attacking one city capture it 50 % faster
     kCivSwVote,      // Civ: a superweapon fires after a vote of everybody
+    kCivOwnMoney,    // Civ: every player has its own money (civ_wallet.cpp, BUG-1468; PR #205); off by default (provisional)
     kSpaceDisable,   // Space: a destroyed ship next to a partner is only disabled for 20 s
     kSpaceTrade,     // Space: tool gifts and trade between players (space_trade.cpp)
     kSpaceContracts, // Space: co-op contracts (space_contracts.cpp)
@@ -72,6 +73,10 @@ struct Def {
     bool off_in_rivals;  // read as off while the Rivals mode is on (the value itself is kept)
     const char* names = nullptr; // a choice of named values: "name0|name1|..." (value_text, the lobby), else on / off
 };
+
+// civ.own_money's default (BUG-1468): provisional until the owner answers question 1 of docs/plan-0.7.17.md; the one
+// place to flip it (tests/validate_tests.cpp reads it from here)
+constexpr int kCivOwnMoneyDefault = 0;
 
 inline const Def kDefs[kCount] = {
     {"cell.regen", "Cell", "Regeneration near a partner",
@@ -149,6 +154,9 @@ inline const Def kDefs[kCount] = {
     {"civ.superweapon_vote", "Civilization", "Superweapons need a vote",
      "on: a superweapon fires after a vote of everybody; off: it fires at once",
      1, 0, 1, Scope::Session, nullptr, false},
+    {"civ.own_money", "Civilization", "Own money",
+     "on: every player has its own money: each pays its own purchases, the cities' income goes to their owners, and a player new to the world gets an equal part of the host's money; off: one shared treasury",
+     kCivOwnMoneyDefault, 0, 1, Scope::Session, nullptr, false},
     {"space.disable", "Space", "Disabled, not destroyed",
      "on: a destroyed ship next to a partner is only disabled for 20 s and the partner repairs it; off: it is destroyed as in a solo game",
      1, 0, 1, Scope::Session, nullptr, false},

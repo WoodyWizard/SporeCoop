@@ -9,12 +9,12 @@ source: lab
 role: 
 versions: 0.7.15, 0.7.16
 fixed_in:
-branch:
-commits:
-tests: wsync_civ (tools/tests/coop_wsync_civ.py)
+branch: feat/w68-wallet
+commits: 162b29f0 ebe0e45a 86ef0e48
+tests: wsync_civ (tools/tests/coop_wsync_civ.py), tools/tests/coop_civ_money_pause.py (civ_money_pause, twin civ_money_pause_off)
 signature:
-docs:
-related: BUG-0205
+docs: docs/re/civ.md#civ-own-money
+related: BUG-0205, BUG-1468
 ---
 
 ## Report
@@ -22,21 +22,26 @@ Validation run of 0.7.16 (lab 20261123-023643, mod code 5376d388): wsync_civ "FA
 host's money (3 s)": `civmoney 000021CC: 0 -> 1500`, `3 s later: ... host 1500.0, guest 0.0`; the 25 s check passed.
 
 ## Root cause
-Old behaviour, seen by a single read (a flake of the test). It is an NPC nation's money (the wsync row civ_money,
-wsync.cpp, unchanged since before 0.7.16), not the player's money (#205, per-player money, is 0.7.17; the player's
-money is still shared in this run: "Alice earned 40 money (shared)"). The test's capture puts the host into a caption:
-the host's world is paused 04:56:51.919-04:56:59.921 (`busy=cinematic,input_lock,paused`), the guest's runs (no busy):
-its copy of the NPC nation's AI spends the copied 1500 and the row puts it back every 0.5 s (civ_money applied=9
-reapplied=8 in this run and in the passing ones). The one read at exactly 3 s fell on a 0. Passed in 20261122-194210,
-20261121-003202, 20261120-133703 (1500 / 1500); 1 of 9 failed on rel/main. Not a 0.7.16 regression.
+Old behaviour (unchanged since before 0.7.16); the mechanism is now known from the disassembly (objdump 2026-11-23,
+docs/re/civ.md#civ-own-money): an NPC nation's AI update (Civilization_AI 0xBFBD30, every second, at 0xBFBF72) calls
+CivAI_WealthToBudgets 0xBF7370, which moves all of a positive +0x98 into the domestic / expansion budgets +0x4AC /
++0x4B0 and sets +0x98 to 0. On the host the AI stands while its caption pauses the world; on the guest it runs: the
+1500 the row civ_money wrote was in the budgets within a second, the row wrote it again every 0.5 s (applied=9
+reapplied=8), and a single read at 3 s fell on a 0. (The guest's blocked AI spawns, BUG-0188, then spend the budgets:
+the purchases pay after the spawn without looking at its result.)
 
 ## Fix
-None in 0.7.16 (low: the values agree within 0.5 s and by 25 s). Idea: the guest's NPC nation does not spend while
-the host's world stands (or the row holds the value then). The test stays strict (a single read at 3 s); a test change
-that waits for any agreeing read would hide this.
+`coop.fix civ.npc_money_hold` (on): civ.cpp hooks CivAI_WealthToBudgets (.sym verified: fastcall, plain ret 0xBF74CA)
+and, on a guest in the host's Civ world, skips it for NPC nations while the host's world stands
+(host_busy::host_stands(): the host's last MSG_HOST_BUSY is paused / editor / away for this guest's stage and world).
+The row's money then stays where it put it until the host's AI runs again. Off: 0.7.16.1 (`coop.civ` money:
+npc_money_held=).
 
 ## Verification
-Open.
+Lab: pending night run: civ_money_pause (a capture caption on the host, 1500 to a nation: 8 reads in 4 s, every
+guest read the host's) and twin civ_money_pause_off (SPORE_FIX_OFF=civ.npc_money_hold: reads of 0, must FAIL);
+regressions wsync_civ (repeat 3), civ_caption, civ_ai_spawn.
 
 ## History
 - 2026-11-23: opened (fix/w65-tests triage).
+- 2026-11-23: implemented on feat/w68-wallet (commits 162b29f0, ebe0e45a and after); unit tests pass; lab tests and twins written for the night run.

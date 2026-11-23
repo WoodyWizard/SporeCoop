@@ -4,9 +4,12 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <set>
 #include <vector>
 
 #include "civ_logic.h"
+#include "civ_wallet_logic.h"
+#include "net/shared_ledger.h"
 
 static int g_fail = 0;
 #define CHECK(c)                                                         \
@@ -121,12 +124,148 @@ static void test_citizens()
     CHECK(citizen_line_owner(1, false, 4) == -1); // creature.mode host: every city the civilization's
 }
 
+// BUG-1468: every player's own Civ money (civ_wallet_logic.h; the rules of PR #205 by IltonBJSilva)
+static void test_wallets()
+{
+    printf("wallets\n");
+    using namespace civwallet;
+    const uint8_t host = 0;
+    auto near = [](double a, double b) { return std::fabs(a - b) < 1e-9; };
+    static_assert(kSharedCity == civlogic::kShared, "the shared city id is civ_internal.h's");
+    // income by cities: host 1 city, guest 1: 2 cities, guest 2: 1 city -> 100 per city
+    std::multiset<uint8_t> owners{0, 1, 1, 2};
+    auto parts = split_income(400, owners, host, {1, 2});
+    CHECK(parts.size() == 2 && near(parts[1], 200) && near(parts[2], 100));
+    // a guest without a wallet (an older peer, away, not in Civ yet): its cities' part stays with the host
+    parts = split_income(400, owners, host, {1});
+    CHECK(parts.size() == 1 && near(parts[1], 200));
+    // the shared capital: equal parts for the host and every guest with a wallet
+    parts = split_income(300, {kSharedCity}, host, {1, 2});
+    CHECK(parts.size() == 2 && near(parts[1], 100) && near(parts[2], 100));
+    // the host's id in the wallet set (a stale entry) changes nothing
+    parts = split_income(300, {kSharedCity}, host, {0, 1, 2});
+    CHECK(parts.size() == 2 && near(parts[1], 100) && near(parts[2], 100));
+    // nothing to split: no gain, a loss, no cities, not a number, infinity
+    CHECK(split_income(0, owners, host, {1}).empty());
+    CHECK(split_income(-50, owners, host, {1}).empty());
+    CHECK(split_income(100, {}, host, {1}).empty());
+    CHECK(split_income(std::numeric_limits<double>::quiet_NaN(), owners, host, {1}).empty());
+    CHECK(split_income(std::numeric_limits<double>::infinity(), owners, host, {1}).empty());
+    // money is never made: the parts never exceed the gain, for any owner mix
+    for (auto o : std::vector<std::multiset<uint8_t>>{{0, 1, 2, kSharedCity}, {kSharedCity, kSharedCity}, {1, 1, 1}, {3, 4}}) {
+        double sum = 0;
+        for (auto& [p, v] : split_income(1000, o, host, {1, 2, 3}))
+            sum += v;
+        CHECK(sum <= 1000 + 1e-9 && sum >= 0);
+    }
+    // the trade between two players' cities: half to each end with a wallet
+    auto tp = split_pair(40, 0, 1, host, {1});
+    CHECK(tp.size() == 1 && near(tp[1], 20));
+    tp = split_pair(40, 1, 2, host, {1, 2});
+    CHECK(tp.size() == 2 && near(tp[1], 20) && near(tp[2], 20));
+    CHECK(split_pair(40, 1, 2, host, {}).empty() && split_pair(-1, 1, 2, host, {1, 2}).empty());
+    // a newcomer: an equal part of the host's money, whole money, nothing for less than two holders
+    CHECK(newcomer_share(2000, 2) == 1000 && newcomer_share(1001, 2) == 500 && newcomer_share(900, 3) == 300);
+    CHECK(newcomer_share(0, 2) == 0 && newcomer_share(-5, 2) == 0 && newcomer_share(1000, 1) == 0);
+    CHECK(newcomer_share(std::numeric_limits<double>::infinity(), 2) == 0);
+    // the join split of the plan's test: host 2000 -> 1000 / 1000 (the sum stays)
+    {
+        double h = 2000, g = newcomer_share(h, 2);
+        h -= g;
+        CHECK(h == 1000 && g == 1000 && h + g == 2000);
+    }
+    // the ledger: the host's operations count until the guest confirms them, then its report is the value
+    Ledger l;
+    l.set(1, 500);
+    CHECK(l.value() == 500);
+    l.op(2, +100); // an income share
+    l.op(3, -250); // a vehicle the host bought for it
+    CHECK(l.value() == 350);
+    CHECK(l.report(2, 600)); // the guest applied op 2 (500 + 100), op 3 still on the way
+    CHECK(l.value() == 350 && l.sent.size() == 1);
+    CHECK(l.report(3, 330)); // it applied op 3 and spent 20 in its own planner meanwhile
+    CHECK(l.value() == 330 && l.sent.empty());
+    CHECK(!l.report(2, 9999)); // an old report (crossed a newer one) is ignored
+    CHECK(l.value() == 330);
+    CHECK(!l.report(4, std::numeric_limits<double>::quiet_NaN()) && !l.report(4, 1e12));
+    l.op(4, -1000); // never below 0
+    CHECK(l.value() == 0);
+    CHECK(clamp_money(2e8) == kMoneyMax && clamp_money(-1) == 0 && clamp_money(std::numeric_limits<double>::quiet_NaN()) == 0);
+    // a purchase in flight while a split arrives (the plan's race): charge -300 (seq 5) and income +50 (seq 6) both
+    // unconfirmed, the guest's report of seq 4 arrives: both still count, nothing is lost or made
+    l.set(4, 1000);
+    l.op(5, -300);
+    l.op(6, +50);
+    CHECK(l.report(4, 990)); // it spent 10 of its own meanwhile
+    CHECK(l.value() == 740 && l.sent.size() == 2);
+    CHECK(l.report(6, 740) && l.value() == 740 && l.sent.empty());
+    // turning it off: the kept wallets go back to the host once (sum before = sum after), bad entries are skipped
+    CHECK(merge_back(1000, {500, 250}) == 1750);
+    CHECK(merge_back(1000, {std::numeric_limits<double>::quiet_NaN(), -5, 2e9}) == 1000);
+    CHECK(merge_back(kMoneyMax - 10, {100}) == kMoneyMax);
+    // who has a wallet: the setting, the peer's mod (civ minor kMinor = 2, the same rev), the guest in the host's world
+    CHECK(kMinor == 2);
+    CHECK(host_gives(true, true, false) && !host_gives(false, true, false) && !host_gives(true, false, false) &&
+          !host_gives(true, true, true));
+    CHECK(guest_runs(true, true) && !guest_runs(false, true) && !guest_runs(true, false));
+    CHECK(reads_wallet(true, true, 1, 2, 1) && reads_wallet(true, true, 1, 3, 1));
+    CHECK(!reads_wallet(true, true, 1, 1, 1)); // a 0.7.16.1 peer (civ 1.1): shared money as before
+    CHECK(!reads_wallet(false, true, 1, 2, 1) && !reads_wallet(true, false, 1, 2, 1) && !reads_wallet(true, true, 2, 2, 1));
+    // civ.wallet_row: a guest with a wallet does not take the shared total; off: it does (one money); no wallet: it does
+    CHECK(!guest_takes_shared(true, true) && guest_takes_shared(false, true) && guest_takes_shared(true, false));
+    // the stored record: v1, 4 bytes
+    CHECK(stored_ok(1, 4) && !stored_ok(2, 4) && !stored_ok(1, 8) && !stored_ok(0, 0));
+}
+
+// BUG-1478 (CIV-5): the guest hooks hold only in the host's Civ world; the host takes world commands only from there
+static void test_local_play_gate()
+{
+    printf("local_play_gate\n");
+    CHECK(guest_holds(true, true, true, false));   // the guest in the host's Civ world: held as before
+    CHECK(!guest_holds(true, true, true, true));   // another Civ world of its own: its own game plays it
+    CHECK(guest_holds(false, true, true, true));   // switch off: held everywhere (0.7.16.1)
+    CHECK(!guest_holds(true, false, true, false)); // the host / alone: never
+    CHECK(!guest_holds(true, true, false, false)); // not in Civ
+    CHECK(host_takes_world_cmd(true, false) && !host_takes_world_cmd(true, true) && host_takes_world_cmd(false, true));
+    // the income gate on top of it: a guest elsewhere keeps its income, in the host's world it is dropped
+    CHECK(guest_income_blocked(false, true, guest_holds(true, true, true, false), true, 80.f));
+    CHECK(!guest_income_blocked(false, true, guest_holds(true, true, true, true), true, 80.f));
+    CHECK(guest_income_blocked(false, true, guest_holds(false, true, true, true), true, 80.f));
+}
+
+// BUG-1236 (civ.income_cause): the cities' passive income is no host cause; everything else is
+static void test_passive_income_cause()
+{
+    printf("passive_income_cause\n");
+    auto near = [](double a, double b) { return std::fabs(a - b) < 1e-6; };
+    // passive +200 alone: no host cause with the fix (passive noted), +200 without (passive 0: 0.7.16.1)
+    CHECK(near(net::host_own_cause(1200, 1000, 0, 200), 0));
+    CHECK(near(net::host_own_cause(1200, 1000, 0, 0), 200));
+    // passive +200 with a host purchase -1000 in the same total: exactly -1000 (not -800)
+    CHECK(near(net::host_own_cause(1200, 2000, 0, 200), -1000));
+    // a sale of the host (+400, not passive) is still the host's
+    CHECK(near(net::host_own_cause(1400, 1000, 0, 0), 400));
+    // passive +200 with a guest's spend -500 applied: no host cause
+    CHECK(near(net::host_own_cause(700, 1000, -500, 200), 0));
+    // passive +200, a guest's +300, the host's -600: exactly -600
+    CHECK(near(net::host_own_cause(900, 1000, 300, 200), -600));
+    // two passive ticks in one total (the 6 s tick 160 and a delivery 80)
+    CHECK(near(net::host_own_cause(1240, 1000, 0, 240), 0));
+    // own money: income 400 of which 200 went to a guest's wallet: the host's money +200, passive noted 200: no cause
+    CHECK(near(net::host_own_cause(1200, 1000, 0, 400 - 200), 0));
+    // the game's cap: the measured gain (49 of 200) is noted, nothing left
+    CHECK(near(net::host_own_cause(999999, 999950, 0, 49), 0));
+}
+
 int main()
 {
     test_money();
     test_owners();
     test_holds();
     test_citizens();
+    test_wallets();
+    test_local_play_gate();
+    test_passive_income_cause();
     printf(g_fail ? "civ_tests: %d FAILED\n" : "civ_tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }
