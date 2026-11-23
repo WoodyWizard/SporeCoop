@@ -10,7 +10,7 @@ role:
 versions: 0.7.17
 fixed_in:
 branch: feat/w81-cell
-commits: e89fe984
+commits: e89fe984, edc53a14
 tests: lineage_cells (coop_lineage_cells.py); lineage_cells_ui; twin lineage_cells_off
 switch: cell.lineage_cells
 signature:
