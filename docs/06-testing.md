@@ -10145,3 +10145,22 @@ by chance. Their tests open the window with a host knob that stands for the real
 * space_planet_citizens cannot show space.citizen_lead (it reads mostly standing citizens); `--case runners` (suite
   space_planet_runners) compares only running host citizens at the guest's moment (host, guest, host dumps by serial);
   its limits are provisional until both arms are measured (BUG-1454).
+
+## World share of one planet, Continue, the quit and the Creature switch (2026-11-23, fix/w75-share)
+<a id="testing-share-one-planet"></a>
+
+* `copy_slot_planets` (BUG-1434, 0.7.17): two extra planet files (byte copies of the played planet's save named
+  `Oldworld.spo` / `Ancient.spo`) go into the host's slot before `coop.share`; the guest's new copy must hold the played
+  planet and the galaxy's files only. The extra files are removed at the end (a warm reuse sees the fixture). Then the
+  role swap: both leave, the guest goes to its galaxy menu (`coop.menuhover list`: the menu's entries with name, has a
+  save, shown, save state, tech level), hosts, and the co-op window's share button reads `Continue <planet>` (13
+  characters of the name at most); a real click loads it; the old host joins and loads the same planet (`coop.avatar`
+  names the planet file). Twins: `copy_slot_planets_off` (`world.share_planet`: the copy holds all three planets) and
+  `copy_slot_continue_off` (`world.continue_coop`: no Continue button). Host `coop.status`: `shares of the played planet
+  alone N, other planets left out M`; guest `coop.status`: `slot ...: a copy of ..., old planets K` and `continue: <planet>
+  in GameN (<host>'s world), loads N`; `coop.continue [go]` is the button's console twin.
+* `cell_quit_switch` (BUG-1436): Cell fixture, the host alone; `coop.cellswitch quit` posts the mod's quit to the galaxy
+  menu and calls the game's Cell -> Creature switch (through the mod's hook) right after the game handled the quit;
+  `coop.cellswitch` alone calls it at once. PASS: the galaxy menu, never Creature, no crash for 20 s. The twin
+  `cell_quit_switch_off` (`world.quit_no_switch`) is the report's hypothesis: if it passes too, the trigger was another
+  one.

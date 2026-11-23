@@ -3605,3 +3605,62 @@ data/symbols/overrides_dc04aee5.sym.
   new archetype id is mission +0x1F4; it calls SetArchetype(cSimulatorSpaceGame::Get(), false, true) at 0xC4DC14.
 * ✔ (objdump) `Empire_SetSpacecraftKey` 0xC358A0: thiscall(cEmpire*, const ResourceKey*) `ret 4`; writes +0xB8/+0xBC/+0xC0
   only when the key differs, then refreshes the empire's ships (0xC372E0). Upgraded from the fork's "not checked by us".
+
+## A share of one planet: what the slot's files say about the other planets (2026-11-23, fix/w75-share)
+<a id="space-share-one-planet"></a>
+
+BUG-1434 (0.7.17 WP-W1). Static reading of lab slots and of the menu code noted in #space-lineages-menu-card; no game run.
+* ✔ (files) A slot `Games\GameN` holds `<planet>.spo` per game started in that galaxy plus the galaxy's own files:
+  `stars.db`, `planetRecords.pkp` / `.pkt`, `PlanetScripts.pld`, `GGEUserData.dat`, `lastSave.pld`, `snapshot.spo` (the
+  game's temporary file of an unsaved game), the `dbreadinitiated` / `dbreadcompleted` markers. A guest's co-op copy adds
+  `sporecoop.txt`.
+* ✔ (files) `GGEUserData.dat` is a DBPF (version 3, index at 0x24) with one RefPack record (type = group = instance
+  0x01897C18, 690 bytes unpacked in a one-planet lab slot): the planet's name in UTF-16 ("Zorispe"), a star id and per-star
+  lists of keys (0x066B980A, 0x07CA2686.., 0x07DB67DB.. tags; 7 entries of 0x408A0000 / 0x4084A100 keys). It names the
+  saved games; it is not rewritten by the mod (a format of its own, not needed: see the next point).
+* ~ (menu code, #space-lineages-menu-card) The galaxy menu lists the saved games from the galaxy's files, not from the
+  `.spo` files present (a `.spo` copied in is not listed); an entry whose save file is missing gets state +0x8C 3, and the
+  menu's Play step 0xDEC130 checks `<name>.spo` and shows "Bad or Missing Saved Game" instead of loading. So a copy without
+  the host's older planets still lists them, and they cannot be started from it; the played planet loads as before
+  (the mod loads with LoadGameByName, not through the Play step). To check in the lab: copy_slot_planets prints the
+  guest's menu entries (`coop.menuhover list`: name, has a save, state) of a copy of one planet.
+* Since 0.7.17 a share to a guest with world 1.1 sends the played planet's `.spo` and every other file but the other
+  planets' `.spo` (share_logic.h); `snapshot.spo` and the galaxy's files go as before.
+
+## The galaxy menu enters Creature without a game: the App state's mode command after a quit (2026-11-23, fix/w75-share)
+<a id="space-menu-creature-switch"></a>
+
+BUG-1436: a player's minidump (Steam 3010a413, exe loaded at 0x860000: file VA = runtime - 0x460000), objdump of the GOG
+2024 exe (the same code). Crash 0xC0000005 at 0xC7A1ED, read of 0x1188, ebx = 0.
+* ✔ (asm) 0xC7A1ED is in **0xC7A140** thiscall(cPlayer*, planet record) ret 4 (a cPlayer list update of a planet: +0x1198
+  / +0x1184 vectors, the record's +0x70 id); `this` was null. Its caller **0x10220E0** (cdecl(planet record), the player's
+  home planet setup into SpacePlayerData [0x16DDA8C]: +0x0C, +0x18 the empire id, +0x1C) skips that call only in the
+  modes 0x1654C00 (Cell) and 0x1654C10 (an adventure); it takes the cPlayer as `[0x167EAE0]+0x74` (getter 0xB3D400,
+  then 0xF67D40 `mov eax,[ecx+0x74]`: the same cPlayer as Player_SetProperty's). **0x1022470** cdecl void() runs it once
+  (byte 0x16DDA89) when SpacePlayerData has no star (+0x08 0) with the star manager's home planet record (0xBB9AC0).
+* ✔ (asm + stack) The chain: 0x1022470 < **0xB32EE0** cdecl(mode) (the simulator's set-up for a game stage started from
+  the galaxy menu; tail jump to 0xAF0FA0) < **0xB33A80** cdecl(previous mode, new mode) (the simulator's mode change:
+  flags per pair; 0xB32EE0 runs for previous = 0x2CCD1D2 or -1 and a game mode in its table) < **0xB5F180**
+  thiscall(sim, previous, new) ret 8 (stores them at the sim mode manager +0x24 / +0x20, clears +0x28 "switch pending")
+  < Simulator_HandleMessage 0xB637A4 on **OnModeEnter 0x212D3E7** (data +0x08 / +0x10 the modes; here previous
+  0x2CCD1D2 GalaxyGameEntry, new 0x1654C01 Creature: the arguments on the stack, their low bytes reused as flags) < our
+  h_SimMsg (a pass-through, nothing of ours on the path) < MessageSend < cGameModeManager::SetActiveModeAt 0x7D8D6A <
+  SetActiveModeByName 0x7D8486 < cGameModeManager::HandleMessage 0x7D8276 on **0xE11333** (posted: processed from the
+  queue, ProcessQueue2 deeper on the stack; the message object's vtable 0x13EB844).
+* ✔ (asm) cGameModeManager::HandleMessage 0x7D8240: 0xD3C602 -> vt 0x40 (set mode by index), 0xE11332 -> vt 0x28,
+  0xE11333 -> vt 0x4C SetActiveModeByName (the name at [data+8]+0xC). The only code that makes a 0xE11333 message is
+  **0x7E4690**, the ParseLine of the App state script command `mode` (class name "ArgScript/Mode" 0x14134B4; the command
+  set made at 0x7E1D80 also has gotoState, message, effect, killEffect, effectFlag, description, cheat: keywords at
+  0x153F600..0x153F61C); it queues the message in the state's lists (+0x2C or +0x40).
+* ✔ (asm) The simulator's SetMode **0xB1E350** thiscall(sim mode manager [0x167EAEC], mode) ret 4 does not switch by
+  itself: it picks the App state named "<New>Game" + "From<Old>Game" (0xB1E000(old, new), e.g. CreatureGameFromCellGame;
+  "LoadGame" for 0x1654C08; editors and the level editor have their own names), calls IStateManager (0x67DCE0, [0x15FD8B4])
+  vt 0x28 with it and sets +0x28 (switch pending). The state's script then posts `mode <name>`. CellStage_ToCreature
+  0xE62440 (and the debug key path through 0xE61140) calls it with 0x1654C01; the quit message's handler (0xB637F9..0xB638F7)
+  calls IStateManager vt 0x40 and sets +0x28 / +0x29.
+* ~ (inferred, not reproduced) A Creature switch of the guest's own game (its History's check or its Cell end sequence,
+  which a guest's hook lets through when the host is no longer in its world: the host had just entered Creature) came while
+  the mod's quit was under way; its state's `mode CreatureGame` ran after the quit had taken the game to the menu, 67 ms
+  after the menu came up, with no game loaded (cPlayer null). Nothing in the minidump names the state (the state manager
+  and the message's name string are heap memory the minidump does not hold). Lab check: cell_quit_switch (the switch right
+  after the quit; its twin with world.quit_no_switch off should end in Creature from the menu or crash).
