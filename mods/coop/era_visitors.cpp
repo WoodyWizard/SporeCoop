@@ -510,6 +510,7 @@ struct Visitor {
     void* ship = nullptr; // BUG-9349: a Space era player's ship (a UFO of ours)
     uint32_t ship_serial = 0;
     double ship_wait = 0; // when its model was first asked from the store
+    net::Vec3 ship_at{};  // where it shows here (lower than its player's zoom altitude)
 };
 static bool g_tags = true;
 COOP_FIX("galaxy.visitor_tags", "BUG-9289", g_tags, "galaxy: a visitor of another era wears a name tag (its name, its era)");
@@ -544,6 +545,7 @@ static bool shows_visitors(uint8_t era) { return era == net::galaxy::kEraCreatur
 static bool g_ships = true;
 COOP_FIX("galaxy.space_ships", "BUG-9349", g_ships, "galaxy: a Space era player's ship at the planet shows as a UFO in its other eras");
 constexpr uint32_t kUfoNoun = 0x018EBADCu;
+constexpr float kShipOverGround = 60.f; // m: a visiting ship's height over the ground at most
 static uint64_t g_ships_sent, g_ships_shown, g_ships_default;
 static bool shows_ships(uint8_t era) { return shows_visitors(era) || era == net::galaxy::kEraCiv; }
 static bool ship_alive(const Visitor& v)
@@ -586,7 +588,13 @@ static void ship_show(Visitor& v)
     }
     const net::Vec3 up = norm(v.pos);
     g_axes = 0;
-    place(v.ship, v.pos, basis_quat(net::Vec3{0, 0, 1}, up));
+    // a Space ship flies at its player's zoom altitude (775 m from the centre seen, 2026-11-23: out of a Civ camera's
+    // view): here it flies over the same point at most kShipOverGround above the ground, as the stages' own UFOs do
+    const float r = std::sqrt(v.pos.x * v.pos.x + v.pos.y * v.pos.y + v.pos.z * v.pos.z);
+    const float g = game::ground_radius(net::Vec3{up.x * 600, up.y * 600, up.z * 600});
+    const float at = std::isfinite(g) && g > 10 ? std::min(r, g + kShipOverGround) : r;
+    v.ship_at = net::Vec3{up.x * at, up.y * at, up.z * at};
+    place(v.ship, v.ship_at, basis_quat(net::Vec3{0, 0, 1}, up));
 }
 
 static void on_visitor(net::Reader& r)
@@ -764,23 +772,24 @@ void overlay(int sw, int sh)
     const std::string planet = galaxy::current_planet();
     void* me = game::avatar() ? game::avatar()
                               : net::galaxy::era_of(planet) == net::galaxy::kEraTribe ? tribe::player_chief() : nullptr;
-    if (!me)
-        return;
-    const net::Vec3 mine = game::position(me);
+    const net::Vec3 mine = me ? game::position(me) : net::Vec3{};
     for (auto& [s, v] : g_visitors) {
-        if (!visitor_alive(v))
+        // BUG-9349: a ship's tag over it wherever it shows (a Civ game has no avatar to measure from), 10 m above
+        const bool ship = g_ships && ship_alive(v);
+        if (!ship && (!me || !visitor_alive(v)))
             continue;
-        const net::Vec3 p = game::position(v.c);
-        const float dist = net::dist(p, mine);
+        const net::Vec3 p = ship ? v.ship_at : game::position(v.c);
+        const float dist = ship ? 0.f : net::dist(p, mine);
         if (!std::isfinite(dist) || dist > 120.f)
             continue;
         const float len = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
-        const float up = len > 1 ? modes::creature_tag_height(v.c) / len : 0; // over its head (as a partner's tag)
+        const float up = len > 1 ? (ship ? 10.f : modes::creature_tag_height(v.c)) / len : 0; // over its head (as a partner's tag)
         float w[3] = {p.x + p.x * up, p.y + p.y * up, p.z + p.z * up}, sc[2] = {NAN, NAN};
         H->world_to_screen(w, sc);
         if (!std::isfinite(sc[0]) || !std::isfinite(sc[1]) || sc[0] < 40 || sc[0] > sw - 40 || sc[1] < 40 || sc[1] > sh - 40)
             continue;
-        const std::string name = v.name.substr(0, utf8::cut_bytes(v.name, 32));
+        const std::string shown = utf8::shown_name(v.name); // (as the Social Menu: no -NoShare- test tag)
+        const std::string name = shown.substr(0, utf8::cut_bytes(shown, 32));
         const std::string era = std::string(net::galaxy::era_name(v.era)) + " era";
         const float bw = (float)std::max(utf8::overlay_text_px(name), utf8::overlay_text_px(era)) + 20, bh = 38;
         const float x1 = sc[0] - bw * .5f, y1 = sc[1] - bh;
@@ -1257,6 +1266,22 @@ std::string stream_status()
         snprintf(b, sizeof b, "space ships (BUG-9349): on=%d sent=%llu shown=%llu default_model=%llu live=%u\n", (int)g_ships,
                  (unsigned long long)g_ships_sent, (unsigned long long)g_ships_shown, (unsigned long long)g_ships_default, live);
         out += b;
+        for (auto& [k, v] : g_visitors) // (tests: where each ship is and where it shows on the screen)
+            if (ship_alive(v)) {
+                float w[3] = {v.ship_at.x, v.ship_at.y, v.ship_at.z}, sc[2] = {NAN, NAN};
+                H->world_to_screen(w, sc);
+                snprintf(b, sizeof b, "  ship of %s: sent (%.0f %.0f %.0f) r=%.0f, shown at r=%.0f, screen (%.0f %.0f)\n",
+                         v.name.c_str(), v.pos.x, v.pos.y, v.pos.z,
+                         std::sqrt(v.pos.x * v.pos.x + v.pos.y * v.pos.y + v.pos.z * v.pos.z),
+                         std::sqrt(v.ship_at.x * v.ship_at.x + v.ship_at.y * v.ship_at.y + v.ship_at.z * v.ship_at.z), sc[0], sc[1]);
+                out += b;
+                const float* up = (const float*)((const uint8_t*)v.ship + 0x38); // (cGameDataUFO position, spacecoop kPos)
+                const uint32_t* mk = (const uint32_t*)((const uint8_t*)v.ship + 0x780);
+                snprintf(b, sizeof b, "    the UFO is at (%.0f %.0f %.0f) r=%.0f, model %08X/%08X/%08X, ship_at (%.0f %.0f %.0f)\n", up[0], up[1], up[2],
+                         std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]), mk[0], mk[1], mk[2], v.ship_at.x, v.ship_at.y,
+                         v.ship_at.z);
+                out += b;
+            }
     }
     {
         size_t live = 0, waiting = 0;
