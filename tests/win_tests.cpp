@@ -545,6 +545,84 @@ static void test_slot_fallback()
     CHECK(get(own + L"\\Mine.spo") == "the guest's own game");
 }
 
+// the file's last write time moved by `seconds` (a save made later than the copy was received)
+static void shift_write_time(const std::wstring& p, int seconds)
+{
+    HANDLE h = CreateFileW(p.c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    ULARGE_INTEGER u;
+    u.LowPart = ft.dwLowDateTime;
+    u.HighPart = ft.dwHighDateTime;
+    u.QuadPart += (LONGLONG)seconds * 10000000ll;
+    ft.dwLowDateTime = u.LowPart;
+    ft.dwHighDateTime = u.HighPart;
+    if (h != INVALID_HANDLE_VALUE) {
+        SetFileTime(h, nullptr, nullptr, &ft);
+        CloseHandle(h);
+    }
+}
+
+// BUG-1434: a co-op copy that holds the player's own progress (it hosted or played alone from it) is the player's: a
+// later share of the same host world never reuses, replaces, deletes or tidies it
+static void test_slot_own_progress()
+{
+    printf("world: a co-op copy with the player's own progress is never replaced or tidied by a later share (BUG-1434)\n");
+    std::wstring games = fresh_dir(L"ownsave") + L"\\Games";
+    CreateDirectoryW(games.c_str(), nullptr);
+    std::string err, note;
+    auto files = [](const std::vector<slotfs::File>& w) {
+        std::vector<const slotfs::File*> v;
+        for (auto& f : w)
+            v.push_back(&f);
+        return v;
+    };
+    // 1. Alice's world (her whole galaxy: Terra and an old planet) into the guest's co-op slot
+    auto w1 = world("Terra", "A1");
+    w1.push_back({"Oldplanet.spo", {'o', 'l', 'd'}});
+    std::wstring a = slotfs::pick(games, L"", "Alice", "Terra", "Terra.spo", false, note);
+    CHECK(wr(a, w1, "Alice", "Terra", 1, err));
+    CHECK(!slotfs::own_progress(a));
+    // 2. the players swap roles: the guest hosts Terra from the copy and saves there
+    put(a + L"\\Terra.spo", "my own progress as the host");
+    CHECK(slotfs::mark_own(a, "Terra"));
+    slotfs::Marker m = slotfs::marker(a);
+    CHECK(m.coop && m.own && m.host == "Alice" && m.planet == "Terra");
+    CHECK(slotfs::own_progress(a));
+    // 3. Alice hosts Terra again (from her own older save) and shares: the copy stays, the world goes elsewhere
+    bool moved = false;
+    std::wstring s2 = slotfs::pick(games, L"", "Alice", "Terra", "Terra.spo", false, note);
+    printf("  share 2 goes into %ls (the copy with own progress: %ls)\n", s2.c_str(), a.c_str());
+    CHECK(!s2.empty() && lower(s2) != lower(a));
+    err.clear();
+    CHECK(slotfs::write_or_fallback(games, s2, L"", files(world("Terra", "A2")), "Alice", "Terra", "Terra.spo", 2, err, moved));
+    CHECK(get(a + L"\\Terra.spo") == "my own progress as the host"); // not deleted, not tidied away
+    CHECK(get(s2 + L"\\Terra.spo") == "A2");
+    // 4. the same with a planet started from the copy (Oldplanet: the report's case) in a slot of an older version
+    //    (no own_save line): a planet other than the marker's saved after the copy came
+    std::wstring b = s2;
+    put(b + L"\\Oldplanet.spo", "an old planet of Alice's played on as the host");
+    shift_write_time(b + L"\\Oldplanet.spo", 60);
+    CHECK(!slotfs::marker(b).own && slotfs::own_progress(b));
+    std::wstring s3 = slotfs::pick(games, L"", "Alice", "Terra", "Terra.spo", false, note);
+    CHECK(!s3.empty() && lower(s3) != lower(a) && lower(s3) != lower(b));
+    err.clear();
+    CHECK(slotfs::write_or_fallback(games, s3, L"", files(world("Terra", "A3")), "Alice", "Terra", "Terra.spo", 3, err, moved));
+    CHECK(get(b + L"\\Oldplanet.spo") == "an old planet of Alice's played on as the host");
+    CHECK(get(a + L"\\Terra.spo") == "my own progress as the host");
+    // 5. a guest's own save of the marker's planet (it plays the host's world as a guest): still a plain copy
+    put(s3 + L"\\Terra.spo", "the guest's save of Alice's world");
+    shift_write_time(s3 + L"\\Terra.spo", 60);
+    CHECK(!slotfs::own_progress(s3));
+    std::wstring s4 = slotfs::pick(games, L"", "Alice", "Terra", "Terra.spo", false, note);
+    CHECK(lower(s4) == lower(s3)); // reused as before: no copy per share
+    // 6. a guard: a write straight into the copy with own progress keeps the old copy in the backup folder
+    err.clear();
+    CHECK(wr(a, world("Terra", "A4"), "Alice", "Terra", 4, err));
+    printf("  the old copy kept in %ls\n", slotfs::g_kept_backup.c_str());
+    CHECK(!slotfs::g_kept_backup.empty() && get(slotfs::g_kept_backup + L"\\Terra.spo") == "my own progress as the host");
+}
+
 static void set_age(const std::wstring& dir, int seconds)
 {
     HANDLE h = CreateFileW(dir.c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
@@ -1935,6 +2013,8 @@ int main(int argc, char** argv)
             upd::g_pending_whole_fix = false;
         else if (!strcmp(argv[i], "--old-move")) // BUG-0848 (world.staged_move)
             slotfs::g_staged_move_fix = false;
+        else if (!strcmp(argv[i], "--old-own")) // BUG-1434 (world.copy_own_save)
+            slotfs::g_own_fix = false;
         else if (!strcmp(argv[i], "--old-collect")) // BUG-0847 (world.share_complete)
             slotfs::g_collect_fix = false;
         else if (!strcmp(argv[i], "--old-closewait")) // BUG-0853 (the test's own race)
@@ -1957,6 +2037,7 @@ int main(int argc, char** argv)
         slotfs::g_busy_fix = slotfs::g_match_fix = slotfs::g_write_fix = false;
         slotfs::g_fallback_fix = slotfs::g_cleanup_fix = false;
         slotfs::g_staged_move_fix = slotfs::g_collect_fix = false;
+        slotfs::g_own_fix = false;
         skini::g_unicode_fix = false;
         skini::g_encode_fix = skini::g_lock_fix = false;
         upd::g_path_fix = false;
@@ -1985,6 +2066,7 @@ int main(int argc, char** argv)
     test_slot_match();
     test_slot_write_fails();
     test_slot_fallback();
+    test_slot_own_progress();
     test_slot_leftovers();
     test_staged_move();
     test_share_collect();

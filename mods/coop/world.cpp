@@ -218,7 +218,7 @@ void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)
     M = mod;
     g_feed = std::move(feed);
     H->command_add(M, "coop.worldfix",
-                   "coop.worldfix [<name> 0|1 | queue <id>... | failnext | retry <ms> | landsave <ms>|-1] - world sharing fix switches (tests: 0 = the old behaviour); "
+                   "coop.worldfix [<name> 0|1 | queue <id>... | failnext | retry <ms> | landsave <ms>|-1 | menusettle <s>] - world sharing fix switches (tests: 0 = the old behaviour); "
                    "queue: shares for these players in one frame, each with a save",
                    c_worldfix, nullptr, SK_CMD_MAIN_THREAD);
     savestrip::set_write_watch(save_write_watch);
@@ -685,6 +685,12 @@ static std::vector<PendingShare> g_pending;
 extern bool g_share_reset_fix;
 
 static std::map<uint8_t, double> g_share_asked; // BUG-0754: host time a share to the peer was asked for
+static std::map<uint8_t, uint32_t> g_share_serial; // BUG-1435: shares asked for the peer (any caller)
+uint32_t share_serial(uint8_t peer)
+{
+    auto it = g_share_serial.find(peer);
+    return it == g_share_serial.end() ? 0 : it->second;
+}
 double since_share(uint8_t peer)
 {
     auto it = g_share_asked.find(peer);
@@ -708,6 +714,7 @@ bool share_in_flight(uint8_t peer)
 bool share_with(uint8_t peer, std::string& err, bool save_first, uint32_t tag)
 {
     g_share_asked[peer] = H->time_seconds(); // BUG-0754
+    g_share_serial[peer]++;                  // BUG-1435
     if (save_first) {
         for (auto& p : g_pending)
             if (p.peer == peer && p.need_save) {
@@ -834,6 +841,7 @@ COOP_FIX("world.write_check", "BUG-0105", slotfs::g_write_fix, "world: a world w
 COOP_FIX("world.slot_fallback", "BUG-0254", slotfs::g_fallback_fix, "world: a slot that cannot be replaced (a file in use) gives way to another slot");
 COOP_FIX("world.staged_move", "BUG-0848", slotfs::g_staged_move_fix, "world: the received world's final folder move is tried again for 1.5 s when a file in it is held for a moment (Windows error 5 / 32)");
 COOP_FIX("world.share_complete", "BUG-0847", slotfs::g_collect_fix, "world: a share whose save files cannot all be read completely fails and is tried again (off: the unreadable files are left out)");
+COOP_FIX("world.copy_own_save", "BUG-1434", slotfs::g_own_fix, "world: a co-op copy of another player's world that you saved in alone or as the host is your own: a later share never replaces, deletes or tidies it");
 COOP_FIX("world.tmp_cleanup", "BUG-0254", slotfs::g_cleanup_fix, "world: leftovers of interrupted world writes are tidied (under a mutex)");
 static unsigned g_share_saves;         // saves posted for shares (tests)
 static unsigned g_collect_failures;    // tests (BUG-0847): shares refused because a save file could not be read
@@ -984,7 +992,10 @@ struct Deferred {
     double back_since = 0;
 };
 static Deferred g_deferred;
-static const double kMenuSettle = 3.0, kStageSettle = 3.0;
+static const double kStageSettle = 3.0;
+// the galaxy menu's settle before a queued load (s); tests (BUG-1435, `coop.worldfix menusettle <s>`): a slow PC's
+// menu pass (the players' report took 5.2-5.4 s from the stage to the load, the lab ~4 s)
+static double g_menu_settle = 3.0;
 static double g_menu_since; // when the galaxy menu came up (0: not in it, or a load started from it)
 static double g_stage_since;    // when the current stage mode began (0: not in a stage)
 static double g_playable_since; // when the local player got something to control in it (0: not yet)
@@ -1435,7 +1446,7 @@ static void via_menu_tick()
         // (terrain spheres that draw their textures in render jobs over many frames): a load from
         // inside Present disposed spheres whose jobs the render frame had already taken, and they
         // were drawn without terrain (docs/re/space.md 8.3). Let the menu settle first.
-        if (!other && now - g_menu_since < kMenuSettle)
+        if (!other && now - g_menu_since < g_menu_settle)
             return;
         // switching the save folder and starting the load reads files and builds UI: outside the
         // frame (this tick runs inside Present)
@@ -1533,6 +1544,82 @@ static void drop_share_loads()
 }
 
 bool load_queued() { return g_editor_load_fix && (g_via_menu.on || g_deferred.on); }
+
+// BUG-1434: a guest's copy of the host's world is the host's whole galaxy (old planets too) with the marker
+// sporecoop.txt naming the host and the planet. After a role swap a player hosted from that copy (a player report: an old
+// planet of the first host's galaxy was started instead of the session's world) and saved its progress there; the next
+// share of the first host's world replaced the copy (its old folder deleted) or moved it to Games-sporecoop-backup. Now
+// the first save in a copy while this game is not a guest of a session (alone, or hosting from it) marks it as the
+// player's own (slotfs::mark_own): later shares leave it where it is (slotfs::g_own_fix). Checked once a second: the
+// newest planet file of the slot the save database points to against the newest one seen while a guest (or when the slot
+// was first seen this run). The co-op window is told who the copy is from (copy_origin, session_glue's notice).
+static struct SlotWatch {
+    std::wstring slot;
+    slotfs::Marker m;
+    uint64_t base = 0; // the newest planet file write seen while a guest or at the first sight
+    double next = 0;
+} g_sw;
+static unsigned g_own_marks; // tests: copies marked as the player's own this run
+
+static uint64_t newest_planet_write(const std::wstring& dir)
+{
+    uint64_t best = 0;
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW((dir + L"\\*.spo").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        return 0;
+    do {
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && _wcsicmp(fd.cFileName, L"snapshot.spo") != 0)
+            best = std::max(best, ((uint64_t)fd.ftLastWriteTime.dwHighDateTime << 32) | fd.ftLastWriteTime.dwLowDateTime);
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+    return best;
+}
+
+void slot_tick(bool guest)
+{
+    double now = H->time_seconds();
+    if (now < g_sw.next)
+        return;
+    g_sw.next = now + 1.0;
+    std::wstring db = current_db_dir(false);
+    if (db != g_sw.slot) {
+        g_sw = SlotWatch{db, db.empty() ? slotfs::Marker{} : slotfs::marker(db), db.empty() ? 0 : newest_planet_write(db), now + 1.0};
+        return;
+    }
+    if (!g_sw.m.coop || g_sw.m.own || !slotfs::g_own_fix)
+        return;
+    uint64_t t = newest_planet_write(db);
+    if (guest || t <= g_sw.base) {
+        g_sw.base = std::max(g_sw.base, t);
+        return;
+    }
+    std::string planet = modes::current_world_name();
+    if (planet.size() > 4 && planet.compare(planet.size() - 4, 4, ".spo") == 0)
+        planet.resize(planet.size() - 4);
+    if (!slotfs::mark_own(db, planet)) {
+        g_sw.base = t; // (tried again at the next save)
+        H->log(M, SK_WARN, "world: could not mark %s as your own save (BUG-1434)", narrow(db).c_str());
+        return;
+    }
+    g_sw.m.own = true;
+    g_own_marks++;
+    H->log(M, SK_INFO, "world: a save of %s in %s, a copy of %s's world: the slot is your own now, later shares leave it "
+                       "alone (BUG-1434)", planet.c_str(), narrow(db).c_str(), g_sw.m.host.c_str());
+    g_feed("your game in " + narrow(db.substr(db.find_last_of(L'\\') + 1)) + " (a copy of " + g_sw.m.host +
+           "'s world) is saved as your own: a world " + g_sw.m.host + " sends later goes into another slot");
+}
+
+bool copy_origin(std::string& slot, std::string& host, std::string& planet, bool& own)
+{
+    if (!g_sw.m.coop)
+        return false;
+    slot = narrow(g_sw.slot.substr(g_sw.slot.find_last_of(L'\\') + 1));
+    host = g_sw.m.host;
+    planet = g_sw.m.planet;
+    own = g_sw.m.own;
+    return true;
+}
 
 void guest_tick()
 {
@@ -1934,7 +2021,7 @@ static bool in_stage(uint32_t m)
 // from Cell the cell pool was freed under our adapter, and a space save loaded from Cell kept the
 // old CurrentGameName ("Karke.spo"), so the next save wrote the wrong planet. The game's quit
 // message 0x4715068 (handled by 0xB63610) saves the game and leaves any stage for the galaxy menu
-// (in space: the planet first); the save is loaded once the menu is up (~1 s + kMenuSettle). A
+// (in space: the planet first); the save is loaded once the menu is up (~1 s + g_menu_settle). A
 // request that comes while the game is in the menu waits for the settle too and also loads outside
 // the frame: a world received in the menu right after it opened was loaded at once from inside
 // Present and the menu's planet faulted (docs/re/space.md 8.3).
@@ -2056,6 +2143,11 @@ static void finish(const std::string& host_name)
     bool moved = false;
     bool wrote = slotfs::write_or_fallback(games_dir(), slot, current_db_dir(), files, host_name, g_in.offer.planet,
                                            planet, crc, werr, moved);
+    if (!slotfs::g_kept_backup.empty()) { // BUG-1434: (a guard: pick does not choose such a slot)
+        H->log(M, SK_WARN, "world: the old copy in %s held your own progress: it was moved to %s", narrow(slot).c_str(),
+               narrow(slotfs::g_kept_backup).c_str());
+        g_feed("your own progress in the old copy of " + host_name + "'s world was kept in " + narrow(slotfs::g_kept_backup));
+    }
     if (moved) {
         H->log(M, SK_WARN, "world: the old copy was in use: the world went into %s", narrow(slot).c_str());
         g_feed("the old copy of " + host_name + "'s world was in use: the world went into another save slot");
@@ -2211,6 +2303,9 @@ std::string status()
     s += b;
     snprintf(b, sizeof b, "stale menu player cleared %u\n", g_menu_player_cleared); // tests (BUG-0284)
     s += b;
+    if (g_sw.m.coop) // BUG-1434: the slot the save database points to is a co-op copy
+        s += "slot " + narrow(g_sw.slot) + ": a copy of " + g_sw.m.host + "'s world, made for " + g_sw.m.planet +
+             (g_sw.m.own ? ", your own save" : "") + " (own marks " + std::to_string(g_own_marks) + ")\n";
     if (g_in.active) {
         snprintf(b, sizeof b, "receiving world: %u/%u bytes\n", g_in.received, g_in.offer.total_size);
         s += b;
@@ -2271,6 +2366,11 @@ static int c_worldfix(void*, int argc, const char* const* argv, SkOut* out)
         g_land_after_ms = atoi(argv[2]);
         g_land_at = 0;
         H->out_printf(out, "land %d ms after the next share save\n", g_land_after_ms);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "menusettle")) { // tests (BUG-1435): the galaxy menu's settle before a queued load, s
+        g_menu_settle = atof(argv[2]);
+        H->out_printf(out, "galaxy menu settle before a load %.1f s\n", g_menu_settle);
         return 0;
     }
     if (argc > 2 && !strcmp(argv[1], "autoload")) { // tests: auto_load_world of coop.ini

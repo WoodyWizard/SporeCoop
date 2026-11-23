@@ -39,6 +39,13 @@ Why not the other stages (initially):
    files are written into `Spore\Games-sporecoop-tmp` first and moved into place as a whole; a
    world that could not be written completely is neither kept nor loaded. A load of a received
    world waits while an editor is open and is dropped when the session ends.
+   The slot is a copy of the host's whole galaxy (every planet of the host's `GameN`, old games
+   too). A copy the player saved in while not a guest (alone, or hosting from it) gets an
+   `own_save` line in its `sporecoop.txt` and is the player's own from then on: no later share
+   reuses, replaces or tidies it (0.7.16.1, BUG-1434). A host whose save database points to such a
+   copy of another player's world is told whose copy it is and which planet it was made for.
+   The host waits for the guest's load of the world it sent (its pass through the galaxy menu),
+   instead of taking that pass for a leave to the main menu (BUG-1435).
 3. The guest appears next to the host's creature: "<Nick> joined the posse".
 
 **In game**

@@ -10083,3 +10083,19 @@ by chance. Their tests open the window with a host knob that stands for the real
   real mating call and `coop.pool mate tp`; `--shared` in these tests runs them with all.shared_dna on.
 * coop_tribe_owners_reload.py (BUG-1429, BUG-1430): the reload is the civ_owners_reload recipe (`coop.save`,
   `coop.menu`, `coop.load` of played_slot() with the guest in the session).
+
+## World share: the guest's menu pass and co-op copies of 0.7.16.1 (2026-11-22, fix/w64-share)
+<a id="testing-share-menu-pass"></a>
+
+* `coop.worldfix menusettle <s>` (guest): the galaxy menu's settle before a queued load of a received world (default
+  3 s). With 6 s the guest's pass from the stage to the load takes ~8 s, longer than the host's 5 s "left to the main
+  menu" window: `share_menu_pass` (BUG-1435) rejoins the guest with it and counts the worlds the guest's game received
+  and loaded (its log) and its galaxy menu passes (game.mode every second) over 150 s: one each. The twin
+  `share_menu_pass_off` (`core.share_load_wait` off) sends the world again every round. The host's `coop.status` has
+  `load_wait <id> <0|1> loads= timeouts= shares=` per guest.
+* The guest's `coop.status` names the co-op copy its save database points to: `slot <path>: a copy of <host>'s world,
+  made for <planet>[, your own save] (own marks N)`. `copy_slot_keep` (BUG-1434): the guest saves alone in its copy,
+  rejoins, the host shares twice; the copy's planet file keeps its bytes (the second share used to replace it,
+  `world.copy_own_save` off). `copy_slot_notice`: the host leaves, the guest hosts from the copy; its notification
+  panel (`coop.notify` lists the visible toasts) says whose copy it is. win_tests `test_slot_own_progress` covers the
+  slot rules (`win_unit.py --old-own` must FAIL it).

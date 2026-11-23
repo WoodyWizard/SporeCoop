@@ -43,6 +43,27 @@ extern unsigned g_move_retries; // moves of a staged folder that needed more tha
 extern std::wstring g_test_held; // tests: this slot (lower case) cannot be moved (as on Windows with a file in it in use)
 extern int g_test_cleanup_age_s; // tests: the age (s) from which a temp copy is deleted (default 600)
 
+// BUG-1434: world.copy_own_save. A co-op slot (a received copy of a host's whole galaxy, old planets too) that holds
+// the player's own progress is the player's: a later share never reuses, replaces or tidies it. Own progress: a save
+// made in it while this game was not a guest of a session (alone, or hosting from it: mark_own adds the line
+// `own_save <date> <planet>` to its sporecoop.txt), or, for slots of older versions without that line, a planet file
+// other than the marker's planet written after the marker (a guest only plays the marker's planet in a copy).
+// Off: the copy is replaced (the old slot deleted) or tidied like any co-op slot (0.7.16).
+extern bool g_own_fix;
+// what a slot's sporecoop.txt says (coop false: no marker, the player's own slot)
+struct Marker {
+    bool coop = false, own = false; // own: an own_save line
+    std::string host, planet;       // the host whose world it is a copy of, the planet the copy was made for
+};
+Marker marker(const std::wstring& slot);
+// the slot is a co-op copy with the player's own progress in it (see g_own_fix), whatever the switch says
+bool own_progress(const std::wstring& slot);
+// adds the own_save line to the slot's marker (once); false when it is no co-op slot or the write failed
+bool mark_own(const std::wstring& slot, const std::string& planet);
+// BUG-1434: the last write() that moved the old copy of the slot to Games-sporecoop-backup instead of deleting it
+// (it held own progress): that backup folder; cleared by every write()
+extern std::wstring g_kept_backup;
+
 enum class WriteFail { None, Files, Replace, Move, Busy };
 
 // games: ...\Spore\Games. busy_lower: the slot the game plays (lower case, no trailing '\'), may be

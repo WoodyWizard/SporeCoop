@@ -319,6 +319,102 @@ void share_wait_tick()
     g_planet_wait_told = planet;
 }
 
+// BUG-1435: the host sent its world again about every 50 s (a player report, 8 shares in 6 minutes, the guest reloading
+// each time). The guest plays on in the stage while the share is saved and sent (~40 s for 20 MB), so joined_phase was
+// set on those frames; then the guest leaves the stage for the galaxy menu to load the world (its save on quit, the
+// menu's 3 s settle: 5.2-5.4 s on the players' PCs), and the 5 s "left to the main menu" window below sent the world
+// again. Now a guest waits for the load of the world sent last (any share: the join's, a phase's, coop.share, the
+// BUG-0508 fallback): its frames in the stage before it are not "joined the phase", its menu pass is not "left to the
+// menu". The wait ends when the guest is back in the host's mode after the share went out and the guest left the stage
+// (it loaded the world), 30 s after the guest left the host's mode (a guest that really went to the main menu then gets
+// the world again, 5 s later as before), or 120 s after the share went out without the guest leaving (auto_load_world=0,
+// a load refused: it plays where it is). `coop.fix core.share_load_wait off`: the old window (0.7.16).
+bool g_load_wait_fix = true;
+COOP_FIX("core.share_load_wait", "BUG-1435", g_load_wait_fix, "core: a guest passing through the galaxy menu to load the world it was just sent is not taken for one that left to the main menu (no world sent again)");
+constexpr double kLoadLeftWait = 30.0, kLoadStayWait = 120.0;
+unsigned g_load_waits, g_load_wait_timeouts; // tests (coop.status): waits that ended with the load / by a timeout
+// true while the guest has yet to load the world sent last
+static bool load_wait(uint8_t id, Remote& r, uint32_t mode, double now)
+{
+    uint32_t ser = world::share_serial(id);
+    if (ser != r.load_serial) {
+        r.load_serial = ser;
+        r.load_wait = true;
+        r.joined_phase = r.load_played = false; // (a new world is on its way: it has not played that one yet)
+        r.load_acked = r.load_left = 0;
+    }
+    if (!r.load_wait)
+        return false;
+    if (mode == g_mode)
+        r.load_played = true;
+    if (world::share_in_flight(id)) {
+        r.load_acked = r.load_left = 0; // (the guest's frames until the world is there are in the old copy)
+        return true;
+    }
+    if (!r.load_acked)
+        r.load_acked = now;
+    // the load's way: the galaxy menu, then the loading screen (an editor is not: the load waits until it is left)
+    if ((mode == modes::kMenu || mode == modes::kLoad) && !r.load_left)
+        r.load_left = now;
+    bool loaded = r.load_left && mode == g_mode;
+    const char* end = loaded                                              ? "loaded"
+                      : r.load_left && now - r.load_left > kLoadLeftWait   ? "is not back 30 s after it left for"
+                      : !r.load_left && now - r.load_acked > kLoadStayWait ? "did not leave its game in 120 s for"
+                                                                            : nullptr;
+    if (!end)
+        return true;
+    r.load_wait = false;
+    r.joined_phase = r.load_played; // as before the share: it played the host's mode since
+    (loaded ? g_load_waits : g_load_wait_timeouts)++;
+    LOG("share: %s %s the world sent last (%.1f s after it went out)", r.name.c_str(), end, now - r.load_acked);
+    return false;
+}
+
+// BUG-1434 (b): after a role swap the new host's galaxy menu showed its co-op copy of the first host's world (the
+// galaxy menu shows the slot the save database points to: the one loaded last, BUG-0676), the whole galaxy with the
+// first host's old planets, and nothing said so: the new host started one of those old planets instead of the world
+// played together. Now a host whose save database points to a co-op copy of another player's world is told, once per
+// copy and planet in a session, in the co-op window and a notification: whose copy it is, the planet it was made for,
+// and, in a stage, whether the planet played is that one. `coop.fix world.copy_notice off`: nothing said (0.7.16).
+bool g_copy_notice_fix = true;
+COOP_FIX("world.copy_notice", "BUG-1434", g_copy_notice_fix, "world: a host playing from a co-op copy of another player's world is told whose copy it is and which planet it was made for");
+void copy_notice_tick()
+{
+    static std::string told; // the copy (and planet) told in this session
+    if (!g_copy_notice_fix || g_sess.role() != net::Role::Host) {
+        told.clear();
+        return;
+    }
+    bool stage = stage_mode(g_mode);
+    if (!stage && g_mode != modes::kMenu)
+        return;
+    std::string slot, host, planet;
+    bool own = false;
+    if (!world::copy_origin(slot, host, planet, own) || host.empty() || host == g_name)
+        return;
+    std::string cur = stage ? modes::current_world_name() : std::string();
+    if (cur.size() > 4 && cur.compare(cur.size() - 4, 4, ".spo") == 0)
+        cur.resize(cur.size() - 4);
+    if (stage && cur.empty())
+        return;
+    std::string key = slot + "|" + cur;
+    if (key == told)
+        return;
+    told = key;
+    std::string text;
+    if (!stage)
+        text = "This galaxy (" + slot + ") is your copy of " + host + "'s world, made for the planet " + planet +
+               ". Its other planets are " + host + "'s older games; " + host + "'s own save is on " + host + "'s PC";
+    else if (cur == planet)
+        text = "You host " + planet + " from your copy of " + host + "'s world (" + slot + "). " + host +
+               "'s own save of " + planet + " is on " + host + "'s PC" +
+               (own ? ": this copy is your own save now" : ": your progress here is saved in this copy");
+    else
+        text = "You host " + cur + " from your copy of " + host + "'s world (" + slot + "): the copy was made for " +
+               planet + ", " + cur + " is one of " + host + "'s older games, not the world you played together";
+    feed_kind(text, "info");
+}
+
 // The host decides when a phase ends: when the host plays a stage and a guest stays in another
 // stage (or its editor) for a few seconds, the host world is sent again and the guest loads it.
 void follow_phase(double now)
@@ -435,13 +531,14 @@ void follow_phase(double now)
                 continue;
             }
         }
+        bool loading = g_load_wait_fix && load_wait(id, r, ls.mode, now); // BUG-1435
         // a guest in an editor is left alone (it may be evolving inside the same stage); a guest
         // that plays another stage than the host is pulled back into the host's stage
         bool behind = ls.mode != g_mode && stage_mode(ls.mode);
         // a guest that played this phase and went to the main menu (pause menu "Exit to Main
         // Menu") while staying in the session waited for the host's world forever (the lobby said
         // "Waiting for the host's world...", play_creature.py 2026-10-23): it gets the world again
-        bool left_to_menu = ls.mode == modes::kMenu && r.joined_phase;
+        bool left_to_menu = ls.mode == modes::kMenu && r.joined_phase && !loading;
         if (left_to_menu)
             behind = true;
         // the host went to the main menu and loaded another planet of the same stage: the guest
@@ -451,7 +548,7 @@ void follow_phase(double now)
             behind = true;
         if (!behind) {
             r.other_mode_since = -1;
-            if (ls.mode == g_mode)
+            if (ls.mode == g_mode && !loading)
                 r.joined_phase = true;
             continue;
         }
