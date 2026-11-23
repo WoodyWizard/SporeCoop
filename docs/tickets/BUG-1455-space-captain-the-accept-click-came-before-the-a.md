@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w65-tests
-commits:
+commits: 04d96951
 tests: tools/tests/coop_space_captain.py (space_captain)
 signature:
 docs:
