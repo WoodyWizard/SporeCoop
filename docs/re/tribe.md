@@ -4879,7 +4879,7 @@ err 0.75-2 m just before, and a step of (2 x gv + 3) x dt. tribe.smooth_bound bo
 ## The galaxy menu's world reset and the destroy hook's walks (2026-11-22, fix/w63-net)
 <a id="tribe-reset-walks"></a>
 
-BUG-9312, the analogue of BUG-9272 found by IltonBJSilva in their fork (PR #212, commit 6d94b4ae6).
+BUG-1427, the analogue of BUG-9272 found by IltonBJSilva in their fork (PR #212, commit 6d94b4ae6).
 * ~ (runtime in the fork, Steam exe on Windows 11, their data) A guest leaving its Tribe world for the host's at a
   rejoin tears the world down inside `SporeCoop::GalaxyMenu_SimReset` 0xB32C30: 283-314 creatures and citizens go
   through cGameNounManager::DestroyInstance there; with the destroy hook's walks the reset took 13.2 and 16.5 s

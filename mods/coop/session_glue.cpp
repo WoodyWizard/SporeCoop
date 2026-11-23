@@ -988,9 +988,9 @@ void setup_callbacks()
                 g_vote.editor = editor; // a cancelled vote ends with 0 (BUG-0234)
             // the evolution starts: everybody evolves its own creature in its own editor (own_editor_tick)
             // F5 (BUG-0769): creature.mode host: no own editor, the host's evolution comes as the new species
-            // BUG-9306 (tests: coop.vote noavatar <s> makes this end see no avatar)
+            // BUG-1421 (tests: coop.vote noavatar <s> makes this end see no avatar)
             bool have_local = g_local && !(ended && H->time_seconds() < g_vote_noavatar_until);
-            // BUG-9306 (CORE-2): in Creature without the avatar yet (its landing): on its way too
+            // BUG-1421 (CORE-2): in Creature without the avatar yet (its landing): on its way too
             bool landing = g_own_editor_no_avatar_fix && g_mode == modes::kCreature && !have_local;
             if (ended && g_vote.editor && g_mode == modes::kCreature && have_local && !(g_vote_world_fix && guest_elsewhere()) &&
                 !host_creature_mode()) {
@@ -1002,14 +1002,14 @@ void setup_callbacks()
                                     g_mode != modes::kSpace)) &&
                        !(g_vote_world_fix && guest_elsewhere()) && !host_creature_mode()) {
                 // BUG-1240: the first Creature editor's vote ended while this guest is still on its way to the host's
-                // Creature world (Cell, the galaxy menu, the load, BUG-9306: the landing without its avatar yet): its
+                // Creature world (Cell, the galaxy menu, the load, BUG-1421: the landing without its avatar yet): its
                 // own editor opens when it has arrived
                 g_own_editor_due = g_vote.editor;
                 g_own_editor_due_at = g_own_editor_due_first = H->time_seconds();
                 g_own_editor_arriving = true;
                 g_own_editor_arrivals++;
                 LOG("own editor: the first Creature editor's vote ended before this guest arrived (%s%s): it opens after the arrival (BUG-1240)",
-                    modes::mode_name(g_mode), landing ? ", no avatar yet, BUG-9306" : "");
+                    modes::mode_name(g_mode), landing ? ", no avatar yet, BUG-1421" : "");
                 feed("evolution: your own editor opens when you have arrived in the Creature stage");
             }
             if (ended && g_vote.editor) // WP-X1 (BUG-1276): the host's end-of-Tribe editors: our own ones after the arrival

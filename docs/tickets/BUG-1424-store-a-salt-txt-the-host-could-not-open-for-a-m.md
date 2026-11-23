@@ -1,5 +1,5 @@
 ---
-id: BUG-9309
+id: BUG-1424
 title: Store: a salt.txt the host could not open for a moment was replaced by a new salt: every stored player of the host lost (NET-12)
 status: open
 kind: bug
@@ -48,3 +48,5 @@ Lab: `tools/lab.py run store_salt_held store_salt_held_off`: store_salt_held mus
 
 ## History
 - 2026-11-22: opened.
+
+- 2026-11-22: renumbered from BUG-9309 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9309.

@@ -729,12 +729,12 @@ std::string debug(const std::vector<std::string>& a)
         g_n.max_chunk = 0;
         return "chunk budget " + std::to_string(g_chunk_budget);
     }
-    if (a.size() >= 3 && a[0] == "claims" && a[1] == "forget" && is_host()) { // claims forget <city> (tests, BUG-9303)
+    if (a.size() >= 3 && a[0] == "claims" && a[1] == "forget" && is_host()) { // claims forget <city> (tests, BUG-1418)
         size_t ci = (size_t)atoi(a[2].c_str());
         void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
         return city ? claims_forget(city) : "no such city\n";
     }
-    if (a.size() >= 2 && a[0] == "savekill" && is_guest()) { // savekill on|off (tests, BUG-9301): the next save's end
+    if (a.size() >= 2 && a[0] == "savekill" && is_guest()) { // savekill on|off (tests, BUG-1416): the next save's end
         took_debug_kill(a[1] == "on");                         // first removes a mirror it took out (as a host snapshot)
         return took_status();
     }
@@ -753,7 +753,7 @@ std::string debug(const std::vector<std::string>& a)
                     z[k] += *it == nullptr;
                 }
             }
-            // BUG-9301: entries that are no vehicle of the game's list now (pointers only: a removed, freed one)
+            // BUG-1416: entries that are no vehicle of the game's list now (pointers only: a removed, freed one)
             int un = 0;
             g_exist_frame = ~0ull;
             for (int k = 0; k < 2; k++) {

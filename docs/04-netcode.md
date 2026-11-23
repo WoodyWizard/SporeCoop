@@ -801,7 +801,7 @@ stays false). New guest-side gates use host_families, never peer_families(0).
 ## A game standing in an editor and the other side's timeout (2026-11-22, fix/w63-editor)
 <a id="netcode-editor-long-wait"></a>
 
-BUG-9304 (ported from PR #216 by IltonBJSilva), BUG-9305 (its reverse case, the owner's rule).
+BUG-1419 (ported from PR #216 by IltonBJSilva), BUG-1420 (its reverse case, the owner's rule).
 
 The host standing: a guest ends its session after `Session::timeout_ms` (30 s) without a packet from the host. An
 editor's first load can stand the host's main thread longer (45-52 s seen by the PR's author on a loaded PC: the City

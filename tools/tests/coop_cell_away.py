@@ -21,7 +21,7 @@ mate with `coop.pool mate tp`; its editor opens at once (BUG-1263; a vote, if an
 stays in its pool; cancel after the checks). It counts as away after 4 s (in Cell since
 BUG-0205; BUG-0233 had left Cell out because nothing played on there).
 
---guest-editor (CELL-5, BUG-9318): the host is in the main menu; after its meal the guest opens its own cell editor
+--guest-editor (CELL-5, BUG-1433): the host is in the main menu; after its meal the guest opens its own cell editor
 (its mating call by a real click, then onto its mate with `coop.pool mate tp`), the host loads its world again
 while the guest is still in its editor, then the guest leaves its editor (the red cross). The food it ate alone must
 still reach the host's total. SPORE_FIX_OFF=cell.solo_editor: the food is dropped when the guest's editor opens (the
@@ -153,7 +153,7 @@ def run(host, guest, editor, guest_editor):
     g1 = food(guest)
     print(f'  guest food {g0} -> {ga} (its own meals while the host is away) -> {g1}; {away_line(guest)}')
     ck(ga is not None and g1 == ga + 10, f'the guest\'s game counts its meal while the host is away ({ga} -> {g1})')
-    if guest_editor:  # CELL-5 (BUG-9318): the guest's own cell editor before the host is back
+    if guest_editor:  # CELL-5 (BUG-1433): the guest's own cell editor before the host is back
         if not ck(own_editor(guest, 'guest'), f'the guest\'s own cell editor opens ({mode(guest).strip()})'):
             return ck.result()
         print(f'  guest in its editor; {away_line(guest)}')

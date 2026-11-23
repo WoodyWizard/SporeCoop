@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Space: grants that reach a rejoined guest before its own cargo hold is back are not lost (BUG-9300, audit SPC-8).
+"""Space: grants that reach a rejoined guest before its own cargo hold is back are not lost (BUG-1415, audit SPC-8).
 
 A guest that rejoins loads the host's world (the host's hold); its own hold comes back a moment later (BUG-0678,
 K_INV_KEPT, up to 20 s) and the restore (apply_inv) takes out every item that is not in it. BUG-1034 made the tool

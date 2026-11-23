@@ -1,5 +1,5 @@
 ---
-id: BUG-9307
+id: BUG-1422
 title: CORE-9: a guest's own editor ends host away and drops the DNA it earned while the host was away
 status: open
 kind: bug
@@ -42,3 +42,5 @@ Open, waiting for the lab run.
 ## History
 - 2026-11-22: opened (audit CORE-9).
 - 2026-11-22: fixed on fix/w63-editor (35163c73), tests 2a454d1e.
+
+- 2026-11-22: renumbered from BUG-9307 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9307.

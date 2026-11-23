@@ -321,10 +321,10 @@ static void test_claims()
           claims::holder("host", present) == 0);
 }
 
-// BUG-9309 (NET-12): a salt.txt or world file that cannot be read now is not replaced
+// BUG-1424 (NET-12): a salt.txt or world file that cannot be read now is not replaced
 static void test_unreadable()
 {
-    printf("unreadable store files (BUG-9309)\n");
+    printf("unreadable store files (BUG-1424)\n");
     using pstore::Got;
     using pstore::SaltStep;
     using pstore::WorldStep;

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Civilization: a host that played alone keeps the cities it really had, and a joiner gets a city of its own
-(BUG-9303, audit CIV-6).
+(BUG-1418, audit CIV-6).
 
 A host is connected() alone, so its Civ tick dealt every city to itself and the owner claims (E1, BUG-1153) stamped
 the host's key on each of them 2 s later: when a guest joined, every non-capital city was claimed by the host and the

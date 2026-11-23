@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Creature: a guest's hit on an animal the host's game removed meanwhile is dropped, not applied to the freed creature
-(CR-2 of the external audit, BUG-9313).
+(CR-2 of the external audit, BUG-1428).
 
 The host reads a guest's hit (MSG_DAMAGE_REQ) in frame_receive, before this frame's NPC pass rebuilt the list of live
 creatures, and with no pass at all while the host has no avatar or is in its editor. The handler asked that list only:

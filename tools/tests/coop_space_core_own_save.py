@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Space: a partner who reached the galactic core gives Steve's gift only in the co-op galaxy (BUG-9300, audit SPC-8).
+"""Space: a partner who reached the galactic core gives Steve's gift only in the co-op galaxy (BUG-1415, audit SPC-8).
 
 Steve's gift (the Staff of Life, the core tools) is given to every player who lacks it once a partner entered the core
 (space_finale.cpp reward_tick, g_reached_by). A guest that plays a Space save of its own in the session (supported:

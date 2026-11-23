@@ -595,13 +595,13 @@ bool gate_drops(uint8_t type)
     return g_world_gate_fix ? guest_elsewhere() : host_elsewhere(type == net::MSG_DNA);
 }
 
-// BUG-9307 (audit CORE-9): the guest's "host away" ended 1 s after the guest itself left its stage, also for its own
+// BUG-1422 (audit CORE-9): the guest's "host away" ended 1 s after the guest itself left its stage, also for its own
 // editor (an Evolve now offer, its nest, its mating call): the host was still away, so solo_end dropped the DNA the guest
 // had earned meanwhile (its bar kept it, the host's next total took it away again). On: the guest's own editor keeps
 // the away state (and its DNA) until the guest is back in its stage, where the host's return decides as before.
 // Off: ended by the editor (0.7.16).
 static bool g_away_editor_fix = true;
-COOP_FIX("core.away_through_editor", "BUG-9307", g_away_editor_fix,
+COOP_FIX("core.away_through_editor", "BUG-1422", g_away_editor_fix,
          "creature: the DNA a guest earned while the host was away is kept through the guest's own editor (it went lost when the guest evolved before the host was back)");
 uint32_t g_away_kept_in_editor = 0; // tests (coop.dna): frames the away state was kept through the guest's own editor
 void host_away_tick(double now)
@@ -653,7 +653,7 @@ void host_away_tick(double now)
     // an editor or a load counts after 4 s: a host passing through the loading screen between two
     // places, or the shared editor of a vote opening a moment later here, is not away
     char why = g_host_away ? 0 : host_out_of_stage();
-    // BUG-9307: the guest's own editor is no end of the away state (its DNA would be dropped)
+    // BUG-1422: the guest's own editor is no end of the away state (its DNA would be dropped)
     bool own_editor = g_away_editor_fix && (g_mode == modes::kEditor || g_mode == modes::kEdit);
     if (g_host_away && own_editor)
         g_away_kept_in_editor++;

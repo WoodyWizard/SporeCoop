@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Tribe: who owns which tribe member stays the same when the host loads its world again with the guest in the game
-(TR-1 and TR-6 of the external audit, BUG-9314, BUG-9315; the reload part of E1, BUG-1154).
+(TR-1 and TR-6 of the external audit, BUG-1429, BUG-1430; the reload part of E1, BUG-1154).
 
 The host keeps a claim per member of the player tribe (its owner's stable key, by position, in the per-player store
 with every save). Every 2 s the claims followed the owners, and that ran first in the host's tick, before the members

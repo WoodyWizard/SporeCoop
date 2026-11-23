@@ -125,13 +125,13 @@ static bool g_wait_restore_fix = true;
 COOP_FIX("space.trade_wait_restore", "BUG-1034", g_wait_restore_fix,
          "space: a gift or a sale reaching a rejoined guest before its own cargo hold is back waits for it");
 static spacekept::HeldQueue g_waiting; // the whole payloads (C5: space_kept.h)
-// BUG-9300 (audit SPC-8): BUG-1034 held only this file's gifts and sales. Other grants into the hold in that window
+// BUG-1415 (audit SPC-8): BUG-1034 held only this file's gifts and sales. Other grants into the hold in that window
 // (a partner's gift spice K_GIFT, a mission's reward tools K_MISSION, a contract's reward tool, Steve's gift of the
 // finale) went into the host's copy and apply_inv took them out again: lost, the Staff of Life for good (its flag
 // stays set). Now they ask spaceext::hold_grants() and wait (owed, queued) until the restore is done.
 // `coop.fix space.grant_wait_restore off`: given at once (0.7.16).
 static bool g_grant_wait_fix = true;
-COOP_FIX("space.grant_wait_restore", "BUG-9300", g_grant_wait_fix,
+COOP_FIX("space.grant_wait_restore", "BUG-1415", g_grant_wait_fix,
          "space: gift spice, mission and contract reward tools and Steve's gift reaching a rejoined guest wait for its own cargo hold");
 static uint32_t g_grant_waits; // tests: frames a grant was told to wait
 static uint32_t g_offer_waits;
@@ -2124,7 +2124,7 @@ static bool reg = spaceext::add({.name = "trade",
 } // namespace spacetrade
 
 namespace spaceext {
-// BUG-9300: see space_ext.h
+// BUG-1415: see space_ext.h
 bool hold_grants()
 {
     if (!spacetrade::g_grant_wait_fix || !spacetrade::inv_restore_pending())

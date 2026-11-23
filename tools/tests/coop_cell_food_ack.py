@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Cell: a guest's meal does not dip out of its food bar while the host's game has not added it yet (CELL-1 of the
-external audit, BUG-9316; BUG-0051's symptom again).
+external audit, BUG-1431; BUG-0051's symptom again).
 
 Since BUG-0633 (cell.food_in_step) the host adds a guest's meal at its next cell step, but it acknowledged the meal's
 number when the message came. The host's food total that went out in between (every 0.5 s) had the number but not the

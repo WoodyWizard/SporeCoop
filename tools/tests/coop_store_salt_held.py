@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The host's store salt survives a moment in which another program holds salt.txt open for writing (BUG-9309, NET-12
+"""The host's store salt survives a moment in which another program holds salt.txt open for writing (BUG-1424, NET-12
 of the 0.7.15.5 audit).
 
 Every stored player's key on the host is a digest of the host profile's salt (Games-sporecoop-store/salt.txt) and the

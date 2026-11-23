@@ -199,13 +199,13 @@ bool g_solo_owed;   // the host is back: g_solo_food goes out before its first s
 // is still in Cell (own_world::host_left, BUG-0638's path): the host's pool never comes there, and the guarded hooks
 // (h_Populate, h_SpawnLoot, h_Pair) emptied the guest's pool, dropped its loot and its predators' pairs. Off: only
 // the host in the menu / an editor / a load counts (0.7.12).
-// CELL-5 (BUG-9318): the food a guest ate while the host was away (in its editor, the menu, a load) is kept in
+// CELL-5 (BUG-1433): the food a guest ate while the host was away (in its editor, the menu, a load) is kept in
 // g_solo_food until the host is back. The guest's own Cell editor (its mating) is not Cell (in_cell() false, mode
 // kEditor), and both resets (the tick's "the stage was left" and solo_tick's) dropped that food: it was in the guest's
 // game only, so the host's next total took it back. On: kept while the mode is the editor (a Cell editor, or the
 // creature editor at the stage's end: then the next stage drops it). Off: dropped (0.7.16).
 static bool g_fix_solo_editor = true;
-COOP_FIX("cell.solo_editor", "BUG-9318", g_fix_solo_editor,
+COOP_FIX("cell.solo_editor", "BUG-1433", g_fix_solo_editor,
          "cell: the food a guest ate while the host was away still reaches the party when the guest opens its own cell editor first");
 bool solo_keep_in_editor() { return g_fix_solo_editor && game::mode_id() == modes::kEditor; }
 bool g_fix_solo_elsewhere = true;
@@ -263,13 +263,13 @@ cell_logic::Once g_eaten(5.0);
 std::unordered_map<uint32_t, uint32_t> g_gone_sends; // tests: ACT_GONE sends per host index (last 512)
 cell_logic::Meals g_meals;              // guest: meals sent, not yet in a host total
 std::unordered_map<int, uint32_t> g_food_ack; // host: the last meal number of each guest it applied
-// CELL-1 (BUG-9316): a guest's meal is acknowledged (g_food_ack) when its message is read, but since BUG-0633
+// CELL-1 (BUG-1431): a guest's meal is acknowledged (g_food_ack) when its message is read, but since BUG-0633
 // (cell.food_in_step) its food is added only at the next cell step. host_tick's total of that frame (every 0.5 s) then
 // went out without the meal and with its number: the guest dropped the meal from "on the way" and its food dipped by it
 // for 0.5 s (BUG-0051's symptom; over a level line a level down and up). On: the acknowledgement waits in the same queue
 // as the food, after it. Off: at once (0.7.16).
 static bool g_fix_ack_in_step = true;
-COOP_FIX("cell.ack_in_step", "BUG-9316", g_fix_ack_in_step,
+COOP_FIX("cell.ack_in_step", "BUG-1431", g_fix_ack_in_step,
          "cell: the host acknowledges a guest's meal together with its food, so the guest's food does not dip for a moment");
 static void ack_meal(int from, uint32_t meal)
 {
@@ -1325,7 +1325,7 @@ void tick(double now)
         mate_forget();        // BUG-1246: and the copies of the partners' mates
     }
     if (!cell && (g_solo || g_solo_owed) && !solo_keep_in_editor())
-        solo_reset(); // BUG-0205: the stage was left (BUG-9318: not for the editor)
+        solo_reset(); // BUG-0205: the stage was left (BUG-1433: not for the editor)
     if (cell && !was_in_cell && C.sess && C.sess->connected())
         g_dna_note_due = true; // BUG-0351: once the Cell game has its data (a load, an editor's return)
     if (cell && g_dna_note_due && S() && avatar()) {
@@ -1423,7 +1423,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         FoodMsg f;
         bool got = type == net::MSG_CELL_EAT ? read_eat(r, e) && e.has_meal : (f = read_food(r)).has_meal;
         if (got) // no game call here: outside Cell the pool can be gone, without an avatar AddFoodPoints is unsafe
-            ack_meal(from, type == net::MSG_CELL_EAT ? e.meal : f.meal); // (BUG-9316: after food still queued)
+            ack_meal(from, type == net::MSG_CELL_EAT ? e.meal : f.meal); // (BUG-1431: after food still queued)
         if (type == net::MSG_CELL_FOOD && f.has_spent)
             spend_in(from, f.spent, f.meal, false); // BUG-1249: kept until our own editor's result is written
 
@@ -1479,7 +1479,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         uint8_t* c = modes::cell_at(idx);
         // a bite lands on an NPC of our pool: never on a player's cell (ours or a puppet); BUG-1008: nor on a dead one
         bool dead = c && g_fix_chunk_killer && F<uint8_t>(c, kDead);
-        bool copy = mate_copy_refuse(c); // BUG-9317: the copy of a partner's mate is its owner's game's
+        bool copy = mate_copy_refuse(c); // BUG-1432: the copy of a partner's mate is its owner's game's
         if (!r.ok() || !c || F<uint8_t>(c, kDying) || dead || c == avatar() || modes::cell_is_puppet(c) || copy) {
             trace::ev("bite", "refused", "from %u c%u refused: %s", from, idx,
                       !c ? "no such cell here" : c == avatar() || modes::cell_is_puppet(c) ? "a player's cell" : copy ? "a partner's mate"
@@ -1562,11 +1562,11 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         int food = e.food;
         bool plant = e.plant;
         if (e.has_meal) // applied (or refused, eaten first) now: its total goes back with this number
-            ack_meal(from, e.meal); // (BUG-9316: once its food below is applied in the step)
+            ack_meal(from, e.meal); // (BUG-1431: once its food below is applied in the step)
         if (food <= -1000 || food >= 1000)
             food = 0;
         uint8_t* c = modes::cell_at(idx);
-        if (c && (modes::cell_is_puppet(c) || c == avatar() || mate_copy_refuse(c))) // (BUG-9317: nor a partner's mate)
+        if (c && (modes::cell_is_puppet(c) || c == avatar() || mate_copy_refuse(c))) // (BUG-1432: nor a partner's mate)
             c = nullptr;
         uint8_t* pc = puppet_cell(from);
         const char* what = c ? kind_of(c) : "-";
@@ -1638,7 +1638,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             trace::ev("eat", "from food", "from %u food +%d %s meal=%u: %s", from, f.amount, f.plant ? "plant" : "meat", f.meal,
                       f.valid && f.amount > -1000 && f.amount < 1000 ? "applied" : "refused (bad message)");
             if (f.has_meal)
-                ack_meal(from, f.meal); // BUG-9316: after the food queued above
+                ack_meal(from, f.meal); // BUG-1431: after the food queued above
         } else if (is_guest()) {
             int food = (int)r.u32(), plant = (int)r.u32();
             uint8_t* s = S();

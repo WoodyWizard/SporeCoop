@@ -5,13 +5,13 @@ Creature fixture, two games. Each part forces the stand the players saw on slow 
 sleeps, nothing is sent, as in an editor's first load; `kit.test.dialog`: a message box, the window pumps messages and
 the keepalive answers for the game) and checks what the other game does (its session, its vote, its editor).
 
-  --part host     BUG-9304 (PR #216): the host's evolution vote (`coop.vote editor`, the guest's real I'm ready); the
+  --part host     BUG-1419 (PR #216): the host's evolution vote (`coop.vote editor`, the guest's real I'm ready); the
                   host's editor request goes to the game; once the guest has been told that the host is in an editor
                   the host's game stands 45 s (`kit.test.hang 45000`, longer than the session's 30 s timeout). The
                   guest stays in the session all along and after it (its status never offline, the host still has two
                   players). FAIL twin: SPORE_FIX_OFF=core.editor_long_wait (the guest ends its session after 30 s:
                   "connection to host lost (timeout)").
-  --part guest    BUG-9305 (the reverse, the owner's rule: a guest stuck in its own editor is removed after 30 s and
+  --part guest    BUG-1420 (the reverse, the owner's rule: a guest stuck in its own editor is removed after 30 s and
                   may join again; the host is not held). Both evolve (`coop.vote editor`), the host leaves its editor,
                   the guest stays in its own:
                   1. vote: in its editor, the guest's game shows a message box for 50 s (`kit.test.dialog 50000`: no
@@ -25,7 +25,7 @@ the keepalive answers for the game) and checks what the other game does (its ses
                      reason ("rejected: the host heard nothing from this game for 30 s ..."), joins again, leaves its
                      editor and is back in the host's world. FAIL twin: SPORE_FIX_OFF=net.timeout_told (the guest
                      reads the host's older packets and stays "connected" to a host that dropped it).
-  --part landing  BUG-9306 (audit CORE-2): the guest in the Creature stage without its avatar yet when the first
+  --part landing  BUG-1421 (audit CORE-2): the guest in the Creature stage without its avatar yet when the first
                   Creature editor's vote (the landfall editor FD4902BD) ends: `coop.vote noavatar 90` on the guest
                   makes that vote end see no avatar (the moment of its landing; the editor's own rule then waits for
                   the real avatar, 15 s). The guest's game opens its own editor within 60 s of the vote's end.

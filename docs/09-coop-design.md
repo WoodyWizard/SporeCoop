@@ -150,11 +150,11 @@ Shared contracts between the features:
   way to the host's Creature world when the first Creature editor's vote ends gets its own editor when it arrives
   (BUG-1240).
 * An editor within a phase (for example, the creature editor after the mating call) does not kick guests out.
-* A guest whose game stands 30 s (stuck in its own editor's load, a dialog) does not hold the host (BUG-9305): a vote
+* A guest whose game stands 30 s (stuck in its own editor's load, a dialog) does not hold the host (BUG-1420): a vote
   that waits for it removes it from the session with the reason, the session's 30 s timeout tells it why; it may join
-  again. A host standing in its editor's load is waited for up to 120 s (BUG-9304, PR #216).
+  again. A host standing in its editor's load is waited for up to 120 s (BUG-1419, PR #216).
 * A guest in the Creature stage without its avatar yet when the first Creature editor's vote ends gets its own editor
-  when the avatar is there (BUG-9306, as BUG-1240's guest on its way).
+  when the avatar is there (BUG-1421, as BUG-1240's guest on its way).
 * Cell -> Creature (BUG-0315, `core.switch_vote`): the host's click on History's check starts the vote "wants to move on
   to the Creature stage"; the first Creature editor's vote that follows counts every player who has arrived as ready.
   That vote waits for a guest still on its way (in Cell, the galaxy menu, the load) while its arrival is quick: its

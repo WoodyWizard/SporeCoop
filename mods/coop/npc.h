@@ -93,7 +93,7 @@ bool debug_hurt(uint8_t player, uint16_t id, float damage); // host: NPC `id` hi
 bool proxy_in_host_pack(void* c); // guest: proxy c mirrors a member of the host's pack (BUG-0556)
 uint16_t id_of(void* c);         // host: the net id of NPC c, guest: of proxy c (0xFFFF: none)
 void* host_npc(uint16_t id);     // host: NPC #id if it is alive this frame
-std::string debug_gone(uint16_t id, float secs); // host (tests, BUG-9313): the game removes NPC #id, the pass held
+std::string debug_gone(uint16_t id, float secs); // host (tests, BUG-1428): the game removes NPC #id, the pass held
 std::string debug_pool(uint16_t id); // host (tests, BUG-0339): NPC #id to the game's creature pool
 std::string debug_nanvel(float secs, int id, bool air); // tests (BUG-0894)
 std::string debug_rxkeep(int n, float secs); // guest (tests, BUG-0611): only the first n NPCs of each state batch for secs

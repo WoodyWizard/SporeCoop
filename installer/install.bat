@@ -23,7 +23,7 @@ if defined HAVE if /i not "%HAVE%"=="%WANT2%" if /i not "%HAVE%"=="%WANT3%" (
   echo It has not been tested yet - see INSTALL.txt, section 2.
   echo.
 )
-rem BUG-9310: the game's own steam_api.dll is kept as steam_api_orig.dll, never SporeCoop's loader (a backup that was
+rem BUG-1425: the game's own steam_api.dll is kept as steam_api_orig.dll, never SporeCoop's loader (a backup that was
 rem lost, e.g. to an antivirus, was replaced by the loader: it then loaded itself and the game did not start). A
 rem steam_api_orig.dll that is the loader counts as missing. Every copy is checked.
 set SCORIG=0

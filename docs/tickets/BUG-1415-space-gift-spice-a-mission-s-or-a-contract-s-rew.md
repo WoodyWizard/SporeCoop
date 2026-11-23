@@ -1,5 +1,5 @@
 ---
-id: BUG-9300
+id: BUG-1415
 title: Space: gift spice, a mission's or a contract's reward tool and Steve's gift reaching a rejoined guest before its own cargo hold is back are lost; Steve's gift is given in a guest's own Space save (audit SPC-8)
 status: open
 kind: bug
@@ -61,3 +61,5 @@ open, waiting for the lab run.
 ## History
 - 2026-11-22: opened.
 - 2026-11-22: fix and tests on fix/w63-space (no lab run yet: lanes busy with the 0.7.16 final check).
+
+- 2026-11-22: renumbered from BUG-9300 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9300.

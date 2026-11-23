@@ -537,7 +537,7 @@ void solo_tick()
         g_solo_owed = g_solo_food[0] || g_solo_food[1];
         trace::line("cell", "host back: the host's pool replaces the guest's at its first state");
     } else if (is_guest() && solo_keep_in_editor())
-        return; // BUG-9318: our own editor: the food eaten alone is kept, decided again back in Cell
+        return; // BUG-1433: our own editor: the food eaten alone is kept, decided again back in Cell
     else
         solo_reset();
 }

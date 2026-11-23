@@ -4550,19 +4550,19 @@ static void test_kick()
     b.leave();
 }
 
-// BUG-9305: a guest whose game stands (its own editor's load) longer than the host's timeout: the host drops it and
+// BUG-1420: a guest whose game stands (its own editor's load) longer than the host's timeout: the host drops it and
 // tells it; when the guest's game goes on it reads the host's older packets and the REJECT, so its session ends at once
 // with the reason (and it may join again). FAILS with `--off timeout_told`: the older packets make it believe the host
-// is there, it plays on a dead link (its own timeout, 120 s with BUG-9304 while the host is in an editor)
+// is there, it plays on a dead link (its own timeout, 120 s with BUG-1419 while the host is in an editor)
 static void test_timeout_told()
 {
-    printf("a guest dropped by the host's timeout while its game stood is told so when it goes on (BUG-9305)\n");
+    printf("a guest dropped by the host's timeout while its game stood is told so when it goes on (BUG-1420)\n");
     const bool fix = g_fix.timeout_told;
     Session h, a, b;
     a.rejoin_token = 1;
     b.rejoin_token = 2;
     h.timeout_ms = 1500;
-    b.timeout_ms = 20000; // its own timeout is far (a guest whose host is in an editor: BUG-9304)
+    b.timeout_ms = 20000; // its own timeout is far (a guest whose host is in an editor: BUG-1419)
     std::string err, why;
     b.cb.disconnected = [&](const std::string& w) { why = w; };
     int a_saw_leave = 0;

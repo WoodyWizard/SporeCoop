@@ -1,5 +1,5 @@
 ---
-id: BUG-9306
+id: BUG-1421
 title: CORE-2: a guest in Creature without its avatar yet when the landfall editor's vote ends loses its first own Creature editor
 status: open
 kind: bug
@@ -44,3 +44,5 @@ Open, waiting for the lab run.
 ## History
 - 2026-11-22: opened (audit CORE-2).
 - 2026-11-22: fixed on fix/w63-editor (35163c73), tests 2a454d1e.
+
+- 2026-11-22: renumbered from BUG-9306 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9306.

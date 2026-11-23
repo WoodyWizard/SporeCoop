@@ -100,7 +100,7 @@ inline std::string stable_key(uint64_t salt, const std::string& player_key, bool
     return b;
 }
 
-// BUG-9309 (NET-12 of the 0.7.15.5 audit): what a read of a store file found. Unreadable: the file may be there but
+// BUG-1424 (NET-12 of the 0.7.15.5 audit): what a read of a store file found. Unreadable: the file may be there but
 // could not be opened or read now (a sharing violation of another program, access denied, an I/O error)
 enum class Got { Text, Missing, Unreadable };
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A guest leaving its Tribe world does not stand for seconds in the world reset (BUG-9312, the analogue of BUG-9272
+"""A guest leaving its Tribe world does not stand for seconds in the world reset (BUG-1427, the analogue of BUG-9272
 that IltonBJSilva found and fixed in their fork, PR #212).
 
 The destroy hook's stale-reference fixes (BUG-0456 forget_sender, BUG-0930 forget_last_attacker) walk every object of

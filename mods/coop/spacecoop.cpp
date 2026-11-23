@@ -1621,7 +1621,7 @@ struct GiftHeld {
     int n;
 };
 static std::vector<GiftHeld> g_gifts_held;
-// BUG-9300: gifts that reached us while our own hold was still to come (spaceext::hold_grants), handled after the
+// BUG-1415: gifts that reached us while our own hold was still to come (spaceext::hold_grants), handled after the
 // restore in the same Space world (another world: the gift went with the old one, as a received gift does)
 struct GiftWait {
     GiftHeld g;
@@ -1786,7 +1786,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         for (auto& k3 : msg.tools) {
             Key k;
             memcpy(k.v, k3.v, sizeof k.v);
-            // BUG-0694; BUG-9300: also while our own hold is still to come (its restore would take the tool out)
+            // BUG-0694; BUG-1415: also while our own hold is still to come (its restore would take the tool out)
             if ((!inv || !in_space() || spaceext::hold_grants()) && spaceext::owe_tool_key(k.v, name(origin) + "'s mission")) {
                 owed++;
                 continue;
@@ -1854,10 +1854,10 @@ static void on_gift(uint8_t kind, uint8_t origin, const Key& k, int n)
         g_gifts_held.push_back({origin, k, n});
         return;
     }
-    if (kind == K_GIFT && spaceext::hold_grants() && g_gifts_wait.size() < 64) { // BUG-9300: not into the replaced hold
+    if (kind == K_GIFT && spaceext::hold_grants() && g_gifts_wait.size() < 64) { // BUG-1415: not into the replaced hold
         g_gifts_wait.push_back({{origin, k, n}, spaceext::world_epoch()});
         g_gift_waited++;
-        H->log(M, SK_INFO, "space: %d spice from %s waits for the own hold's restore (BUG-9300)", n, name(origin).c_str());
+        H->log(M, SK_INFO, "space: %d spice from %s waits for the own hold's restore (BUG-1415)", n, name(origin).c_str());
         return;
     }
     if (kind == K_GIFT_BACK && g_gift_refund_fix) {
@@ -1875,7 +1875,7 @@ static void on_gift(uint8_t kind, uint8_t origin, const Key& k, int n)
         g_gifts_out.erase(it); // before anything is paid: once
         // BUG-0225: another Space world in memory now (a load came between): gift_owed_tick decides
         bool other_world = spaceext::owed_id() && g.epoch != spaceext::world_epoch();
-        if (other_world || spaceext::hold_grants() || !add_spice(k, n)) { // BUG-9300: not into the replaced hold
+        if (other_world || spaceext::hold_grants() || !add_spice(k, n)) { // BUG-1415: not into the replaced hold
             g_gifts_owed.push_back({k, n, g.epoch, g.tag});
             g_gift_back_owed++;
             if (C.notice)
@@ -1910,7 +1910,7 @@ static void on_gift(uint8_t kind, uint8_t origin, const Key& k, int n)
 // BUG-0226: owed spice, back in Space (also after the session ended)
 static void gift_owed_tick()
 {
-    if (!g_gifts_wait.empty() && in_space() && inventory() && !spaceext::hold_grants()) { // BUG-9300: the restore is done
+    if (!g_gifts_wait.empty() && in_space() && inventory() && !spaceext::hold_grants()) { // BUG-1415: the restore is done
         auto wait = std::move(g_gifts_wait);
         g_gifts_wait.clear();
         for (auto& w : wait)
@@ -1921,7 +1921,7 @@ static void gift_owed_tick()
                 H->log(M, SK_INFO, "space: %d spice that waited for the restore dropped: another Space world", w.g.n);
             }
     }
-    if (g_gifts_owed.empty() || !in_space() || !inventory() || spaceext::hold_grants()) // BUG-9300
+    if (g_gifts_owed.empty() || !in_space() || !inventory() || spaceext::hold_grants()) // BUG-1415
         return;
     auto owed = std::move(g_gifts_owed);
     g_gifts_owed.clear();
@@ -2743,7 +2743,7 @@ std::string debug(const std::vector<std::string>& a)
                  F<float>(rec, 0xB8));
         return b;
     }
-    if (a[0] == "missiontool" && a.size() > 1) { // tests (BUG-9300): K_MISSION with this tool as its reward (0xhash)
+    if (a[0] == "missiontool" && a.size() > 1) { // tests (BUG-1415): K_MISSION with this tool as its reward (0xhash)
         void* inv = inventory();
         Key tk{};
         int n = inv ? vcall<int>(inv, 0x5C / 4) : 0;

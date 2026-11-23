@@ -1,5 +1,5 @@
 ---
-id: BUG-9299
+id: BUG-1414
 title: Space: the switch from Rivals to Allies while a guest is in an editor or an adventure credits the shared total back to the host as the guest's correction (audit SPC-2)
 status: open
 kind: bug
@@ -52,3 +52,5 @@ Expected: PASS with the fix; FAIL with SPORE_FIX_OFF=space.merge_hold_totals (ho
 ## History
 - 2026-11-22: opened.
 - 2026-11-22: fix and test on fix/w63-space (no lab run yet: lanes busy with the 0.7.16 final check).
+
+- 2026-11-22: renumbered from BUG-9299 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9299.

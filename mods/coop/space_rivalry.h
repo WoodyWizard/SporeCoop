@@ -18,7 +18,7 @@ bool on_hit(void* ufo, void* attacker, float dmg, int type, const float* dir);
 // host's own NPC ships and that player's ship then hit each other)
 bool at_war(uint8_t id);
 
-// BUG-9299 (audit SPC-2): a guest whose switch to Allies is not merged yet (it was outside Space at the switch): its own
+// BUG-1414 (audit SPC-2): a guest whose switch to Allies is not merged yet (it was outside Space at the switch): its own
 // budget is still in its game, shared.cpp holds the host's Space money totals until the merge's correction went out
 // (false on the host and with `coop.fix space.merge_hold_totals off`; each true answer is counted as a held total)
 bool merge_pending();

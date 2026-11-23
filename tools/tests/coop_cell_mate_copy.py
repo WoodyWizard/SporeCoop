@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Cell: the copy of the guest's mate in the host's game cannot be killed there (CELL-3 of the external audit,
-BUG-9317).
+BUG-1432).
 
 Since BUG-1246 the host keeps a copy of a guest's mate in its pool (the guest's mating call made it in the guest's
 game only). It was protected by the invulnerable byte +0x111 alone, which the game's lethal bite (Bite ->

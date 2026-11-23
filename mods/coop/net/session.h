@@ -96,12 +96,12 @@ public:
     uint32_t world = 0;
     uint32_t welcome_world() const { return welcome_world_; }
     uint32_t timeout_ms = 30000; // the game can block for a long time while saving/loading
-    // BUG-9305, host: what a guest dropped for silence is told (net.timeout_told): its game stood longer than
+    // BUG-1420, host: what a guest dropped for silence is told (net.timeout_told): its game stood longer than
     // timeout_ms (an editor's load, a hang); it reads this when it goes on and ends its session, then it may join again
     static constexpr const char* kTimeoutText =
         "the host heard nothing from this game for 30 s (it stood, maybe in an editor's load) and went on without it: "
         "join again";
-    uint32_t timeouts_told() const { return timeouts_told_; } // BUG-9305: guests dropped for silence and told so
+    uint32_t timeouts_told() const { return timeouts_told_; } // BUG-1420: guests dropped for silence and told so
     std::string lobby_info;  // host: shown to players looking for games on the network
     // F3 (BUG-0768), host: the players the session takes, the host counted (all.max_players, 2..kMaxPlayers), and
     // whether a new player is refused now (all.late_join off while the host plays its world). A player who was in
@@ -145,7 +145,7 @@ public:
     bool join(const std::string& addr, const std::string& name, std::string& err);
     void leave(const char* why = "left");
     void update(); // call every frame: receive, timeouts, send
-    // BUG-9304: what is queued goes out now (no receive, no timeouts): a message told just before the game's main
+    // BUG-1419: what is queued goes out now (no receive, no timeouts): a message told just before the game's main
     // thread stands for long (host_busy_long_wait)
     void flush_now()
     {
@@ -265,7 +265,7 @@ private:
     void stage_compat();
     uint32_t halfopen_refused_ = 0, halfopen_evicted_ = 0;                                      // BUG-0778
     uint32_t replace_refused_ = 0;                                                              // BUG-1003
-    uint32_t timeouts_told_ = 0; // BUG-9305
+    uint32_t timeouts_told_ = 0; // BUG-1420
     uint32_t recv_skipped_ = 0;                                                                 // BUG-1007
     // BUG-1108: the guest whose message is being handled (its id; 0xFF = none): what the host sends meanwhile is charged
     // to it. limits(): the drops and the peaks, every update

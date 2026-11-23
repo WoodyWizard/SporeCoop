@@ -99,7 +99,7 @@ const void* world_anchor();
 // BUG-0694 (space_contracts.cpp): a reward tool (its key) this game cannot take now (outside Space) is owed and given in
 // the first Space frame of the same Space world; false: the switch space.reward_owed is off (the tool is lost)
 bool owe_tool_key(const uint32_t key[3], const std::string& what);
-// BUG-9300 (audit SPC-8, space_trade.cpp): a rejoined guest's cargo hold is still the host's copy that its own kept hold
+// BUG-1415 (audit SPC-8, space_trade.cpp): a rejoined guest's cargo hold is still the host's copy that its own kept hold
 // is about to replace (BUG-0678 / BUG-1034, up to 20 s): whatever goes into the hold now is taken out by the restore.
 // Grants (gift spice, reward tools, Steve's gift) wait (owed or queued) while it is true. False with
 // `coop.fix space.grant_wait_restore off`, on the host and outside that window.

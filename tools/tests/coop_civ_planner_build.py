@@ -16,7 +16,7 @@ h_AddBuilding, CMD_BUILD), which builds it in its game (the guest already paid w
    money fell by the same amount on both games (the house's price), the guest's building list is the host's.
 SPORE_FIX_OFF=civ.planner_send must FAIL (the guest's placement stays in the guest's game).
 
---miss (BUG-9302, audit CIV-7): the guest drops the house tile on a taken plot: the planner adds the building at the drop
+--miss (BUG-1417, audit CIV-7): the guest drops the house tile on a taken plot: the planner adds the building at the drop
 and takes it away again (no money taken). PASS: the guest's planner added it (`coop.civ tables` planner_out adds went
 up; else INCONCLUSIVE), the guest kept no new house, the host's city gets no new house within 20 s and the shared money
 is unchanged on both games. SPORE_FIX_OFF=civ.planner_closed must FAIL (the host builds the house unpaid, sent at
@@ -87,7 +87,7 @@ def close_enough(a, b):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--miss', action='store_true', help='the guest drops the house on a taken plot (BUG-9302)')
+    ap.add_argument('--miss', action='store_true', help='the guest drops the house on a taken plot (BUG-1417)')
     a = ap.parse_args()
     host, guest = start('civ_npc')
     ck = Checks()
@@ -179,7 +179,7 @@ def main():
 
 
 def miss(ck, host, guest, p, ci, b0h, b0g, m0h, m0g):
-    """BUG-9302: a drop on a taken plot of the open planner; the host must get nothing"""
+    """BUG-1417: a drop on a taken plot of the open planner; the host must get nothing"""
     busy = [s for s in slots(guest, ci) if not s['free'] and 400 < s['at'][0] < 1300 and 150 < s['at'][1] < 950]
     ck(busy, f'a taken plot on the guest\'s planner screen ({len(busy)})')
     adds0 = planner_adds(guest)

@@ -333,7 +333,7 @@ bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const float* dir,
         g_n.puppet_hits_dropped++;
         return false;
     }
-    if (mate_copy_refuse(victim)) // BUG-9317: a partner's mate is its owner's game's
+    if (mate_copy_refuse(victim)) // BUG-1432: a partner's mate is its owner's game's
         return false;
     if (victim && victim == avatar() && attacker && attacker != victim) {
         // BUG-0958: a partner's poison cloud (a mirror of the host's that is a player's product, or on the host a
@@ -424,7 +424,7 @@ static void chunk(Chunk_t orig, uint32_t eater, uint32_t victim, uint32_t a, uin
         g_n.ko_eats_blocked++;
         return;
     }
-    if (mate_copy_refuse(v)) // BUG-9317: no chunk off a partner's mate (it fed the eater)
+    if (mate_copy_refuse(v)) // BUG-1432: no chunk off a partner's mate (it fed the eater)
         return;
     if (e == avatar() && !is_guest())
         g_n.own_chunks++;
@@ -481,7 +481,7 @@ bool SK_CDECL h_KillCell(uint8_t* c, uint32_t killer, void* res, bool by_player,
         }
         return false;
     }
-    if (mate_copy_refuse(c)) // BUG-9317: a partner's mate does not die here (its loot was free meat)
+    if (mate_copy_refuse(c)) // BUG-1432: a partner's mate does not die here (its loot was free meat)
         return false;
     if (in_cell() && go_down(c))
         return false;
@@ -520,7 +520,7 @@ void SK_CDECL h_Break(uint8_t* victim, uint8_t* attacker, float f)
         }
         return;
     }
-    if (mate_copy_refuse(victim)) // BUG-9317: the lethal bite's BreakOrSwallow (Bite asks no +0x111 there)
+    if (mate_copy_refuse(victim)) // BUG-1432: the lethal bite's BreakOrSwallow (Bite asks no +0x111 there)
         return;
     if (in_cell() && go_down(victim))
         return;
@@ -738,7 +738,7 @@ void SK_CDECL h_ExecInter(uint32_t* in, float dt)
 Swallow_t o_Swallow;
 void SK_CDECL h_Swallow(uint8_t* eater, uint8_t* food, int type)
 {
-    if (mate_copy_refuse(food)) // BUG-9317: nobody swallows a partner's mate whole
+    if (mate_copy_refuse(food)) // BUG-1432: nobody swallows a partner's mate whole
         return;
     if (food && eater && in_cell() && is_guest() && eater == avatar() && g_host_of.count(F<uint32_t>(food, 0))) {
         g_swallowed[F<uint32_t>(food, 0)] = H->time_seconds();
@@ -771,7 +771,7 @@ void food_in_step(std::function<void()> f)
     }
     g_food_q.push_back({H->time_seconds(), std::move(f)});
 }
-double g_test_food_hold_until; // tests (BUG-9316): no drain until then, as while the host's cell step does not run
+double g_test_food_hold_until; // tests (BUG-1431): no drain until then, as while the host's cell step does not run
 void food_drain(bool late_only)
 {
     if (g_food_q.empty())

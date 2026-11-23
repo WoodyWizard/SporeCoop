@@ -1458,7 +1458,7 @@ void Session::update()
             bool dead = p->bye || (p->accepted ? now - p->conn.last_recv_ms > timeout_ms
                                                : now - p->conn.created_ms > 10000);
             if (dead && !p->bye && p->accepted && g_fix.timeout_told) {
-                // BUG-9305: a guest whose game stood (an editor's load) gets the REJECT: it reads it when its game goes
+                // BUG-1420: a guest whose game stood (an editor's load) gets the REJECT: it reads it when its game goes
                 // on and ends its session at once (it may join again), not after its own timeout on a dead link
                 timeouts_told_++;
                 drop_told(i, kTimeoutText, 1);

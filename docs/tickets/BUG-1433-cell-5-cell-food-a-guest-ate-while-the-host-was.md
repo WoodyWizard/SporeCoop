@@ -1,5 +1,5 @@
 ---
-id: BUG-9318
+id: BUG-1433
 title: CELL-5: Cell: food a guest ate while the host was away is dropped when the guest opens its own Cell editor
 status: open
 kind: bug
@@ -31,3 +31,5 @@ Open, waiting for the lab run. PASS expected: cell_away_guest_editor and cell_aw
 
 ## History
 - 2026-11-22: opened (audit item); fixed on fix/w63-life with its test and twin, waiting for the lab run.
+
+- 2026-11-22: renumbered from BUG-9318 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9318.

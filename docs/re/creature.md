@@ -5384,7 +5384,7 @@ BUG-1393. GOG 2024, the logs of lab 20261121-003202 mem_census (20 min of Creatu
 ## The HUD portrait's drawable vtable is a symbol (2026-11-22, fix/w63-net)
 <a id="creature-portrait-vtable-symbol"></a>
 
-BUG-9311 (UIFX-3 of the 0.7.15.5 audit; the same as BUG-9269 of PR #208 by IltonBJSilva).
+BUG-1426 (UIFX-3 of the 0.7.15.5 audit; the same as BUG-9269 of PR #208 by IltonBJSilva).
 * ✔ (.rdata, GOG 2024 dc04aee5) `UTFWin::ImageDrawable::vftable` = 0x01443248: slot 4 (+0x10) = ImageDrawable::Paint
   0x97D1E0, slot 6 (+0x18) = GetDimensions 0x97D0E0 (both ModAPI March2017 names). It is the vtable of the Creature HUD
   portrait window's drawable (runtime 2026-11-12, BUG-0937).

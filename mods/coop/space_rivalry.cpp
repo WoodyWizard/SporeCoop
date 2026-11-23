@@ -114,14 +114,14 @@ static bool g_money_range_fix = true;
 COOP_FIX("space.money_range", "BUG-1110", g_money_range_fix,
          "space rivals: budgets outside the game's money range are ignored, the allies merge sum stays in range");
 static uint32_t g_money_refused;
-// BUG-9299 (audit SPC-2): the switch to Allies needs only the host in Space. A guest in an editor or an adventure entered
+// BUG-1414 (audit SPC-2): the switch to Allies needs only the host in Space. A guest in an editor or an adventure entered
 // from Space keeps its merge pending (no money_ptr there), but shared.cpp already takes the host's shared totals into its
 // empire money (the cEmpire lives on, `own_budget` is off now): back in Space the correction was that total minus the
 // host's credit, and the host added its own money and the other guests' budgets once more. Now the guest's shared Space
 // totals wait while its merge is pending (merge_pending(), asked by shared.cpp), so the correction is its own budget's
 // change; the host's next total (every 2 s at the latest) comes after it. `coop.fix space.merge_hold_totals off`: 0.7.16.
 static bool g_merge_hold_fix = true;
-COOP_FIX("space.merge_hold_totals", "BUG-9299", g_merge_hold_fix,
+COOP_FIX("space.merge_hold_totals", "BUG-1414", g_merge_hold_fix,
          "space rivals: a guest outside Space at the switch to allies gets the shared money only after its own budget merged");
 static uint32_t g_merge_held; // shared totals held while the merge was pending
 static int g_fake_money;            // tests: the budget this guest reports instead of its money ...

@@ -66,14 +66,14 @@ bool is_mate_copy(uint32_t idx)
     return false;
 }
 
-// CELL-3 (BUG-9317): the copy was protected by +0x111 alone, which the game's lethal bite (Bite -> BreakOrSwallow),
+// CELL-3 (BUG-1432): the copy was protected by +0x111 alone, which the game's lethal bite (Bite -> BreakOrSwallow),
 // a mouth's chunks (EatChunk, KillIfDead) and a swallow do not ask (docs/re/cell.md#cell-guest-hit-game): the host's
 // own cell, its NPCs and the other guests (MSG_CELL_HIT / MSG_CELL_EAT) killed it, every kill dropped the game's meat and
 // mate_in made it again 0.2 s later (free meat again and again), and the guest's mate died on the host only. On: the
 // copy is a picture like a partner's puppet: no collision pair, no damage, no death, no swallow, a guest's hit or kill
 // on it refused. Off: 0.7.16.
 static bool g_fix_mate_copy_safe = true;
-COOP_FIX("cell.mate_copy_safe", "BUG-9317", g_fix_mate_copy_safe,
+COOP_FIX("cell.mate_copy_safe", "BUG-1432", g_fix_mate_copy_safe,
          "cell: the copy of a partner's mate cannot be bitten, eaten or killed in the host's game (it gave free meat again and again)");
 unsigned g_mate_copy_refused; // tests: attacks on a copy refused
 bool mate_copy_cell(const uint8_t* c)

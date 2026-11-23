@@ -1,5 +1,5 @@
 ---
-id: BUG-9312
+id: BUG-1427
 title: A guest's world reset walks every object for each creature it destroys: seconds of stall leaving a world (BUG-9272 analogue)
 status: open
 kind: freeze
@@ -50,3 +50,5 @@ teardown runs outside GalaxyMenu_SimReset in our flow: stop and record it (the f
 
 ## History
 - 2026-11-22: opened.
+
+- 2026-11-22: renumbered from BUG-9312 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9312.

@@ -1,5 +1,5 @@
 ---
-id: BUG-9314
+id: BUG-1429
 title: TR-1: Tribe: the member claims follow the owners before the members are adopted: who owns which member is lost on a reload, a join or coop.store adopt
 status: open
 kind: bug
@@ -14,7 +14,7 @@ commits: 0e1f881a, 39f2f060
 tests: tribe_owners_reload (coop_tribe_owners_reload.py), tribe_owners_reload_shared; twin tribe_owners_reload_off
 signature:
 docs: docs/06-testing.md#testing-w63-life-knobs
-related: BUG-1154, BUG-9315
+related: BUG-1154, BUG-1430
 ---
 
 ## Report
@@ -31,3 +31,5 @@ Open, waiting for the lab run. PASS expected: tribe_owners_reload and tribe_owne
 
 ## History
 - 2026-11-22: opened (audit item); fixed on fix/w63-life with its test and twin, waiting for the lab run.
+
+- 2026-11-22: renumbered from BUG-9314 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9314.

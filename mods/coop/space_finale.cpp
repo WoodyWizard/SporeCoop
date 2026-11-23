@@ -378,14 +378,14 @@ static void enter_system(void*)
 }
 
 // ---------------- Steve's gift for partners ----------------
-// BUG-9300 (audit SPC-8): a partner's entry into the core gave Steve's gift also in a guest's own Space save (its own
+// BUG-1415 (audit SPC-8): a partner's entry into the core gave Steve's gift also in a guest's own Space save (its own
 // world, not the co-op galaxy: g_reached_by is the session's), and a gift inside a rejoined guest's restore window
 // went into the hold the restore replaced: the Staff was gone and the flag (kFlagCoreTools) blocked a second gift.
 // Now a partner's entry counts only in the host's galaxy (own_world::space_other) and the gift waits while
 // spaceext::hold_grants() (the restore's switch, space.grant_wait_restore). `coop.fix finale.gift_own_save off`: a
 // partner's entry gives it in the own save too (0.7.16).
 static bool g_own_save_fix = true;
-COOP_FIX("finale.gift_own_save", "BUG-9300", g_own_save_fix,
+COOP_FIX("finale.gift_own_save", "BUG-1415", g_own_save_fix,
          "space: a partner who reached the galactic core gives Steve's gift only in the co-op galaxy, not in a guest's own Space save");
 static bool g_reward_held;        // give_reward waited for the hold's restore: given when it is done ...
 static uint32_t g_reward_held_world; // ... in the same Space world (also after the session ended: it was earned)
@@ -395,7 +395,7 @@ static void give_reward(void*)
     g_reward_pending = false;
     if (!spaceext::in_space() || !player())
         return;
-    if (spaceext::hold_grants()) { // BUG-9300: not into the hold the restore replaces
+    if (spaceext::hold_grants()) { // BUG-1415: not into the hold the restore replaces
         if (!g_reward_held)
             H->log(M, SK_INFO, "finale: Steve's gift from %s waits for the own hold's restore", g_reward_from.c_str());
         g_reward_held = true;
@@ -470,9 +470,9 @@ static void reward_tick(double now)
         context() < 0 || g_enter_at || g_waiting)
         return;
     g_reward_next = now + 3;
-    if (spaceext::hold_grants()) // BUG-9300: after the own hold's restore
+    if (spaceext::hold_grants()) // BUG-1415: after the own hold's restore
         return;
-    if (g_reward_held) { // BUG-9300: the gift that waited for the restore
+    if (g_reward_held) { // BUG-1415: the gift that waited for the restore
         g_reward_held = false;
         if (g_reward_held_world == spaceext::world_epoch()) {
             schedule_reward(g_reward_from);
@@ -480,7 +480,7 @@ static void reward_tick(double now)
         }
     }
     std::string from;
-    bool other_save = g_own_save_fix && own_world::space_other(); // BUG-9300: a partner's entry is the co-op galaxy's
+    bool other_save = g_own_save_fix && own_world::space_other(); // BUG-1415: a partner's entry is the co-op galaxy's
     for (auto& [id, n] : g_reached_by)
         if (id != spaceext::my_id() && !other_save)
             from = n;
@@ -884,7 +884,7 @@ static std::string debug(const std::vector<std::string>& a)
         g_alone = true;
         return "the core does not wait";
     }
-    if (a[0] == "reached") { // tests (BUG-9300): tell the partners we entered the core (K_REACHED), without the trip
+    if (a[0] == "reached") { // tests (BUG-1415): tell the partners we entered the core (K_REACHED), without the trip
         spaceext::send(K_REACHED, net::Writer());
         return "reached sent";
     }

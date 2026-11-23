@@ -91,7 +91,7 @@ void member_claim(void* c, uint8_t owner, uint8_t flag)
     if (flag)
         g_member_flags[c] |= flag;
 }
-// TR-1 (BUG-9314): the 2 s follow below ran first in host_tick, before the adopt loop and the resplit: after a world
+// TR-1 (BUG-1429): the 2 s follow below ran first in host_tick, before the adopt loop and the resplit: after a world
 // change (a load, the game over's reload) with a player here the members had no entries yet (hm null) and every
 // present player's claim was dropped (the host's too), then all were dealt in turns; at a join it saw the newcomer
 // here while its members were still held by the host and rewrote their claims to "host" before the resplit; after
@@ -99,13 +99,13 @@ void member_claim(void* c, uint8_t owner, uint8_t flag)
 // after the adopt loop and the resplit of the same tick, keeps a claim whose member has no entry yet, and an adopt
 // redoes the split. Off: as 0.7.16.
 static bool g_claims_order_fix = true;
-COOP_FIX("tribe.claims_order", "BUG-9314", g_claims_order_fix,
+COOP_FIX("tribe.claims_order", "BUG-1429", g_claims_order_fix,
          "tribe: who owns which tribe member is kept when the host loads its world again (a game over too), when a player joins and after coop.store adopt");
-// TR-6 (BUG-9315): the first tick after a world change resplit (and balanced) with no member entries yet: a present
+// TR-6 (BUG-1430): the first tick after a world change resplit (and balanced) with no member entries yet: a present
 // player with no claim on a world whose members are all claimed got none, and split_for == players held that until the
 // next join or leave. On: the balance of a resplit runs after the adopt loop. Off: before it (0.7.16).
 static bool g_claims_balance_fix = true;
-COOP_FIX("tribe.claims_balance", "BUG-9315", g_claims_balance_fix,
+COOP_FIX("tribe.claims_balance", "BUG-1430", g_claims_balance_fix,
          "tribe: after the host loads its world again a player whose members were all claimed by others still gets its share");
 static void member_claims_follow(void* pt, double now, const std::vector<void*>& ms);
 static void member_claims_tick(void* pt, double now, bool follow = true)
@@ -314,13 +314,13 @@ void host_tick(double now)
     g_host.members.sweep([&](uint16_t id) { return seen.count(id) != 0; },
                [&](HEntry& e, bool alive_obj) { return body(e, alive_obj) ? mirror::Unseen::Keep : mirror::Unseen::Remove; },
                [](HEntry&, bool) {}); // (no game call: the game removed the member)
-    if (resplit && g_claims_balance_fix) { // TR-6 (BUG-9315): with this tick's new entries (a world change has only them)
+    if (resplit && g_claims_balance_fix) { // TR-6 (BUG-1430): with this tick's new entries (a world change has only them)
         member_balance(pt, players);
         for (Entry& e : entries) // (this tick's snapshot with the owners the balance gave)
             if (HEntry* it = g_host.members.find(e.id))
                 e.owner = it->data.owner;
     }
-    if (g_claims_order_fix && pt) // TR-1 (BUG-9314): the claims follow the owners this tick's split and adoption gave
+    if (g_claims_order_fix && pt) // TR-1 (BUG-1429): the claims follow the owners this tick's split and adoption gave
         member_claims_follow(pt, now, members(pt));
     // chunks that fit one packet; every chunk carries the tribe table. A chunk larger than a packet
     // is dropped by the connection: with 24 members per chunk (fixed until 2026-10-23) the first

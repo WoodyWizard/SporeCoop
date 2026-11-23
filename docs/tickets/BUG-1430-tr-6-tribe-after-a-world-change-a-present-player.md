@@ -1,5 +1,5 @@
 ---
-id: BUG-9315
+id: BUG-1430
 title: TR-6: Tribe: after a world change a present player with no claim gets no members until the next join or leave
 status: open
 kind: bug
@@ -14,7 +14,7 @@ commits: 0e1f881a, 8b8ed93c, 39f2f060
 tests: tribe_owners_reload_back (coop_tribe_owners_reload.py --back); twin tribe_owners_reload_back_off
 signature:
 docs: docs/06-testing.md#testing-w63-life-knobs
-related: BUG-1154, BUG-9314
+related: BUG-1154, BUG-1429
 ---
 
 ## Report
@@ -31,3 +31,5 @@ Open, waiting for the lab run. PASS expected: tribe_owners_reload_back (the gues
 
 ## History
 - 2026-11-22: opened (audit item); fixed on fix/w63-life with its test and twin, waiting for the lab run.
+
+- 2026-11-22: renumbered from BUG-9315 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9315.

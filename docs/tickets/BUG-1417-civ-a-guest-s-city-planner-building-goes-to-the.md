@@ -1,5 +1,5 @@
 ---
-id: BUG-9302
+id: BUG-1417
 title: Civ: a guest's city planner building goes to the host at AddBuilding, before the planner kept it (free building or refund, CIV-7)
 status: open
 kind: bug
@@ -34,7 +34,7 @@ of its own if seen". Not seen in Civ yet.
 civ.cpp: the guest's planner building goes into a queue (`g_planner_out`: city, block, noun, price); once the planner
 closed (or after 10 min) it is sent with its placed position only when it is still in the city's building list as
 the same block and noun (`civlogic::planner_kept`, tests/civ_tests.cpp); one taken away again is dropped (log "was
-taken away again: not sent (BUG-9302)"). For 5 s after such a send the guest's building reconciliation of that city
+taken away again: not sent (BUG-1417)"). For 5 s after such a send the guest's building reconciliation of that city
 waits (`planner_send_holds`, as the planner hold of BUG-0493): the host's snapshot from before the send does not have
 the building yet. Counters `planner_out: adds= waiting= queued= sent= dropped=` in `coop.civ tables`. The message is
 unchanged (no wire change). Switch `coop.fix civ.planner_closed off` (sent at AddBuilding, 0.7.16).
@@ -49,3 +49,5 @@ Twin `civ_planner_miss_off` (SPORE_FIX_OFF=civ.planner_closed): the host builds 
 ## History
 - 2026-11-22: opened.
 - 2026-11-22: fix on fix/w63-civ (switch civ.planner_closed, test civ_planner_miss and its twin); lab run pending.
+
+- 2026-11-22: renumbered from BUG-9302 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9302.

@@ -1064,13 +1064,13 @@ static void stage_zip(const std::wstring& bin, const char* v)
         CHECK(CopyFileW(g_excl.c_str(), (sc + L"\\ini.exclude").c_str(), FALSE));
 }
 
-// BUG-9310 (KIT-25 of the 0.7.15.5 audit): install.bat copied steam_api.dll to steam_api_orig.dll whenever that
+// BUG-1425 (KIT-25 of the 0.7.15.5 audit): install.bat copied steam_api.dll to steam_api_orig.dll whenever that
 // backup was missing, also when steam_api.dll was SporeCoop's loader already (a reinstall after the backup was lost to
 // an antivirus or a cleanup): the loader then loaded itself and the game did not start. And every copy's result was
 // hidden: "SporeCoop installed." (exit 0) after a copy that failed (a read-only or locked file, Program Files).
 static void test_install_bat_backup()
 {
-    printf("install.bat keeps the game's steam_api.dll, a failed copy is said (BUG-9310)\n");
+    printf("install.bat keeps the game's steam_api.dll, a failed copy is said (BUG-1425)\n");
     if (g_bat.empty()) {
         printf("  (skipped: no --bat)\n");
         return;

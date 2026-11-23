@@ -599,7 +599,7 @@ static std::vector<uint8_t> msg_bytes(State s, uint16_t seq, uint16_t why = 0)
     return encode(Msg{1, s, why, 0x1654C02, 7, seq});
 }
 
-// BUG-9304 (PR #216 by IltonBJSilva): the host tells "an editor's load is coming" at once (no debounce), and a guest waits longer for a
+// BUG-1419 (PR #216 by IltonBJSilva): the host tells "an editor's load is coming" at once (no debounce), and a guest waits longer for a
 // host whose last told state is such a stand; the next state is told as usual
 static void busy_long_wait()
 {

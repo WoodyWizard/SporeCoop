@@ -120,7 +120,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
     void* av = g_local;
     SAY("mode=0x%08X local=%p overlay-self=(%.1f %.1f ok=%.0f)\n", game::mode_id(), av, g_dbg_sc[0], g_dbg_sc[1], g_dbg_sc[2]);
     SAY("host_away=%d (times %u) solo_dna=%.1f solo_stale_totals=%u solo_dropped=%u kept_in_editor=%u\n", (int)g_host_away,
-        g_host_away_count, g_solo_dna, g_solo_stale_totals, g_solo_dropped, g_away_kept_in_editor); // BUG-9307
+        g_host_away_count, g_solo_dna, g_solo_stale_totals, g_solo_dropped, g_away_kept_in_editor); // BUG-1422
     SAY("host elsewhere=%d, its world's messages dropped %u, dna pending %.1f, own-world dna gains %u, welcome world %08X, share retries %u\n",
         (int)(g_world_gate_fix ? guest_elsewhere() : host_elsewhere()), g_place_dropped, g_dna_pending, g_dna_own,
         g_sess.welcome_world(), g_share_retries); // BUG-0130, BUG-0231
@@ -780,7 +780,7 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY(ok ? "joined the pack" : "no such npc or it cannot join");
         return ok ? 0 : 1;
     }
-    if (argc > 2 && !strcmp(argv[1], "gone")) { // host, tests (BUG-9313): gone <id> [secs]
+    if (argc > 2 && !strcmp(argv[1], "gone")) { // host, tests (BUG-1428): gone <id> [secs]
         SAY("%s", npc::debug_gone((uint16_t)atoi(argv[2]), argc > 3 ? (float)atof(argv[3]) : 3.f).c_str());
         return 0;
     }
@@ -1843,7 +1843,7 @@ void register_commands_editor()
                        return 0;
                    },
                    nullptr, SK_CMD_OUTSIDE_FRAME);
-    H->command_add(M, "coop.vote", "coop.vote [test|go|tribeend [<archetype hex>]|noavatar <s>] - evolution vote (test: a vote without an editor; tribeend: the end-of-Tribe editor guard; noavatar: a vote end in <s> sees no avatar, BUG-9306; tests)",
+    H->command_add(M, "coop.vote", "coop.vote [test|go|tribeend [<archetype hex>]|noavatar <s>] - evolution vote (test: a vote without an editor; tribeend: the end-of-Tribe editor guard; noavatar: a vote end in <s> sees no avatar, BUG-1421; tests)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1 && !strcmp(argv[1], "test") && g_sess.role() == net::Role::Host && !g_vote.active) {
                            start_vote(nullptr, g_name + " wants to evolve (test)");
@@ -1917,7 +1917,7 @@ void register_commands_editor()
                            finish_vote("the host started it");
                        else if (argc > 2 && !strcmp(argv[1], "hold")) // tests (BUG-0234): a due own editor waits
                            g_own_editor_hold_until = H->time_seconds() + atof(argv[2]);
-                       else if (argc > 2 && !strcmp(argv[1], "noavatar")) // tests (BUG-9306): a vote's end sees no avatar
+                       else if (argc > 2 && !strcmp(argv[1], "noavatar")) // tests (BUG-1421): a vote's end sees no avatar
                            g_vote_noavatar_until = H->time_seconds() + atof(argv[2]);
                        SAY("vote %s: %s (%d s)\nown editor %d, part list waived %u (own outfitters %u, BUG-1308), editor held for a save %u, "
                            "quit held for a save %u, repeated requests dropped %u, own editor due %d (waited %u frames)\n"
@@ -1938,7 +1938,7 @@ void register_commands_editor()
                            "guest mates forgotten in creature.mode host (Cell) %u (BUG-1265)\n"
                            "host History checks held before the end sequence %u (BUG-1269)\n"
                            "arrival votes that waited for a guest arriving quickly %u (BUG-1336)\n"
-                           "guests removed for a game that stood during a vote %u (BUG-9305)",
+                           "guests removed for a game that stood during a vote %u (BUG-1420)",
                            g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left, (int)g_own_editor,
                            g_part_list_waivers, g_outfit_part_waivers, g_submits_held, g_quits_delayed, g_submits_repeated,
                            g_own_editor_due ? 1 : 0, g_own_editor_waits, g_vote_actions_run, g_votes_dropped,

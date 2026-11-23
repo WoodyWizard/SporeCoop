@@ -1,5 +1,5 @@
 ---
-id: BUG-9317
+id: BUG-1432
 title: CELL-3: Cell: the host's copy of a guest's mate can be killed or eaten on the host (repeatable free meat, the mate dies on the host only)
 status: open
 kind: bug
@@ -31,3 +31,5 @@ Open, waiting for the lab run. PASS expected: cell_mate_copy (the guest's mating
 
 ## History
 - 2026-11-22: opened (audit item); fixed on fix/w63-life with its test and twin, waiting for the lab run.
+
+- 2026-11-22: renumbered from BUG-9317 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9317.

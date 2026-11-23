@@ -1,5 +1,5 @@
 ---
-id: BUG-9308
+id: BUG-1423
 title: My Creations file of several hundred MB: the whole size was allocated before the size check (bad_alloc in the 32-bit game, CORE-11)
 status: open
 kind: crash
@@ -31,7 +31,7 @@ it std::bad_alloc when no block of that size is free; nothing catches either in 
 
 ## Fix
 A failed size or one of 256 MB and more is refused before anything is allocated; the log says it once per size
-("... not read, own creations are off (BUG-9308)"). Switch `coop.fix creations.size_first off`: the allocation first
+("... not read, own creations are off (BUG-1423)"). Switch `coop.fix creations.size_first off`: the allocation first
 (0.7.16).
 
 ## Verification
@@ -41,3 +41,5 @@ the creations come back), creations_big_file_off (the twin) must FAIL (the guest
 
 ## History
 - 2026-11-22: opened.
+
+- 2026-11-22: renumbered from BUG-9308 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9308.

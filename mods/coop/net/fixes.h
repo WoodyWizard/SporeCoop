@@ -45,7 +45,7 @@ struct Fixes {
     // 0.7.16 (WP-F1)
     bool refuse_fork = true; // BUG-1281: a peer running the Lineages fork is refused at HELLO / WELCOME, in both roles
     // 0.7.16.1
-    bool timeout_told = true; // BUG-9305: host: a guest dropped for 30 s of silence is told (REJECT), it ends and may rejoin
+    bool timeout_told = true; // BUG-1420: host: a guest dropped for 30 s of silence is told (REJECT), it ends and may rejoin
 };
 inline Fixes g_fix;
 

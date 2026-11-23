@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A My Creations file (EditorSaves.package) above the 256 MB the mod reads does not end the game (BUG-9308, CORE-11
+"""A My Creations file (EditorSaves.package) above the 256 MB the mod reads does not end the game (BUG-1423, CORE-11
 of the 0.7.15.5 audit).
 
 creations.cpp read_file allocated the whole file size (std::vector::resize) before it looked at the 256 MB limit, and
@@ -11,7 +11,7 @@ creature fixture, the guest:
   1. its own creations are listed (`coop.creations list`, which reads the file);
   2. its EditorSaves.package is moved aside and a sparse file of 2.2 GB put in its place (no disk space used); after
      12 s and two more lists the guest's game still answers, is in the Creature stage, wrote no fault, and its log
-     says the file was refused (BUG-9308);
+     says the file was refused (BUG-1423);
   3. the real file comes back: within 25 s its creations are listed again.
 The real file is put back in every case (also after a failed or killed run: the next start restores a left .bak).
 SPORE_FIX_OFF=creations.size_first (suite creations_big_file_off, the twin): the allocation first: the guest's game
@@ -74,7 +74,7 @@ def main():
                 break
             time.sleep(11)
         ck(listed is not None and alive(guest), '2. the guest\'s game still runs after reading the 2.2 GB file')
-        ck(log_has(lane.GUEST, 'not read, own creations are off (BUG-9308)'), '2. the guest\'s log says the file was refused before it was read (BUG-9308)')
+        ck(log_has(lane.GUEST, 'not read, own creations are off (BUG-1423)'), '2. the guest\'s log says the file was refused before it was read (BUG-1423)')
     finally:
         try:
             os.remove(PKG)

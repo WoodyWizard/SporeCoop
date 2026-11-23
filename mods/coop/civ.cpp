@@ -759,13 +759,13 @@ void space_write_city(void* city)
 static void space_note_host_build(void* city, void* b, int except, bool planner = false);
 static void space_tick(double now);
 
-// BUG-9302 (audit CIV-7, the Civ half of BUG-0902): the guest's CMD_BUILD (BUG-0189) went at the planner's
+// BUG-1417 (audit CIV-7, the Civ half of BUG-0902): the guest's CMD_BUILD (BUG-0189) went at the planner's
 // AddBuilding; a drop that does not end on a free plot adds the building and takes it away again, so the host built
 // (unpaid) a building the guest's planner never kept, or refunded its claimed price when it could not. The guest now
 // sends it once the planner closed with the building still in the city (or after 10 min), with its placed position;
 // one taken away again is not sent. Off: sent at AddBuilding (0.7.16).
 static bool g_fix_planner_closed = true;
-COOP_FIX("civ.planner_closed", "BUG-9302", g_fix_planner_closed,
+COOP_FIX("civ.planner_closed", "BUG-1417", g_fix_planner_closed,
          "civ: a guest's city planner building goes to the host only when the planner closed with it");
 struct PlannerOut {
     void* city;
@@ -820,10 +820,10 @@ static void planner_out_tick(double now)
             send_build_cmd(o.city, o.noun, pos, o.price);
             g_planner_sent_at[o.city] = now;
             g_planner_sent++;
-            H->log(M, SK_INFO, "civ: planner: the building %08X the planner kept goes to the host (BUG-9302)", o.noun);
+            H->log(M, SK_INFO, "civ: planner: the building %08X the planner kept goes to the host (BUG-1417)", o.noun);
         } else {
             g_planner_dropped++;
-            H->log(M, SK_INFO, "civ: planner: a building %08X the planner added was taken away again: not sent (BUG-9302)",
+            H->log(M, SK_INFO, "civ: planner: a building %08X the planner added was taken away again: not sent (BUG-1417)",
                    o.noun);
         }
         g_planner_out.erase(g_planner_out.begin() + i);
@@ -869,7 +869,7 @@ static int SK_THISCALL h_AddBuilding(void* city, void* b, int x)
         // the guest placed a building in its city planner: the host builds the same one
         float price = vcall<float>(b, 0x5C / 4); // BUG-0807: its price (GetCost), paid in this planner
         g_planner_adds++;                        // (tests: the planner's AddBuilding ran, fix on or off)
-        if (g_fix_planner_closed) { // BUG-9302: once the planner closed with it
+        if (g_fix_planner_closed) { // BUG-1417: once the planner closed with it
             if (host_index_of_city(city) >= 0 && g_planner_out.size() < 64) {
                 auto it = std::find_if(g_planner_out.begin(), g_planner_out.end(), [&](const PlannerOut& o) { return o.b == b; });
                 if (it != g_planner_out.end()) // the same block again (taken away, a new one there): the newest
@@ -2067,7 +2067,7 @@ void tick(double now)
     if (is_host())
         host_tick(now);
     else if (is_guest()) {
-        planner_out_tick(now); // BUG-9302
+        planner_out_tick(now); // BUG-1417
         guest_tick(now);
     }
     own_designs_tick(now); // BUG-1274
@@ -2399,8 +2399,8 @@ static void clear_coop_tables(bool restore_speed)
 
 void on_session_end()
 {
-    took_clear(); // BUG-9301
-    planner_out_clear(); // BUG-9302
+    took_clear(); // BUG-1416
+    planner_out_clear(); // BUG-1417
     g_held.clear(); // BUG-0693
     g_space_held.clear(); // BUG-0766 / BUG-0884
     g_space_out.clear();
@@ -2435,8 +2435,8 @@ void on_world_change()
     if (m == modes::kEdit || m == modes::kEditor)
         return;
     g_n.world_resets++;
-    took_clear(); // BUG-9301: the taken mirrors' civilizations are freed with the world
-    planner_out_clear(); // BUG-9302 (the cities are freed)
+    took_clear(); // BUG-1416: the taken mirrors' civilizations are freed with the world
+    planner_out_clear(); // BUG-1417 (the cities are freed)
     g_bld_rekeyed.clear(); // BUG-0670 (the buildings are freed)
     caption_disarm();
     // BUG-0773: after a real load the vehicles are gone and nothing is written (boost_ours: in the game's list now,

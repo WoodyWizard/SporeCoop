@@ -10051,35 +10051,35 @@ over the gap itself, not wait for the game to make one.
 ## Civ audit fixes of 0.7.16.1: save took, planner miss, solo deal (2026-11-22, fix/w63-civ)
 <a id="testing-civ-audit-w63"></a>
 
-* `civ_save_took` (coop_civ_save_took.py, civ_npc, warm, ~3 min, BUG-9301 / CIV-1): `coop.civ savekill on` (guest) makes
+* `civ_save_took` (coop_civ_save_took.py, civ_npc, warm, ~3 min, BUG-1416 / CIV-1): `coop.civ savekill on` (guest) makes
   the next save's end remove one taken mirror first, as a host snapshot of that frame would; `coop.civ civlists` now
   prints `unlisted=` (civ list entries the game's vehicle list no longer has, pointers only). Twin `civ_save_took_off`
   (SPORE_FIX_OFF=civ.save_took_listed, unsafe: the removed vehicle goes back): unlisted >= 1 or a fault.
-* `civ_planner_miss` (coop_civ_planner_build.py --miss, civ_npc, warm, ~4 min, BUG-9302 / CIV-7): the house tile dropped
+* `civ_planner_miss` (coop_civ_planner_build.py --miss, civ_npc, warm, ~4 min, BUG-1417 / CIV-7): the house tile dropped
   on a taken plot; precondition `planner_out: adds=` of `coop.civ tables` went up (the planner's AddBuilding ran), else
   INCONCLUSIVE. Twin `civ_planner_miss_off` (SPORE_FIX_OFF=civ.planner_closed). A kept building now reaches the host at
   the planner's close, not at the drop (civ_planner_build waits 25 s for it).
-* `civ_solo_deal` (coop_civ_solo_deal.py, civ_npc, ~6 min, BUG-9303 / CIV-6): the guest leaves, the host alone buys two
+* `civ_solo_deal` (coop_civ_solo_deal.py, civ_npc, ~6 min, BUG-1418 / CIV-6): the guest leaves, the host alone buys two
   NPC cities, `coop.civ claims forget <city>` (host, tests) drops one city's claim and capture / gift marks (a Civ save
   played without co-op), the guest joins again. Twin `civ_solo_deal_off` (SPORE_FIX_OFF=civ.solo_claims).
   `coop.civ tables` line `solo_claims: fix= unclaimed= adopt_fix= adopt_owned=`.
 ## Audit fixes of 0.7.16.1: test knobs for one-frame windows (2026-11-22, fix/w63-life)
 <a id="testing-w63-life-knobs"></a>
 
-Four audit items (BUG-9313, BUG-9316, BUG-9317, BUG-9318) are windows of a frame or two that a lab run does not hit
+Four audit items (BUG-1428, BUG-1431, BUG-1432, BUG-1433) are windows of a frame or two that a lab run does not hit
 by chance. Their tests open the window with a host knob that stands for the real cause:
 
-* `coop.npc gone <id> [secs]` (host, BUG-9313): the game removes NPC #id with its own DestroyInstance (no bookkeeping
+* `coop.npc gone <id> [secs]` (host, BUG-1428): the game removes NPC #id with its own DestroyInstance (no bookkeeping
   of the mod, `game::destroy_untracked`) and the host's NPC pass does not run for secs (at most 30), as in the host's
   editor or without an avatar: the host's tables still name the freed creature, the guest still has its proxy.
   `coop.npc` prints `msg_gone_refused=` (guests' hits / resyncs dropped for such an NPC). coop_creature_hit_gone.py.
-* `coop.pool foodhold <secs>` (host, BUG-9316): the food queued for the next cell step (cell.food_in_step) waits up to
+* `coop.pool foodhold <secs>` (host, BUG-1431): the food queued for the next cell step (cell.food_in_step) waits up to
   2 s, as while the cell step stands (a pause); the 0.5 s totals go out as usual. coop_cell_food_ack.py reads the
   guest's food every ~0.1 s.
-* `coop.pool cellhp c<idx> <hp>` (host, BUG-9317): a cell's hp, so the game's own Bite takes its lethal branch
+* `coop.pool cellhp c<idx> <hp>` (host, BUG-1432): a cell's hp, so the game's own Bite takes its lethal branch
   (BreakOrSwallow) at once; `coop.pool mate` prints `copy_refused=` and each copy's `hp=` / `dying=`.
   coop_cell_mate_copy.py.
-* coop_cell_away.py `--guest-editor` (BUG-9318): the guest's own cell editor while the host is in the menu, by the
+* coop_cell_away.py `--guest-editor` (BUG-1433): the guest's own cell editor while the host is in the menu, by the
   real mating call and `coop.pool mate tp`; `--shared` in these tests runs them with all.shared_dna on.
-* coop_tribe_owners_reload.py (BUG-9314, BUG-9315): the reload is the civ_owners_reload recipe (`coop.save`,
+* coop_tribe_owners_reload.py (BUG-1429, BUG-1430): the reload is the civ_owners_reload recipe (`coop.save`,
   `coop.menu`, `coop.load` of played_slot() with the guest in the session).

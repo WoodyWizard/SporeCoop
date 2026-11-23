@@ -49,7 +49,7 @@ SetEvolutionPoints, as the editor's result):
           guest's bar is the party's again (within the sync-check's half point). FAIL: SPORE_FIX_OFF=creature.bar_setback
           (the guest's bar stays 0.8 ahead until the next gain: the night's "bar: host 36.0, guest 36.9")
 
-  --case away_editor  BUG-9307 (audit CORE-9): the host evolves (`coop.vote evolve`: its editor at once), the guest
+  --case away_editor  BUG-1422 (audit CORE-9): the host evolves (`coop.vote evolve`: its editor at once), the guest
           plays on alone (the host counts as away) and earns 20 (`coop.dna add 20`), then takes its Evolve now offer
           (its own editor) and comes back while the host is still in its editor; then the host comes back: the host's
           game has the guest's 20 (the party's gain) and the guest's still has them. FAIL:
@@ -374,7 +374,7 @@ def host_editor_case(host, guest, ck):
 
 
 def away_editor_case(host, guest, ck):
-    """BUG-9307 (audit CORE-9): the guest earns DNA while the host is away in its editor, then evolves in its own
+    """BUG-1422 (audit CORE-9): the guest earns DNA while the host is away in its editor, then evolves in its own
     editor (its Evolve now offer) before the host is back: that DNA reaches the host's game when the host is back"""
     from coop_editor_sync import DONE, back, confirm_captions, in_editor, mode
     from coop_ui import Ui

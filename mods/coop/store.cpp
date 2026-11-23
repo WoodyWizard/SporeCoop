@@ -76,7 +76,7 @@ static std::wstring file_of(const std::string& world, bool make)
     return dir + L"\\" + widen(world.substr(s + 1)) + L".txt";
 }
 
-// BUG-9309 (NET-12 of the 0.7.15.5 audit): salt.txt was opened with FILE_SHARE_READ only and any failure to open it
+// BUG-1424 (NET-12 of the 0.7.15.5 audit): salt.txt was opened with FILE_SHARE_READ only and any failure to open it
 // counted as "no file": a moment in which another program held it with write access (a sync or backup tool, an
 // antivirus) made a new salt and wrote it over the old one, and every stored player of every world of this host had
 // another key from then on (their stored things were never found again). A world's file the same: an empty store,
@@ -84,7 +84,7 @@ static std::wstring file_of(const std::string& world, bool make)
 // there is missing, and one that cannot be read now is not replaced (pstore::salt_step / world_step): no keys / the
 // world's store stays closed until it can be read. Off (`coop.fix store.unreadable_kept off`): as 0.7.16.
 static bool g_unreadable_fix = true;
-COOP_FIX_UNSAFE("store.unreadable_kept", "BUG-9309", g_unreadable_fix,
+COOP_FIX_UNSAFE("store.unreadable_kept", "BUG-1424", g_unreadable_fix,
                 "store: a salt or world file another program holds open is read (all share flags), and one that cannot be read now is never replaced (a new salt lost every stored player)");
 static DWORD g_read_error;      // the last failed read's error
 static uint32_t g_unreadable_n; // reads that found a file unreadable (status `unreadable=`)
@@ -127,7 +127,7 @@ static pstore::Got read_file(const std::wstring& f, std::string& out)
 }
 
 // a temporary file next to it, then a replace: a crash mid-write leaves the old file (or the .tmp) whole
-// replace false: the file is not replaced when it is there now (a new salt: BUG-9309)
+// replace false: the file is not replaced when it is there now (a new salt: BUG-1424)
 static bool write_file(const std::wstring& f, const std::string& text, std::string& err, bool replace = true) // not a lab switch: a parameter (a new salt never replaces a file that came meanwhile)
 {
     std::wstring tmp = f + L".tmp";
@@ -154,7 +154,7 @@ static bool write_file(const std::wstring& f, const std::string& text, std::stri
 }
 
 // this host profile's salt (salt.txt in the store folder; made once). 0 until known (also while salt.txt is there
-// but cannot be read: read again at most every 2 s, BUG-9309)
+// but cannot be read: read again at most every 2 s, BUG-1424)
 static double g_salt_retry_at = -1;
 static uint32_t g_salt_waits;
 static uint64_t salt()
@@ -182,14 +182,14 @@ static uint64_t salt()
         g_salt_retry_at = now + 2.0;
         if (g_salt_waits++ % 30 == 0)
             H->log(M, SK_WARN, "store: salt.txt is there but cannot be read now (error %lu): no stored player is looked up "
-                               "until it can, the file stays (BUG-9309, %u tries)",
+                               "until it can, the file stays (BUG-1424, %u tries)",
                    (unsigned long)g_read_error, g_salt_waits);
         return 0;
     }
     g_salt_retry_at = -1;
     if (g_unreadable_fix && got == pstore::Got::Text) { // there, no salt in it: kept for a look
         MoveFileExW(f.c_str(), (f + L".bad").c_str(), MOVEFILE_REPLACE_EXISTING);
-        H->log(M, SK_WARN, "store: salt.txt holds no salt: a new one (the old file is salt.txt.bad, BUG-9309)");
+        H->log(M, SK_WARN, "store: salt.txt holds no salt: a new one (the old file is salt.txt.bad, BUG-1424)");
     }
     LARGE_INTEGER q;
     QueryPerformanceCounter(&q);
@@ -200,7 +200,7 @@ static uint64_t salt()
     std::string err;
     if (!write_file(f, b, err, !g_unreadable_fix)) {
         if (g_unreadable_fix && GetFileAttributesW(f.c_str()) != INVALID_FILE_ATTRIBUTES) {
-            H->log(M, SK_WARN, "store: salt.txt came meanwhile (%s): read again (BUG-9309)", err.c_str());
+            H->log(M, SK_WARN, "store: salt.txt came meanwhile (%s): read again (BUG-1424)", err.c_str());
             return 0; // (the next ask reads it)
         }
         H->log(M, SK_WARN, "store: no salt file (%s): the keys hold for this run only", err.c_str());
@@ -235,10 +235,10 @@ static void open_world(const std::string& w)
     std::string text;
     pstore::Got got = f.empty() ? pstore::Got::Missing : read_file(f, text);
     pstore::WorldStep step = pstore::world_step(got, g_unreadable_fix);
-    if (step == pstore::WorldStep::Wait) { // BUG-9309: no empty store over the file; tick() tries again every second
+    if (step == pstore::WorldStep::Wait) { // BUG-1424: no empty store over the file; tick() tries again every second
         if (g_unreadable_world != w)
             H->log(M, SK_WARN, "store: the file of world '%s' cannot be read now (error %lu): its store stays closed and "
-                               "is read again, the file is not written (BUG-9309)",
+                               "is read again, the file is not written (BUG-1424)",
                    w.c_str(), (unsigned long)g_read_error);
         g_unreadable_world = w;
         g_open = false;
@@ -246,7 +246,7 @@ static void open_world(const std::string& w)
         return;
     }
     if (g_unreadable_world == w)
-        H->log(M, SK_INFO, "store: the file of world '%s' can be read again (BUG-9309)", w.c_str());
+        H->log(M, SK_INFO, "store: the file of world '%s' can be read again (BUG-1424)", w.c_str());
     g_unreadable_world.clear();
     bool has = step == pstore::WorldStep::Parse;
     g_parsed = g_cur.parse(has ? text : "", w);
@@ -454,7 +454,7 @@ int command(void*, int argc, const char* const* argv, SkOut* out)
                argv[2]);
         return 0;
     }
-    if (sub == "saltprobe") { // tests (BUG-9309): another program holds salt.txt open for writing while the salt is read
+    if (sub == "saltprobe") { // tests (BUG-1424): another program holds salt.txt open for writing while the salt is read
         if (!is_host()) {
             H->out_printf(out, "saltprobe: host only\n");
             return 1;

@@ -1,5 +1,5 @@
 ---
-id: BUG-9305
+id: BUG-1420
 title: A guest whose game stands in its own editor is dropped silently, or kept for good through the keepalive: kick it after 30 s, told, so it can join again
 status: open
 kind: bug
@@ -14,11 +14,11 @@ commits: 35163c73, 2a454d1e
 tests: editor_stand_guest, twins editor_stand_vote_off, editor_stand_told_off; unit test_timeout_told (net_tests)
 signature: host: "player N (...) disconnected (reason 1)" while the guest loads its own editor; the guest plays on a dead link
 docs: docs/04-netcode.md#netcode-editor-long-wait
-related: BUG-9304, BUG-1239, BUG-1369, BUG-0687, BUG-1108
+related: BUG-1419, BUG-1239, BUG-1369, BUG-0687, BUG-1108
 ---
 
 ## Report
-The reverse case of PR #216 (BUG-9304), the owner's rule for 0.7.16.1: a guest stuck in its own editor (0.7.16 opens a
+The reverse case of PR #216 (BUG-1419), the owner's rule for 0.7.16.1: a guest stuck in its own editor (0.7.16 opens a
 guest's own City Hall / vehicle editors at its Civ arrival, its own spaceship editor, its own Creature editor) must
 not hold the host: after 30 s it is removed from the session and may join again. Found by reading the code (review
 of PR #216, out/research/prs-213-220.md): no run.
@@ -28,7 +28,7 @@ Inferred from the code. How the host waits for a guest today:
 * The session: one `timeout_ms` (30 s) for all peers (net/session.cpp, the host's timeout loop). A guest whose game
   stands without pumping messages (an editor's load) is dropped after 30 s, as the owner wants, but silently: drop_peer
   sent it nothing. When its game went on it read the host's older packets from its socket, so it believed it was still
-  in the session (its own 30 s timeout, or 120 s with BUG-9304 while the host was in an editor) and played on a dead
+  in the session (its own 30 s timeout, or 120 s with BUG-1419 while the host was in an editor) and played on a dead
   link: the host ignored its packets (a retired connection).
 * A guest whose game stands while its window pumps messages (a dialog) keeps its link alive through the keepalive
   (coop.cpp, BUG-0687): it is never dropped. The host's vote then waited for its ready until the vote's 60 s: an
@@ -65,3 +65,5 @@ Open, waiting for the lab run.
 ## History
 - 2026-11-22: opened (the reverse case of PR #216).
 - 2026-11-22: fixed on fix/w63-editor (35163c73), tests 2a454d1e.
+
+- 2026-11-22: renumbered from BUG-9305 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9305.

@@ -1,5 +1,5 @@
 ---
-id: BUG-9316
+id: BUG-1431
 title: CELL-1: Cell: the host acknowledges a guest's meal before its food is applied, the guest's food dips for 0.5 s (BUG-0051 again)
 status: open
 kind: desync
@@ -31,3 +31,5 @@ Open, waiting for the lab run. PASS expected: cell_food_ack and cell_food_ack_sh
 
 ## History
 - 2026-11-22: opened (audit item); fixed on fix/w63-life with its test and twin, waiting for the lab run.
+
+- 2026-11-22: renumbered from BUG-9316 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9316.

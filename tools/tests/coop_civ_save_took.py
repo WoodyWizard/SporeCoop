@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Civilization: a mirror vehicle removed between a guest's save and its end stays out of the civ lists (BUG-9301,
+"""Civilization: a mirror vehicle removed between a guest's save and its end stays out of the civ lists (BUG-1416,
 audit CIV-1).
 
 While a guest's save is written the mod takes the guest's mirror vehicles (the host's vehicles) out of every

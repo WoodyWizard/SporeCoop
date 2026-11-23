@@ -1,5 +1,5 @@
 ---
-id: BUG-9304
+id: BUG-1419
 title: A guest's session times out while the host's editor loads for more than 30 s on a slow PC (port of PR #216)
 status: open
 kind: bug
@@ -14,7 +14,7 @@ commits: 35163c73, 2a454d1e
 tests: editor_stand_host, twin editor_stand_host_off; unit busy_long_wait (core_tests)
 signature: "guest: connection to host lost (timeout)" while the host loads an editor (hang in App::cJob::Wait < cTextureManager < Palettes::PalettePageUI::Load)
 docs: docs/04-netcode.md#netcode-editor-long-wait
-related: BUG-9305, BUG-1142, BUG-0655, BUG-0687
+related: BUG-1420, BUG-1142, BUG-0655, BUG-0687
 ---
 
 ## Report
@@ -39,7 +39,7 @@ the new why bit kWhyLongWait (0x100) at once (Announcer::announce, no debounce) 
 (Session::flush_now). A guest sets its session timeout to busy_model::kLongWaitMs while the host's last told state is
 such a stand (kWhyLongWait, Editor, or Away for a load), else the session's 30 s. kLongWaitMs is 120 s (the PR had
 180 s; 120 s is over twice the 51.8 s seen and still notices a host that died in its editor within two minutes).
-The host's timeout for its guests stays 30 s (the reverse case is BUG-9305). Wire: no change of a message, no family
+The host's timeout for its guests stays 30 s (the reverse case is BUG-1420). Wire: no change of a message, no family
 bump: a new bit in the why field of the existing MSG_HOST_BUSY; busy_model::decode takes any why bits (an older guest
 treats it as plain Editor), an older host never sends it (the guest keeps 30 s). Off: as 0.7.16.
 
@@ -54,3 +54,5 @@ Open, waiting for the lab run (no lab runs during the 0.7.16 final check).
 ## History
 - 2026-11-22: opened (port of PR #216 by IltonBJSilva, 0.7.16.1 scope).
 - 2026-11-22: fixed on fix/w63-editor (35163c73), tests 2a454d1e.
+
+- 2026-11-22: renumbered from BUG-9304 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9304.

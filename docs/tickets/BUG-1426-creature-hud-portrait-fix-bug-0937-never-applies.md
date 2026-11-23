@@ -1,5 +1,5 @@
 ---
-id: BUG-9311
+id: BUG-1426
 title: Creature HUD portrait fix (BUG-0937) never applies when Windows relocates the exe: raw vtable address (UIFX-3)
 status: open
 kind: bug
@@ -46,3 +46,5 @@ symbol equals the vtable the game uses under Wine).
 
 ## History
 - 2026-11-22: opened.
+
+- 2026-11-22: renumbered from BUG-9311 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9311.

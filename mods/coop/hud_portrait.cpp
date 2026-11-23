@@ -56,7 +56,7 @@ static sui::Win window()
 }
 
 // whether the window draws the avatar's species png: the window's drawable (UTFWin::ImageDrawable, its vtable the
-// symbol UTFWin::ImageDrawable::vftable: BUG-9311, the raw 0x01443248 never matched where Windows relocates the exe)
+// symbol UTFWin::ImageDrawable::vftable: BUG-1426, the raw 0x01443248 never matched where Windows relocates the exe)
 // holds its UTFWin::Image at +0x24 (runtime 2026-11-12: an object with the size 67 x 68 at +0x20 / +0x24, the
 // portrait's size); UTFWin::Image::GetImage of a key answers the game's one Image of that png, so the two pointers
 // are the same when the portrait shows it. -1: not known (no drawable, no image of that key)
@@ -125,7 +125,7 @@ void init(const SkHost* host, SkMod* mod, std::function<bool()> creature_now)
     g_creature_now = std::move(creature_now);
     a_set_by_key = H->sym("UTFWin::Image::SetBackgroundByKey");
     a_get_image = H->sym("UTFWin::Image::GetImage");
-    a_image_vt = H->sym("UTFWin::ImageDrawable::vftable"); // BUG-9311 (UIFX-3): rebased with the exe
+    a_image_vt = H->sym("UTFWin::ImageDrawable::vftable"); // BUG-1426 (UIFX-3): rebased with the exe
     H->command_add(M, "coop.portrait",
                    "coop.portrait - BUG-0937: the Creature HUD portrait's image key against the avatar's species",
                    command, nullptr, SK_CMD_OUTSIDE_FRAME);

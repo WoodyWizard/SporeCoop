@@ -1,5 +1,5 @@
 ---
-id: BUG-9303
+id: BUG-1418
 title: Civ: a host alone claims every city by its solo deal, so a joiner gets no city of its own (CIV-6)
 status: open
 kind: bug
@@ -53,3 +53,5 @@ token; the rule is in tests/civ_tests.cpp).
 ## History
 - 2026-11-22: opened.
 - 2026-11-22: fix on fix/w63-civ (switches civ.solo_claims, civ.adopt_owners; test civ_solo_deal and its twin); lab run pending.
+
+- 2026-11-22: renumbered from BUG-9303 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9303.

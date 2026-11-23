@@ -1,5 +1,5 @@
 ---
-id: BUG-9310
+id: BUG-1425
 title: install.bat copied the loader over a missing steam_api_orig.dll and said installed after failed copies (KIT-25)
 status: open
 kind: bug
@@ -49,3 +49,5 @@ Lab: `tools/lab.py run win_unit win_unit_kit25_off`: win_unit must PASS, win_uni
 
 ## History
 - 2026-11-22: opened.
+
+- 2026-11-22: renumbered from BUG-9310 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9310.

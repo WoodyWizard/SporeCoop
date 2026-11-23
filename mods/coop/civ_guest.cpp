@@ -31,7 +31,7 @@ static void reconcile_buildings(void* city, size_t n,
                                 const std::function<void(size_t, uint32_t&, net::Vec3&, bool&)>& host_b)
 {
     if (planner_holds(city) || planner_send_holds(city)) { // BUG-0493: after the planner closes (the next snapshot);
-        g_n.planner_held++;                                 // BUG-9302: and the host has the building it kept
+        g_n.planner_held++;                                 // BUG-1417: and the host has the building it kept
         g_bfix_seen[city] = 0;
         return;
     }
@@ -206,14 +206,14 @@ struct Took {
     uint32_t serial; // its cGameData::mID when it was taken out
 };
 static std::vector<Took> g_took;
-// BUG-9301 (audit CIV-1): save_start runs inside the save's first write, save_end only on the next frame's
+// BUG-1416 (audit CIV-1): save_start runs inside the save's first write, save_end only on the next frame's
 // savestrip::tick, after that frame's network receive: a host snapshot in between that no longer names a mirror
 // removes it (kill_local: Vehicle_Remove takes it out of the game's list at once and frees it later), and save_end put
 // the removed vehicle back into the civilization's vehicle and selectable vectors (a dangling pointer the civ update
 // walks). Now only a vehicle still in the game's list (the same object: its serial) of a civilization still listed
 // goes back; the taken list is cleared with the world and the session. Off: every taken entry back (0.7.16).
 static bool g_took_check_fix = true;
-COOP_FIX_UNSAFE("civ.save_took_listed", "BUG-9301", g_took_check_fix,
+COOP_FIX_UNSAFE("civ.save_took_listed", "BUG-1416", g_took_check_fix,
                 "civ: a guest's save puts back only the mirror vehicles the game still has (one removed during the save stays out)");
 static bool g_debug_save_kill; // tests (coop.civ savekill): the next save_end first removes a taken mirror
 uint32_t g_took_back, g_took_gone, g_took_cleared;
@@ -251,7 +251,7 @@ void save_end()
     if (g_debug_save_kill && !g_took.empty()) { // tests: as if this frame's host snapshot removed a mirror first
         g_debug_save_kill = false;
         void* v = g_took.front().v;
-        H->log(M, SK_INFO, "civ: savekill: the taken mirror %p removed before the save's end (tests, BUG-9301)", v);
+        H->log(M, SK_INFO, "civ: savekill: the taken mirror %p removed before the save's end (tests, BUG-1416)", v);
         if (exists(v))
             kill_local(v);
     }
@@ -267,7 +267,7 @@ void save_end()
             if (!civlogic::took_goes_back(civ_here, civ_here && exists(t.v),
                                           civ_here && exists(t.v) && game::object_serial(t.v) == t.serial)) {
                 g_took_gone++;
-                H->log(M, SK_INFO, "civ: a mirror vehicle %p taken out for the save is gone: not put back (BUG-9301)", t.v);
+                H->log(M, SK_INFO, "civ: a mirror vehicle %p taken out for the save is gone: not put back (BUG-1416)", t.v);
                 continue;
             }
         }
@@ -279,7 +279,7 @@ void save_end()
     }
     g_took.clear();
 }
-// BUG-9301: the world or the session ended between a save's start and its end: nothing goes back
+// BUG-1416: the world or the session ended between a save's start and its end: nothing goes back
 void took_clear()
 {
     if (!g_took_check_fix || g_took.empty())

@@ -44,15 +44,15 @@ static bool g_save_fix = true;
 COOP_FIX("core.host_busy_save", "BUG-1217", g_save_fix,
          "core: the host's own save (a world share's, an autosave) is no stand its guests are told about or wait for");
 
-// BUG-9304 (ported from PR #216 by IltonBJSilva): an editor's first load stood the host's main thread 30-60 s on a busy
+// BUG-1419 (ported from PR #216 by IltonBJSilva): an editor's first load stood the host's main thread 30-60 s on a busy
 // PC (the City Hall editor's palettes, the spaceship editor's property files); its guests heard nothing for 30 s and
 // their sessions ended ("connection to host lost (timeout)"), the host went on alone. The host now tells its guests
 // just before every editor request of its own reaches the game (host_busy_long_wait from vote.cpp: Editor +
 // kWhyLongWait, sent at once), and a guest waits up to busy_model::kLongWaitMs for the host's packets while the host's
 // last told state is such a stand (an editor, a load). Off: the guest's timeout stays 30 s and nothing is told before
-// the editor (0.7.16). The other direction (a guest standing in its own editor) is BUG-9305: the host keeps 30 s.
+// the editor (0.7.16). The other direction (a guest standing in its own editor) is BUG-1420: the host keeps 30 s.
 static bool g_long_wait_fix = true;
-COOP_FIX("core.editor_long_wait", "BUG-9304", g_long_wait_fix,
+COOP_FIX("core.editor_long_wait", "BUG-1419", g_long_wait_fix,
          "core: the host tells its guests before an editor loads, and a guest waits longer for a host in an editor or a load");
 static uint32_t g_long_waits_told;
 static uint32_t g_normal_timeout_ms; // the session's own timeout (read once)
@@ -190,8 +190,8 @@ static void guest_tick(double now)
     if (!g_normal_timeout_ms)
         g_normal_timeout_ms = g_sess.timeout_ms;
     bool guest = g_sess.role() == net::Role::Client && g_sess.connected();
-    // BUG-9304: a host in an editor or a load may stand long: wait longer for its packets (a guest only: the host's
-    // timeout for its guests stays the session's, BUG-9305)
+    // BUG-1419: a host in an editor or a load may stand long: wait longer for its packets (a guest only: the host's
+    // timeout for its guests stays the session's, BUG-1420)
     g_sess.timeout_ms = guest && g_host_busy_fix && g_long_wait_fix
                             ? busy_model::guest_timeout_ms(g_view.heard, g_view.last, g_normal_timeout_ms)
                             : g_normal_timeout_ms;
@@ -228,7 +228,7 @@ void host_busy_tick(double now)
     guest_tick(now);
 }
 
-// BUG-9304, host: the game's main thread is about to stand for long (an editor is asked for): the guests are told now,
+// BUG-1419, host: the game's main thread is about to stand for long (an editor is asked for): the guests are told now,
 // and the message leaves before the stand
 void host_busy_long_wait(const char* what)
 {
@@ -241,7 +241,7 @@ void host_busy_long_wait(const char* what)
         send_to(0xFF, m);
         g_sess.flush_now();
     }
-    LOG("host busy: %s: the guests wait up to %u s for this game (seq %u, BUG-9304)", what, busy_model::kLongWaitMs / 1000,
+    LOG("host busy: %s: the guests wait up to %u s for this game (seq %u, BUG-1419)", what, busy_model::kLongWaitMs / 1000,
         m.seq);
 }
 

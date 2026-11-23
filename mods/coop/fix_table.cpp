@@ -37,7 +37,7 @@ COOP_FIX("net.relay_budget", "BUG-1108", net::g_fix.relay_budget, "net: the host
 COOP_FIX("net.dir_gate", "BUG-1136", net::g_fix.dir_gate, "net: the host drops a message of a type only the host sends when a guest sends it (net/messages.def)");
 COOP_FIX("net.family_check", "BUG-1137", net::g_fix.family_check, "net: a player whose SporeCoop has another revision of a message family the stage uses cannot join (other versions join with a warning)");
 COOP_FIX("net.refuse_fork", "BUG-1281", net::g_fix.refuse_fork, "net: a player running the Lineages fork of SporeCoop cannot join and a host running it is left, with a text that says why (the fork's messages mean other things)");
-COOP_FIX("net.timeout_told", "BUG-9305", net::g_fix.timeout_told, "net: a guest whose game stood 30 s (an editor's load, a hang) and was dropped by the host is told so when it goes on: its session ends at once and it can join again");
+COOP_FIX("net.timeout_told", "BUG-1420", net::g_fix.timeout_told, "net: a guest whose game stood 30 s (an editor's load, a hang) and was dropped by the host is told so when it goes on: its session ends at once and it can join again");
 COOP_FIX("net.recv_skip_big", "BUG-1007", net::g_fix.recv_skip_big, "net: a datagram too big for the read buffer is skipped, the other datagrams of the frame are still read");
 COOP_FIX("net.async_resolve", "BUG-0204",net::g_fix.async_resolve, "net: a host name is looked up on a worker thread");
 

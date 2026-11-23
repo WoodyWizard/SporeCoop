@@ -85,19 +85,19 @@ static void claims_tick()
     }
 }
 
-// BUG-9303 (audit CIV-6 A): a host is connected() alone (net/session.h), so host_tick deals every city to it and this
+// BUG-1418 (audit CIV-6 A): a host is connected() alone (net/session.h), so host_tick deals every city to it and this
 // refresh stamped the host's key on each 2 s later: when a guest joined, every non-capital city was claimed by the host
 // and the joiner got only the shared capital. A deal made while the host plays alone is no claim now: a city keeps the
 // claim it has (from the store, a capture, a gift or a purchase, which claim at the event) and an unclaimed one stays
 // unclaimed for the deal at the next join. Off: the solo deal claims (0.7.16).
 static bool g_fix_solo_claims = true;
-COOP_FIX("civ.solo_claims", "BUG-9303", g_fix_solo_claims,
+COOP_FIX("civ.solo_claims", "BUG-1418", g_fix_solo_claims,
          "civ: a host playing alone claims no city by its own deal (a joiner gets a city of its own)");
-// BUG-9303 (audit CIV-6 B): `coop.store adopt` renamed the claim keys but not the owner table: the cities and vehicles
+// BUG-1418 (audit CIV-6 B): `coop.store adopt` renamed the claim keys but not the owner table: the cities and vehicles
 // the host held for the absent player stayed the host's, and the next refresh wrote the host's key back over the
 // adopted claims. Now the adopted player owns them at once. Off: the owner table is left as it was (0.7.16).
 static bool g_fix_adopt_owners = true;
-COOP_FIX("civ.adopt_owners", "BUG-9303", g_fix_adopt_owners,
+COOP_FIX("civ.adopt_owners", "BUG-1418", g_fix_adopt_owners,
          "civ: coop.store adopt gives the adopted player its claimed cities and vehicles at once");
 uint32_t g_solo_unclaimed, g_adopt_owned;
 
@@ -111,7 +111,7 @@ static void claims_refresh()
     if (!pc)
         return;
     std::unordered_map<void*, std::string> cc;
-    bool solo = g_fix_solo_claims && C.sess->players().size() < 2; // BUG-9303: the host alone
+    bool solo = g_fix_solo_claims && C.sess->players().size() < 2; // BUG-1418: the host alone
     for (void* c : vec_of((uint8_t*)pc + kCivCities)) {
         auto old = g_city_claim.find(c);
         bool has_old = old != g_city_claim.end();
@@ -123,7 +123,7 @@ static void claims_refresh()
         if (!k.empty())
             cc[c] = k;
         else if (solo && !has_old)
-            g_solo_unclaimed++; // BUG-9303: left for the deal at the next join
+            g_solo_unclaimed++; // BUG-1418: left for the deal at the next join
     }
     g_city_claim = std::move(cc);
     uint32_t ppol = pol_of(pc);
@@ -169,7 +169,7 @@ static void claims_save(pstore::Store& s, int64_t)
     claims::put_spots(o, vs);
     s.put_world("civ.owners", 1, o.d);
 }
-// BUG-9303 (CIV-6 B): the adopted player (here now with the key `to`) owns its claimed cities (not the capital) and
+// BUG-1418 (CIV-6 B): the adopted player (here now with the key `to`) owns its claimed cities (not the capital) and
 // vehicles at once
 static void adopt_owners(const std::string& to)
 {
@@ -195,7 +195,7 @@ static void adopt_owners(const std::string& to)
                 x.h->owner = (uint8_t)id;
                 g_adopt_owned++;
             }
-    H->log(M, SK_INFO, "civ: the adopted player %d owns its claimed cities and vehicles now (BUG-9303)", id);
+    H->log(M, SK_INFO, "civ: the adopted player %d owns its claimed cities and vehicles now (BUG-1418)", id);
 }
 static bool g_claims_reg = store::add({"civ.owners", claims_save, [](const std::string& from, const std::string& to) {
                                            for (auto* m : {&g_city_claim, &g_veh_claim})
@@ -206,7 +206,7 @@ static bool g_claims_reg = store::add({"civ.owners", claims_save, [](const std::
                                                for (auto& sp : *v)
                                                    if (sp.key == from)
                                                        sp.key = to;
-                                           adopt_owners(to); // BUG-9303
+                                           adopt_owners(to); // BUG-1418
                                        }});
 std::string solo_status()
 {
@@ -215,7 +215,7 @@ std::string solo_status()
              g_solo_unclaimed, (int)g_fix_adopt_owners, g_adopt_owned);
     return b;
 }
-// tests (BUG-9303): city ci of the player civ as a save that was never played in co-op leaves it: no claim, no
+// tests (BUG-1418): city ci of the player civ as a save that was never played in co-op leaves it: no claim, no
 // capture or gift mark (`coop.civ claims forget <ci>`)
 std::string claims_forget(void* city)
 {

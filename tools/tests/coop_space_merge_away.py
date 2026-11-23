@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""BUG-9299 (audit 0.7.15.5 SPC-2): the switch from Rivals to Allies while the guest is outside Space.
+"""BUG-1414 (audit 0.7.15.5 SPC-2): the switch from Rivals to Allies while the guest is outside Space.
 
 The switch needs only the host in Space. A guest in an editor or an adventure entered from Space keeps its merge
 pending (no Space money to read there), but its cEmpire lives on and shared.cpp took the host's shared totals into
