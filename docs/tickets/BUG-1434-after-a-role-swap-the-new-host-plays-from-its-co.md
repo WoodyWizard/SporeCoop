@@ -10,7 +10,7 @@ role: all
 versions: 0.7.15.5
 fixed_in:
 branch: fix/w64-share
-commits: 2d3bc204
+commits: 2d3bc204, f6f56ea1
 tests: copy_slot_keep, copy_slot_notice (coop_copy_slot.py); twins copy_slot_keep_off, copy_slot_notice_off; win_unit test_slot_own_progress (--old-own)
 signature:
 docs: docs/03-gameplay.md, docs/06-testing.md#testing-share-menu-pass, README.md, docs/INSTALL.md

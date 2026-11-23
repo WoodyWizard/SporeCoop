@@ -104,7 +104,16 @@ def notice_case(host, guest, ck):
     time.sleep(3)
     guest.call('coop.leave')
     time.sleep(2)
-    print('  guest hosts:', guest.call(f'cheat coop host {lane.PORT} Bob')['out'].strip()[:120], flush=True)
+    hosted = False
+    for _ in range(3):  # (the port of the session that just ended may be held for a moment, BUG-0302)
+        out = (guest.call(f'cheat coop host {lane.PORT} Bob').get('out') or '').strip()
+        print('  guest hosts:', out[:120], flush=True)
+        hosted = 'host failed' not in out
+        if hosted:
+            break
+        time.sleep(3)
+    if not ck(hosted, 'the guest hosts a session of its own'):
+        return
     want = re.compile(r"from your copy of Alice's world \(" + re.escape(slot) + r"\).*" + re.escape(planet))
     got = None
     t0 = time.time()

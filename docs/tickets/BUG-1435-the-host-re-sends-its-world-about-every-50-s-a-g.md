@@ -10,7 +10,7 @@ role: all
 versions: 0.7.15.5
 fixed_in:
 branch: fix/w64-share
-commits: aa1d7d26
+commits: aa1d7d26, f6f56ea1
 tests: share_menu_pass (coop_share_menu_pass.py); twin share_menu_pass_off
 signature:
 docs: docs/07-modes.md, docs/06-testing.md#testing-share-menu-pass
