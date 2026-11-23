@@ -155,6 +155,8 @@ struct NewStage {
 };
 static bool g_civ_start = true;
 COOP_FIX("galaxy.civ_start", "BUG-9343", g_civ_start, "galaxy menu: a planet whose latest stage is Tribe offers its Civ stage (new)");
+static bool g_space_start = true;
+COOP_FIX("galaxy.space_start", "BUG-9346", g_space_start, "galaxy menu: a planet whose latest stage is Civ offers its Space stage (new)");
 static NewStage new_stage(const Row& row)
 {
     NewStage n;
@@ -165,7 +167,8 @@ static NewStage new_stage(const Row& row)
     for (auto& e : row.eras)
         if (net::galaxy::era_of(e) > top && !net::galaxy::is_crossing(e))
             top = net::galaxy::era_of(e), top_key = e;
-    if (top != net::galaxy::kEraCreature && !(g_civ_start && top == net::galaxy::kEraTribe))
+    if (top != net::galaxy::kEraCreature && !(g_civ_start && top == net::galaxy::kEraTribe) &&
+        !(g_space_start && top == net::galaxy::kEraCiv))
         return n;
     for (auto& p : galaxy::planets_known())
         if (p.name == top_key && p.stored)

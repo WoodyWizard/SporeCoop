@@ -13090,6 +13090,15 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
             return true;
         };
         gx.start_stage = []() -> bool { // BUG-9336: a start crossing: the game's own Creature stage end, once it can
+            if (game::mode_id() == modes::kCiv) { // BUG-9346: from a Civ era: the planet won, as a surrender gives it
+                if (world::cinematic_playing() || game_busy() || mode_switch_pending())
+                    return false;
+                const bool r = civ::stage_end_request();
+                LOG("galaxy: the start crossing asks the Civ stage's end (BUG-9346) -> %d", (int)r);
+                feed(r ? "A new Space stage: every city of the planet joins your nation, then build your spaceship."
+                       : "The Space stage could not be started here: leave the planet and try again.");
+                return true;
+            }
             if (game::mode_id() == modes::kTribe) { // BUG-9343: from a Tribe era: the Tribe stage's own end
                 if (world::cinematic_playing() || game_busy() || mode_switch_pending())
                     return false;

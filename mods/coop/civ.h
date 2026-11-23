@@ -40,6 +40,11 @@ int give_selected(uint8_t to);
 bool planner_open(); // BUG-9153: the community editor (Civ or Tribe planner) is up
 bool init(const SkHost* host, SkMod* mod, Ctx ctx);
 void tick(double now);
+// BUG-9346 (5R A, a galaxy start crossing from a Civ era): the end of Civ as a nation's surrender gives it: the
+// planet's cities still to come are founded, then every city of another nation joins the player civ (Capture, the
+// instant path); the game's own check then ends the stage (planet won, the spacecraft editor, Space). Host only.
+bool stage_end_request();
+std::string stage_end_status();
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
 void before_native_save();

@@ -7793,9 +7793,11 @@ static std::string veh_hunt_status()
     return b;
 }
 
+static void stage_end_tick(double now); // BUG-9346 (below)
 void tick(double now)
 {
     veh_hunt_tick();
+    stage_end_tick(now);
     if (g_ok && C.sess && C.sess->connected())
         space_tick(now); // BUG-0766 / BUG-0884
     if (!active())
@@ -8691,6 +8693,77 @@ std::vector<net::Vec3> local_positions()
     return v;
 }
 
+// BUG-9346: the end of Civ for a galaxy start crossing (civ.h stage_end_request), one step a second outside the frame:
+// founding (SpawnNextCity, instant, while the expansion has sites left), then capturing (Capture(player pol, the
+// player city's specialty, instant 1, no caption, 1): the arguments of a nation's surrender, docs/re/civ.md#civ-stage-end)
+static int g_end_phase; // 0 idle, 1 founding, 2 capturing
+static double g_end_next;
+static unsigned g_end_asks, g_end_founded, g_end_captured, g_end_steps;
+bool stage_end_request()
+{
+    if (!g_ok || !nm() || !is_host() || game::mode_id() != modes::kCiv || !player_civ())
+        return false;
+    g_end_phase = 1;
+    g_end_next = 0;
+    g_end_asks++;
+    return true;
+}
+static void stage_end_step(void*)
+{
+    g_end_next = H->time_seconds() + 1.0;
+    if (!g_end_phase || !g_ok || !nm() || !is_host() || game::mode_id() != modes::kCiv) {
+        g_end_phase = 0;
+        return;
+    }
+    g_end_steps++;
+    void* pc = player_civ();
+    if (!pc) {
+        g_end_phase = 0;
+        return;
+    }
+    if (g_end_phase == 1) {
+        void* ex = skg::cdecl_call<void*>(a_ExpansionGet);
+        if (ex && F<int>(ex, kExSitesLeft) > 0 && g_end_founded < 40 && h_SpawnNextCity(ex, 1, nullptr)) {
+            g_end_founded++;
+            return;
+        }
+        g_end_phase = 2;
+        return;
+    }
+    const uint32_t mine = pol_of(pc);
+    int spec = 0;
+    void* other = nullptr;
+    for (void* c : all_cities()) {
+        if (pol_of(c) == mine)
+            spec = F<int>(c, kCitySpecialty);
+        else if (!other)
+            other = c;
+    }
+    if (!other || g_end_captured >= 60) {
+        H->log(M, SK_INFO, "civ: the stage's end for the start crossing: %u cities founded, %u captured (BUG-9346)",
+               g_end_founded, g_end_captured);
+        g_end_phase = 0;
+        return;
+    }
+    h_Capture(other, mine, spec, 1, 0, 1);
+    g_end_captured++;
+}
+static void stage_end_tick(double now)
+{
+    if (!g_end_phase || now < g_end_next)
+        return;
+    g_end_next = now + 5.0; // (the step sets the next one; again in 5 s if it never ran)
+    H->run_outside_frame(stage_end_step, nullptr);
+}
+std::string stage_end_status()
+{
+    void* ex = g_ok && a_ExpansionGet ? skg::cdecl_call<void*>(a_ExpansionGet) : nullptr;
+    char b[200];
+    snprintf(b, sizeof b, "civ stage end (BUG-9346): asks %u, phase %d, founded %u, captured %u, steps %u, sites left %d",
+             g_end_asks, g_end_phase, g_end_founded, g_end_captured, g_end_steps, ex ? F<int>(ex, kExSitesLeft) : -1);
+    return b;
+}
+
 std::string debug(const std::vector<std::string>& a)
 {
     if (a.size() == 1 && a[0] == "defenses") {
@@ -9275,6 +9348,10 @@ std::string debug(const std::vector<std::string>& a)
         on_world_change();
         return "world change run";
     }
+    if (a.size() == 1 && a[0] == "stage_end") // BUG-9346: the counters (tests)
+        return stage_end_status();
+    if (a.size() == 2 && a[0] == "stage_end" && a[1] == "now") // BUG-9346: ask it here (tests)
+        return stage_end_request() ? "asked: " + stage_end_status() : "not here (host in Civ only)";
     if (a.size() >= 2 && a[0] == "capture" && is_host()) { // capture <city>: the player civ takes it (tests, BUG-0187)
         size_t ci = (size_t)atoi(a[1].c_str());
         void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
