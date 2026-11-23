@@ -147,6 +147,7 @@ void guest_state(net::Reader& r)
         auto& m = g_mirrors[hidx];
         m.pos = p; m.vel = v; m.rot = q; m.size = size; m.hp = hp; m.seen = now;
         m.product = (flags & 4) != 0; // BUG-0958
+        m.own_product = (flags & 8) != 0; // BUG-1513
         m.scale = host_scale; // the pose stays in the host's scale; drawn in ours
         size *= k;
         uint8_t* c = m.local ? modes::cell_at(m.local) : nullptr;

@@ -9,9 +9,9 @@ source: lab rel/0.7.16 20261121-003202 own_cell
 role: 
 versions: 0.7.15.1, unreleased
 fixed_in:
-branch: fix/w62-flake-cc
-commits: 9cebc645
-tests: own_cell
+branch: fix/w84-tests
+commits: 9cebc645 454c040a
+tests: own_cell, own_cell_steady
 signature:
 docs:
 related: BUG-0797
@@ -39,18 +39,35 @@ Inferred: the game's own tile cull (0xE7C080 -> DestroyCell, return 0xE7C3E6) wh
 game's per-tile population lifetime; why a whole batch goes at once while the guest's cell barely moves (99.9 100.6 ->
 96.8 100.5) is open. Whether a player sees it: the guest of a session who plays its own Cell world swims in a nearly
 empty pool for ~20 s every ~45 s; not reported by players.
+* 2026-11-23 (fix/w84-tests): a real defect, not the test's: the guest's own pool is emptied by the game's tile cull
+  (DestroyCell from 0xE7C3E6, lab 20261122-193406) in every own_cell run since 2026-11-13 (the cycle shows in the passing
+  runs too, their trough stayed at 20+ or fell outside the last 25 s). On a guest h_TileActive (cellsync_tiles.cpp)
+  returns the game's own IsTileActive (its union of view boxes runs only with 2 or more boxes, g_union, on the host),
+  so the game's own answer said "not active" for the guest's tiles while its cell stood still; which input of it (the
+  game's view box, the tile keys after a world scale step) is open. Not fixed here (WP-T1 is test-only); needs a mod
+  ticket owner.
 
 ## Fix
 None yet (cause not found). The test now prints, at each fall of the pool by half from 40 or more, the game's
 DestroyCell calls by caller since the sample before (`coop.pool orphans`: "DestroyCell from") and the guest's
 cell_tiles / cell_away lines, so the next run names the destroyer. The check is unchanged.
+* fix/w84-tests (454c040a), test only: own_cell judges BUG-0797's claim on the whole 60 s ("40 or more own live cells
+  in a read"; the twin cell.solo_elsewhere off reads 0 in every read, lab 20261112-030821), not on the last 25 s that
+  caught BUG-1408's trough by chance; the trough is printed as "(BUG-1408, open: ...)". The defect has its own test:
+  `own_cell_steady` (coop_own_cell.py --steady, extended, 90 s): once the pool has 40 cells it keeps 10 or more in every
+  later read; it FAILS until BUG-1408 is fixed.
 
 ## Verification
 Lab (shows the cause): `SPORE_DETECTOR=20 python3 tools/lab.py run own_cell --repeat 4 --lane N --retry 0
 --no-build`: the line "the guest's own pool fell ... DestroyCell by
 {...}" names the caller (0xE7C3E6 = the tile cull). Open: waiting for that run, then the fix.
 - Still open (2026-11-23): 20261122-193406 own_cell#2 FAIL named the destroyer: "the guest's own pool fell 175 -> 1 at 30 s: DestroyCell by {'SporeApp.exe+0xA7C3E6': 174}" (the tile cull, 0xE7C3E6), cell_tiles all 0 on the guest at that moment; #1 and #3 PASS, also 20261122-194210 and 20261123-023643. Next: the fix (why the cull takes a guest's own pool).
+- Pending night run (fix/w84-tests): `SPORE_DETECTOR=20 python3 tools/lab.py run own_cell --repeat 4 --lane N --retry 0 --no-build` PASS 4 of 4; twin
+  `SPORE_LAB_FIXOFF="own_cell=cell.solo_elsewhere" SPORE_DETECTOR=20 python3 tools/lab.py run own_cell --lane M --retry 0 --no-build` FAILS; `SPORE_DETECTOR=20 python3 tools/lab.py run own_cell_steady
+  --repeat 2 --lane M --retry 0 --no-build` FAIL expected (the defect; with the DestroyCell callers). The ticket stays
+  open for the mod fix.
 
 ## History
 - 2026-11-21: opened from the third final check of 0.7.16 (fix/w62-flake-cc); diagnostics added to the test.
 - 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.
+- 2026-11-23: fix/w84-tests (WP-T1 of 0.7.17): own_cell judges the populate on any read; the defect gets own_cell_steady (454c040a). Kind stays bug: a real defect.

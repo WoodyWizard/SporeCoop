@@ -141,6 +141,7 @@ struct Mirror {
     double seen = 0;
     float scale = 0; // the host's world scale G+0x514C of the sample (0: an older host without it)
     bool product = false; // BUG-0958: a player's product on the host (+0x110: a poison cloud), state flag 4
+    bool own_product = false; // BUG-1513: and it is OUR product (the host made it for our puppet), state flag 8
     double soft_at = 0;   // tests (BUG-1247): when h_Soft last turned it to the host's heading
     float soft_d = 0;     // ... and by how much (rad)
     float step_head = 0;  // tests (BUG-1247): its heading (+0x5C) right after the cell step, before ours is written back
@@ -168,7 +169,12 @@ struct Ko {
 constexpr uintptr_t kOpacity = 0xA4;
 
 // MSG_CELL_EAT: u32 host index, u8 kind, u8 arg, i32 food, u8 plant (older guests send the index only)
-enum : uint8_t { ACT_GONE = 0, ACT_KILL = 1, ACT_BREAK = 2 };
+// ACT_SHRINK (BUG-1514, cell 1.2): a guest's bite shrank a plant one level in place, arg = its new level; a host before
+// cell 1.2 took any kind but "gone" for a kill, so a guest sends it only to a host of cell 1.2 or newer
+enum : uint8_t { ACT_GONE = 0, ACT_KILL = 1, ACT_BREAK = 2, ACT_SHRINK = 3 };
+constexpr uint16_t kCellMinorShrink = 2; // the cell family's minor whose host reads ACT_SHRINK (0.7.17)
+extern bool g_fix_plant_shrink;
+bool shrink_plant(uint8_t* c, int new_level); // host: the game's own shrink of EatFood (0xE7DFDB) on a plant
 
 using NoAttack_t = bool(SK_CDECL*)(uint8_t*, uint8_t*);
 using DamageCell_t = bool(SK_CDECL*)(uint8_t*, uint8_t*, const float*, int, int, float);
@@ -378,6 +384,7 @@ void effect(uint8_t* c, const char* name);
 uint8_t* puppet_cell(int id);
 bool go_down(uint8_t* c);
 bool res_types(uint8_t* c, int* cell_type, int* ai_type);
+bool ref_types(void* ref, int* cell_type, int* ai_type);
 int ai_type(uint8_t* c);
 void hurt_avatar(int dmg, int type);
 std::string away_status();
@@ -391,7 +398,8 @@ void send_hit(uint32_t hidx, int dmg, int type);
 extern uintptr_t a_PoisonStep;
 void puppet_poison(float dt);
 extern bool g_fix_partner_poison;
-extern std::unordered_set<uint32_t> g_partner_clouds;
+extern std::unordered_map<uint32_t, uint8_t> g_partner_clouds; // BUG-0958; BUG-1513: cloud index -> its player
+extern bool g_fix_own_cloud; // BUG-1513 (cellsync_combat.cpp)
 extern char g_own_hit_last[160];
 extern uint32_t g_own_hits_n; // tests (BUG-1243)
 bool players_hurt_each_other();
@@ -581,6 +589,12 @@ void solo_tick();
 
 // cellsync_kin.cpp (BUG-1257): the wild kin of every player's species
 void kin_init();
+// BUG-1507 (cellsync.cpp): the switch cell.elsewhere_spend; guest: we do not play the host's Cell world now
+extern bool g_fix_elsewhere_spend;
+bool not_host_world();
+void spend_fake(int n); // tests (BUG-1507)
+std::string tiles_shadow_status(); // tests (BUG-1510)
+std::string audit_status(); // the counters of the Cell audit fixes of 0.7.17 (coop.pool, cellsync_combat.cpp)
 void kin_pop_enter();
 void kin_pop_leave();
 void kin_before_pass();

@@ -61,6 +61,10 @@ from twoinst import Checks, start
 LIMIT = 1.5     # m (printed: samples farther than this)
 P90_S = 0.3     # s x the dash speed: the 90th percentile of the errors (BUG-0757; see P90 below)
 ALONG_MIN = -0.043  # s: BUG-0757, the copy's median offset along the host's path (on -0.041 .. +0.009, off -0.045 .. -0.074)
+# BUG-1452: a median within this of ALONG_MIN is not judged on one dash: its 40 s quarters spread +0.002 .. -0.101 s on a
+# loaded night (lab 20261122-194210, median -0.051), the on and off bands are 0.004 s apart. A second dash of the same
+# animals is recorded and the median of both dashes' frames is judged (the same limit); a clear result costs nothing
+ALONG_AMBIG = 0.010
 # DASH_FEED=0: no `coop.npc list` on the guest during the dash (it samples every proxy's buffer at the console's own time,
 # which moves drive.lead_late's / the smoothing's state between two frames; BUG-0363 check) and no fresh-state check
 FEED = os.environ.get('DASH_FEED', '1') != '0'
@@ -197,12 +201,12 @@ def judge_rows(host, guest, keys, t0, t1, windows):
         print(f'    window {e:.2f} m at {tt:.1f} s: same moment {dd:.2f} (target {g(t_)}, driving {g(dr)}), nearest the '
               f'host\'s path {g(pd)} m at lag {f(lag)} s; host readings at {f(ts[0])} / {f(ts[1])} / {f(ts[2])} s of the '
               f'guest\'s', flush=True)
-    return pct(d, .9), len(sm), along_offset(hr, gr, keys, t0, t1)
+    return pct(d, .9), len(sm), along_offset(hr, gr, keys, t0, t1, values=True)
 
 
-def along_offset(hr, gr, keys, t0, t1):
+def along_offset(hr, gr, keys, t0, t1, values=False):
     """BUG-0757: the drawn copies' median time offset along the host's path while running (s, + ahead, - behind): the
-    error along the host's velocity over its speed, every guest frame of the host's NPC over 2 m/s"""
+    error along the host's velocity over its speed, every guest frame of the host's NPC over 2 m/s (values: the list)"""
     hb, gb = bt._by_key(hr), bt._by_key(gr)
     out = []
     for key in keys:
@@ -223,7 +227,34 @@ def along_offset(hr, gr, keys, t0, t1):
             sp = math.sqrt(sum(x * x for x in v))
             if sp > 2:
                 out.append(sum((gp[k] - h[k]) * v[k] for k in range(3)) / sp / sp)
+    if values:
+        return out
     return pct(out, .5) if out else None
+
+
+def quarters(v):
+    """the medians of four equal parts of the list (each animal's frames in time order, the first animal first): how
+    steady the along offset was over a dash"""
+    n = len(v) // 4
+    return [round(pct(sorted(v[i * n:(i + 1) * n]), .5), 3) for i in range(4)] if n else []
+
+
+def second_dash(host, guest, nid, mate, keys, off_g):
+    """BUG-1452: one more dash of the same animals, recorded as the first (coop.bodyrec on both games); returns the
+    along-the-path offsets of its guest frames"""
+    host.call('coop.bodyrec start')
+    guest.call('coop.bodyrec start diag')
+    t0 = time.monotonic() + off_g
+    print('  host (second dash):', host.call(f'coop.npc dash {nid} {LEN} {SPEED} 45 {WIDTH} {mate} {OFF}')['out'].strip(),
+          flush=True)
+    time.sleep(42)
+    t1 = time.monotonic() + off_g
+    for c in (host, guest):
+        c.call('coop.bodyrec stop')
+    want = set(keys) | {c + k[1:] for k in keys for c in 'qu'}
+    hr = [r for r in bt.dump(host) if r[1] in want]
+    gr = [r for r in bt.dump(guest) if r[1] in want]
+    return along_offset(hr, gr, keys, t0 + 2, t1, values=True)
 
 
 def main():
@@ -303,11 +334,22 @@ def main():
     for i in (nid, mate):
         line = [l.strip() for l in guest.call('coop.npc list')['out'].splitlines() if re.match(rf'\s*#{i}\s', l)]
         print(f'  guest proxy #{i}:', line[0][:300] if line else '-', flush=True)
-    guest.call('frame.limit auto')
     m = re.search(r'proxy_holds=(\d+)', guest.call('coop.npc')['out'])  # BUG-0440: placings kept through the update
     print(f'  guest: npc.proxy_hold kept {m.group(1) if m else "?"} placings', flush=True)
     ck(len(keys) == 2 and min(per.values()) >= 30, f'samples of both animals on both machines ({per})')
-    p90_rows, n_rows, along = judge_rows(host, guest, keys, t0_rows, t1_rows, windows)
+    p90_rows, n_rows, along_v = judge_rows(host, guest, keys, t0_rows, t1_rows, windows)
+    along = pct(sorted(along_v), .5) if along_v else None
+    if along_v:
+        print(f'  along the path: median {along:+.3f} s over {len(along_v)} running frames, quarters {quarters(along_v)}',
+              flush=True)
+    if along is not None and abs(along - ALONG_MIN) <= ALONG_AMBIG:
+        more = second_dash(host, guest, nid, mate, keys, off_g)
+        m2 = pct(sorted(more), .5) if more else None
+        print(f'  (BUG-1452: the median {along:+.3f} s is within {ALONG_AMBIG} s of the limit: a second dash, median '
+              f'{m2 if m2 is None else round(m2, 3)} over {len(more)} frames, quarters {quarters(more)})', flush=True)
+        along_v = along_v + more
+        along = pct(sorted(along_v), .5)
+    guest.call('frame.limit auto')
     if errs:
         s = sorted(errs)
         far = sum(1 for e in errs if e > LIMIT)
@@ -343,7 +385,7 @@ def main():
            f'(90 % of {n_rows} frames within {p90_rows:.2f} m, limit {P90:.2f} m)')
         # BUG-0757 (npc.place_now): not a guest frame behind the host along its path
         ck(along is not None and along >= ALONG_MIN, f'the running copy is not a frame behind the host along its path '
-           f'(median {along if along is not None else 0:+.3f} s, limit {ALONG_MIN} s)')
+           f'(median {along if along is not None else 0:+.3f} s over {len(along_v)} frames, limit {ALONG_MIN} s)')
     return ck.result()
 
 

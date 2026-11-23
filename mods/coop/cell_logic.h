@@ -500,4 +500,44 @@ struct OwnCellFollow {
     }
 };
 
+// ---- the Cell audit fixes of 0.7.17 (BUG-1507..1514): their decisions (tests/cell_tests.cpp audit_0717) ----
+
+// BUG-1507 (CELL-4): a guest's own editor spend the host keeps while it has no Cell game: it goes when the host left
+// the Cell stage (no Cell game, no editor), or, back in Cell, when it came in another world
+inline bool owed_drop(bool fix, bool cell_or_editor, bool in_cell, uint32_t owed_world, uint32_t world)
+{
+    return fix && (!cell_or_editor || (in_cell && owed_world && world && owed_world != world));
+}
+
+// BUG-1510 (CELL-8): a list's entry of a tile holds its cells (a starved tile never; a shadow neither, with the fix)
+inline bool tile_entry_populated(bool starved, bool shadow, bool fix) { return !starved && !(fix && shadow); }
+
+// BUG-1511 (CELL-9): the game's break / swallow states (+0x18C, BreakOrSwallow): such a cell is dying
+inline bool breaking_state(int st) { return st == 7 || st == 8 || st == 9; }
+
+// BUG-1512 (CELL-11): the factor that brings a partner's pose (its world scale) into ours; 1 when either is not sane
+inline float partner_scale_k(float theirs, float own)
+{
+    if (!(theirs > 0.f) || !(own > 0.f) || !std::isfinite(theirs) || !std::isfinite(own))
+        return 1.f;
+    return theirs / own;
+}
+
+// BUG-1513 (CELL-13): the flags of one cell of MSG_CELL_STATE: 1 dying, 2 dead, 4 a player's product, 8 the receiver's
+// own product (an older guest reads only 1, 2, 4)
+inline uint8_t state_flags(bool dying, bool dead, bool product, bool own_product)
+{
+    return (uint8_t)((dying ? 1 : 0) | (dead ? 2 : 0) | (product ? 4 : 0) | (product && own_product ? 8 : 0));
+}
+
+// BUG-1514 (CELL-14): EatFood's shrink in place (0xE7DFDB): level L -> L - 1, target size times sizes[L-1] / sizes[L];
+// false: not a one-level shrink of a level of the table (17 levels)
+inline bool plant_shrink(int level, int new_level, const float* sizes, float& factor)
+{
+    if (!sizes || new_level != level - 1 || new_level < 0 || level > 16 || !(sizes[level] > 0.f))
+        return false;
+    factor = sizes[new_level] / sizes[level];
+    return std::isfinite(factor) && factor > 0.f;
+}
+
 } // namespace cell_logic

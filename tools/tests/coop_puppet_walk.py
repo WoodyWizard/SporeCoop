@@ -114,7 +114,17 @@ def back_to_partner(con, W, H):
         xy = partner_screen(con)
         if xy and 40 < xy[0] < W - 40 and 90 < xy[1] < H - 170:
             d0 = partner_dist(con)
-            con.call(f'click {xy[0]} {min(H - 180, xy[1] + 60)}')
+            cx, cy = xy[0], min(H - 180, xy[1] + 60)
+            if near_nest(con, cx, cy):
+                # BUG-1358: the partner stands at (or on) the walker's own nest (both spawn there): the click under its
+                # tag hit the nest, the walker went onto it and its game played the nest cinematic and opened the
+                # evolution editor (latency_step_ingame 20261123-023643: busy=cinematic from s 55, the editor at s 82).
+                # A W hold instead: the camera faces the partner now
+                con.call('key 0x57 down')
+                time.sleep(2.0)
+                con.call('key 0x57 up')
+                return True
+            con.call(f'click {cx} {cy}')
             time.sleep(2.0)
             d1 = partner_dist(con)
             if d0 is not None and d1 is not None and d1 > d0 - 2:

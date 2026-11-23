@@ -264,6 +264,7 @@ to know them. A module reads a value with `settings::on(settings::kX)` / `settin
 | `all.late_join` | All stages | on | live | - | net/session.cpp HELLO (`Session::join_closed`) |
 | `cell.knockout` | Cell | on | session | - | cellsync.cpp go_down |
 | `cell.respawn_small` | Cell | on | session | - | cellsync.cpp downed_tick |
+| `cell.lineage_cells` | Cell | off (`settings::kLineageCellsDefault`, the owner's decision of 2026-11-20) | session | - | lineage_cells.cpp (BUG-1477, PR #211 by IltonBJSilva): the players' old cells as wild species, a guest's only with its co-op window box; cellsync_kin.cpp lineage_filter |
 | `core.switch_vote` | Cell | on | session | - | coop.cpp h_CellToCreature, start_vote (arrival) |
 | `creature.mode` | Creature | own (own / host) | session | - | creations.cpp mine, cycle; coop.cpp h_Submit, the offer; coop_ui.cpp |
 | `core.editor_now` | Creature (also the Cell evolution, BUG-1263) | on | session | - | vote.cpp h_Submit |
@@ -382,6 +383,6 @@ Defaults are provisional: the owner's questions of the plan are open.
 | `all.shared_dna` (existing) | All stages | 0 own wallet (default, as 0.7.16), 1 shared, 2 own progress (new); the lobby row becomes "DNA and progress" with three names; the ini key stays. **Declared** (feat/w69-progress, BUG-1469): kDefs max 2, names `own wallet|shared|own progress` (console also `own_progress` or 2), default the one constant `settings::kSharedDnaDefault` | session | WP-P1 / P2 (feat/w69-progress) | item 2, question 2 |
 | `creature.revive` | Creature | on (provisional) / off (question 4; pack rescue stays the first line) | session | WP-R1 (feat/w71-revive): declared (row above, BUG-1472) | item 4 |
 | `all.party_difficulty` | All stages | 100 % (default), 125, 150, 200, auto (+25 % per player over two; question 5) | session | WP-D1 (feat/w72-difficulty): declared (row above, BUG-1473; values 0..4, names 100 % / 125 % / 150 % / 200 % / auto) | item 5 |
-| `cell.lineage_cells` | Cell | off / on | session | WP-L2 (feat/w81-cell) | item 9 |
+| `cell.lineage_cells` | Cell | off / on | session | WP-L2 (feat/w81-cell): declared (row above, BUG-1477) | item 9 |
 
 The fix switches of the same items (`coop.fix`, twins) are the WPs' own and are named in the plan per item.

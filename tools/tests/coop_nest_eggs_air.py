@@ -29,6 +29,7 @@ from twoinst import Checks, shot, start
 import coop_nest_eggs as ne
 
 HANG = 0.3  # m over the surface (settled eggs: 0.0-0.1)
+SETTLE_S = 30.0  # s after the laying: the egg settles (awake), stands still 1 s, the host's grounding puts it down (BUG-1466)
 OS = re.compile(r'egg (\S+) pos=\((\S+) (\S+) (\S+)\) .*? serial=(\d+) mirror_of=(\d+) .*?over_surface=(\S+)')
 
 
@@ -68,15 +69,34 @@ def main():
         if len(ho) >= 2 and lay and int(lay.group(1)) <= 0:
             break
         time.sleep(2)
-    time.sleep(6)  # the last egg settles
-    ho = eggs(host, home)
-    print(f'  host eggs after {time.time() - t0:.0f} s (ptr: over surface):',
-          {p: round(v[1], 2) for p, v in ho.items()}, flush=True)
+    # BUG-1466: a freshly laid egg is awake and moves for a while; the host's grounding (nest.cpp ground_tick) puts an
+    # egg onto the surface only after it stood still for two of its 0.5 s checks. One read 6 s after the laying caught
+    # an egg 0.48-0.52 m up before that (3 runs; later reads 0.0 with grounded=2). The eggs are read every 0.5 s for up
+    # to SETTLE_S s after the laying, each egg's height and move printed; an egg still over HANG then fails.
+    t_laid = time.time()
+    trace, last, ho = {}, {}, {}
+    while True:
+        ho = eggs(host, home)
+        el = round(time.time() - t_laid, 1)
+        for ptr, v in ho.items():
+            moved = math.dist(v[0], last[ptr]) if ptr in last else 0.0
+            last[ptr] = v[0]
+            trace.setdefault(ptr, []).append((el, round(v[1], 2), round(moved, 2)))
+        if (el >= 6 and len(ho) >= 2 and all(v[1] <= HANG for v in ho.values())) or el >= SETTLE_S:
+            break
+        time.sleep(0.5)
+    gm = re.search(r'grounded=(\d+)', host.call('coop.nest')['out'])
+    print(f'  host eggs {time.time() - t_laid:.1f} s after the laying ({time.time() - t0:.0f} s; ptr: over surface):',
+          {p: round(v[1], 2) for p, v in ho.items()}, f'grounded={gm and gm.group(1)}', flush=True)
+    for ptr, tr in trace.items():
+        high_at = [t for t, h, _ in tr if h > HANG]
+        print(f'    egg {ptr} (s, over surface m, moved m): {tr[:4]} ... {tr[-3:]}; over {HANG} m until '
+              f'{high_at[-1] if high_at else "never"} s', flush=True)
     if not ck(len(ho) >= 2, f'the host\'s herd laid two eggs ({len(ho)})'):
         ck.faults(host=host, guest=guest)
         return ck.result()
     high = {p: round(v[1], 2) for p, v in ho.items() if v[1] > HANG}
-    ck(not high, f'the eggs the game laid lie on the surface (over {HANG} m: {high})')
+    ck(not high, f'the eggs the game laid lie on the surface within {SETTLE_S:g} s of the laying (over {HANG} m: {high})')
 
     egg = sorted(ho)[0]
     serial = ho[egg][2]

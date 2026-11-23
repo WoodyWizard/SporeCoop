@@ -217,6 +217,7 @@ unit-lint:
 	python3 tools/tickets.py check
 	python3 tools/ci_lint.py
 	python3 tools/ratchet_lint.py
+	python3 tools/conflict_lint.py
 	python3 tools/ratchet_lint.py --self-test
 	python3 tools/fix_retire.py check
 	python3 tools/fix_retire.py check --self-test

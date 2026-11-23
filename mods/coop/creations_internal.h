@@ -101,6 +101,7 @@ struct BarState {
 
 // creations.cpp
 extern const SkHost* H;
+extern SkMod* M;
 extern Ctx C;
 extern const KindInfo kInfo[3];
 extern uintptr_t a_RmPtr;
@@ -115,6 +116,7 @@ uint32_t world_record(int k, uint32_t world);
 void world_record_set(int k, uint32_t world, uint32_t inst);
 extern unsigned int g_ps_test_null;
 extern double g_last_check;
+void test_hide_own(int k, bool on); // tests (BUG-1476): hideown
 extern std::map<uint8_t, std::set<uint32_t>> g_own_sent;
 uint32_t fnv(const void* p, size_t n, uint32_t h = 0x811C9DC5);
 std::string hex(uint32_t v);
@@ -160,6 +162,22 @@ extern unsigned int g_bar_rebuilds;
 uint8_t* bar_table();
 BarState bar_state(void* av);
 void bar_rebuild_task(void*);
+// WP-K1 (creations_captain.cpp, creations 1.2): the captains between the games (BUG-1279, BUG-1262)
+bool key_exists(const Key& k);
+bool read_file_at(HANDLE f, uint64_t off, uint32_t n, std::vector<uint8_t>& buf);
+unsigned ensure_content(std::vector<dbpf::Record>& recs, ModelKind k, const std::string& whose);
+bool unpack(const std::vector<uint8_t>& d, Bundle& b);
+void drop_package(void* db);
+bool is_crt(const Key& k);
+constexpr uint32_t kPartDescGroup = 0x7C0DE5C1; // a part's description in a bundle (never registered)
+bool captain_kind_on(uint8_t kind); // MSG_CREATION kind 10 / 11 with its switch on
+void captain_message(uint8_t kind, uint8_t owner, uint32_t id, const std::vector<uint8_t>& data);
+void captain_tick(double now);
+void captain_join(uint8_t id);
+void captain_leave(uint8_t id);
+void captain_end();
+void captain_init();
+std::string captain_status();
 
 
 } // namespace creations

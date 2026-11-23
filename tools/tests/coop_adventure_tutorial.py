@@ -16,9 +16,13 @@ host's game showed the guest's puppet at its captain's feet as the guest's Creat
    then 25 s of play;
 5. checks: both games are still in the adventure and running, with no fault and no crash report (the lab checks the
    reports too); a puppet of the partner that a game shows has the captain's size (within 25 % of the captain's size on
-   the partner's game x 1.15, the puppets' factor) and it is a captain (this game's own captain stands in for the partner's: the
-   captains' species are made per game, BUG-1262), not the partner's Creature-stage creature.
-SPORE_FIX_OFF=adventure.puppet_captain must FAIL.
+   the partner's game x 1.15, the puppets' factor) and it is a captain, not the partner's Creature-stage creature;
+6. BUG-1262: the puppet is the partner's OWN captain: its body (the bem record this game answers for the puppet's
+   species, a 0x7A...... copy of the partner's captain registered here) is the body of the partner's captain on the
+   partner's game (`coop.creations modelhash`); its puppet was made again once this game baked the copy.
+SPORE_FIX_OFF=adventure.puppet_captain must FAIL (the Creature-stage body), SPORE_FIX_OFF=adventure.partner_captain
+must FAIL (6: this game's own captain stands in). When both games happen to play the same captain (the same body) the
+partner_captain twin cannot fail: the test prints it.
 
   SPORE_LANE=N python3 tools/tests/coop_adventure_tutorial.py [--own-places]
 """
@@ -66,6 +70,12 @@ def puppet(c):
     m = re.search(r'puppet pos=\([^)]*\) err=\S+ rot_err=\S+ species=([0-9A-F]{8})(?: scale=([0-9.]+))?',
                   call(c, 'coop.status'))
     return (m.group(1), float(m.group(2)) if m.group(2) else None) if m else None
+
+
+def body(c, inst):
+    """the bem hash this game answers for a creature key (`coop.creations modelhash`)"""
+    m = re.search(r'model [0-9A-F]{8} (\S+)', call(c, f'coop.creations modelhash {inst} 2B978C46 40626200'))
+    return m.group(1) if m else None
 
 
 def start_adventure(inst):
@@ -163,6 +173,29 @@ def main():
                 k = p[1] / (want_sc * 1.15)
                 ck(0.75 < k < 1.25, f'5. the {who}\'s puppet of the {other} has the captain\'s size ({p[1]:.2f}, the '
                                     f'captain {want_sc:.2f} x 1.15)')
+    # 6. BUG-1262: the partner's own captain (its body)
+    for who, c, other, oc in (('host', host, 'guest', guest), ('guest', guest, 'host', host)):
+        p = puppet(c) if mode(c) == 'Scenario' else None
+        if not p or other not in caps or who not in caps:
+            ck(False, f"6. the {who} shows a puppet of the {other} in the adventure ({p})")
+            continue
+        mine_body, want_body, got_body = body(c, caps[who][0]), body(oc, caps[other][0]), body(c, p[0])
+        t6 = time.time()  # (the copy: sent once the captain's package is written, baked here, the puppet made again)
+        while got_body != want_body and time.time() - t6 < 30 and mode(c) == 'Scenario':
+            time.sleep(2)
+            p = puppet(c) or p
+            got_body = body(c, p[0])
+        lines = [ln.strip() for ln in call(c, 'coop.creations status').splitlines() if 'captain' in ln]
+        print(f"  {who}: puppet {p[0]} body {got_body}; the {other}'s captain {caps[other][0]} body {want_body} there; "
+              f"its own captain's body {mine_body} | {' | '.join(lines)}", flush=True)
+        if want_body == mine_body:
+            print('  (both games play captains of the same body: the partner_captain twin cannot fail on this run)', flush=True)
+        ck(got_body and got_body not in ('none', 'nobem') and got_body == want_body,
+           f"6. the {who}'s puppet of the {other} has the {other}'s own captain's body ({got_body} / {want_body}; this "
+           f"game's own captain {mine_body})")
+    keyframe('partner_captain', "BUG-1262: each game shows its partner as the PARTNER's captain (the other game's own "
+             "captain look, not a second copy of this game's own captain), at the captain's size",
+             {'host': host, 'guest': guest}, settle=2)
     alive = {k: c for k, c in (('host', host), ('guest', guest)) if mode(c) != 'gone'}
     ck(len(alive) == 2, f'both games are still running ({", ".join(alive) or "none"})')
     ck.faults(**alive)

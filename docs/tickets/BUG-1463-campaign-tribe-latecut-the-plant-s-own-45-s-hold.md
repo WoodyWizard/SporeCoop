@@ -1,14 +1,14 @@
 ---
 id: BUG-1463
 title: campaign_tribe_latecut: the plant's own 45 s hold ate the raid's 120 s after the first cut; dropped at 403 s with the hut at 1 of 400
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w65-tests
 commits: def13b5f
 tests: tools/tests/coop_campaign.py (campaign_tribe_latecut)
@@ -27,7 +27,10 @@ Test (the plant): BUG-1169's driver gives a raid RAID_AFTER_CUT 120 s after its 
 coop_campaign.py: for the planted raid the limit is counted from the end of the plant's hold (+ PLANT_CUT_HOLD); the old rule (CAMPAIGN_OLD_RAID_CUT=1, the twin) keeps 300 s.
 
 ## Verification
-Open, waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run campaign_tribe_latecut --lane N --retry 0 --no-build` PASS (the twin with CAMPAIGN_OLD_RAID_CUT=1 still fails: its suite entry). no-fail-run: a test fix; FAIL before 20261123-023643.
+FAIL before the fix: 20261123-023643 (campaign_tribe_latecut, mod code 5376d388, the test of before def13b5f). PASS with it:
+20261123-104630 (campaign_tribe_latecut, rel/0.7.16.1 30be883d, which holds def13b5f). no-fail-run: a test fix (the raid limit counted from the end of the plant's hold); def13b5f
+is in v0.7.16 (released with it).
 
 ## History
 - 2026-11-23: opened (fix/w65-tests).
+- 2026-11-23: fix/w84-tests (WP-T1 of 0.7.17): closed on the lab evidence: PASS 20261123-104630 on rel/0.7.16.1; fixed_in 0.7.16 (def13b5f is in the v0.7.16 tag).

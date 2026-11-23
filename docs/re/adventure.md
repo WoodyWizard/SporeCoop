@@ -125,3 +125,100 @@ about 3 s after the host's game showed the guest's puppet). GOG 2024, objdump an
 * Lab only: a game that loaded before the galaxy menu's start-up video ended showed no main menu panel when it came
   back to the menu (BUG-1260, fixed by world.menu_intro_return: docs/re/space.md#space-menu-intro-state); the test sent
   the video's end message first (`coop.menuintro`) until then.
+
+## Where an adventure's captain comes from (2026-11-23, feat/w74-captain)
+<a id="adventure-captain-copy"></a>
+
+BUG-1262. GOG 2024, Ghidra (static). Adds to #adventure-puppet-herd ("the captains' species keys are made per game").
+* ✔ The galaxy menu's Galactic Adventures launcher (vtable 0x147ED9C): choosing an adventure (0xDFFD70) reads its
+  "captain locked" flag; locked: launcher +0xA4 = the adventure's captain (likely resource +0x130), no copy; not locked
+  (the tutorial): +0x7C = 1 (a copy), +0x7F = 1 (a name). Play (SporeCoop::GAMenu_Play 0xDFBD40) copies the picked
+  captain with 0x6462E0 (a new key of this profile, EditorSaves.package, metadata tag 0x4178B8E8) unless it is a copy
+  already; the request's captain (+0x18 of 0x15ACCC8) is +0xA4. From Space (0xFDF5E0) the request takes cEmpire +0xC4;
+  cScenarioMode's enter 0xEF1D20 then calls SetCaptainAsset 0xF42420 (resource +0x130) after the adventure loads.
+* So each game's adventure captain is a creation in its own EditorSaves.package, readable by records_from_game; a
+  partner's key names another creation here. creations_captain.cpp sends it (MSG_CREATION kind 11) and the puppet takes
+  the copy (docs/re/creations.md#creations-captain-0717).
+
+## Adventure creatures and the Creature NPC proxies (2026-11-23, feat/w83-advnpc)
+<a id="adventure-npc-proxies"></a>
+
+BUG-1474 (plan 0.7.17 item 6, Adventures part; owner question 6). GOG 2024, Ghidra (static, our project
+`out/ghidra-2024`); no runtime this time (no lab by day). Question: can the Creature stage's NPC proxy layer (npc.cpp:
+the host streams its NPCs, a guest removes its own and shows AI-less proxies, a guest's hit goes to the host) make the
+host's adventure enemies the guest's? Answer: **no, not as it is** (the reasons below are static ✔ or likely ~); a
+shared adventure needs its own layer that keeps the guest's adventure objects. Symbols: the `feat/w83-advnpc` entries
+of data/symbols/overrides_dc04aee5.sym.
+
+**How an adventure places and drives its creatures**
+* ✔ (static) Markers: the adventure resource (cScenarioMode +0x74 -> +0x10) holds its markers at +0x2C10 (stride
+  0x238, end +0x2C14, count +0x2C24); marker +0 is its class, +4 position, +0x10 orientation, +0x20 scale, +0x228
+  the placement id. `ScenarioData_InstantiateMarker` 0xF3F8C0 makes a marker's object (CreateObjectInstance 0xEEDD40)
+  and writes **cGameData +0x18 = the marker, +0x1C = its class**: only such objects are the adventure's
+  (`cGameData_ScenarioObject` 0xB18470 reads +0x1C).
+* ✔ (static) The scenario data keeps two hash maps of raw object pointers: GetObjectForMarker 0xF3D620 (marker +0x228
+  -> object; the avatar's marker data +0x8C -> the avatar) and GetMarkerForObject 0xF3DB10 (object -> marker index).
+  This confirms the fork's CORRECTION of #adventure-ga-fork (march2017's `Simulator::cScenarioData::GetMarkerForObject`
+  at 0xF3D620 is GetObjectForMarker) with our own decompile.
+* ✔ (static) Per act a class has a row of 0x4E0 bytes at class +0x70 + act * 0x4E0: +2 "out" (the act setup kills it:
+  health 1 and a 2.0 hit, 0xF195D0), +0x48C the act's health (health scales by row(act) / row(act - 1) at an act
+  change), +0x4A4 (< 0: the class is not in this act), +0x4AC the attitude 1..5 (combatant +0x5FC bits 0x10000000,
+  0x40000000, 0x80000000, 0x200000, 0x20000000) unless +0x4C8 (then a behaviour block at +0x4CC), +0x4B8 == 1 one more
+  bit 0x20000, +0x484 into creature +0x32C.
+* ✔ (static) An act change (SetCurrentAct 0xF1EE70, thiscall(play, act, bool) ret 8): writes +0xB8, then
+  RemoveInvisibleClasses 0xF1ABE0 (every marker object: a spawner object whose class is not in this act is destroyed
+  with DestroyInstance, a visible one gets an "EP1_powerup_spawnerReincarnate" powerup, 0xF237B0), then
+  `ScenarioPlay_SetupActGoals` 0xF1EBD0 (the goal vector, below), then the act pass `ScenarioPlay_ActSetupPass`
+  0xF1E580 (the 0xF1E5F0 of #adventure-puppet-herd is its creature loop): Creature_ScenarioActSetup 0xC070D0 for every
+  creature not in the avatar's herd and the act health 0xF195D0 for every combatant, creature and building.
+* ~ (static, likely) Waves: spawner powerups tick in every game (`ScenarioSpawner_Tick` 0xF24240 from the powerup
+  update 0xF24C40): they count the objects they made (map 0x16C8318) and, on their timer (+ row +0x4A4), make a new
+  one (`ScenarioSpawner_Spawn` 0xF21D30 -> CreateObjectInstance with the class and the act ->
+  `ScenarioObject_ActSetup` 0xF20180, which runs 0xC070D0 and 0xF195D0 on it). So each game makes its own waves and
+  its own replacements; the exact count rule (when a missing object is made again) is `?`.
+* ✔ (static) A creature's adventure behaviour reads its class's act row through `Creature_ScenarioActRow` 0xC048B0
+  (Update's 0xC148B0, many behaviour tree nodes) and its attitude through `Creature_ScenarioAttitude` 0xC04930 (row
+  +0x4AC, **2 for a creature without a scenario object**). The AI still runs through NPCTickAI (cCreatureAnimal::Update
+  calls it for every non-avatar; our h_NPCTickAI skips puppets and proxies).
+* ✔ (static) Goals: `ScenarioPlay_SetupActGoals` copies the act's goal rows (stride 0x188 at 0xF3BD00(act) +0x84) into
+  play +0x64 / +0x68 (stride 0x1AC): goal +0x24 kind, **+0x28 the target class** (not an object), +0x30 required; a
+  kind 8 / kind 5 goal credits the objects already there at once (`ScenarioCreditGoal` 0xF1ACF0, ret 0xC, returns
+  unless play +0x90 is 3). An object of a goal's class made during an act gets the goal's marker (0xF1A6D0).
+* ✔ (static) The end: `ScenarioPlay_SetState` 0xF1A9C0 (ret 4); cCreatureAnimal::TakeDamage calls it with 6 (failure)
+  at 0xC07989 while the state is 3, on the captain's death.
+
+**What npc.cpp's proxy path would do in kScenario** (today `npc_stage()` is Creature, Tribe and Civ only: an adventure
+runs no NPC sync, each game its own creatures, as since 0.7.12)
+1. ✔ (static, the same pass as BUG-1254's runtime fault) A proxy is made with Create in the species' nest herd or a
+   herd of ours (`proxy_herd`), so it has no scenario object (+0x1C -1) and is outside the avatar's herd: the next act
+   change's pass runs 0xC070D0 on it and faults at **0xC0714E** (row 0, as the BUG-1254 puppet did on both games).
+   Every adventure with an act after the proxies appear breaks this way.
+2. ~ (static, likely) Putting the proxies into the avatar's herd (the BUG-1254 cure for the partner's captain) avoids
+   the fault but makes them the captain's own family: the pass skips their act setup and their attitude reads 2.
+   ? Whether the guest's captain can attack (and the posse treats as enemies) creatures of its own herd: not checked;
+   either way they would not be the adventure's (no class, so point 3 holds for them too).
+3. ✔ (static) The guest's update filter removes every creature outside the avatar's herd and puppets: in an adventure
+   these are the adventure's own objects (marker and class, in the marker maps, targets of the guest's goals by class,
+   counted by its spawners). The guest's defeat goals then have no target of their class (a proxy has no class: it
+   never counts), and ~ (likely, as the fork saw "80 unpaired, 56 at 0 hp after 3 minutes") its spawners make new
+   ones that the filter removes again, frame after frame.
+4. ✔ (static) The guest's acts, goals and end stay its own: a host kill reaches the guest's proxy only (no class, no
+   goal credit), so the guest's run cannot advance with the host's, and its own act changes re-make the creatures the
+   filter removed (RemoveInvisibleClasses, 0xF3F8C0).
+5. ~ (likely) The host side (host_tick's candidates, ai_target in Creature only, MSG_DAMAGE to a puppet) is usable as it is:
+   the fork's E-B lets `ai_target` run in kScenario for partner bodies.
+
+**What a shared adventure needs instead** (the fork's working design, out/research/lineages-systems.md section E, now
+backed by the static facts above): keep the guest's own adventure objects (they carry marker, class, act rows, goal
+targets and spawner bookkeeping) and **pair** each host creature with the guest's creature of the same marker and class
+(the fork: object id = FNV-1a over marker +0x18 and class +0x1C, nearest unpaired within 12 m), skip only their
+NPCTickAI on the guest, drive them with the puppet driver, mirror the host's deaths through the game's Die, forward
+the guest's hits to the host (npc.cpp's MSG_DAMAGE_REQ idea), remove the guest's unpaired leftovers after 5 s, and run
+the goals, act changes and the end as one host journal (ScenarioCreditGoal 0xF1ACF0, SetState 0xF1A9C0). That is the
+fork's E-A (shared run, M) plus E-B (host-run creatures, L), with runtime RE first (the pairing, the death through the
+behaviour tree, the political id +0x30 of #adventure-ga-fork). npc.cpp's id and lifecycle layer (spawn a proxy,
+remove the local one) does not carry over; its driving, damage request and old-peer gates do.
+
+Verdict for 0.7.17 (provisional owner choice of question 6): the proxies do not work in an adventure, so no
+`adventure.shared_npcs` setting in 0.7.17; the feature goes to 0.8 with co-op adventures (BUG-0793,
+docs/11-rivals.md), proposal in BUG-1474.
