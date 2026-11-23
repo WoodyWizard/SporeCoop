@@ -552,6 +552,8 @@ extern uint32_t g_mclaims_moved;
 extern uint32_t g_mclaims_read;
 extern uint32_t g_mclaims_serial;
 extern bool g_members_matched;
+extern bool g_claims_at_join;          // tests (BUG-1450): the claims follow is due in the tick of the next join
+extern uint32_t g_claims_join_forced;  // ... times it fired
 void member_claim(void* c, uint8_t owner, uint8_t flag);
 void host_tick(double now);
 extern uint32_t g_fruit_orders_moved;
