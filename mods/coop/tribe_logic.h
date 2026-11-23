@@ -204,12 +204,20 @@ inline SpeciesAct species_act(uint32_t line, uint32_t cur, uint32_t slot, uint32
 //   Off: the body's speed only (fbdd2510).
 constexpr float kLagCatchTime = 0.5f; // s: the lag is closed in about this (on top of the walk)
 constexpr float kLagCatchMax = 9.f;   // m/s: what BUG-1235's bound allows the lab's member (frames 0.67 m at 32 ms)
+// * BUG-1235 / item 12 of docs/plan-0.7.17.md (`coop.fix drive.lead_cap`, `raw_fix`): the raw lead walked without its
+//   late lead catching up had no bound (0): its catch_prop catch-up of a mirror that started late drew 0.86-0.93 m
+//   frames (tribe_walk_player 20261123-023643, -071312, -075458); with the fix it is bounded by the body's own speed
+//   too (sp: the raw lead runs at the body's speed then), walk_place_max_step (drive_plan.h) holds the frame.
+//   Off: no bound there (0.7.16.1).
 inline float mirror_lead_speed(bool keep_fix, bool smooth_bound_fix, float lead_sp, float sp, bool late_catching,
-                               float late_rate, bool catch_fix = false, float lag = 0.f)
+                               float late_rate, bool catch_fix = false, float lag = 0.f, bool raw_fix = false)
 {
     const float rate = late_rate > 1.f ? late_rate : 1.f;
-    if (lead_sp < 0)
-        return keep_fix && late_catching ? std::max(sp / rate, 0.5f) : 0.f;
+    if (lead_sp < 0) {
+        if (keep_fix && late_catching)
+            return std::max(sp / rate, 0.5f);
+        return keep_fix && raw_fix ? std::max(sp, 0.5f) : 0.f;
+    }
     if (!smooth_bound_fix)
         return 0.f;
     float v = std::max(lead_sp / rate, 0.5f);

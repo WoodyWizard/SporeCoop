@@ -649,6 +649,7 @@ COOP_FIX("drive.lead_throw", "BUG-0675", net::g_lead_throw_fix, "creature, tribe
 COOP_FIX("drive.lead_low", "BUG-0651", net::g_lead_low_fix, "tribe: the member lead stays on over a player network and on a loaded PC (the rule reads the link's own latency, not the mean round trip)");
 COOP_FIX("drive.lead_gap", "BUG-1376", net::g_lead_gap_fix, "creature, tribe: after the host's game stood (a caption, a pause) the copies of its animals go where the host's game put them at once, not over a minute");
 COOP_FIX("drive.lead_late", "BUG-0650", net::g_lead_late_fix, "tribe: a member's state that arrives late (a latency spike) is brought in over time, not at once (members jumped ~0.9 m per frame at a walk start in a spike)");
+COOP_FIX("drive.lead_cap", "BUG-1235", drive::g_lead_cap_fix, "tribe: a guest's copy of a member that catches up with its walk does not jump about 1 m in one frame, nor surge while it starts or stops");
 COOP_FIX("drive.sender_agl", "BUG-0425", drive::g_sender_agl_fix, "creature, tribe: a partner or animal off the ground is drawn at its height over the sender's ground, over this game's ground");
 COOP_FIX("drive.own_height", "BUG-0329", drive::g_own_height_fix, "tribe: a member's or animal's mirror is driven at its own ground height, not the host's absolute one");
 COOP_FIX("fleet.type", "BUG-0111", ufo_ident_fix, "space: only our own puppets count as puppets, not any UfoType 6 ship (coop.fleet typefix)");

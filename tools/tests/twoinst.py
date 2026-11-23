@@ -548,7 +548,7 @@ KNOBS = re.compile(r'\s*(?:'
                    r'|coop\.\w+\s+\w*fix\w*\s+\S+'  # coop.pool fix purge 0, coop.npc reusefix 0, coop.space starfix 0
                    r'|coop\.(?:npc|team|savestrip|echo|overlay|sneak)\s+(?:on|off|0|1|force)\b'
                    r'|coop\.settings\s+(?:set|force)\s+\S+\s+\S+|coop\.dna\s+pace\s+\S+'  # BUG-0762: session settings
-                   r'|coop\.puppet\s+hold\s+\S+|coop\.track\s+(?:novel|lift)\s+\S+|coop\.npctrack\s+novel\s+\S+'
+                   r'|coop\.puppet\s+hold\s+\S+|coop\.track\s+(?:novel|lift)\s+\S+|coop\.npctrack\s+(?:novel|walksp)\s+\S+'
                    r'|coop\.space\s+repairdist\s+\S+'  # w49-warm: a warm successor would inherit these three
                    r'|coop\.autosave\s+interval\s+\S+'  # E2: the autosave's test interval
                    r'|coop\.uistate\s+(?:lang|color|nudge|hide)\s+\S+|coop\.lanfake\b'

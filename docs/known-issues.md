@@ -271,7 +271,10 @@ anchor so other docs can link to it:
 * Known: not a 0.7.15 regression (v0.7.14.1 the same rate on the same lanes); the proxy is not dropped (BUG-0611's
   case), it drifts. Runs after a warm reset pass.
 * Not checked: which side moves (the host's NPC jumping on after the thaw or the guest's proxy lagging).
-* Next steps: the next release.
+* Known (2026-11-23, fix/w76-motion): the guest's proxy lagged: the same cause as BUG-1376, fixed by `drive.lead_gap`
+  in 0.7.16 (5 passing runs since); the twin npc_frozen_thaw_lead_gap_off waits for the lab. A read of an NPC at the
+  50 m edge of the test's census is BUG-1534 (test only).
+* Next steps: the night run of the twin.
 * Ticket: BUG-1234
 
 ## Tribe: at 30 fps over a real network a guest sees a tribe member jump once or walk unevenly (2026-11-18, test tribe_walk_player)
@@ -286,7 +289,10 @@ anchor so other docs can link to it:
   20261122-193406), but 4 of 4 runs on fd28f88f (the same mod code) still had 1-3 jumps of 0.85-0.93 m in one frame
   (20261123-023643, 20261123-071312, 20261123-075458): the catch-up of a walk start that came late over the network
   (BUG-1451, `tribe.smooth_catch`, planned for 0.7.16.1).
-* Next steps: the next release.
+* Known (2026-11-23, fix/w76-motion): those frames are the raw catch-up of a copy the game already walks at full
+  speed, with no frame bound; the uneven frames are surges of 3 m/s at slow speeds. `drive.lead_cap` (0.7.17), waiting
+  for the lab.
+* Next steps: the night run of tribe_walk_player and its twin.
 * Ticket: BUG-1235
 
 ## Civ: a guest gets an "earned money (shared)" card every few seconds (2026-11-18, key-frame review)
@@ -407,7 +413,9 @@ anchor so other docs can link to it:
   test) is drawn on its path but with its standing animation (0x02481DE5) for 1-6 s; at 60 fps almost never.
 * Reproduce: `tools/lab.py run npc_walk_novel npc_walk_fps30` (walk gait 79-86 % of the on-screen moving frames; 98 %
   in npc_walk at 60 fps).
-* Next steps: a diagnostic run with the proxy's MoveTo goal, desired speed and locomotion state in the track.
+* Known (2026-11-23, fix/w76-motion): the mod walked such a copy at the speed of an earlier slow walk of its host
+  animal (about 0.3 m/s, at which the game plays the standing idle); `npc.walk_gait` (0.7.17), waiting for the lab.
+* Next steps: the night run of npc_walk_novel_stale and its twin.
 * Ticket: BUG-1360
 
 ## Cell: after a level change one player's world can be moved away from the others' for the rest of the level (2026-11-21, fix/w62-core)

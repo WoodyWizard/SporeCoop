@@ -1364,7 +1364,7 @@ static float proxy_turn_step(bool fix)
 // BUG-1376 (drive.lead_gap): an NPC proxy (the buffer as npc.cpp sets it) of a host animal standing at x = 0; the host's
 // game stands for 70 s (its evolution caption: no state sent), its game puts the animal 12 m away and it stands there,
 // the states come again. Returns the shown target's distance from the new place 5 s after the first new state.
-static float lead_gap_err(bool on)
+static float lead_gap_err(bool on, double gap_s = 70.0, float put = 12.f, double read_at = 5.0)
 {
     const bool was = g_lead_gap_fix;
     g_lead_gap_fix = on;
@@ -1373,20 +1373,20 @@ static float lead_gap_err(bool on)
     b.lead = true;
     b.late_lead = true;
     b.smooth_max = 8.f;
-    const double lat = 0.03, gap_from = 5.0, gap_to = 75.0;
+    const double lat = 0.03, gap_from = 5.0, gap_to = gap_from + gap_s;
     auto st_at = [&](double st) {
         PlayerState s;
         s.time_ms = (uint32_t)(1000 + st * 1000.0 + 0.5);
         s.mode = 0x1654C01;
         s.world = 7;
         s.flags = PF_IN_WORLD;
-        s.pos = {st >= gap_to ? 12.f : 0.f, 0.f, 0.f};
+        s.pos = {st >= gap_to ? put : 0.f, 0.f, 0.f};
         return s;
     };
     double next = 0;
     PlayerState o;
     float err = 99.f;
-    for (double now = 10.0 + lat; now < 10.0 + lat + gap_to + 5.0; now += 1.0 / 30) {
+    for (double now = 10.0 + lat; now < 10.0 + lat + gap_to + read_at; now += 1.0 / 30) {
         double st = now - 10.0 - lat;
         while (next <= st) {
             if (next < gap_from || next >= gap_to)
@@ -1394,7 +1394,7 @@ static float lead_gap_err(bool on)
             next += 0.1;
         }
         if (b.sample(now, o)) // the proxy is driven every frame, also while the host's game stands
-            err = std::fabs(o.pos.x - 12.f);
+            err = std::fabs(o.pos.x - put);
     }
     g_lead_gap_fix = was;
     return err;
@@ -1407,6 +1407,80 @@ static void test_lead_gap()
     printf("  5 s after the states came again: target %.2f m from the new place (0.7.16 rc %.2f m)\n", on, off);
     CHECK(off > 5.f); // the gap's line crossed at a fraction of the real pace: still near the old place
     CHECK(on < 0.5f);
+}
+
+// BUG-1234 (npc_frozen_thaw: a host NPC's proxy 16-18 m off for ~3 s after a 10 s caption): the same cause as BUG-1376,
+// a shorter stand. Off (drive.lead_gap) the target crosses the gap's line at 2x real time; on it is at the new place
+static float quiet_walk_step(bool on, double gap);
+static void test_lead_gap_thaw()
+{
+    printf("an NPC proxy after a 10 s caption put the animal 18 m away (BUG-1234, drive.lead_gap)\n");
+    // (off: 16.7 m at 0.5 s, 14.9 m at 1 s, 7.8 m at 3 s, 0.65 m at 5 s: the lab's "16-18 m off for 3 reads")
+    float on = lead_gap_err(true, 10.0, 18.f, 1.0), off = lead_gap_err(false, 10.0, 18.f, 1.0);
+    printf("  1 s after the states came again: target %.2f m from the new place (without drive.lead_gap %.2f m)\n", on, off);
+    CHECK(on < 0.5f);
+    CHECK(off > 10.f);
+    // the review of fix/agy-open-bugs (finding 3): a Civ standing creature's states go once a second (BUG-0973); one lost,
+    // the gap is 2.1 s, over kLateGap. The walk start after it is no late news either way: the same target steps
+    for (double gap : {1.05, 2.1}) {
+        float a = quiet_walk_step(true, gap), b = quiet_walk_step(false, gap);
+        printf("  a Civ walk start %.2f s after the last standing state: max target step %.3f m (rule off %.3f m)\n", gap, a, b);
+        CHECK(std::fabs(a - b) < 0.01f && a < 0.3f);
+    }
+}
+// the target's largest step in a frame (1/30 s) in the first 1.5 s of a 4 m/s walk that starts `gap` s after the last
+// standing state (states every 1/30 s before, then none: the Civ quiet period), one-way 0.15 s
+static float quiet_walk_step(bool on, double gap)
+{
+    const bool was = g_lead_gap_fix;
+    const double was_ow = g_one_way;
+    g_lead_gap_fix = on;
+    g_one_way = 0.15;
+    SnapshotBuffer b;
+    b.delay = 0.15;
+    b.lead = true;
+    b.late_lead = true;
+    b.smooth_max = 8.f;
+    const double walk_at = 8.0, lat = 0.15;
+    auto st_at = [&](double st) {
+        PlayerState s;
+        s.time_ms = (uint32_t)(1000 + st * 1000.0 + 0.5);
+        s.mode = 0x1654C01;
+        s.world = 7;
+        s.flags = PF_IN_WORLD;
+        const bool w = st > walk_at;
+        s.pos = {w ? (float)(st - walk_at) * 4.f : 0.f, 0.f, 0.f};
+        s.vel = {w ? 4.f : 0.f, 0.f, 0.f};
+        if (w)
+            s.flags |= PF_MOVING;
+        return s;
+    };
+    std::vector<double> sends;
+    for (double t = 0; t < walk_at - 1.5; t += 1.0 / 30)
+        sends.push_back(t);
+    sends.push_back(walk_at - gap);
+    for (double t = walk_at + 0.001; t < walk_at + 4; t += 1.0 / 30)
+        sends.push_back(t);
+    size_t k = 0;
+    PlayerState o;
+    Vec3 last{};
+    bool have = false;
+    float mx = 0;
+    for (double now = 10.0; now < 10.0 + walk_at + 4; now += 1.0 / 30) {
+        while (k < sends.size() && 10.0 + sends[k] + lat <= now) {
+            b.push(st_at(sends[k]), 10.0 + sends[k] + lat);
+            k++;
+        }
+        if (!b.sample(now, o))
+            continue;
+        if (have && now > 10.0 + walk_at && now < 10.0 + walk_at + 1.5)
+            mx = std::max(mx, (float)std::fabs(o.pos.x - last.x));
+        last = o.pos;
+        have = true;
+    }
+    g_lead_gap_fix = was;
+    g_one_way = was_ow;
+    return mx;
 }
 
 static void test_lead_fall()
@@ -5236,6 +5310,7 @@ int main(int argc, char** argv)
         {"test_lead_keep", test_lead_keep},
         {"test_lead_fall", test_lead_fall},
         {"test_lead_gap", test_lead_gap},
+        {"test_lead_gap_thaw", test_lead_gap_thaw},
         {"test_agl_extrap", test_agl_extrap},
         {"test_discovery", test_discovery},
         {"test_lobby_roles", test_lobby_roles},

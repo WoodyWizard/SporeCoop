@@ -5391,3 +5391,25 @@ BUG-1426 (UIFX-3 of the 0.7.15.5 audit; the same as BUG-9269 of PR #208 by Ilton
 * ✔ (PE header) SporeApp.exe is DYNAMIC_BASE (DllCharacteristics 0x8140) and has a .reloc directory (0xC2C04 bytes):
   Windows may load it elsewhere (PR #208: 0x00320000 on Windows 11, every address -0xE0000), Wine never does. A raw
   game address in the code is right under Wine and wrong on such a Windows PC; ask H->sym (rebased).
+
+## A walked proxy at 0.3 m/s plays the standing idle (2026-11-23, fix/w76-motion)
+<a id="creature-proxy-stale-walk-speed"></a>
+
+BUG-1360. GOG 2024, the per-frame track of npc_walk_novel (lab 20261120-133703 lane 3,
+out/lane3/track/npc_walk_creature_20261120-204929.json of the rel/0.7.16 tree, proxy #21).
+
+* ✔ (runtime, track) Through the whole run the proxy's own speed in the game (gv, the cLocomotiveObject velocity) was
+  0.28-0.31 m/s in every walked frame (how=3), while its target's path ran at 2.5-6 m/s: the game played the walk clip
+  04866DAB at first and then the standing idle 02481DE5 for seconds; the placing carried it 0.6-0.8 m behind its
+  target (catch_prop's (speed + catch-up) budget at the clamped speed: 0.3 + 3.3 m/s against a 4 m/s path).
+* ✔ (code) The speed the mod gives the game is `walk_place`'s walk speed = the velocity npc.cpp hands it; with no
+  reported speed (the test's `coop.npctrack novel 1`, or a move an animation carries, BUG-0394) a walked proxy goes on
+  at its path's velocity clamped to px.walk_sp, the speed its host NPC reported while it last walked (BUG-0361's stop
+  clamp). walk_sp was set by reported walks only and never cleared, so a slow reported walk of the first seconds
+  (0.31-0.36 m/s rows exist in the track) clamped every later unreported walk to it.
+* Inferred: the game's locomotion picks the standing idle for a creature walked at about 0.3 m/s; the walk clip seen in
+  the same frames is its fade. The fix (`npc.walk_gait`, npc_logic::walk_velocity): walk_sp belongs to one walk.
+* Not taken (fix/agy-open-bugs fc420dcb's second half): on a guest-only nest mound, a residual mound lift by
+  game::place instead of game::teleport and no on_own_ground there. No walked idle frame of the BUG-1360 tracks was on a
+  mound (the case is the stale speed above), and a placing without the teleport mark is undone by the game's next
+  update (BUG-0440: proxies pushed back 6-7 m/s), so it would bring back BUG-0562 (drawn inside the mound).

@@ -508,9 +508,10 @@ static void mirror_drive(GEntry& e, double now)
         // frames at 12.8 m/s, tribe_walk_player 20261107-111106 #2)
         // BUG-1235 (tribe.smooth_bound): the smoothed target's walk start too (tribe_logic::mirror_lead_speed)
         // BUG-1451 (tribe.smooth_catch): and at least a catch-up speed that grows with the lag behind the aim
+        // BUG-1235 (drive.lead_cap): and the raw lead that does not catch up (the body's speed)
         o.lead_speed = tribe_logic::mirror_lead_speed(net::g_lead_keep_fix, g_smooth_bound_fix, g.lead_sp, sp,
                                                       g.buf.late_catching(), g.buf.late_rate(), g_smooth_catch_fix,
-                                                      net::dist(game::position(c), g.aim));
+                                                      net::dist(game::position(c), g.aim), drive::g_lead_cap_fix);
         o.keep_lost = g_mirror_keep_fix; // BUG-0386
         drive::walk_place(c, g.aim, rot, vel, g.ds, now, o);
         // tests (BUG-0386): the game's walk and a placing without the teleport mark are undone, the mirror crawls 0.04 m

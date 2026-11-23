@@ -325,14 +325,15 @@ struct WalkPlace {
     // (at its smoothed target's speed, the lead's offset closing included). What the player sees in a frame is the
     // placing's step from where the game's walk had it plus the game's walk of the next frame, so the placing's step
     // is held to (2 x lead_speed + catch_up - the walk's speed) x dt: a frame never draws more than 0.7.8's
-    // (2 x speed + 3 m/s). Placed from the last placing instead, the next walk came on top (1-1.3 m frames)
+    // (2 x speed + 3 m/s). Placed from the last placing instead, the next walk came on top (1-1.3 m frames).
+    // BUG-1235 (drive.lead_cap): that catch_up is the base one, and the game's walk counts in the catch-up's budget
+    // (drive_plan.h walk_place_max_step)
     float lead_speed = 0.f;
     // BUG-0440 (npc.proxy_hold): a held placing (teleport with the mark) is also kept through the game's next creature
     // and physics update (game::place_hold): Tribe animal proxies were moved back by the game's update at 6-7 m/s while
     // placed every frame (walk err 3-8 m, `held 1`, pushed back 6.9 m/s with the call itself taken)
     bool hold_after = false;
 };
-constexpr float kCatchTime = 0.25f;     // s
 constexpr float kWalkLostErr = 0.75f;   // m
 constexpr double kWalkLostAfter = 0.15; // s
 constexpr float kHoldErr = 1.5f;        // m (BUG-0440)
@@ -413,12 +414,9 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
         ds.track = Track{};
         return;
     }
-    float catch_up = o.catch_up;
-    if (o.catch_prop && net::g_lead_fix)
-        catch_up = std::max(catch_up, std::min(err / kCatchTime, sp + o.catch_up));
-    float max_step = (sp + catch_up) * (float)dt;
-    if (o.lead_speed > 0)
-        max_step = std::min(max_step, std::max(0.f, 2.f * o.lead_speed + catch_up - walk_sp) * (float)dt);
+    // BUG-0425 / BUG-0619 / BUG-1235 (drive.lead_cap): drive_plan.h walk_place_max_step
+    const float max_step = walk_place_max_step(sp, walk_sp, o.lead_speed > 0 ? speed(game::velocity(p)) : 0.f, err, dt, o.catch_up, o.catch_prop,
+                                               net::g_lead_fix, o.lead_speed, ds.held);
     net::Vec3 to = pos;
     if (err > max_step) {
         float k = max_step / err;
