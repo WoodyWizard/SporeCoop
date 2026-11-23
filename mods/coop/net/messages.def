@@ -55,22 +55,35 @@
 // converters, buy meters and price maps, BUG-1285 / BUG-1287; an older guest drops it as a bad snapshot header).
 // Minor bump of fix/w59-tribe: session 1.2 (MSG_DIAG's digest: a trailing u8 `stands`, the sender's game time stands,
 // BUG-1339; an older reader stops before it, an older sender's digest reads 0: compared as before).
-FAMILY(session,   1, 1, 2, STAGE_ALWAYS, "session", "net/protocol.h")
-FAMILY(world,     2, 1, 0, STAGE_ALWAYS, "world transfer", "")
-FAMILY(creature,  3, 1, 2, STAGE_CREATURE, "Creature", "")
+// WP-0 of 0.7.17 (docs/plan-0.7.17.md "WP-0"): the minors of 0.7.17, bumped once before the work packages start so
+// that parallel branches do not each bump the same family (one bump per family per release). Only minors: a 0.7.16.1
+// peer (session 1.2, world 1.0, creature 1.2, cell 1.1, civ 1.1, space 1.2, creations 1.1) still joins and every
+// existing message reads as before (net/compat.h refuses only another rev; every gate on a minor is "this minor or
+// newer"). A new path of a WP is gated on its family's new minor (`peer_families` on the host, `host_families` on a
+// guest, BUG-1282): civ 1.2 (WP-M1 own Civ money, MSG 74), session 1.3 (WP-H1 own stage history, MSG 75), creature 1.3
+// (WP-P2 own progress in Creature, MSG 76; WP-R1 revive, MSG 77), cell 1.2 (WP-P1 own progress in Cell), space 1.3
+// (WP-S1 fleets, MSG 78), creations 1.2 (WP-K1 captain, WP-L2 lineage cells: MSG_CREATION kinds 10-12), world 1.1
+// (WP-W1 the share's file list). Until 0.7.17 ships these minors are open: a WP that changes a family's rows or wire
+// files re-locks it without another bump, `tools/msg_manifest.py lock --rebase <family> "<WP>: <what>, unreleased
+// <family> 1.x of 0.7.17"` (as feat/w54-shims did for creations 1.1 in 0.7.16). The ids 74-78 and the kinds 10-12 are
+// reserved in net/manifest.h kReservedMsgs and creations.h.
+FAMILY(session,   1, 1, 3, STAGE_ALWAYS, "session", "net/protocol.h")
+FAMILY(world,     2, 1, 1, STAGE_ALWAYS, "world transfer", "")
+FAMILY(creature,  3, 1, 3, STAGE_CREATURE, "Creature", "")
 FAMILY(npc,       4, 1, 2, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
-FAMILY(cell,      5, 1, 1, STAGE_CELL, "Cell", "")
+FAMILY(cell,      5, 1, 2, STAGE_CELL, "Cell", "")
 FAMILY(tribe,     6, 1, 1, STAGE_TRIBE, "Tribe", "wire/tribe_anim.h")
-FAMILY(civ,       7, 1, 1, STAGE_CIV | STAGE_SPACE, "Civilization", "")
-FAMILY(space,     8, 1, 2, STAGE_SPACE, "Space", "wire/common.h wire/space_core.h wire/space_map.h wire/space_contracts.h wire/space_diplomacy.h wire/space_finale.h wire/space_rivalry.h wire/space_allies.h wire/space_trade.h wire/space_planets.h wire/space_badges.h wire/space_eco.h")
+FAMILY(civ,       7, 1, 2, STAGE_CIV | STAGE_SPACE, "Civilization", "")
+FAMILY(space,     8, 1, 3, STAGE_SPACE, "Space", "wire/common.h wire/space_core.h wire/space_map.h wire/space_contracts.h wire/space_diplomacy.h wire/space_finale.h wire/space_rivalry.h wire/space_allies.h wire/space_trade.h wire/space_planets.h wire/space_badges.h wire/space_eco.h")
 FAMILY(shared,    9, 1, 0, STAGE_TRIBE | STAGE_CIV | STAGE_SPACE, "shared resources", "wire/common.h wire/shared_res.h")
-FAMILY(creations, 10, 1, 1, STAGE_ALWAYS, "creations", "species_line_core.h")
+FAMILY(creations, 10, 1, 2, STAGE_ALWAYS, "creations", "species_line_core.h")
 
 // Class notes (from the 0.7.14 switch of host_world.h): ANIM, DAMAGE are Session: a partner's own creature (its
 // puppet); SETTINGS, COLORS, REPORT, HOST_WORLD: the session's, wherever the guest plays (HOST_WORLD is what
 // "elsewhere" is measured against); VOTE: session-wide, the editor start it brings is gated in its handler
 // (core.vote_world); RES: held inside shared.cpp (res.elsewhere), not at dispatch.
-// Ids 55 and 58 are free (never used; a new type takes the next free id after the last row).
+// Ids 55 and 58 are free (never used). Ids 74-78 are reserved for 0.7.17 (net/manifest.h kReservedMsgs: 74 CIV_WALLET,
+// 75 PLAYER_HISTORY, 76 PROGRESS, 77 RESCUE, 78 UFO_LEAD); any other new type takes the next free id after 78.
 MSG(1,  HELLO,       R,  Guest, Session,   None,        Both,   session,   "u16 protocol, u32 exe build id, str8 name; then u32 caps and their payloads (#netcode-hello-caps)")
 MSG(2,  WELCOME,      R,  Host,  Session,   None,        Both,   session,   "u8 your id, u32 world id, u8 n, n x {u8 id, str8 name}; then u32 caps and their payloads")
 MSG(3,  REJECT,       R,  Host,  Session,   None,        Both,   session,   "u8 reason (1 version, 2 full, 3 another exe build, 4 started, 5 kicked), str8 text")

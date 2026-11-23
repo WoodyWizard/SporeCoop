@@ -46,6 +46,14 @@ constexpr size_t kMaxPlayers = 64;             // players per world: the ones se
 constexpr size_t kMaxRecordBytes = 256 * 1024; // one record
 constexpr size_t kMaxFileBytes = 8u << 20;     // the whole file (read: a bigger file is no store)
 
+// Record names reserved for 0.7.17 (WP-0 of docs/plan-0.7.17.md; declared only: nothing reads or writes them yet).
+// The data is each player's (kept under its stable key); the WP decides between player records and one world record
+// that names its players by stable key (as civ.owners does), and documents the layout in docs/01-architecture.md.
+constexpr const char* kRecCivWallet = "civ.wallet"; // WP-M1 (feat/w68-wallet): a player's own Civ money (civ.own_money)
+constexpr const char* kRecHistory = "history";      // WP-H1 (feat/w70-history): consequence cards, trait progress, archetype
+constexpr const char* kRecProgress = "progress";    // WP-P1/P2 (feat/w69-progress): Cell food / spent, Creature DNA / bar /
+                                                    // brain level; WP-R1 (feat/w71-revive): the progress debt column
+
 struct Record {
     uint16_t ver = 0;
     std::vector<uint8_t> data;

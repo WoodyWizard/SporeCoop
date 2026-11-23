@@ -134,16 +134,16 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 
 | Family | Id | Rev | Used in | Covers |
 |---|---|---|---|---|
-| session (session) | 1 | 1.2 | every stage and the menus | `HELLO`, `WELCOME`, `REJECT`, `PLAYER_JOIN`, `PLAYER_LEAVE`, `PLAYER_STATE`, `CHAT`, `PING`, `PONG`, `BYE`, `ABILITY`, `PING_MARK`, `READY`, `LOBBY`, `NOTICE`, `DIAG`, `SETTINGS`, `COLORS`, `REPORT`, `HOST_WORLD`, `HOST_BUSY` |
-| world (world transfer) | 2 | 1.0 | every stage and the menus | `WORLD_OFFER`, `WORLD_FILE`, `WORLD_CHUNK`, `WORLD_DONE` |
-| creature (Creature) | 3 | 1.2 | Creature | `ANIM`, `WORLD_TIME`, `DNA`, `DNA_ADD`, `VOTE`, `SPECIES`, `SOCIAL`, `NEST`, `PARTS`, `EFFECT` |
+| session (session) | 1 | 1.3 | every stage and the menus | `HELLO`, `WELCOME`, `REJECT`, `PLAYER_JOIN`, `PLAYER_LEAVE`, `PLAYER_STATE`, `CHAT`, `PING`, `PONG`, `BYE`, `ABILITY`, `PING_MARK`, `READY`, `LOBBY`, `NOTICE`, `DIAG`, `SETTINGS`, `COLORS`, `REPORT`, `HOST_WORLD`, `HOST_BUSY` |
+| world (world transfer) | 2 | 1.1 | every stage and the menus | `WORLD_OFFER`, `WORLD_FILE`, `WORLD_CHUNK`, `WORLD_DONE` |
+| creature (Creature) | 3 | 1.3 | Creature | `ANIM`, `WORLD_TIME`, `DNA`, `DNA_ADD`, `VOTE`, `SPECIES`, `SOCIAL`, `NEST`, `PARTS`, `EFFECT` |
 | npc (mirrored creature and world state) | 4 | 1.2 | Creature, Tribe, Civilization | `DAMAGE`, `NPC_STATE`, `NPC_SPAWN`, `NPC_DESPAWN`, `DAMAGE_REQ`, `WOBJ`, `FIELDS`, `NPC_RESYNC`, `NPC_ANIM`, `WSTATE`, `PLAYER_RULE`, `MIRROR_FX`, `NPC_MEAT` |
-| cell (Cell) | 5 | 1.1 | Cell | `CELL_STATE`, `CELL_HIT`, `CELL_EAT`, `CELL_FOOD`, `CELL_KO`, `CELL_BITTEN`, `CELL_MATE` |
+| cell (Cell) | 5 | 1.2 | Cell | `CELL_STATE`, `CELL_HIT`, `CELL_EAT`, `CELL_FOOD`, `CELL_KO`, `CELL_BITTEN`, `CELL_MATE` |
 | tribe (Tribe) | 6 | 1.1 | Tribe | `TRIBE_STATE`, `TRIBE_CMD`, `TRIBE_ANIM` |
-| civ (Civilization) | 7 | 1.1 | Civilization, Space | `CIV_STATE`, `CIV_CMD`, `CIV_BUILD`, `ROLE`, `CIV_ALARM` |
-| space (Space) | 8 | 1.2 | Space | `UFO_STATE`, `UFO_HIT`, `UFO_DAMAGE`, `SPACE` |
+| civ (Civilization) | 7 | 1.2 | Civilization, Space | `CIV_STATE`, `CIV_CMD`, `CIV_BUILD`, `ROLE`, `CIV_ALARM` |
+| space (Space) | 8 | 1.3 | Space | `UFO_STATE`, `UFO_HIT`, `UFO_DAMAGE`, `SPACE` |
 | shared (shared resources) | 9 | 1.0 | Tribe, Civilization, Space | `RES`, `RES_ADD` |
-| creations (creations) | 10 | 1.1 | every stage and the menus | `CREATION`, `SPECIES_LINE` |
+| creations (creations) | 10 | 1.2 | every stage and the menus | `CREATION`, `SPECIES_LINE` |
 
 | `MSG_SPACE` kind | Feature | Name | Sent by |
 |---|---|---|---|
@@ -821,3 +821,37 @@ again (its token). A guest whose window pumps messages (a dialog) keeps its link
 waits for it removes it once its game sent no state for 30 s (`core.vote_stuck_kick`, coop.kick with the reason).
 Nothing else on the host waits for a guest in its editor (the evolution vote skips it, BUG-1239; the Civ arrival
 editors hold nothing). Test: `editor_stand_guest` (a 50 s box during an action vote, a 45 s hang).
+
+## Reserved ids, kinds and family minors of 0.7.17 (2026-11-23, rel/0.7.17)
+<a id="netcode-reserved-0717"></a>
+
+WP-0 of docs/plan-0.7.17.md. Parallel branches collided on message ids before (BUG-1288's branch and PR #205 both took
+74), so one commit reserves the wire of every 0.7.17 work package before they start; each WP fills its own rows.
+
+| WP (branch) | Family minor (0.7.16.1 -> 0.7.17) | Message / kind | player_store record |
+|---|---|---|---|
+| WP-M1 own Civ money (feat/w68-wallet) | civ 1.1 -> 1.2 | MSG 74 CIV_WALLET (report, credit, charge, kept, end) | `civ.wallet` |
+| WP-H1 own stage history (feat/w70-history) | session 1.2 -> 1.3 | MSG 75 PLAYER_HISTORY (cards, trait progress, archetype) | `history` |
+| WP-P1 / P2 own progress (feat/w69-progress) | cell 1.1 -> 1.2, creature 1.2 -> 1.3 | MSG 76 PROGRESS (gain, values, bar, held, level line) | `progress` |
+| WP-R1 revive (feat/w71-revive) | creature 1.3 (the same bump) | MSG 77 RESCUE (K_DOWN, K_RESULT, K_LINES) | debt column of `progress` |
+| WP-S1 fleets (fix/w73-fleet, BUG-1288) | space 1.2 -> 1.3 | MSG 78 UFO_LEAD (the agy branch's 74 moves here) | - |
+| WP-K1 captain (feat/w74-captain), WP-L2 old cells (feat/w81-cell) | creations 1.1 -> 1.2 | MSG_CREATION kinds 10 (host props), 11 (captain), 12 (lineage cell) | - |
+| WP-W1 share (fix/w75-share) | world 1.0 -> 1.1 | the share's file list (no new id) | - |
+| WP-D1 difficulty (feat/w72-difficulty) | none (host side) | - | - |
+
+* Where: `net/manifest.h` `kReservedMsgs` (id, name, family, WP; `validate_tests test_manifest`: a reserved id is
+  unknown to the build or known under its reserved name and family; PROGRESS's family is the WP's choice);
+  `creations.h` `kKindHostProps` / `kKindCaptain` / `kKindLineageCell` (kind 9 stays retired); `player_store.h`
+  `kRecCivWallet` / `kRecHistory` / `kRecProgress`. Declared only: nothing sends, handles, reads or writes them.
+  Any other new type takes the next free id after 78.
+* The minors are bumped in WP-0 already (messages.def, messages.lock). Only minors: net/compat.h refuses a peer only
+  for another `rev`, and every existing gate on a minor is "that minor or newer" (`dna_own::peer_reads` creature /
+  npc 1.2, `vote.cpp` creature 1.1, `civ_arrival.cpp` creations 1.1, `wire/tribe_anim.h` tribe 1.1,
+  `host_relays_world_events` npc 1.2), so a 0.7.16.1 peer plays every existing message as before. A WP gates its new
+  path on the new minor (`peer_families` on the host, `host_families` on a guest, #netcode-host-families) and says
+  what an older peer gets (the plan names it per item).
+* Until 0.7.17 ships these minors are open: a WP that adds its MSG row or changes a family's wire files re-locks the
+  family without another bump, `tools/msg_manifest.py lock --rebase <family> "<WP>: <what>; unreleased <family>
+  1.x of 0.7.17"` (feat/w54-shims did the same for creations 1.1 in 0.7.16). Two WPs of one family both re-lock;
+  the merge takes either lock line and runs the rebase once more on the merged tree.
+* Settings and store: docs/07-modes.md#modes-reserved-0717, docs/01-architecture.md#arch-player-store.

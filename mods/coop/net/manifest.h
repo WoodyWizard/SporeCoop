@@ -98,4 +98,31 @@ inline const FamilyInfo* family_info(uint8_t id)
     return nullptr;
 }
 
+// ---- ids reserved for the work packages of 0.7.17 (WP-0 of docs/plan-0.7.17.md) ----
+// Parallel branches took the same id before (BUG-1288's branch and PR #205 both took 74). A WP adds its MSG row to
+// messages.def with exactly this id and name, in this family (Family::None: the WP picks it); every other new type
+// takes the next free id after 78. tests/validate_tests.cpp test_manifest: a reserved id is unknown to this build, or
+// known under its reserved name (and family). Declared only: nothing sends or handles these ids yet.
+struct ReservedMsg {
+    uint8_t id;
+    const char* name;
+    Family family;
+    const char* wp;
+};
+constexpr ReservedMsg kReservedMsgs[] = {
+    {74, "CIV_WALLET", Family::civ, "WP-M1 own Civ money (feat/w68-wallet): report, credit, charge, kept, end"},
+    {75, "PLAYER_HISTORY", Family::session, "WP-H1 own stage history (feat/w70-history): cards, trait progress, archetype"},
+    {76, "PROGRESS", Family::None, "WP-P1/P2 own progress (feat/w69-progress): gain, values, bar, held, level line; "
+                                   "creature 1.3 and cell 1.2 gate it, the row's family is the WP's choice"},
+    {77, "RESCUE", Family::creature, "WP-R1 revive (feat/w71-revive): K_DOWN, K_RESULT, K_LINES"},
+    {78, "UFO_LEAD", Family::space, "WP-S1 fleets (fix/w73-fleet, BUG-1288; the agy branch's 74 moves here)"},
+};
+inline const ReservedMsg* reserved_msg(uint8_t id)
+{
+    for (auto& r : kReservedMsgs)
+        if (r.id == id)
+            return &r;
+    return nullptr;
+}
+
 } // namespace net

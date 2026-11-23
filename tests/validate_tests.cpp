@@ -33,6 +33,7 @@
 #include "world_path.h"
 #include "realign_rule.h"
 #include "model_paint.h"
+#include "actor_scope.h"
 #include "../../sporekit/task_drop.h"
 
 using namespace net;
@@ -1100,6 +1101,25 @@ static void test_model_paint_runs()
 // once; the generated tables equal 0.7.14's (tests/manifest_golden.h: the wire values, the classes, the Space
 // directions, the dispatch of every type on both roles); the host's direction gate drops exactly the host-only types;
 // the space kinds of the manifest are the enums of the sources and the ranges the features register
+// WP-0 of 0.7.17: the Actor scope's interface (actor_scope.h; WP-H1 and WP-P1 / P2 use it)
+static void test_actor_scope()
+{
+    printf("actor scope: none outside, the inner scope wins, the outer one comes back, reset ends a lost one\n");
+    CHECK(actor::current() == actor::kNone && !actor::active());
+    {
+        actor::Scope a(2);
+        CHECK(actor::current() == 2 && actor::active());
+        {
+            actor::Scope b(1);
+            CHECK(actor::current() == 1);
+        }
+        CHECK(actor::current() == 2);
+    }
+    CHECK(actor::current() == actor::kNone && !actor::reset());
+    actor::g_current = 3; // a scope a caught fault unwound past (its destructor never ran)
+    CHECK(actor::reset() && actor::current() == actor::kNone);
+}
+
 static void test_manifest()
 {
     printf("message manifest: every type once, the 0.7.14 tables, the direction gate (BUG-1136)\n");
@@ -1131,6 +1151,18 @@ static void test_manifest()
     for (auto& g : golden0714::kTypes)
         CHECK(msg_info(g.id).known && std::string(msg_info(g.id).name) == g.name);
     CHECK(MSG_HELLO == 1 && MSG_SPACE == 48 && MSG_NPC_ANIM == 59 && MSG_HOST_WORLD == 69);
+    // WP-0 of 0.7.17: the ids 74-78 are reserved; one is unknown, or known under its reserved name and family
+    {
+        std::set<int> rids;
+        for (auto& r : kReservedMsgs) {
+            CHECK(rids.insert(r.id).second && r.id >= 74 && r.id <= 78 && reserved_msg(r.id) == &r);
+            MsgInfo m = msg_info(r.id);
+            CHECK(!m.known || (std::string(m.name) == r.name && (r.family == Family::None || m.family == r.family)));
+            if (r.family != Family::None)
+                CHECK(family_info((uint8_t)r.family) != nullptr);
+        }
+        CHECK(rids.size() == 5 && !reserved_msg(73) && !reserved_msg(79));
+    }
     // the classes, the Space directions, the dispatch
     int bad = 0;
     for (int t = 0; t < 256; t++) {
@@ -1339,6 +1371,7 @@ int main(int argc, char** argv)
     test_cycle();
     test_space_origin();
     test_space_dir();
+    test_actor_scope();
     test_manifest();
     test_compat();
     test_effect_xf();

@@ -362,3 +362,22 @@ BUG-0933 (class BUG-0420, a limit BUG-0709 left: "the host's save is the one of 
 * ? A connected guest in Space is not taken along when the host loads another Space save (BUG-0941, open): with the
   rule above it hears the new save and holds the shared money while it plays the old one.
 * Tests: space_save_change (FAIL with the switch off: lab 20261111-110127), space_own_save (BUG-0709) unchanged.
+
+## Session settings reserved for 0.7.17 (2026-11-23, rel/0.7.17)
+<a id="modes-reserved-0717"></a>
+
+WP-0 of docs/plan-0.7.17.md. These keys are reserved here and **not** declared in `settings::kDefs` yet: every row of
+kDefs shows in the lobby at once (a row with no behaviour would be a switch that does nothing), and `settings::on()`
+is `get() != 0`, so a third value of `all.shared_dna` declared before WP-P1 would read as "shared". Each WP adds its
+row (or its value) together with the behaviour; the keys are never renamed once released (stored worlds keep them).
+Defaults are provisional: the owner's questions of the plan are open.
+
+| Key | Group | Values (default first) | Scope | WP (branch) | Plan |
+|---|---|---|---|---|---|
+| `civ.own_money` | Civilization | off / on (question 1) | session | WP-M1 (feat/w68-wallet) | item 1 |
+| `all.shared_dna` (existing) | All stages | 0 own wallet (default, as 0.7.16), 1 shared, 2 own progress (new); the lobby row becomes "DNA and progress" with three names; the ini key stays | session | WP-P1 / P2 (feat/w69-progress) | item 2, question 2 |
+| `creature.revive` | Creature | on or off (question 4; pack rescue stays the first line) | session | WP-R1 (feat/w71-revive) | item 4 |
+| `all.party_difficulty` | All stages | 100 % (default), 125, 150, 200, auto (+25 % per player over two; question 5) | session | WP-D1 (feat/w72-difficulty) | item 5 |
+| `cell.lineage_cells` | Cell | off / on | session | WP-L2 (feat/w81-cell) | item 9 |
+
+The fix switches of the same items (`coop.fix`, twins) are the WPs' own and are named in the plan per item.

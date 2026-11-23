@@ -24,6 +24,12 @@ enum Kind : uint8_t { kCreature = 0, kCell = 1, kUfo = 2, kKinds = 3 };
 // creation: a civ mirror vehicle or a building of a city, a host ship. (Kind stays the creations'
 // own: its numbers are on the wire.)
 enum ModelKind : uint8_t { kMkCreature = 0, kMkCell, kMkUfo, kMkVehicle, kMkBuilding, kMkKinds };
+// MSG_CREATION kinds reserved for 0.7.17 (WP-0 of docs/plan-0.7.17.md, creations 1.2; declared only, nothing sends or
+// handles them yet). Kinds 0-2 are Kind above, 3-8 are in creations.cpp, 9 is retired (WP-C2 of an unreleased 0.7.16
+// build: never reuse it). An older peer drops a kind it does not know.
+constexpr uint8_t kKindHostProps = 10;   // WP-K1 (feat/w74-captain): the host captain's property lists (BUG-1279)
+constexpr uint8_t kKindCaptain = 11;     // WP-K1: a player's own captain (#217 a, BUG-1262)
+constexpr uint8_t kKindLineageCell = 12; // WP-L2 (feat/w81-cell): a player's old cell as an NPC species (#211)
 using Key = dbpf::Key;
 
 struct Option {
