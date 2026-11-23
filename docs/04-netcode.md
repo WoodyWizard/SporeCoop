@@ -856,3 +856,22 @@ WP-0 of docs/plan-0.7.17.md. Parallel branches collided on message ids before (B
   1.x of 0.7.17"` (feat/w54-shims did the same for creations 1.1 in 0.7.16). Two WPs of one family both re-lock;
   the merge takes either lock line and runs the rebase once more on the merged tree.
 * Settings and store: docs/07-modes.md#modes-reserved-0717, docs/01-architecture.md#arch-player-store.
+
+## MSG_PLAYER_HISTORY: every player's own stage history (2026-11-23, feat/w70-history)
+<a id="netcode-player-history"></a>
+
+WP-H1 of docs/plan-0.7.17.md (BUG-1470), the reserved id 75 of #netcode-reserved-0717, family session 1.3 (the bump of
+WP-0; `wire/history.h` joins the family's wire files). Reliable, both directions, class Session, route History
+(history.cpp). Body: u8 kind, then:
+
+* `K_RECORD` 1 (host -> one guest): u8 flags (1: the record is the guest's own; 0: it plays the shared history again),
+  5 x u32 the cards (cPlayer +0x10FC.. order, 0 = stage not done), f32 social, f32 combat (the trait progress). Sent
+  when it changed and every 5 s; the guest writes it into its own cPlayer while it plays the host's world.
+* `K_CELL` 2 (guest -> host): u32 the Cell card the guest's own game decides now (Cell_GetConsequenceTrait), on a change
+  while it plays Cell (every 2 s at most).
+
+Old-peer guard: the host sends K_RECORD only to a guest whose families have session 1.3 or newer (`peer_families`,
+history_logic.h `peer_reads`, `kSessionMinor`); a guest sends K_CELL only to a host with session 1.3 (`host_families`).
+A 0.7.16.1 peer (session 1.2) plays the shared history exactly as before: no record, the wsync row "stages" writes the
+host's cards, its kills raise the host's progress (no redirect for a peer that cannot read its own). A 0.7.16.1 peer
+ignores type 75 (an unknown type). Decoders: tests/fuzz_decoders.cpp; codecs: tests/validate_tests.cpp test_history.

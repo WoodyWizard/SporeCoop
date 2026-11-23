@@ -1976,3 +1976,63 @@ BUG-1328. Ghidra (GOG 2024) and runtime on lab lanes 5 and 6.
 * ~ The editor's exit `0x5802F0` saves the new creation's list for the key from cIDGenerator (never 0 seen); with
   `param_2` (saved) it first reads the edited creation's list (EditorRequest +0x10's key: 0 for a new one; on a polluted
   profile the new creation inherited the list under key 0, now none).
+
+## Own stage history per player: the consequence cards, the trait progress, the Space archetype (2026-11-23, feat/w70-history)
+<a id="creations-own-history"></a>
+
+BUG-1470, BUG-1471 (WP-H1 of docs/plan-0.7.17.md). Ported from PR #207 (own cards, BUG-9263 / BUG-9264 of the Lineages
+fork) and PR #217 b (the own archetype tools) by IltonBJSilva: their RE was done on the in-memory Steam .text
+(docs/05-re-notes.md#re-notes-steam-text-dump); every address below was checked again by us with objdump of the GOG 2024
+exe (dc04aee5), the symbols are in data/symbols/overrides_dc04aee5.sym. Builds on #creations-cplayer-fields.
+
+* ✔ **Stage ids** of `cPlayer_GetConsequenceTrait` 0xC75880 / `cPlayer_SetConsequenceTrait` 0xC75E60 (fnv1 of the stage
+  names): CellGame A426730B (+0x10FC), CreatureGame AD56080C (+0x1100), TribeGame F71FA311 (+0x1104), CivGame BEB528CB
+  (+0x1108), SpaceGame 2DB6DAD3 (+0x110C). The setter, in Space (mode 0x1654C05), then calls 0xC75B40 (gives the player
+  empire the cards).
+* ✔ **Trait ids** (the setConsequenceTrait cheat's table, .data 0x156ACD0; PR #207): Cell carnivore CFB01B93, herbivore
+  A8EC6F99, omnivore 5ECE4770; Creature aggressive 17E5EF84, social FD159D91, mixed B9DE15F2; Tribe aggressive 0CAC124D,
+  social 60A78928, mixed C2CA9495; Civ military 0A35D0F5, economic 3360727F, religious 6AEB96A1; Space bard 50FEE6BF,
+  ecologist B40D2187, zealot 2B35F523, diplomat B436C0BC, scientist 9CE4639C, trader B7CB9F7A, shaman CF6C2AB4, warrior
+  D9C806E4, wanderer A5656E84, knight F966D429 (history_logic.h valid_card).
+* ✔ **Trait progress**: `cPlayer_AddTraitProgress` 0xC75840 (thiscall(float amount, bool social) ret 8; social ? +0x1278
+  : +0x127C; its first instruction `cmp byte [esp+8],0` is 5 bytes: hookable). Callers take the cPlayer from
+  cGameNounManager::Get 0xB3D400 -> 0xF67D40: the kill in TakeDamage 0xC07C0C (push 0: combat), SpeciesGoal_Update
+  0xC2EFE9 (push 1: social) and 0xC2F0F1 (push ebx), the social win 0xD9BD36. `cPlayer_GetTraitProgress` 0xC75820 reads
+  them (x87). (runtime, PR #207's probe) a guest's lethal hit landed as the host avatar's (npc.cpp) called it with
+  (7.0, combat) on the host only; social.cpp's replica of the social win (apply_success) called it for nobody: BUG-1471.
+* ✔ **The Creature card**: `Creature_GetConsequenceTrait` 0xD38780 = `Creature_TraitScore` 0xD386A0 >= 1/3 [0x13F26CC] ->
+  aggressive, >= -1/3 [0x140D10C] -> mixed, else social. The score = (combat - social) / (the sum of the floats
+  0x1582E38..0x1582E44; 0 when the sum is not > 0) + the History timeline's Cell value (0xB3D510 non-null:
+  0xE3F7A0(timeline, CellGame)), clamped to [[0x13EB1BC], [0x1453740]]. The Creature end (CreatureGame message handler)
+  writes it at 0xD2C7D3 (`mov [eax+0x1100], ebp`).
+* ✔ **The Cell card**: `Cell_GetConsequenceTrait` 0xE5C9D0 reads [cCellGame::_ptr 0x16B3C04] +0x5190 with no null check
+  (cCellSerializableData): r = 0xE511C0(d+0x24 + d+0x20, d+0x28 - d+0x20 + d+0x1C) against the Cell tuning (0xE4CE20)
+  +0xCC / +0xC8: herbivore / carnivore / omnivore. ~ In co-op the food counters +0x1C / +0x20 are the party's (cellsync's
+  MSG_CELL_FOOD writes the host's totals into every guest's game): with the shared Cell food a guest's own Cell card is
+  mostly the host's; with WP-P1's own progress (own food) it is the guest's own diet.
+* ✔ **Tribe / Civ**: `Tribe_GetConsequenceTrait` 0xCDBBD0 (the Tribe end 0xCDC739 writes +0x1104); `Civ_DecideConsequenceTrait`
+  0xCF82C0 (three 0xBF19C0 shares, the largest to +0x1108: 0xCF833B). Not called by the mod: one shared tribe and nation.
+* ✔ **The Space archetype**: `SpaceArchetype_FromTraits` 0x556440 (cdecl, 4 cards, unoptimised ebp frame; the caller
+  0x1005C6B cleans 0x10). `SpaceGame_SetArchetype` 0x1005C20 (thiscall(game, bool from_cards, bool announce) ret 8):
+  from_cards true takes FromTraits of the four cards, false the cPlayer's +0x110C as it is; SetConsequenceTrait(SpaceGame,
+  it); the archetype index into cEmpire +0x58 (0x1005DB7): warrior 9, trader 10, scientist 11, shaman 12, bard 13, zealot
+  14, diplomat 15, ecologist 16, wanderer 17 (also the default for any other card), knight 18; then 0x10056A0 (the tools,
+  both branches); announce adds the achievement calls. No null check of GetPlayerEmpire 0x10211B0 (0xC30DE0 reads
+  [empire+0xB0], +0x58 is written): call it only with a player empire. ~ Whether switching the archetype removes the
+  previous archetype's tools was not traced (PR #217: "running it twice duplicates or removes tools").
+* **Per-player history (history.cpp, history_logic.h)**: the host keeps each guest's cards and progress (store record
+  `history` v1, docs/01-architecture.md#arch-player-store); the hook on AddTraitProgress sends the amount of a call inside
+  an actor::Scope naming a guest (npc.cpp around a guest's hit, social.cpp around its social win's relationship event
+  and the replica's credit of the creature's DNA worth) to that guest's record instead of the host's cPlayer. When the
+  host's world has a stage done that a guest's record has not, the guest gets: Cell = its own game's Cell card (reported
+  over MSG_PLAYER_HISTORY K_CELL while it plays Cell), Creature = Creature_GetConsequenceTrait with the guest's progress
+  lent into the host's cPlayer for the call (the swap ledger, BUG-0110; the timeline's Cell value stays the host
+  world's: ~ a limit), Tribe / Civ = the host's, Space = FromTraits of its four cards; a stage the host's world has not
+  done is cleared (an earlier save; a game started after Cell has no cards at all, #218's note: the guest's history is
+  empty too). First sight of a guest in a world: a copy of the host's cards and progress (the history so far was the
+  party's). The guest's game writes its record with the game's setter while it plays the host's world (not in a world
+  of its own, own_world::elsewhere / space_other), the wsync row "stages" leaves it alone; in Space, 5 s after the
+  world opened, when its empire's index is not its own archetype's, SpaceGame_SetArchetype(game, false, false) once
+  per world and card. Switches: core.own_history, core.trait_credit, space.own_archetype; test
+  tools/tests/coop_own_cards.py. Editor requests (vote.cpp) copy the cards from the local cPlayer, so a guest's
+  editors get its own consequence abilities.
