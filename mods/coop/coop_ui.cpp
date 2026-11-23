@@ -4005,6 +4005,12 @@ static struct {
     bool failed = false;
 } g_pm;
 static bool g_pm_open, g_pm_queued;
+// BUG-9347: a player menu opened over the Social Menu was drawn under the panel (the panel stays in front of its
+// siblings whatever their order: TITAN 2026-11-23, `coop.ui where` listed the menu behind it after bring_to_front):
+// a menu from a point on the panel opens beside it (left, else right). Off: at the pointer as before
+static bool g_menu_beside_social = true;
+COOP_FIX("ui.menu_beside_social", "BUG-9347", g_menu_beside_social, "ui: a player's right-click menu from the Social Menu opens beside the panel, not under it");
+static Rect g_so_rect_seen; // (the Social panel's area while it shows: so_apply)
 static float g_pm_x, g_pm_y;
 static std::string g_pm_title;
 static std::vector<MenuItem> g_pm_items;
@@ -4088,6 +4094,9 @@ static void pm_apply(void*)
     const float h = kPmTitle + n * kPmRow + kPmPad * 2;
     // at the pointer, kept on the screen (a menu near the right or the bottom edge opens to the other side)
     float x = g_pm_x, y = g_pm_y;
+    const Rect so = g_so_rect_seen;
+    if (g_menu_beside_social && so.x2 > so.x1 && x >= so.x1 && x <= so.x2 && y >= so.y1 && y <= so.y2) // BUG-9347
+        x = so.x1 - kPmW - 4 >= 0 ? so.x1 - kPmW - 4 : so.x2 + 4;
     if (x + kPmW > sw) x = std::max(0.f, x - kPmW);
     if (y + h > sh) y = std::max(0.f, y - h);
     x = std::floor(x), y = std::floor(y);
@@ -5715,6 +5724,7 @@ static void so_apply(void*)
     if (!g_so_open || !main) {
         sui::set_visible(g_so.root, false);
         g_so_rect = {};
+        g_so_rect_seen = {};
         for (auto& r : g_so.rows) r.at = {}, r.row = -1;
         g_so.eras.at = {};
         return;
@@ -5753,6 +5763,7 @@ static void so_apply(void*)
     if (g_so_btn_rect.x2 > g_so_btn_rect.x1 && g_so_btn_rect.y1 < 44 + h) x2 = std::min(x2, g_so_btn_rect.x1 - 10);
     const float x = std::max(8.f, x2 - kSoW), y = 44;
     g_so_rect = {x, y, x + kSoW, y + h};
+    g_so_rect_seen = g_so_rect; // (BUG-9347)
     sui::set_area(g_so.root, g_so_rect);
     if (sui::parent(g_so.root) != main) sui::add_child(main, g_so.root);
     // the frame's pieces: an edge in the left (top) half of the Co-op window keeps its place, one in the right (bottom)
