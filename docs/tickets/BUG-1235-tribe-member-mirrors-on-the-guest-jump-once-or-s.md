@@ -68,3 +68,4 @@ tribe_tests smooth_bound (PASS with the rule, FAIL with `--nofix`).
 - 2026-11-21 (fix/w62-flake-tcs): the jump's cause found (the smoothed walk start without the frame bound, since
   1fcf09b2), tribe.smooth_bound; the stop-and-go half stays open.
 - 2026-11-18: opened in the second 0.7.15 final-check triage; old (0.7.14.1 fails it too), left for the next release.
+- 2026-11-23: fix/w65-night: smooth_bound held a late walk start to the host's current speed (BUG-1451, body_trail_tribe_player 1.16 s over 2 m); tribe.smooth_catch lets the bound grow with the lag, capped at the 9 m/s this ticket's case keeps (its frames still at most 0.67 m).

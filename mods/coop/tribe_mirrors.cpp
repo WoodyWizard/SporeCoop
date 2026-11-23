@@ -462,6 +462,19 @@ static void mirror_step(GEntry& e, const net::Vec3& pos, const net::Quat& rot, c
 static bool g_smooth_bound_fix = true;
 COOP_FIX("tribe.smooth_bound", "BUG-1235", g_smooth_bound_fix,
          "tribe: a guest's copy of a member that starts to walk over a laggy network does not jump about 1 m in one frame");
+// BUG-1451: with smooth_bound, a copy that started its walk late and stands far behind its aim catches up at a speed that
+// grows with the lag (tribe_logic::mirror_lead_speed), not only at the host body's current speed
+static bool g_smooth_catch_fix = true;
+COOP_FIX("tribe.smooth_catch", "BUG-1451", g_smooth_catch_fix,
+         "tribe: a guest's copy of a member that starts to walk late over a laggy network catches up with it within a second");
+
+// BUG-1460: a dead member's mirror taken out of its tribe (detach_body) stands still: its walk ended, no MoveTo; off:
+// mirror_step drives it on (0.7.16 and older)
+bool g_body_still_fix = true;
+COOP_FIX("tribe.body_still", "BUG-1460", g_body_still_fix,
+         "tribe: a guest's copy of a member that died lies still (it does not walk on out of its tribe, which made the "
+         "guest's game fault)");
+uint32_t g_bodies_stilled;
 
 static void mirror_drive(GEntry& e, double now)
 {
@@ -494,8 +507,10 @@ static void mirror_drive(GEntry& e, double now)
         // (and always: a mirror held by its game and moved by keep_lost's marked teleports, BUG-0386, caught up in 0.91 m
         // frames at 12.8 m/s, tribe_walk_player 20261107-111106 #2)
         // BUG-1235 (tribe.smooth_bound): the smoothed target's walk start too (tribe_logic::mirror_lead_speed)
+        // BUG-1451 (tribe.smooth_catch): and at least a catch-up speed that grows with the lag behind the aim
         o.lead_speed = tribe_logic::mirror_lead_speed(net::g_lead_keep_fix, g_smooth_bound_fix, g.lead_sp, sp,
-                                                      g.buf.late_catching(), g.buf.late_rate());
+                                                      g.buf.late_catching(), g.buf.late_rate(), g_smooth_catch_fix,
+                                                      net::dist(game::position(c), g.aim));
         o.keep_lost = g_mirror_keep_fix; // BUG-0386
         drive::walk_place(c, g.aim, rot, vel, g.ds, now, o);
         // tests (BUG-0386): the game's walk and a placing without the teleport mark are undone, the mirror crawls 0.04 m
@@ -592,6 +607,21 @@ void guest_tick(double now)
             }
             if (g.body)
                 detach_body(c);
+            // BUG-1460 (tribe.body_still): a body out of its tribe is not walked: mirror_step's MoveTo left it steering
+            // with +0x1014 null, and a blocked one made the game's make-way step (Creature_AskGroupToMakeWay 0xC28530)
+            // read its null tribe (0x00C8F6D3, 38 caught faults, campaign_tribe_noclick 20261123-023643). Its walk is
+            // ended once; it is put where the host's body lies when it is over 1 m off (StopMovement can put a
+            // creature back up to 3 m, driver.h)
+            if (tribe_logic::body_still(g_body_still_fix, g.body, g_detached.count(c) > 0)) {
+                if (!g.body_stopped) {
+                    game::stop(c);
+                    g.body_stopped = true;
+                    g_bodies_stilled++;
+                }
+                if (net::dist(game::position(c), g.pos) > 1.f)
+                    game::teleport(c, drive::out_of_ground(g.pos, true), g.rot);
+                return;
+            }
             mirror_step(e_, g.pos, g.rot, g.vel, now, now - g.seen);
             return;
         }

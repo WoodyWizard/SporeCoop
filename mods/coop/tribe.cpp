@@ -9,6 +9,7 @@
 #include "world_id.h"
 #include "player_life.h"
 
+#include <atomic>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -450,6 +451,28 @@ static std::unordered_map<void*, void*> g_left_tribe; // guest: citizen -> the t
 static uint32_t g_teardown_tribe_back, g_teardown_bt_emptied;
 using SetTribe_t = void(SK_THISCALL*)(void*, void*);
 static SetTribe_t o_SetTribe;
+
+// BUG-1460 (`coop.fix tribe.makeway_null`): Creature_AskGroupToMakeWay 0xC28530 (cdecl(ctx, creature), plain ret,
+// bool: the caller GroupLocomotion_Step pops 8 bytes) asks a blocked walker's group to step aside; for a citizen it
+// calls Citizen_GetTribe(c)->PostStimulusNear(...) with no null check, so a walking citizen out of its tribe
+// (+0x1014 null) faults at 0x00C8F6D3. A citizen without a tribe asks nobody (false: not made to wait); everything
+// else goes to the game's own function. Called from the locomotion step for every moving creature: read-only, no
+// lock, no allocation; the counter is atomic (any thread). Off: the game's function always (the fault)
+static bool g_makeway_null_fix = true;
+COOP_FIX("tribe.makeway_null", "BUG-1460", g_makeway_null_fix,
+         "tribe: a walking member that is out of its tribe does not make the game fault when its way is blocked");
+static std::atomic<uint32_t> g_makeway_null_skipped{0};
+typedef bool(__cdecl* MakeWay_t)(void*, void*);
+static MakeWay_t o_MakeWay;
+static bool __cdecl h_MakeWay(void* ctx, void* c)
+{
+    const bool citizen = c && a_CitizenVt && *(uintptr_t*)c == a_CitizenVt;
+    if (tribe_logic::makeway_skip(g_makeway_null_fix, citizen, citizen ? F<void*>(c, 0x1014) : c)) {
+        g_makeway_null_skipped.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    return o_MakeWay(ctx, c);
+}
 static void SK_THISCALL h_SetTribe(void* c, void* t)
 {
     if (is_guest()) {
@@ -1674,6 +1697,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a, (void*)h_ReleaseSlot, (void**)&o_ReleaseSlot);
     if (uintptr_t a = H->sym("Simulator::cCreatureCitizen::SetTribe")) // BUG-0667 (optional)
         H->hook_create(M, (void*)a, (void*)h_SetTribe, (void**)&o_SetTribe);
+    if (uintptr_t a = H->sym("SporeCoop::Creature_AskGroupToMakeWay")) // BUG-1460 (optional)
+        H->hook_create(M, (void*)a, (void*)h_MakeWay, (void**)&o_MakeWay);
     if (uintptr_t a = H->sym("SporeCoop::cCreatureCitizen_Teardown")) // BUG-0667 (optional)
         H->hook_create(M, (void*)a, (void*)h_CitizenTeardown, (void**)&o_CitizenTeardown);
     a_Form = H->sym("SporeCoop::NpcTribeController_FormTribe"); // BUG-0483 (optional)
@@ -4638,6 +4663,10 @@ std::string status()
                  g_teardown_bt_emptied, g_map_stale_skipped, g_join_bodies, g_mirrors_grown, g_away_trees_ended);
     std::string out = b;
     // C1 / C4 (BUG-1140, BUG-1143): the tables and the snapshot receiver
+    // BUG-1460: dead mirrors kept still (tribe.body_still), make-way calls of tribe-less citizens left out (makeway_null)
+    snprintf(b, sizeof b, "tribe bodies: still fix=%d stilled=%u | makeway_null fix=%d skipped=%u\n", (int)g_body_still_fix,
+             g_bodies_stilled, (int)g_makeway_null_fix, g_makeway_null_skipped.load(std::memory_order_relaxed));
+    out += b;
     out += "tribe registry: " + g_host.members.status() + "; " + g_guest.mirrors.status() + "\n";
     snprintf(b, sizeof b, "tribe snapshot rx: chunks=%u bad=%u older=%u cut=%u incomplete=%u abandoned=%u complete=%u generation=%u\n",
              g_guest.snap.chunks_in, g_guest.snap.bad, g_guest.snap.older, g_guest.snap.cut, g_guest.snap.incomplete, g_guest.snap.abandoned,

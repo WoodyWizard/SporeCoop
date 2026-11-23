@@ -237,6 +237,39 @@ static void smooth_bound()
     // the switch off: no bound in the smoothed path (the 0.7.16 rc rule; the lab's 0.95 m frame)
     CHECK(mirror_lead_speed(true, false, 13.5f, 13.5f, true, 1.5f) == 0.f);
     CHECK(drawn_frame(0.f, 13.6f, 3.f, dt) > limit);
+    // BUG-1451 (tribe.smooth_catch): BUG-1235's case 1-2 m behind keeps the body's own speed; any lag stays under the
+    // jump limit (at most kLagCatchMax: 0.67 m frames)
+    for (float raw : {13.4f, 13.7f})
+        for (float lag : {1.f, 2.f})
+            CHECK(mirror_lead_speed(true, true, raw, raw, true, raw / 9.f, true, lag) > 8.9f &&
+                  mirror_lead_speed(true, true, raw, raw, true, raw / 9.f, true, lag) < 9.1f);
+    CHECK(drawn_frame(mirror_lead_speed(true, true, 13.6f, 13.6f, true, 13.6f / 9.f, true, 20.f), 13.6f, 3.f, dt) < limit);
+    // body_trail_tribe_player 20261122-194210 t1: the host slowed to ~2 m/s while its late copy stood 3.3 m behind; the
+    // aim (the smoothed target closing that offset) at 6 m/s, 33 ms frames: held to (2 x 2 + 3 - 6) x dt = 0.03 m a
+    // frame by the body's speed alone; with the catch-up the placing closes (sp + catch_up) x dt again (as before 0.7.16)
+    {
+        const float sp = 6.f, ddt = 0.033f;
+        float off = mirror_lead_speed(true, true, 2.f, sp, false, 1.f, false, 3.3f);
+        float on = mirror_lead_speed(true, true, 2.f, sp, false, 1.f, !g_nofix, 3.3f);
+        CHECK(off == 2.f);
+        CHECK(drawn_frame(on, sp, 3.f, ddt) - sp * ddt >= (sp + 3.f) * ddt - 1e-4f); // the placing's full step
+        CHECK(!g_nofix || drawn_frame(off, sp, 3.f, ddt) - sp * ddt < 0.05f);
+    }
+}
+
+// BUG-1460: the make-way hook leaves out only a citizen without a tribe; a dead mirror stands still only when it was a
+// host body taken out of its tribe. With `--nofix` (the switches off) neither acts: the first checks fail
+static void body_rules()
+{
+    printf("tribe-less walkers: make-way skip and still bodies (BUG-1460)\n");
+    const bool fix = !g_nofix;
+    int t = 0;
+    CHECK(makeway_skip(fix, true, nullptr)); // the fault's case (FAILS with --nofix)
+    CHECK(!makeway_skip(fix, true, &t));             // a citizen in its tribe: the game's own step
+    CHECK(!makeway_skip(fix, false, nullptr));       // an animal (its herd path, no tribe read)
+    CHECK(!makeway_skip(false, true, nullptr));      // the switch off: the game's function always
+    CHECK(body_still(fix, true, true)); // (FAILS with --nofix)
+    CHECK(!body_still(fix, false, true) && !body_still(fix, true, false));
 }
 
 int main(int argc, char** argv)
@@ -251,6 +284,7 @@ int main(int argc, char** argv)
     anim_type();
     end_editors();
     smooth_bound();
+    body_rules();
     if (g_fail) {
         printf("tribe_tests: %d FAILED\n", g_fail);
         return 1;

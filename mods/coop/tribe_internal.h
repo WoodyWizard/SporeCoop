@@ -141,6 +141,8 @@ constexpr double kBodyMax = 60.0;
 constexpr uint8_t kBodyBit = 0x80; // in a snapshot entry's age byte: a body (the guest takes it out of its tribe too)
 
 extern std::unordered_map<void*, void*> g_detached;
+extern bool g_body_still_fix;     // BUG-1460 (tribe_mirrors.cpp)
+extern uint32_t g_bodies_stilled; // BUG-1460
 extern uintptr_t a_BTTerminate;
 extern uint32_t g_teardown_restored;
 void detach_body(void* c);
@@ -190,6 +192,7 @@ extern float g_test_lift;
 struct GMember {
     uint8_t tribe = 0, owner = 0xFE, age = 1;
     bool body = false; // BUG-0620: the host's member is a body out of its tribe's list
+    bool body_stopped = false; // BUG-1460 (tribe.body_still): its last walk ended once it was detached
     net::Vec3 pos, vel;
     net::Quat rot;
     float hp = 0;
