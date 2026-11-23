@@ -10,7 +10,7 @@ role: all
 versions: 0.7.15.5
 fixed_in:
 branch: fix/w64-share, fix/w75-share
-commits: 2d3bc204, f6f56ea1, 6fba22c4, COMMITS_W75
+commits: 2d3bc204, f6f56ea1, 6fba22c4, 6327cf12, 7be732b5, c29dc4db, b004781d
 tests: copy_slot_keep, copy_slot_notice, copy_slot_planets (coop_copy_slot.py); twins copy_slot_keep_off, copy_slot_notice_off, copy_slot_planets_off, copy_slot_continue_off; win_unit test_slot_own_progress (--old-own); core_tests share_one_planet
 signature:
 docs: docs/03-gameplay.md, docs/06-testing.md#testing-share-menu-pass, docs/06-testing.md#testing-share-one-planet, docs/re/space.md#space-share-one-planet, docs/04-netcode.md#netcode-reserved-0717, README.md, docs/INSTALL.md

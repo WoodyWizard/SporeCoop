@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.15.5
 fixed_in:
 branch: fix/w75-share
-commits: COMMITS_1436
+commits: 7be732b5, c29dc4db
 tests: cell_quit_switch (coop_cell_quit_switch.py); twin cell_quit_switch_off
 signature: 3010a413:SporeApp.exe SporeCoop::Player_SetProperty+0x14D
 docs: docs/re/space.md#space-menu-creature-switch, docs/06-testing.md#testing-share-one-planet
