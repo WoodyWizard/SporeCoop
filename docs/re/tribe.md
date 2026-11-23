@@ -4875,3 +4875,54 @@ lead's, BUG-0651). A 32 ms frame then draws 0.52 m of placing + 0.43 m of the ga
 0.86 m). How to read it in a track: the jumping frames have rv (aim speed) and gv (the game's walk speed) at 13-14 m/s,
 err 0.75-2 m just before, and a step of (2 x gv + 3) x dt. tribe.smooth_bound bounds the placing by the body's own speed
 (lead_sp / late_rate) there too. ? The stop-and-go half of BUG-1235 (uneven 12-14 %) is another cause, not found.
+
+## A walking citizen with no tribe: the make-way stimulus faults at 0xC8F6D3 (2026-11-23, fix/w65-tests)
+<a id="tribe-makeway-null-tribe"></a>
+
+BUG-1460. GOG 2024, objdump disassembly of SporeApp.exe (REA's Rizin route was not available on this machine: ENOENT),
+the guest log of lab 20261123-023643 campaign_tribe_noclick (Bob, 03:09:42). Static analysis only; no game run.
+* ✔ (disassembly) `SporeCoop::Citizen_GetTribe` 0xC230B0 is `mov eax,[ecx+0x1014]; ret`: the citizen's tribe, no
+  lookup, null for a citizen out of its tribe. The "lookup returned none" of the ticket is a citizen with +0x1014 = 0.
+* ✔ (disassembly) `SporeCoop::cTribe_PostStimulusNear` 0xC8F6D0, thiscall(tribe, const Vector3* pos, float radius,
+  stimLo, stimHi, float value, sender) ret 0x18: for every member of the tribe's vt 0x90 vector within radius + the
+  member's own radius (spatial vt 0x74) of pos it calls BT_PostStimulus 0xBC9960 on [member+0xB4C]+8 and stores pos and
+  the radius in the slot. Its 2nd instruction `mov eax,[ecx]` is the fault (data 0, ecx 0). Not part of
+  cTribe_PopulationCount (the crash line's "+0x1A3" is only the nearest symbol).
+* ✔ (disassembly, byte scan of .text and .rdata/.data) 0xC8F6D0 has two callers, 0xC28663 and 0xC286B1, both in
+  0xC28530 (`SporeCoop::Creature_AskGroupToMakeWay`, cdecl(ctx, creature) -> bool, plain ret); 0xC28530 has one
+  caller, 0xC2D822 in 0xC2D380 (`SporeCoop::GroupLocomotion_Step`); 0xC2D380's only reference is slot +0xC of the
+  vtable 0x1469DD8, the LocomotionStrategy singleton (global 0x168D838, made by 0xC06160) that 0xC43300 calls at
+  0xC4338A (`call [strategy vt+0xC]`, spatial +0x4CC). The fault's own `calls:` line has 0xC286B6, 0xC2D827 and
+  0xC4338C in that order: the chain is the locomotion step -> GroupLocomotion_Step -> Creature_AskGroupToMakeWay ->
+  cTribe_PostStimulusNear(null). The stack-scan names after it (AnimatedCreature_SetEpicFlag, the AnimatedCreature
+  ctor, cTribe_ToolLayout+0x836) are nearest-symbol labels and stale frames: the epic is not in the chain.
+* ✔ (disassembly) What 0xC28530 does: with the creature's +0x330 bits 0x1 / 0x2 / 0x8 (set by 0xC2CC20, which
+  GroupLocomotion_Step calls right before it) and the move request (0xC42020) +0x6C under 30 (under 2 with bit 0x2),
+  outside an adventure (0x1654C10), it zeroes the step and asks its group to step aside with stimulus 0x2000000
+  (value 5.0, sender itself): a citizen (noun 0x18EB4B7) through `Citizen_GetTribe(c)->PostStimulusNear(...)` with no
+  null check (pos = the move goal, radius = goal-stop + own radius with +0x330 bit 0x10; else its own position, 2x its
+  radius), an animal (0x18EB45E) in herd state 2 to each herd member in range but itself. It returns true then (the
+  caller skips the rest of the step).
+* ~ The +0x330 bits are path results of 0xC2CC20 (a path planner with 8 buffers of 0x100 bytes; 0x1 after 0xB47620
+  with one segment, 0x8 / 0x2 by its result kind 0 / 2): "no clear way", so the "make way" reading of stimulus
+  0x2000000 is inferred, not checked at runtime.
+* So the fault needs a citizen that **walks (a live move request, run by the locomotion strategy), is blocked, and
+  has +0x1014 = 0**. The game's own tribe-less citizen is a dead player member's body (#tribe-member-body), which does
+  not walk (~ not checked: the death presumably ends its move request).
+* ✔ (code) On a guest the mod makes exactly such a citizen: `guest_tick` (mods/coop/tribe_mirrors.cpp:583-597) takes a
+  dead member's mirror out of its tribe with `detach_body` (tribe.cpp:247, +0x1014 = 0) and then calls `mirror_step`
+  on it every tick, which drives it with `drive::step` (driver.h:187): `game::move_to` whenever the plan says walk,
+  and `walk_place`'s last MoveTo (12 m ahead of a member that was running) is never ended (no walk_end / stop in the
+  Death branch). The mirror's behaviour tree is skipped, so no death node ends the walk either.
+* ~ (log) In the run, bodies_detached went 72 -> 77 between 03:09:15 and 03:09:55 with removed unchanged (75): five
+  detached bodies were in the world at 03:09:42, 2 s after `pincer attack` (the raid on village 2, members dying in a
+  crowd, which is what sets the blocked bits). No `SetTribe(null)` line in the whole guest log (the game took no
+  citizen out of its tribe there), so the null +0x1014 is most likely detach_body's. Not checked: that the citizen
+  0x29444530 (esi / ebp of the fault) was one of them (the log has no mirror address for it).
+* ? 38 caught faults = ~38 steps of one blocked body (0.6 s at 65 fps) until the bit / time checks stopped it or the
+  body was put still: not measured.
+* Proposed fix (not made; a test agent owns the branch's tests): (a) `coop.fix tribe.body_still`: in the Death branch,
+  a detached body gets `game::stop(c)` once and is then only placed (teleport when over 1 m off the host's body), no
+  `mirror_step`; (b) a class guard `coop.fix tribe.makeway_null`: hook Creature_AskGroupToMakeWay 0xC28530 (cdecl,
+  2 args, plain ret) and return false for a citizen whose +0x1014 is 0 (the vanilla path for any other kind already
+  copes). (b) alone stops the fault for every tribe-less walking citizen, host or guest.

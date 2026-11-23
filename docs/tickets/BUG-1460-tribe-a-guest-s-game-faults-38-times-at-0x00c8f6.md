@@ -13,7 +13,7 @@ branch:
 commits:
 tests: campaign_tribe_noclick (tools/tests/coop_campaign.py)
 signature: dc04aee5:0x00C8F6D3 read 0x0 (ecx=0), function 0xC8F6D0 called at 0xC286B1 with the result of 0xC230B0
-docs:
+docs: docs/re/tribe.md#tribe-makeway-null-tribe
 related: BUG-0505, BUG-0942, BUG-1091, BUG-1169
 ---
 
@@ -37,9 +37,34 @@ reached Civilization in the same session (summary: stages Creature > Tribe > Civ
 The stuck Tribe end is the known flake of this test (BUG-1091 / BUG-1169 class: "the host's click: no member selected
 (7 own)", villages 2 and 5 untouched at 750/750 and 1000/1000 for 4 raids; 9 of 14 failed on rel/main), not this fault.
 
+CORRECTION (2026-11-23, static RE with objdump on the GOG 2024 exe, docs/re/tribe.md#tribe-makeway-null-tribe): the
+symbol names in the log line and the stack scan were the nearest ones only. 0xC230B0 is `Citizen_GetTribe` (verified:
+`mov eax,[ecx+0x1014]; ret`, the citizen's owner tribe, null for a citizen out of its tribe); 0xC8F6D0 is
+`cTribe_PostStimulusNear` (verified, thiscall(tribe, pos, radius, stimLo, stimHi, value, sender), ret 0x18: posts a
+behaviour stimulus to the tribe's members near pos; faults on its 2nd instruction with a null tribe); the call at
+0xC286B1 is in `Creature_AskGroupToMakeWay` 0xC28530 (likely), called only by `GroupLocomotion_Step` 0xC2D380 (likely,
+LocomotionStrategy vt +0xC), from the physics locomotion step 0xC43300 for every moving creature: a citizen that walks,
+is blocked on its path and has +0x1014 = 0 makes it dereference the null tribe. Not a raid order, a tool or the epic
+(the SetEpicFlag / ctor frames were stale stack entries).
+Mod path (code verified; that it made this fault is inferred, the faulting citizen 0x29444530 is not in the log):
+tribe_mirrors.cpp guest_tick, the Death branch: a dead member's mirror is taken out of its tribe (`detach_body`,
+tribe.cpp, +0x1014 = null) and then still driven by `mirror_step` every tick (drive::step issues game::move_to when its
+plan says walk; the last MoveTo is never ended, the mirror's behaviour tree is skipped on the guest): a walking,
+tribe-less body that gets blocked runs into this. Log: `bodies_detached` 72 -> 77 between 03:09:15 and 03:09:55 while
+`removed` stayed 75 (five detached bodies alive at the fault), 2 s after the raid's "pincer attack" (members dying in a
+crowd); no SetTribe(null) of the game itself on that guest. The branch is from 0.7.15 or older (b7e3706c, before
+v0.7.15): not a 0.7.16 regression.
+
 ## Fix
-None yet. Next: name 0xC230B0 and 0xC8F6D0 (Ghidra), see which of the mod's tribe paths (raid / pincer, epic, member
-tools of 0.7.16's own species) gives the lookup a key it does not know.
+Proposed for 0.7.16.1 (branch fix/w65-mod; not made yet):
+(a) `coop.fix tribe.body_still` (tribe_mirrors.cpp, the Death branch): after detach_body a body is stopped once
+(game::stop, then put back where its host body lies: StopMovement can put a creature back up to 3 m) and no longer
+driven by mirror_step (no MoveTo for a body).
+(b) `coop.fix tribe.makeway_null`: a hook on `SporeCoop::Creature_AskGroupToMakeWay` (cdecl(ctx, creature), plain
+ret) that returns false for a citizen without a tribe (+0x1014 null) and calls the original otherwise: stops the whole
+class on host and guest. (b) is the guaranteed stop of the fault, (a) the behaviour fix.
+Test idea: a guest's raid with deaths in a crowd, the detached bodies' moves logged (spatial 0xC42020 +0x5C, +0x330
+bits); with both switches off the fault must come back (not deterministic: the body must be blocked).
 
 ## Verification
 Open.
