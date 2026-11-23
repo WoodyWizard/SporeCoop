@@ -1790,6 +1790,10 @@ ban reaches the galaxy's players without a mod release.
   player's BANS names its crc). An older mod never asks and gets nothing; an older server ignores BANS.
 * ✔ In game (TITAN): switch off nothing moved; on, the banned creation moved at once and the kept copy applied at the
   next start; a banned player's creature was not stored. Not run: a refused get, the MSI.
+* ✔ Cross-PC (2026-11-23, TITAN's galaxy server, a game on the MSI): switch off, a creation named in the server's
+  banned.txt stayed in the MSI game's library; on, the game got the list (`server_bans=1/1/23F8A5AD`, the server's
+  crc) and moved the creation into LineagesCache\banned at once. A second game without it: `1/0`. Not run: a
+  refused get.
 
 ## Starting the Space stage from a planet's Civ era (5R A, 2026-11-23, feat/lineages-alpha)
 <a id="server-space-start"></a>
@@ -1820,6 +1824,14 @@ creation store). It goes when the ship leaves the planet. Look-only, kept out of
 * ✔ In game (TITAN): Abber's Space ship over Abber's Civ city (images/bug9349_ship_in_civ.png); switch off: no ship
   (images/bug9349_off_on.png). Not run: the ship moving, Creature or Tribe games, a name tag, the MSI.
 * BUG-9348: the Space era is stored once the ship is in the solar system (Spore saves Space only there); seen.
+* ✔ Cross-PC (2026-11-23, TITAN's galaxy server, two games on the MSI): the Civ game got the Space player's ship
+  design from the creation store (`got 1`) and drew it at the tree line with its tag "MSISpace / Space era"
+  (the shown name: no -NoShare- test tag; images/bug9349_msi_tag.png, images/bug9349_msi_tag_zoom.png); the
+  Space game's takeoff removed it (`live=0`) and its galaxy save stored Abber|Space (3248 KB). Still not run: the
+  ship moving, Creature or Tribe viewers.
+* Seen on the way: a player new to Space who joins a Space era's host gets the host's Civilization victory to
+  design a ship first ("Loading your Civilization victory so you can design your spacecraft"): the designed
+  guest path, not a bug. BUG-9350 (open): Spore's Choose A Stage ring can stay on screen into the planet.
 * The ship flies at most 60 m over the ground in the other eras (its player's zoom altitude, 775 m from the centre at
   Abber, put it out of a Civ camera's view) and wears a name tag with "Space era" (images/bug9349_tag.png).
 

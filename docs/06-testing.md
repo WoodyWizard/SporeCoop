@@ -9378,3 +9378,20 @@ BUG-9326 (docs/re/tribe.md#tribe-partner-pens). Follows #testing-tribe-final-qa 
   planet (then a galaxy save works). The scratchpad flow script of 2026-11-23 drove the whole start with real clicks
   at 1024x768 (globe 590,490; domination OK 683,311; Advance hint OK 683,343; Advance 985,750; History OK 683,471 and
   check 1000,745; editor check 1000,745; lift-off check 993,736; captain dice 707,399 and OK 728,472).
+
+## Cross-PC with TITAN locked: both games on the MSI (2026-11-23, feat/lineages-alpha)
+<a id="testing-msi-two-games-titan-locked"></a>
+
+* While TITAN's Windows session is locked (LogonUI running) a QA game there stops at Spore's own alert "Could not start
+  the renderer. Please ensure your display is set to 32 bit color. [1001]" (sporekit's watchdog logs the dialog); the
+  console never answers. Not a mod crash. Run the games on the MSI then; the galaxy server stays on TITAN (the games
+  reach it over Tailscale, so the network part is still cross-PC).
+* A TITAN test profile can be copied to the MSI: pack %APPDATA%\SporeKit-<profile> (DuoQASpaceStart: 240 MB packed),
+  scp it, unpack it as SporeKit-<new name> (here MSISpaceStart), then `msi.ps1 start -Instance 2 -Profile MSISpaceStart
+  -Resolution 1024x768` (qa target msi2). It keeps the profile's galaxy identity, so the server knows it.
+* `coop.gmenu play <planet>` on a game that is still a session guest (after `coop.menu`) rejoins its host;
+  `coop.galaxy leave` first, then `coop.galaxy enter "<planet>|<Era>"` enters one era directly.
+* The Civ camera: the arrow keys turn it (down tilts toward the horizon); `coop.visit status` prints the ship's screen
+  position, so turn until it is inside the window.
+* SSH to the MSI dropped several times ("Connection reset", once a timeout) while Tailscale pinged fine (direct, 3 ms);
+  a retry worked each time. Existing tunnels on 47850 / 47851 kept working.

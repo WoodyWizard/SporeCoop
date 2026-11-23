@@ -55,3 +55,5 @@ no-fail-run: a feature, Windows QA by hand; the runs above are the switch off an
 - 2026-11-23: opened.
 - 2026-11-23: built on feat/lineages-alpha and seen in game (a Space ship over Abber in its Civ era).
 - 2026-11-23: a name tag over the ship; the ship flies at most 60 m over the ground in the other eras.
+- 2026-11-23: cross-PC run (two games on the MSI, TITAN's server): the ship and its tag seen in a Civ game, the
+  shown name without -NoShare- seen (images/bug9349_msi_tag.png); gone after the takeoff.

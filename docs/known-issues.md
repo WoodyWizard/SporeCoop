@@ -4021,3 +4021,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   with two villagers selected; watch the members' `bt=` in host `coop.tribe` (the egg node 05B9B7F5 never shows).
 * BUG-9326 (cosmetic). A pen made by the catch-up for a village that already stood (a loaded world) can stand on
   plants; at the founding the site was clear.
+* BUG-9350. Spore's Choose A Stage ring (the galaxy's stage choice) stays drawn over the planet when a join or
+  load starts while it is open. Reproduce: a guest of a planet's host goes back to the galaxy menu (`coop.menu`),
+  presses Play on that planet (the ring opens, then the rejoin card), then enters an era of it from the menu. Its X
+  closes it.

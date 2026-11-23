@@ -57,3 +57,4 @@ no-fail-run: a feature, Windows QA by hand; the runs above are the switch off an
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: built on feat/lineages-alpha and seen in game (switch off: nothing moved; on: moved at once and at the next start).
+- 2026-11-23: cross-PC run (the MSI): switch off nothing moved; on, the list arrived and the creation moved.
