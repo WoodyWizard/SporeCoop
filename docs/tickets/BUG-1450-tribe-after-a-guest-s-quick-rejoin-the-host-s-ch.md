@@ -7,14 +7,14 @@ stage: Tribe
 reported: 2026-11-23
 source: lab
 role: 
-versions: 0.7.16
+versions: 0.7.16, 0.7.16.1
 fixed_in:
-branch: 
+branch: fix/w67-chief
 commits:
-tests: tools/tests/coop_tribe_looks.py (tribe_held_item: "the host's chief #N is still the host's member"), tribe_owners_session
+tests: tribe_owners_rejoin, tribe_owners_rejoin_back (coop_tribe_owners_rejoin.py); twins tribe_owners_rejoin_off, tribe_owners_rejoin_back_off; tribe_held_item (coop_tribe_looks.py: "the host's chief #N is still the host's member"); tests/tribe_tests.cpp balance_leader
 signature:
-docs:
-related: BUG-1154, BUG-1449
+docs: docs/re/tribe.md#tribe-balance-leader
+related: BUG-1154, BUG-1429, BUG-1449
 ---
 
 ## Report
@@ -24,20 +24,34 @@ chief_rows "no chief" (no owner=0 leader=1 row on the host). At the start #1 was
 was still the host's after the rejoin. Breaks BUG-1154 ("members keep their owners across joins and leaves").
 
 ## Root cause
-Inferred from the code, not yet seen in a log line (tribe_host.cpp): `member_claims_tick` runs before the resplit;
-when its 2 s refresh lands in the host tick in which the guest is back, `tpresent(guest key) >= 0` skips the "keep"
-branch and the guest's claims are rewritten to the interim owner (the host); the resplit then gives the guest nothing
-and `member_balance` (tribe_logic::balance: the first plain member in member order, the chief included) hands it #1.
-About 0.12 per rejoin (the refresh window), consistent with a first sighting. Code unchanged since 0.7.15.5: not a
-0.7.16 regression.
+Confirmed from the code; the log has no claims line (0.7.16 logs none) but fits only this path. In rel/0.7.16
+(5376d388) `member_claims_tick` ran its 2 s follow first in `host_tick`, before the resplit. In the tick of the
+guest's join (the follow due about 1 tick in 17) it saw the guest's key present while the host still held its members
+(owner 0 since the leave) and rewrote their claims to "host"; the resplit gave every member to the host, and
+`member_balance` (tribe_logic::balance: a player with no member gets total / players from the richest, plain members
+first in member order) gave the guest 3 of 7, the leader #1 first (it is first in member order; a dealing in turns
+would have given it to the host, players[0], so only the balance can have moved it). As the guest's lowest-id adult
+it became "Bob's chief". Runs 2 and 3 missed the window. Two faults: (1) the follow before the resplit, which TR-1
+(BUG-1429, `tribe.claims_order`) already fixed on rel/0.7.16.1 without a lab test of this join case; (2) the balance
+moves the leader at all, which also happens with (1) fixed whenever a player with no member joins while the host is the
+giver (a guest that gave all its members away and rejoins, a third player in a fully claimed session, TR-6's share
+after a reload).
 
 ## Fix
-Not in 0.7.16 (owner rule: mod bugs that are not regressions wait): planned for 0.7.16.1. Ideas: the claims refresh
-after the resplit (or not in the tick of a join), and balance never moves the leader.
+`tribe_logic::balance` takes a `fixed(m)` predicate: those members never move, a giver with only fixed members above
+the share gives no more; the host passes `is_leader` (Citizen_IsLeader). Switch `coop.fix tribe.balance_leader off`: as
+0.7.16 (any member, the leader first). The join case itself is TR-1's order fix (`tribe.claims_order`). Test hook
+`coop.tribe claims_at_join 1`: the follow is due in the tick of the next join (the window hit every time); `coop.status`
+claims line `at_join=<armed>/<fired>`. Unit test: tests/tribe_tests.cpp balance_leader (with the 4-argument form, the
+old behaviour, the leader goes first). Lab: tribe_owners_rejoin (the forced window: every member keeps its owner, the
+leader the host's on both games), tribe_owners_rejoin_back (the guest gives all its members to the host and rejoins:
+its share, never the leader); twins tribe_owners_rejoin_off (SPORE_FIX_OFF=tribe.claims_order,tribe.balance_leader,
+the 0.7.16 code) and tribe_owners_rejoin_back_off (SPORE_FIX_OFF=tribe.balance_leader). Not changed: the dealing in
+turns (no claims) could give the leader to a guest if it were not first in member order (not seen).
 
 ## Verification
-Open. The test: tribe_held_item's new check "the host's chief #N is still the host's member" (BUG-1449) fails when it
-happens.
+VERIFICATION_PLACEHOLDER
 
 ## History
 - 2026-11-23: opened (fix/w65-night triage); for 0.7.16.1.
+- 2026-11-23: cause confirmed from the code; fixed on fix/w67-chief (tribe.balance_leader, the lab test of TR-1's join window).
