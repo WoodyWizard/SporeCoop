@@ -1,17 +1,17 @@
 ---
 id: BUG-9338
 title: Galaxy: our stage choice box opens on top of Spore's stage loading card after a real Play
-status: open
+status: fixed
 kind: bug
 stage: all
 reported: 2026-11-22
 source: found while testing BUG-9337 (2026-11-22)
 role: 
 versions: 0.7.14.1-lineages69-dev (alpha)
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: feat/lineages-alpha
+commits: 28034591
+tests: tools/qa_win (manual, 2026-11-22): TITAN, QA 9, real star + Play on Samuth with galaxy.native_stage_choice off; coop.fix galaxy.choice_box_no_card off/on
 signature:
 docs: docs/12-server-and-players.md#server-native-stage-choice
 related: BUG-9335, BUG-9337
@@ -29,12 +29,20 @@ Inferred: the panel's Play switches the menu to its Play state (0xC), which show
 went through `coop.gmenu play`, which never entered state 0xC.)
 
 ## Fix
-Not fixed. With BUG-9337 on (the default) Play goes to Spore's own Choose A Stage screen and never reaches this path;
-the box is only the fallback when that screen cannot open (switch off, symbols missing). A fix would open the box
-instead of switching to state 0xC (the same place BUG-9337 switches to state 4).
+galaxy_menu.cpp h_SetState: when Spore's Choose A Stage screen is not used (its switch off, or it cannot open) and the
+planet wants a stage choice, Play's switch to the Play state (0xC) becomes a switch to the planets (state 2, as the
+screen's Back) and our box opens there, so no stage loading card comes up. Switch `coop.fix galaxy.choice_box_no_card
+off`: as before (the box from the Play step, over the card).
 
 ## Verification
-Not fixed.
+TITAN, the rebuilt test galaxy, QA 9 (every stage reached), Samuth forgotten, `galaxy.native_stage_choice off`, a real
+click on Samuth's star and on Play:
+- PASS (on): "Choose a stage" (Creature, Tribe (new)) over the stars, no card (images/bug9338_box_over_planets.png); the
+  view stays zoomed on the planet until Esc, which zooms out with the box still there; a press works from either.
+- FAIL (off): the "Creature Stage" loading card with the box on top (images/bug9338_off.png); its Creature press entered
+  Samuth (Creature).
+no-fail-run: Windows QA by hand; the runs above are the switch on and off.
 
 ## History
 - 2026-11-22: opened (found while testing BUG-9337).
+- 2026-11-22: fixed on feat/lineages-alpha (Play goes back to the planets and the box opens there).

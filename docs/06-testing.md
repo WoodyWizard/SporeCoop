@@ -9347,3 +9347,19 @@ BUG-9326 (docs/re/tribe.md#tribe-partner-pens). Follows #testing-tribe-final-qa 
   on (library.no_share). A Lineages Cache test that needs two QA games to share turns it off on both:
   `coop.fix core.test_noshare off`, then leave and host / join again (the name is taken at host and join).
 * Check: `coop.library` on both games: `incoming` and `imported` do not grow after the join with the switch on.
+
+## The test galaxy on TITAN, rebuilt (2026-11-22, feat/lineages-alpha)
+<a id="testing-test-galaxy"></a>
+
+* 2026-11-22: out/galaxy (every stored test world: worlds, worlds_6eb, worlds_6ga, worlds_9335, worlds_9336, worlds_9337
+  and the run copies, and the server's log) was deleted by a quoting slip in a test helper (a bash string passed to
+  PowerShell lost its variable, and `Remove-Item -Recurse -Force out\galaxy\<name>` became `out\galaxy`). No copy existed.
+* Rebuilt base: out/galaxy_fixtures/worlds_base (kept outside out/galaxy; tests copy it to a new folder under out/galaxy
+  and never delete the base): Samuth (Creature, DuoQACreatureHost Game0), Abber (Civ, DuoQACivHost Game0), Clyth (Tribe,
+  DuoQAClythHost Game0). Seeding a planet: start the server on the folder, launch the profile's QA game, `coop.load
+  <Game> <planet>`, wait in the stage, `coop.galaxy connect 127.0.0.1:47900`, `coop.galaxy enter <planet>`,
+  `coop.galaxy save`, `coop.galaxy leave`, quit. A planet name with a space ("Jiff Peanutbutter") is split by the
+  console: not seeded.
+* Not rebuilt yet: Abber's Creature era (the BUG-9341 setup), Cellfour (Cell), Jiff Peanutbutter (Tribe).
+* Rule: no recursive delete of a path built from a variable in a shell string; make a new uniquely named folder for a run.
+
