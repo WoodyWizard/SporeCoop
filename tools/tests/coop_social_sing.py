@@ -233,7 +233,11 @@ def run(host, guest, ck, gid):
     elif not sang:
         ck.faults(host=host, guest=guest)
         return ck.inconclusive(f'the {sname}\'s creature never sang in 40 s (the social game did not start)')
-    print(f'  (the {oname}\'s game shows the {sname} singing: {bool(social & set(sung.get("other_puppet_of_singer", [])))}; BUG-1244)')
+    if sang:
+        # BUG-1244 (fixed by BUG-1253, creature.avatar_bhv_anims): the other game shows the singer's song on its puppet
+        # (the game's own animation on the puppet, sampled with coop.npc cur); a print only until 0.7.16
+        shown = sorted(social & set(sung.get('other_puppet_of_singer', [])))
+        ck(bool(shown), f"the {oname}'s game shows the {sname} singing on its creature ({shown})")
     ck(not (social & set(sung.get('other_avatar', []))),
        f"the {oname}'s own creature does not sing with the {sname} ({sorted(social & set(sung.get('other_avatar', [])))})")
     ck(not (social & set(sung.get('singer_puppet_of_other', []))),
