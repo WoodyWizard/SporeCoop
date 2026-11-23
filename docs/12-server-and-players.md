@@ -1772,3 +1772,22 @@ era is Tribe offers its Civ stage as new to a player who reached Civ in their ow
   images/bug9343_off.png. Not run: a party of several, the MSI. Civ -> Space is not offered (the next step).
 * How the Tribe end works: docs/re/tribe.md#tribe-advance-button.
 
+## The galaxy server's creation ban list (8D A, 2026-11-23, feat/lineages-alpha)
+<a id="server-ban-list"></a>
+
+BUG-9345, switch `galaxy.server_bans`. Decision 8D A (owner 2026-11-23): the server sends a creation ban list, so a new
+ban reaches the galaxy's players without a mod release.
+* The server's operator writes `banned.txt` in the server's worlds folder, with the lines of the mod's
+  data/lineages/banned.txt: `source <identity>`, `creation <sha256>`, `keep <sha256>`. The server reads it at start
+  and again within 5 s of a change; connected players get the new list at once.
+* `player <galaxy identity, 16 hex>` lines are the server's own (not sent): that player's creations are not kept by
+  the server's creation store (#server-era-visitors-built) and none already kept are handed out (the files stay).
+* The mod keeps the last galaxy server's list (LineagesCache\galaxy_banned.txt) and applies it at once and at each
+  game start beside the shipped list: the same move into LineagesCache\banned (never deleted), the player's own
+  creations never touched. Live Lineages without a galaxy server keeps only the shipped list.
+* A ban the server takes back stays applied until the next start (a moved creation is never moved back).
+* Protocol: net/galaxy.h BANS (player: the crc of its kept list) and BANSPART (server: the list in pieces until the
+  player's BANS names its crc). An older mod never asks and gets nothing; an older server ignores BANS.
+* ✔ In game (TITAN): switch off nothing moved; on, the banned creation moved at once and the kept copy applied at the
+  next start; a banned player's creature was not stored. Not run: a refused get, the MSI.
+

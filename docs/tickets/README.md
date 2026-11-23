@@ -1458,3 +1458,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9342](BUG-9342-social-menu-a-galaxy-player-s-place-shows-the-er.md) | fixed | bug | menu | 2026-11-22 | unreleased | Social Menu: a galaxy player's place shows the era key (Abber/Creature) instead of Abber - Creature |
 | [BUG-9343](BUG-9343-galaxy-a-player-new-to-a-planet-starts-its-civ-s.md) | fixed | feature | tribe | 2026-11-22 | unreleased | Galaxy: a player new to a planet starts its Civ stage when the planet has only Tribe (a new era) |
 | [BUG-9344](BUG-9344-notifications-a-long-message-box-runs-past-the-s.md) | open | bug | menu | 2026-11-22 |  | Notifications: a long message box runs past the screen's right edge at 1024x768 |
+| [BUG-9345](BUG-9345-galaxy-the-server-s-creation-ban-list-reaches-pl.md) | fixed | feature | menu | 2026-11-23 | unreleased | Galaxy: the server's creation ban list reaches players when they connect (8D A) |
