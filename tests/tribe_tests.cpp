@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "tribe_logic.h"
+#include "drive_plan.h"
 #include "bone_rules.h"
 #include "tribe_editors.h"
 #include "wire/tribe_anim.h"
@@ -272,6 +273,101 @@ static void body_rules()
     CHECK(!body_still(fix, false, true) && !body_still(fix, true, false));
 }
 
+// BUG-1235 / item 12 of docs/plan-0.7.17.md (drive.lead_cap): the frame a walked member mirror draws = walk_place's
+// placing step (drive::walk_place_max_step) + the game's walk of the next frame at walk_sp. The lab's raw-path frames
+// (tribe_walk_player 20261123-023643 guest's view of member 8: 9 m/s, 2.74 m behind, the game walking 9 m/s, 32 ms;
+// 20261123-071312 member 1: a 12 m/s run, 1.40 m behind, the game at 7.74 m/s, 31 ms); the test's jump limit
+// 3 x 9 m/s x dt (the members' p95 speed 9). FAILS with --nofix.
+static float raw_frame(float sp, float err, float gv, float dt, bool fix)
+{
+    const float ls = mirror_lead_speed(true, true, -1.f, sp, false, 1.f, true, err, fix);
+    return drive::walk_place_max_step(sp, sp, gv, err, dt, 3.f, true, true, ls, false, fix) + sp * dt;
+}
+static void lead_cap()
+{
+    printf("member mirror frame bound: the raw lead's catch-up (BUG-1235, drive.lead_cap)\n");
+    const bool fix = !g_nofix;
+    CHECK(raw_frame(9.f, 2.74f, 9.15f, 0.032f, fix) < 3.f * 9.f * 0.032f);   // 0.64 m (0.93 m before)
+    CHECK(raw_frame(12.f, 1.40f, 7.74f, 0.031f, fix) < 3.f * 9.f * 0.031f);  // 0.68 m (0.92 m before)
+    CHECK(raw_frame(9.f, 2.74f, 9.15f, 0.032f, false) > 3.f * 9.f * 0.032f); // the 0.7.16.1 rule: the lab's jump
+    // the hard bound: never more than 2 x the body's speed + 3 m/s in a frame, whatever the error and the game's walk
+    for (float err : {0.5f, 1.5f, 3.f, 9.f})
+        for (float gv : {0.f, 4.f, 9.f})
+            CHECK(!fix || raw_frame(9.f, err, gv, 0.032f, true) <= (2.f * 9.f + 3.f) * 0.032f + 1e-4f);
+    // a big error (BUG-0674, 6-9 m after a switch) still closes fast: the frame at the body's speed + 12 m/s
+    CHECK(!fix || std::fabs(raw_frame(9.f, 9.f, 9.f, 0.032f, true) - 21.f * 0.032f) < 1e-3f);
+    // the smoothed path (catch_prop off) with BUG-1451's lag bound: unchanged over kSlowCapErr (body_trail_tribe_player
+    // 20261122-194210 t1: 3.3 m behind, the host at 2 m/s, the aim at 6 m/s): the placing's full (sp + 3) step
+    {
+        const float sp = 6.f, dt = 0.033f;
+        const float ls = mirror_lead_speed(true, true, 2.f, sp, false, 1.f, true, 3.3f, fix);
+        CHECK(std::fabs(drive::walk_place_max_step(sp, sp, sp, 3.3f, dt, 3.f, false, true, ls, false, fix) -
+                        (sp + 3.f) * dt) < 1e-4f);
+    }
+    // slow phases with a small error (the stop-and-go half: the guest's member 9 at 1.6 m/s, 0.46 m behind, drawn
+    // 4.8-5.0 m/s in 20261123-023643): whether the game's next walk comes (walk_sp) or not (0), the frame stays within the
+    // test's uneven line (the target's step +- half of it + 1 m/s)
+    for (float sp : {1.6f, 3.2f, 4.5f})
+        for (float next : {0.f, sp}) {
+            const float dt = 0.033f, ts = sp * dt;
+            const float ls = mirror_lead_speed(true, true, sp, sp, false, 1.f, true, 0.46f, fix);
+            const float drawn = drive::walk_place_max_step(sp, sp, sp * 0.8f, 0.46f, dt, 3.f, false, true, ls, false, fix) +
+                                next * dt;
+            CHECK(!fix || std::fabs(drawn - ts) <= 0.5f * ts + 1.f * dt);
+        }
+    // the lab's frame itself, the game walking 1.6 m/s next frame: 1.5 x 1.6 + 0.9 = 3.3 m/s (4.6 m/s placing + walk before)
+    CHECK(drive::walk_place_max_step(1.6f, 1.6f, 1.28f, 0.46f, 0.033f, 3.f, false, true, 1.6f, false, fix) + 1.6f * 0.033f <=
+          3.3f * 0.033f + 1e-4f);
+    // no bound asked (lead_speed 0: the NPC proxies, Creature and Civ): the old (sp + catch_up) step, switch on or off
+    CHECK(std::fabs(drive::walk_place_max_step(4.f, 4.f, 4.f, 2.f, 0.1, 3.f, true, true, 0.f, false, true) -
+                    (4.f + 7.f) * 0.1f) < 1e-4f); // catch_up min(2 / 0.25, 4 + 3)
+    // the switch off: the raw lead without a late catch-up has no bound (0.7.16.1)
+    CHECK(mirror_lead_speed(true, true, -1.f, 9.f, false, 1.f, true, 1.f, false) == 0.f);
+    CHECK(!fix || mirror_lead_speed(true, true, -1.f, 9.f, false, 1.f, true, 1.f, true) == 9.f);
+}
+
+// 0.7.17 WP-B1, the audit's TR items and the save's taken members: each rule with its switch on (the lab's case) and off
+// (0.7.16.1); with `--nofix` the first check of each FAILS
+static void audit_tr()
+{
+    printf("audit TR-7, 8, 9, 11 and the save's taken members (BUG-1493..1496, BUG-1522)\n");
+    const bool fix = !g_nofix;
+    // TR-8: a picked-empty tree (+0x48 = 0) of a big tree (+0x4C = 0x1F) is no gather target
+    CHECK(!tree_has_fruit(fix, 0, 0x1F));        // (FAILS with --nofix)
+    CHECK(tree_has_fruit(fix, 0x04, 0x1F));      // fruit left
+    CHECK(tree_has_fruit(false, 0, 0x07));       // the 0.7.16.1 read: every tree passes
+    CHECK(tree_has_fruit(true, 0x01, 0x07) && !tree_has_fruit(true, 0, 0));
+    // TR-7: the hold goes when the mirror is not placed from the host any more
+    CHECK(air_release(fix, true, true, false));  // the host away (FAILS with --nofix)
+    CHECK(air_release(fix, true, false, true) == fix); // no snapshot for 3 s
+    CHECK(!air_release(fix, true, false, false)); // placed from the host: the hold is the air list's
+    CHECK(!air_release(fix, false, true, true));  // no hold
+    CHECK(!air_release(false, true, true, true));
+    // TR-9: a guest in another world drops the host's music plays and its caption's going up, takes the stops and ends
+    CHECK(elsewhere_drops(fix, true, 20, true)); // the game-over caption up (FAILS with --nofix)
+    for (uint8_t k : {4, 5, 7})
+        CHECK(elsewhere_drops(fix, true, k, true) == fix);
+    CHECK(elsewhere_drops(fix, true, 21, true) == fix);
+    for (uint8_t k : {6, 8})
+        CHECK(!elsewhere_drops(fix, true, k, false)); // the stops pass
+    CHECK(!elsewhere_drops(fix, true, 20, false) && !elsewhere_drops(fix, true, 21, false)); // a wait's end passes
+    for (uint8_t k : {2, 3, 4, 11, 16, 20})
+        CHECK(!elsewhere_drops(fix, false, k, true)); // in the host's world: every kind
+    CHECK(!elsewhere_drops(false, true, 20, true));
+    // TR-11: a theme the relay plays is stopped at the session's end in Tribe; a stop outside Tribe waits for the return
+    CHECK(theme_end(fix, true, true) == ThemeEnd::Stop); // (FAILS with --nofix)
+    CHECK(theme_end(fix, false, false) == (fix ? ThemeEnd::Later : ThemeEnd::Lost));
+    CHECK(theme_end(fix, true, false) == ThemeEnd::Stop);
+    CHECK(theme_end(false, true, true) == ThemeEnd::Lost && theme_end(false, false, false) == ThemeEnd::Lost);
+    // BUG-1522: a taken member goes back only alive, the same object, its tribe listed, not in the vector yet
+    CHECK(!took_goes_back(fix, true, false, false, false)); // removed during the save (FAILS with --nofix)
+    CHECK(took_goes_back(fix, true, true, true, false));
+    CHECK(took_goes_back(fix, true, true, false, false) == !fix); // another citizen at that address
+    CHECK(took_goes_back(fix, false, true, true, false) == !fix); // its tribe gone
+    CHECK(took_goes_back(fix, true, true, true, true) == !fix);   // already back (put back by the removal itself)
+    CHECK(took_goes_back(false, false, false, false, true));
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && !strcmp(argv[1], "--nofix");
@@ -284,7 +380,9 @@ int main(int argc, char** argv)
     anim_type();
     end_editors();
     smooth_bound();
+    lead_cap();
     body_rules();
+    audit_tr();
     if (g_fail) {
         printf("tribe_tests: %d FAILED\n", g_fail);
         return 1;

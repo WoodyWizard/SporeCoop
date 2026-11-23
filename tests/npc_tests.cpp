@@ -21,6 +21,7 @@
 #include "lifecycle.h"
 #include "call_guard.h"
 #include "off_main.h"
+#include "npc_logic.h"
 #include "npc_proxy_rules.h"
 #include "max_hp_rule.h"
 
@@ -834,6 +835,55 @@ static void test_share_fresh()
     CHECK(share_wait::merge(fresh, 2000, false, 1000) == Merge::None);
 }
 
+// BUG-1360 (npc.walk_gait): the stop clamp of BUG-0361 (px.walk_sp) belongs to one walk. The lab's case (npc_walk_novel
+// 20261120-133703, proxy #21): a reported slow walk (0.31 m/s) left walk_sp at 0.31; every later walk without a
+// reported speed (the test's `coop.npctrack novel 1`) was clamped to it: the game walked the proxy at 0.28-0.31 m/s
+// (the standing idle) while its path ran at 4 m/s. FAILS with --nofix.
+static void test_walk_gait()
+{
+    printf("walk gait: an unreported walk is not clamped to an earlier walk's speed (BUG-1360)\n");
+    using namespace npc_logic;
+    const bool fix = !g_nofix;
+    auto frame = [](bool kin, Vec3 vel, Vec3 path, float sp_ema, float walk_sp, bool f) {
+        WalkIn in;
+        in.kinematic = kin;
+        in.vel = vel;
+        in.path_v = path;
+        in.path_v_ema = path;
+        in.path_sp_ema = sp_ema;
+        in.walk_sp = walk_sp;
+        return walk_velocity(in, f);
+    };
+    // a slow reported walk: walk_sp 0.31
+    WalkOut a = frame(true, {0.31f, 0, 0}, {0.31f, 0, 0}, 0.31f, 0.f, fix);
+    CHECK(std::fabs(a.walk_sp - 0.31f) < 1e-4f);
+    // it stands (not walked, no speed), then an unreported walk at 4 m/s starts and goes on
+    WalkOut b = frame(false, {}, {}, 0.f, a.walk_sp, fix);
+    WalkOut c = frame(false, {}, {4.f, 0, 0}, 4.f, b.walk_sp, fix);
+    CHECK(std::fabs(speed(c.vel) - 4.f) < 0.01f); // the start: the path's velocity (both rules)
+    WalkOut d = frame(true, {}, {4.f, 0, 0}, 4.f, c.walk_sp, fix);
+    CHECK(std::fabs(speed(d.vel) - 4.f) < 0.01f); // 0.31 m/s without the fix (the lab's idle frames)
+    // the switch off is 0.7.16.1: the stale clamp
+    {
+        WalkOut d0 = frame(true, {}, {4.f, 0, 0}, 4.f, frame(false, {}, {4.f, 0, 0}, 4.f, 0.31f, false).walk_sp, false);
+        CHECK(std::fabs(speed(d0.vel) - 0.31f) < 0.01f);
+    }
+    // within one reported walk the stop clamp stays (BUG-0361): a 37 m/s path at the stop is held to the walk's 4 m/s
+    WalkOut e = frame(true, {}, {37.f, 0, 0}, 4.f, 4.f, fix);
+    CHECK(std::fabs(speed(e.vel) - 4.f) < 0.01f);
+    // an unreported walk's path jump (over 15 m/s) is no velocity (drive::path_velocity's rule); a 6 m/s path is
+    WalkOut f = frame(true, {}, {20.f, 0, 0}, 4.f, 0.f, fix);
+    CHECK(!fix || speed(f.vel) < 0.01f);
+    WalkOut g = frame(true, {}, {6.f, 0, 0}, 6.f, 0.f, fix);
+    CHECK(std::fabs(speed(g.vel) - 6.f) < 0.01f);
+    // a reported walk slower along its path: the walk at the path's speed (BUG-0361), walk_sp the reported one
+    WalkOut h = frame(true, {5.f, 0, 0}, {2.f, 0, 0}, 2.f, 0.f, fix);
+    CHECK(std::fabs(h.walk_sp - 5.f) < 0.01f && std::fabs(h.walk_speed - 2.2f) < 0.01f);
+    // standing still: no velocity, walk_sp forgotten with the fix only
+    WalkOut i = frame(false, {}, {}, 0.f, 3.f, fix);
+    CHECK(speed(i.vel) < 0.01f && (fix ? i.walk_sp == 0.f : i.walk_sp == 3.f));
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
@@ -857,6 +907,7 @@ int main(int argc, char** argv)
     test_proxy_rules();
     test_max_hp_null_species();
     test_share_fresh();
+    test_walk_gait();
     printf(g_fail ? "npc tests: %d FAILED\n" : "npc tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

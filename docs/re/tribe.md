@@ -4954,3 +4954,52 @@ the guest log of lab 20261123-023643 campaign_tribe_noclick (Bob, 03:09:42). Sta
   `mirror_step`; (b) a class guard `coop.fix tribe.makeway_null`: hook Creature_AskGroupToMakeWay 0xC28530 (cdecl,
   2 args, plain ret) and return false for a citizen whose +0x1014 is 0 (the vanilla path for any other kind already
   copes). (b) alone stops the fault for every tribe-less walking citizen, host or guest.
+
+## The raw lead's catch-up frames of a member mirror (2026-11-23, fix/w76-motion)
+<a id="tribe-raw-catch-frames"></a>
+
+BUG-1235 (item 12 of docs/plan-0.7.17.md). GOG 2024, the per-frame tracks of tribe_walk_player on rel/0.7.16 fd28f88f
+(lab 20261123-023643 lane 6, -071312 lane 7, -075458 lanes 4 / 5; out/laneN/track/tribe_walk_*_walks_*.json of the
+rel/0.7.16 tree).
+
+* ✔ (runtime, track) Every jump the test counted (0.85-0.93 m in one 31-33 ms frame, limit 3 x 9 m/s x dt) is a
+  catch-up frame while the game already walks the mirror at its full speed: member 8 at 7.89 s: 2.74 m behind, the game
+  at 9.15 m/s, the frame's own move 0.93 m = the game's walk 0.29 m + a placing of 0.64 m (20 m/s = 9 + 2.74 / 0.25);
+  member 1 at 34.43 s (a 12 m/s run, 1.40 m behind after a late walk start): walk 0.37 m + placing 0.54 m (17.6 m/s =
+  12 + 1.40 / 0.25). Both are walk_place's raw-lead budget (sp + catch_prop's catch-up) with no frame bound:
+  tribe_logic::mirror_lead_speed gave the raw lead a bound only while its late lead catches up, and that bound used
+  catch_prop's catch-up (2 x lead + catch_up - sp = sp + catch_up: no bound at all). Not the smoothed path
+  (tribe.smooth_bound holds that one to 2 x lead + 3 - sp: 0.47 m, not 0.54-0.64 m).
+* ✔ (runtime, track) The stop-and-go frames of the same runs (the guest's own members, uneven 20 % in 023643) are surges,
+  not stands: at 1.6-4.5 m/s targets the frame drew the target's speed + 3.0-3.3 m/s (member 9 at 37.9 s: 1.6 m/s
+  drawn 4.8-5.0 m/s with 0.35-0.55 m of error): walk_place's base catch-up of 3 m/s on top of the game's walk.
+* The fix (`drive.lead_cap`, drive_plan.h walk_place_max_step): the bound for every walked member mirror (the raw lead
+  without a catch-up at the body's speed), with the base catch-up; with catch_prop the game's walk counts in the
+  catch-up's budget (sp + catch_up in all); slow phases with an error under 1.5 m at most 1.5 x sp + 0.9 m/s.
+
+## Audit TR items of 0.7.17 and the save's taken members (2026-11-23, fix/w79-tribe)
+<a id="tribe-audit-wp-b1"></a>
+
+BUG-1492..1496 (audit TR-5, 7, 8, 9, 11; out/research/ext-audit-verify-cr-tr.md), BUG-1522. Code reading on rel/0.7.17
+4daf12d1, no lab run yet (the twins of docs/06-testing.md#testing-tribe-audit-wp-b1 are the proof).
+
+* (code) **The save window and a host removal** (BUG-1522, CIV-1's BUG-1416 in Tribe): save_start (inside the save's
+  first COMSerializer write) takes the mirrors the mod spawned (`g_ours_c`) and whole made tribes out of every tribe's
+  member (+0x340) and selectable (+0x354, citizen + 0xC0) vector; save_end runs on the next frame's savestrip::tick,
+  after that frame's network receive. A host state in that frame that no longer names a mirror calls remove_member:
+  with tribe.member_lifetime on (default) tribe_holding finds no tribe for it (it is in no vector) and the removal is
+  refused, the mirror only forgotten (BUG-0844's log line "is no member of a live tribe"); save_end then puts it back:
+  a member nobody mirrors. While the host still sends that member the next snapshot binds the orphan again
+  (pick_bind: the nearest unbound member within 6 m), so the visible harm needs a member the host really removed (a
+  death, a gift to another tribe, a raid's end): it then stands on the guest for good. With member_lifetime off the
+  removal is RemoveMember(c, destroy) and save_end writes a freed pointer back into both vectors. Mirrors bound from
+  the loaded world (not spawned) are never taken out, so a fresh fixture join takes nothing until the host makes members.
+* (code) **TR-5**: the CMD_CONQUER of an away conquest (BUG-0879) felled the hut with no cTribeToTribeMission for the
+  village; a save's village then counts nothing (#tribe-guest-mission, lab 20261113-072615). The fix makes the mission
+  with SetTargetTribe (wsync::goal_target) and fells the hut 0.5 s later; ? whether SetTargetTribe on a village that is
+  already conquered still lets the mission's update count it was not checked (the fix avoids the question).
+* (code) **TR-11**: TribeTheme_Stop on the guest's own theme manager is only called in Tribe; outside Tribe (an
+  editor) the manager (TribeStage +0x1C8 through cTribeUI_Get) is not touched by the mod, the stop waits for the
+  return. ? Whether a theme track loops until stopped (or ends by itself) is still not known.
+* (code) **TR-8**: confirms the 2026-11-13 CORRECTION in use: tribe_host.cpp fruit_instead was the last reader of
+  +0x48 as a u64.

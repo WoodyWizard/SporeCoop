@@ -110,6 +110,7 @@ struct Counters {
     uint32_t cities_founded = 0, cities_in = 0, cities_blocked = 0, cities_caught_up = 0;
     uint32_t roads_sent = 0, roads_in = 0, roads_added = 0, roads_failed = 0;
     uint32_t income_blocked = 0;
+    uint32_t world_cmds_dropped = 0; // host: BUG-1478 superweapon / city purchase / capture of a guest elsewhere
     uint32_t ai_spawns_blocked = 0;
     uint32_t credit_by[4] = {}; // host: captures credited by command, hit, siege, nearest vehicle
     uint32_t away_captures_sent = 0;
@@ -135,6 +136,7 @@ struct Counters {
     uint32_t save_stripped = 0;
     unsigned veh_design_checked = 0, veh_design_fallback = 0;
     unsigned bound_redesigned = 0;
+    unsigned wait_design = 0, wait_design_spared = 0; // BUG-1481: candidates waiting for the design answer, spared
     unsigned bld_rekeys = 0, bld_pending = 0, bld_restored = 0;
     uint32_t founds_outside = 0; // BUG-0319 diagnostics: city foundings received outside the Civ mode
     uint32_t space_held_built = 0, space_relayed = 0, space_relay_in = 0;
@@ -396,6 +398,7 @@ extern std::unordered_set<void*> g_joint_told;
 extern bool g_fix_specialty_buyer;
 extern std::deque<SpecialtyAsk> g_spec_queue;
 extern int g_spec_open;
+extern void* g_spec_took_at; // BUG-1479 (tests)
 extern std::unordered_map<void*, Boost> g_boost;
 extern std::unordered_map<void*, double> g_alarm_at;
 extern int g_sw_last_req;
@@ -433,6 +436,9 @@ bool is_guest();
 bool is_host();
 void kill_local(void* v);
 bool local_play();
+bool guest_holds();                // BUG-1478 (CIV-5): a guest in the host's Civ world (civlogic::guest_holds)
+extern bool g_local_play_gate_fix; // civ.local_play_gate
+extern bool g_income_cause_fix;    // civ.income_cause (BUG-1236)
 void* local_vehicle(uint16_t id);
 bool movie_playing();
 void* nm();

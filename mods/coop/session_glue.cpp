@@ -11,9 +11,11 @@
 #define COOP_VERSION SC_VER_STR
 #endif
 #include "lifecycle.h"
+#include "civ_wallet.h"
 #include "coop_state.h"
 #include "store.h"
 #include "species_line.h"
+#include "own_progress.h"
 #include "history.h"
 #include "designs.h"
 #include "net/compat.h"
@@ -404,7 +406,12 @@ void copy_notice_tick()
         return;
     told = key;
     std::string text;
-    if (!stage)
+    std::string cs, ch, cp;
+    if (!stage && world::copy_old_planets() == 0) // BUG-1434 (0.7.17): a share of one planet, no old games in it
+        text = "This galaxy (" + slot + ") is your copy of " + host + "'s world: " + planet + " is the world you played together" +
+               (world::last_coop_world(cs, ch, cp) ? " (Continue in the co-op window loads it); " : "; ") + host +
+               "'s own save is on " + host + "'s PC";
+    else if (!stage)
         text = "This galaxy (" + slot + ") is your copy of " + host + "'s world, made for the planet " + planet +
                ". Its other planets are " + host + "'s older games; " + host + "'s own save is on " + host + "'s PC";
     else if (cur == planet)
@@ -821,6 +828,7 @@ void setup_callbacks()
         support::on_player_join(p);
         settings::on_player_join(p.id); // F3: the host's session settings first
         store::on_player_join(p.id);    // E1: a stored name under a new key: the host is told
+        own_progress::on_player_join(p.id); // BUG-1469: an older mod is not let in while own progress is played
         pfind::on_player_join(p.id);    // F2: the host gives the newcomer a colour, everybody gets the table
         shared::on_player_join(g_sess.role());
         g_world_announced = 0; // BUG-0933: the newcomer's WELCOME may have named no world (the host in an editor)
@@ -964,6 +972,10 @@ void setup_callbacks()
                 tail = dna_own::Tail::read(r);
             } else
                 dna_pace_heard(1);
+            if (own_progress::active()) { // BUG-1469: our DNA and bar are our own (a host total is the host's)
+                g_own_totals_ignored++;
+                return;
+            }
             if (r.ok() && g_solo_await > 0) { // BUG-0829
                 bool paid = false;
                 for (auto& p : parts)
@@ -1016,6 +1028,10 @@ void setup_callbacks()
         }
         case net::Route::DnaAdd: {
             float d = r.f32();
+            if (own_progress::active()) { // BUG-1469: a guest's DNA is its own (a stray forward is not the party's)
+                g_own_totals_ignored++;
+                return;
+            }
             auto add = dna_route::host_add(game::avatar() != nullptr, g_away_dna_fix);
             if (r.ok() && d > 0 && d < 10000 && add == dna_route::Add::Pay) {
                 dna_host_gain({dna_ledger::Cause::Earned, from, d}, game::dna());
@@ -1222,12 +1238,20 @@ void setup_callbacks()
             civ::on_message(type, from, r);
             return;
         }
+        case net::Route::CivWallet: { // BUG-1468: every player's own Civ money (civ.own_money)
+            civ_wallet::on_message(from, r);
+            return;
+        }
         case net::Route::Creation: {
             creations::on_message(type, from, r);
             return;
         }
         case net::Route::SpeciesLine: { // WP-0 (BUG-1270): the species line
             species::on_message(type, from, r);
+            return;
+        }
+        case net::Route::Progress: { // WP-P1 / P2 of 0.7.17 (BUG-1469): own progress
+            own_progress::on_message(from, r);
             return;
         }
         case net::Route::History: // WP-H1 (BUG-1470): every player's own stage history
@@ -1292,6 +1316,7 @@ void setup_callbacks()
         shared::on_player_leave(id);
         creations::on_player_leave(id); // BUG-0076: the next player of this id is not shown as this one
         npc::on_player_leave(id);       // BUG-0125
+        own_progress::on_player_leave(id); // BUG-1469: its live values go (its record stays, by key)
         views::forget(id);              // BUG-0280
         pfind::on_player_leave(id);     // F2: its colour is free again
         if (g_player_forget_fix)

@@ -500,11 +500,14 @@ class Campaign:
                              f'in {hst} ({", ".join(detail)})', [host, self.byname(name)])
             # shared food / money
             hr = cl.res_of(host.call('coop.res'))
+            # BUG-1468: with civ.own_money every player's Civ money is its own (coop.wallet), not one shared total
+            own_money = hst == 'civ' and 'setting=on' in (host.call('coop.wallet') or '')
             bad = []
             for g in self.guests:
                 if g in alive and g.pid in tog:
                     for k, hv, gv in cl.res_mismatch(hr, cl.res_of(g.call('coop.res'))):
-                        bad.append(f'{g.name}:{k}')
+                        if not (own_money and k == 'money'):
+                            bad.append(f'{g.name}:{k}')
             for k in self.persist['shared'].update(bad):
                 name, what = k.split(':')
                 self.finding('shared', f'{hst}:{k}', f'{name}: shared {what} differs from the host\'s in {hst}',
@@ -1051,6 +1054,7 @@ class Campaign:
         state = {'n': 0, 'last': 0.0}
         reached = False  # BUG-0739: the host's own reload after Creature -> Tribe (BUG-0332) passes the menu a few s later
         log0 = self.log_size(self.host.inst)
+        glog0 = {g.name: self.log_size(g.inst) for g in self.guests}  # BUG-1531: the guests' own spaceship editors
         services = [Service(self, p) for p in self.P]
         for s in services:
             s.start()
@@ -1088,7 +1092,20 @@ class Campaign:
         self.stage = nxt
         self.follow(nxt, services)  # a guest left behind is a finding; the game goes on in the stage
         self.vote_check(log0, t0)
+        if stage == 'civ':
+            self.ship_editor_check(glog0)
         return True
+
+    def ship_editor_check(self, glog0):
+        """BUG-1531 (PR #219's question): every guest's own game opens the spaceship editor (0x96B24187) at Civ -> Space.
+        Noted always; a finding only with CAMPAIGN_GUEST_SHIP_EDITOR=1 (the lab check of 0.7.17, civ_own_money_space)"""
+        for g in self.guests:
+            lines = self.log_since(g.inst, glog0.get(g.name, 0))
+            ed = next((l for l in lines if re.search(r'coop: stage: \S+ \S+ -> Editor', l)), None)
+            self.note(f'{g.name}: its own spaceship editor at Civ -> Space: {"yes: " + ed.strip()[:120] if ed else "none in its log"}')
+            if not ed and os.environ.get('CAMPAIGN_GUEST_SHIP_EDITOR') == '1':
+                self.finding('editor', f'civ:guest_ship_editor:{g.name}', f'{g.name}: no spaceship editor of its own at '
+                             'Civ -> Space (BUG-1531)', [g])
 
     def share_spam(self, nxt):
         """BUG-0359 (CAMPAIGN_SHARE_SPAM=1): the host's world share posted again every ~1.5 s through the
@@ -2196,6 +2213,10 @@ def main():
     for cmd in filter(None, os.environ.get('CAMPAIGN_GUEST_CMDS', '').split(';')):
         for p in camp.guests:
             camp.note(f'planted on {p.name}: {cmd}: {p.call(cmd).strip()[:120]}')
+    # the host's commands at the start, e.g. CAMPAIGN_HOST_CMDS="coop.settings force civ.own_money on" (BUG-1468: the
+    # Civ -> Space segment with own money; a session setting forced in play, the guests ask for their wallets)
+    for cmd in filter(None, os.environ.get('CAMPAIGN_HOST_CMDS', '').split(';')):
+        camp.note(f'on the host: {cmd}: {players[0].call(cmd).strip()[:120]}')
     if a.save:  # A6: the failed segment's own save, loaded in game (the guests follow)
         if not camp.load_save(a.start, os.path.abspath(a.save)):
             camp.finding('dead', 'segment:load', f'the segment save {a.save} did not load', players)

@@ -11,9 +11,14 @@ its game's surface (`coop.ground`: cPlanetModel_SurfacePoint, the terrain or the
 on the guest the proxy's drawn height over the guest's surface and how far it is from the host's NPC.
 
 Checks (the game's own state on both machines):
-  * the NPCs backed away (they moved: the roar worked; else nothing is tested)
   * on the guest no proxy of them is drawn more than SUNK m inside its surface (the mound) for more than 1 s
   * on the guest every proxy keeps within FOLLOW m of the host's NPC (not stuck at the mound)
+Preconditions (BUG-1530: not met, the case did not happen and the result is INCONCLUSIVE, never a FAIL of its own;
+a failed check above still makes it a FAIL):
+  * wild NPCs at a nest of the fixture
+  * the NPCs backed away (they moved: the roar worked)
+  * without --host-near: the host's game has an NPC of that nest inside its mound for over 1 s (the host far)
+  * the NPC deepest in the mound was on the guest's screen for 3 s (only what the guest sees counts)
 
   coop_npc_nest_backoff.py [--host-near]   (--host-near: the host's player stays at the nest too, the control)
 """
@@ -93,10 +98,13 @@ def main():
     # the nest with the most wild NPCs within 12 m of it
     best = max(nests, key=lambda q: sum(math.dist(n['pos'], q) < 12 for n in wild), default=None)
     at_nest = [n for n in wild if best and math.dist(n['pos'], best) < 12]
-    ck(len(at_nest) >= 1, f'wild NPCs at a nest of the fixture ({len(at_nest)} at {worlddiff._fmt(best) if best else "-"}, '
-                          f'{len(nests)} nests)')
-    if not at_nest:
-        return ck.result()
+    print(f'  wild NPCs at a nest of the fixture: {len(at_nest)} at {worlddiff._fmt(best) if best else "-"} '
+          f'({len(nests)} nests)', flush=True)
+    if not at_nest:  # BUG-1530: a precondition, not a check
+        for c in (host, guest):
+            c.call('coop.team on')
+        ck.faults(host=host, guest=guest)
+        return ck.inconclusive(f'no wild NPC at a nest of the fixture ({len(nests)} nests)')
     # the guest 5 m beyond the NPCs from the mound: backing away from it takes them onto the mound
     mid = tuple(sum(n['pos'][i] for n in at_nest) / len(at_nest) for i in range(3))
     gp = away(mid, best, 5.0)
@@ -160,12 +168,7 @@ def main():
     print(f'  host NPCs inside their game\'s surface over {SUNK} m: { {i: round(v, 1) for i, v in host_in.items()} } s', flush=True)
     ml = re.search(r'mound_lifts=(\d+)', guest.call('coop.npc')['out'])
     print(f'  guest: proxy targets put onto the mound (npc.proxy_mound (retired)) {ml.group(1) if ml else "?"}', flush=True)
-    if not a.host_near:
-        ck(any(v > 1.0 for v in host_in.values()), 'the host\'s game has an NPC of that nest inside its mound (the case: '
-                                                   'the host far, its game without the mound there)')
     vis = {i: sum(1 for x in rows if x[1] == i and x[6]) * dt for i in ids}
-    ck(vis.get(deep, 0) >= 3, f'the NPC in the mound (#{deep}) was on the guest\'s screen ({vis.get(deep, 0):.1f} s)')
-    ck(any(v > 1.5 for v in moved.values()), f'the NPCs backed away from the guest ({ {i: round(v, 1) for i, v in moved.items()} } m)')
     ck(all(v <= 1.0 for v in sunk.values()), f'on the guest\'s screen no proxy is drawn more than {SUNK} m inside the surface for over 1 s '
                                               f'({ {i: round(v, 1) for i, v in sunk.items()} } s)')
     ck(all(v <= FOLLOW for v in far.values()), f'on the guest every proxy keeps within {FOLLOW} m of the host\'s NPC '
@@ -173,6 +176,23 @@ def main():
     for c in (host, guest):
         c.call('coop.team on')
     ck.faults(host=host, guest=guest)
+    # BUG-1530: the case itself (preconditions): not met, the checks above tested nothing; INCONCLUSIVE (a check that
+    # failed above still makes it a FAIL). Lab 20261123-023643 / -071312: the host's game had no NPC in its mound (the
+    # NPCs stood next to it, -0.18 m at most) and the test failed on that line alone
+    unmet = []
+    if not any(v > 1.5 for v in moved.values()):
+        unmet.append(f'the NPCs did not back away from the guest ({ {i: round(v, 1) for i, v in moved.items()} } m)')
+    if not a.host_near and not any(v > 1.0 for v in host_in.values()):
+        unmet.append('the host\'s game had no NPC of that nest inside its mound for over 1 s (the case: the host far, '
+                     f'its game without the mound there; { {i: round(v, 1) for i, v in host_in.items()} } s)')
+    if vis.get(deep, 0) < 3:
+        unmet.append(f'the NPC in the mound (#{deep}) was on the guest\'s screen {vis.get(deep, 0):.1f} s (< 3 s)')
+    for u in unmet:
+        print(f'  precondition not met: {u}', flush=True)
+    if unmet:
+        return ck.inconclusive(unmet[0])
+    print(f'  ok   the case happened: the NPCs backed away, the host\'s game had one in its mound '
+          f'({"host near" if a.host_near else "host far"}), #{deep} on the guest\'s screen {vis.get(deep, 0):.1f} s', flush=True)
     return ck.result()
 
 

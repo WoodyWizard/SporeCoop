@@ -139,9 +139,11 @@ void* tribe_holding(void* c)
     }
     return nullptr;
 }
+std::unordered_set<uint16_t> g_test_gone; // tests (BUG-1522, coop.tribe savekill): member ids the host's states skip here
 void remove_member(void* c)
 {
     game::air_hold(c, false); // BUG-0946: no hold on a citizen the game frees later
+    took_return(c);           // BUG-1522: a save has it out of its tribe now: back first, then removed as always
     if (g_member_lifetime_fix && !g_detached.count(c)) {
         void* lt = tribe_holding(c);
         if (!lt) {
@@ -228,6 +230,8 @@ void guest_state(net::Reader& r)
         m.hp = r.f32();
         if (!r.ok())
             return cut();
+        if (!g_test_gone.empty() && g_test_gone.count(id))
+            continue; // tests (BUG-1522): the host's state as if it no longer had this member
         g_guest.snap.saw(id);
         GEntry& e = g_guest.mirrors.at(id);
         GMember& g = e.data;
@@ -508,9 +512,10 @@ static void mirror_drive(GEntry& e, double now)
         // frames at 12.8 m/s, tribe_walk_player 20261107-111106 #2)
         // BUG-1235 (tribe.smooth_bound): the smoothed target's walk start too (tribe_logic::mirror_lead_speed)
         // BUG-1451 (tribe.smooth_catch): and at least a catch-up speed that grows with the lag behind the aim
+        // BUG-1235 (drive.lead_cap): and the raw lead that does not catch up (the body's speed)
         o.lead_speed = tribe_logic::mirror_lead_speed(net::g_lead_keep_fix, g_smooth_bound_fix, g.lead_sp, sp,
                                                       g.buf.late_catching(), g.buf.late_rate(), g_smooth_catch_fix,
-                                                      net::dist(game::position(c), g.aim));
+                                                      net::dist(game::position(c), g.aim), drive::g_lead_cap_fix);
         o.keep_lost = g_mirror_keep_fix; // BUG-0386
         drive::walk_place(c, g.aim, rot, vel, g.ds, now, o);
         // tests (BUG-0386): the game's walk and a placing without the teleport mark are undone, the mirror crawls 0.04 m
@@ -583,15 +588,38 @@ void away_tree_end_tick()
     H->log(M, SK_INFO, "tribe: the host is back: %u mirror trees left running by the away play ended (BUG-1084)", n);
 }
 
+// BUG-1493 (audit TR-7): a mirror held in the air (BUG-0946 / BUG-1082: game::air_hold re-places it at the host's height
+// whenever its game grounds it) kept the hold when guest_tick stopped placing it: the host away or this guest elsewhere
+// (local_play: its own game plays the mirror) or no snapshot of it for 3 s. It hung at the old height until the host
+// was back or the snapshots came again. Now the hold goes there (its game lands it; the next air list holds it again).
+// `coop.fix tribe.air_release off`: the hold stays (0.7.16.1).
+static bool g_air_release_fix = true;
+COOP_FIX("tribe.air_release", "BUG-1493", g_air_release_fix,
+         "tribe: a member mirror held in the air comes down when the host goes away or its news stops");
+uint32_t g_air_released;
+static void air_release(GEntry& e_, bool local, bool stale)
+{
+    if (!tribe_logic::air_release(g_air_release_fix, e_.data.air, local, stale))
+        return;
+    e_.data.air = false;
+    game::air_hold(e_.ref.p, false); // (a pointer compare only: no game call)
+    g_air_released++;
+    MIRROR_LOG("tribe: mirror #%u leaves its air hold: %s (BUG-1493)", e_.id, local ? "this game plays it now" : "no news for 3 s");
+}
+
 void guest_tick(double now)
 {
-    if (local_play())
-        return; // the last states would hold the members for 3 s
+    if (local_play()) { // the last states would hold the members for 3 s
+        g_guest.mirrors.for_each([&](GEntry& e_) { air_release(e_, true, false); });
+        return;
+    }
     g_guest.mirrors.for_each([&](GEntry& e_) {
         const uint16_t id = e_.id;
         GMember& g = e_.data;
-        if (!mirror_ok(e_) || now - g.seen > 3.0) // (BUG-0844)
+        if (!mirror_ok(e_) || now - g.seen > 3.0) { // (BUG-0844)
+            air_release(e_, false, true);
             return;
+        }
         void* const c = e_.ref.p;
         g.ds.drawn = game::position(c); // coop.track (BUG-0365): where the game drew it this frame
         tribe_logic::Ko ko = tribe_logic::ko(g_fix_ko, g.hp, game::is_dead(c)); // (D3)

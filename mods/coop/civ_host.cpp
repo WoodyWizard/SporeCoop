@@ -2,6 +2,8 @@
 // the snapshot it sends (host_tick), the buildings' hit points, the guests' commands (host_command); moved out of
 // civ.cpp (C8 of 0.7.15, BUG-1164).
 #include "civ_internal.h"
+#include "civ_wallet.h"
+#include "own_world.h"
 
 namespace civ {
 
@@ -373,12 +375,15 @@ static void trade_tick(double now)
             owned.push_back({city, o});
     int pairs = 0, gain = 0;
     auto economic = [](uint8_t p) { return role(p) == 2; };
+    std::vector<std::array<int, 3>> paid; // BUG-1468: (owner a, owner b, gain) of every pair
     for (size_t i = 0; i < owned.size(); i++)
         for (size_t j = i + 1; j < owned.size() && pairs < 8; j++)
             if (owned[i].second != owned[j].second) {
                 pairs++;
                 // an economic governor at either end doubles the pair (both: triple)
-                gain += kTradePerPair * (1 + economic(owned[i].second) + economic(owned[j].second));
+                int g = kTradePerPair * (1 + economic(owned[i].second) + economic(owned[j].second));
+                gain += g;
+                paid.push_back({owned[i].second, owned[j].second, g});
             }
     g_trade_pairs = pairs;
     if (!pairs)
@@ -386,6 +391,13 @@ static void trade_tick(double now)
     std::string err;
     if (!shared::debug_add("money", gain, err))
         return;
+    double out = 0; // BUG-1468 (civ.own_money): each end's half goes to its owner's own money
+    for (auto& [a, b, g] : paid)
+        out += civ_wallet::host_trade_pair((uint8_t)a, (uint8_t)b, g);
+    if (out > 0)
+        shared::debug_add("money", -out, err);
+    if (g_income_cause_fix) // BUG-1236: the trade between the players' cities has its own notice below
+        shared::note_passive(2, gain - out);
     g_trade_total += gain;
     if (g_trade_payouts++ % 6 == 0 && C.notice) // now and then, not every payout
         C.notice("trade between the players' cities: +" + std::to_string(gain) + " every 30 s (" +
@@ -672,14 +684,18 @@ static void refund_build(uint8_t from, float paid, const char* why)
         return;
     void* pc = player_civ();
     float back = civlogic::refund_amount(paid, kRefundMax);
-    if (pc && back > 0 && o_AddMoney) {
+    bool own = back > 0 && civ_wallet::host_refund(from, back); // BUG-1468: back into its own money (civ.own_money)
+    if (own) {
+        g_n.build_refunds++;
+        g_build_refunded += back;
+    } else if (pc && back > 0 && o_AddMoney) {
         o_AddMoney(pc, back, 0); // the shared money (no difficulty multiplier)
         g_n.build_refunds++;
         g_build_refunded += back;
     }
     char t[200];
     snprintf(t, sizeof t, "the host's game could not build your building (%s)%s", why && *why ? why : "refused",
-             back > 0 ? ": its price is back in the shared money" : "");
+             back > 0 ? (own ? ": its price is back in your money" : ": its price is back in the shared money") : "");
     net::Writer nw;
     nw.str8(t);
     C.sess->send_reliable_to(from, net::MSG_NOTICE, nw);
@@ -955,7 +971,8 @@ void* host_buy(void* city, int loco)
     if (thiscall<int>(a_SlotsLeft, civ, purpose) <= 0)
         return nullptr;
     float cost = thiscall<float>(a_VehicleCost, civ, purpose, loco);
-    g_buy_fail = "not enough money";
+    civ_wallet::PayAs pay(g_pending_owner); // BUG-1468: a guest's purchase is paid from its own money (civ.own_money)
+    g_buy_fail = pay.paying() ? "not enough money of your own" : "not enough money";
     if (!civlogic::can_pay(thiscall<float>(a_GetMoney, civ), cost))
         return nullptr;
     g_buy_fail = "the city cannot build it";
@@ -1067,6 +1084,14 @@ void host_command(uint8_t from, net::Reader& r)
                 H->log(M, SK_INFO, "civ: rejected command kind %u from player %u%s", (unsigned)kind, (unsigned)from, why);
         }
     };
+    // BUG-1478 (CIV-5): a superweapon, a city purchase or a capture of a guest that plays another Civ world of its own is
+    // not the host's world's (its target, its city index are of that world): dropped
+    if ((kind == 5 || kind == 6 || kind == 7) && from != C.sess->my_id() &&
+        !civlogic::host_takes_world_cmd(g_local_play_gate_fix, own_world::peer_elsewhere(from))) {
+        snprintf(why, sizeof why, " (the player plays another Civ world)");
+        g_n.world_cmds_dropped++;
+        return reject();
+    }
     if (kind == 5) { // a guest wants to fire a superweapon: everybody votes
         host_superweapon_request(from, r);
         return;
@@ -1213,15 +1238,20 @@ void host_command(uint8_t from, net::Reader& r)
             snprintf(why, sizeof why, " (city %u: %s)", (unsigned)ci, !city ? "not in the host's game" : "already the players'");
             return reject();
         }
-        float money = thiscall<float>(a_GetMoney, pc);
-        g_capture_for = from;
-        if (kind == 6)
-            o_CityBuy(city, pol_of(pc), price);
-        else
-            h_Capture(city, pol_of(pc), type, 0, 0, 0);
-        g_capture_for = -1;
-        // (the owner changes when the capture's cinematic ends: a purchase that took spent the money)
-        if (kind == 6 && pol_of(city) != pol_of(pc) && thiscall<float>(a_GetMoney, pc) >= money) {
+        bool refused;
+        {
+            civ_wallet::PayAs pay(kind == 6 ? from : -1); // BUG-1468: a guest's city purchase is paid from its own money
+            float money = thiscall<float>(a_GetMoney, pc);
+            g_capture_for = from;
+            if (kind == 6)
+                o_CityBuy(city, pol_of(pc), price);
+            else
+                h_Capture(city, pol_of(pc), type, 0, 0, 0);
+            g_capture_for = -1;
+            // (the owner changes when the capture's cinematic ends: a purchase that took spent the money)
+            refused = kind == 6 && pol_of(city) != pol_of(pc) && thiscall<float>(a_GetMoney, pc) >= money;
+        }
+        if (refused) {
             net::Writer nw;
             nw.str8("the city was not bought: not enough money or no trade route in the host's game");
             C.sess->send_reliable_to(from, net::MSG_NOTICE, nw);

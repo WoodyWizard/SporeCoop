@@ -25,7 +25,21 @@ tidied it into Games-sporecoop-backup.
    planet from its copy of Alice's world and names the planet the copy was made for. SPORE_FIX_OFF=world.copy_notice
    (copy_slot_notice_off): nothing is said: FAIL.
 
-  SPORE_LANE=4 python3 tools/tests/coop_copy_slot.py [--case keep|notice]
+--case planets (0.7.17 WP-W1: world.share_planet, world.continue_coop):
+1. Creature fixture. The host's slot gets two more planet files (copies of the played planet's save under other
+   names: Oldworld.spo, Ancient.spo; the galaxy's own files do not list them), as a galaxy with older games.
+2. The host shares (`coop.share`): the guest loads the host's world from a new co-op copy S.
+3. PASS: S holds the played planet's file and the galaxy's files, none of the two old planets (the guest's disk), and
+   the host's log line says two planets were left out. SPORE_FIX_OFF=world.share_planet (copy_slot_planets_off): S holds
+   all three planets: FAIL.
+4. Role swap: both leave the session; the guest goes to its galaxy menu (key frame: the galaxy menu of S, the
+   session's planet with its save: `coop.menuhover list`), hosts a session of its own and its co-op window's greyed
+   out "Send my world" reads "Continue <planet>": a click loads the session's planet from S (the guest's game: the
+   Creature stage on that planet). The old host joins it and loads that world too (its game: the same planet, key
+   frame). SPORE_FIX_OFF=world.continue_coop (copy_slot_continue_off): no Continue button: FAIL.
+The two planet files are removed from the host's slot at the end (a warm reuse of the lane sees the fixture again).
+
+  SPORE_LANE=4 python3 tools/tests/coop_copy_slot.py [--case keep|notice|planets]
 """
 import argparse
 import hashlib
@@ -34,8 +48,9 @@ import re
 import time
 
 import lane
+from coop_ui import Ui
 from harness import waiter
-from twoinst import Checks, keyframe, save_taken, start, wait_guest_in
+from twoinst import Checks, keyframe, played_slot, save_taken, start, wait_guest_in
 
 wait = waiter(step=1)
 
@@ -130,13 +145,123 @@ def notice_case(host, guest, ck):
     guest.call('coop.leave')
 
 
+OLD_PLANETS = ('Oldworld.spo', 'Ancient.spo')
+
+
+def world_of(con):
+    """the planet file ('Name.spo') the game plays, '' without an avatar"""
+    m = re.search(r"world '([^']*)'", con.call('coop.avatar').get('out') or '')
+    return m.group(1) if m else ''
+
+
+def wait_mode(con, name, secs):
+    return wait(lambda: name in (con.call('game.mode').get('out') or ''), secs)
+
+
+def host_again(con, name):
+    for _ in range(3):  # (the port of the session that just ended may be held for a moment, BUG-0302)
+        out = (con.call(f'cheat coop host {lane.PORT} {name}').get('out') or '').strip()
+        print(f'  {name} hosts:', out[:120], flush=True)
+        if 'host failed' not in out:
+            return True
+        time.sleep(3)
+    return False
+
+
+def planets_case(host, guest, ck):
+    hslot, hplanet = played_slot()
+    if not ck(hslot and hplanet, f"the host plays {hslot}/{hplanet}"):
+        return
+    hdir = os.path.join(lane.HOST_DIR, 'Games', hslot)
+    played = hplanet if hplanet.lower().endswith('.spo') else hplanet + '.spo'
+    src = os.path.join(hdir, played)
+    made = []
+    try:
+        for name in OLD_PLANETS:  # older games of the host's galaxy (files only: the galaxy's files do not list them)
+            with open(src, 'rb') as f, open(os.path.join(hdir, name), 'wb') as g:
+                g.write(f.read())
+            made.append(os.path.join(hdir, name))
+        print('  host slot:', sorted(os.listdir(hdir)), flush=True)
+        before, _ = copy_slot(guest)
+        print('  host:', host.call('coop.share')['out'].strip()[:120], flush=True)
+        wait(lambda: not guest.call('coop.avatar')['ok'], 60)
+        ck(wait_guest_in(host, guest), "the guest loaded the host's world again")
+        slot, planet = copy_slot(guest)
+        print(f'  the guest plays {slot} (made for {planet}; before {before})', flush=True)
+        if not ck(slot, "the guest plays the host's world from a co-op copy"):
+            return
+        gdir = os.path.join(lane.GUEST_DIR, 'Games', slot)
+        files = sorted(os.listdir(gdir))
+        print('  guest copy:', files, flush=True)
+        low = [f.lower() for f in files]
+        ck(played.lower() in low, f"the guest's copy {slot} holds the played planet {played}")
+        old = [n for n in OLD_PLANETS if n.lower() in low]
+        ck(not old, f"the guest's copy {slot} holds none of the host's older planets ({old or 'none'})")
+        ck('stars.db' in low and 'ggeuserdata.dat' in low, "the guest's copy holds the galaxy's own files")
+        st = [ln for ln in host.call('coop.status')['out'].splitlines() if ln.startswith('shares of the played planet')]
+        print('  host:', st, flush=True)
+        keyframe('copy_planets', f"Creature after the share: both play {planet}; the guest's copy {slot} holds that "
+                 "planet only")
+        # ---- the role swap: the guest continues the session's world as the new host
+        host.call('coop.leave')
+        time.sleep(3)
+        guest.call('coop.leave')
+        time.sleep(2)
+        print('  guest:', guest.call('coop.menu')['out'].strip()[:120], flush=True)
+        if not ck(wait_mode(guest, 'GalaxyGameEntry', 90), "the guest is in its galaxy menu"):
+            return
+        guest.call('wait.frames 240 60000')
+        menu = guest.call('coop.menuhover list')['out']
+        print('  guest menu:', menu.strip().replace('\n', ' | ')[:600], flush=True)
+        stem = played[:-4]
+        ck(re.search(r"planet \d+ '" + re.escape(stem) + r"': has a save 1", menu),
+           f"the guest's galaxy menu lists {stem} with its save")
+        keyframe('copy_planets_menu', f"the guest's galaxy menu (its copy {slot}): the planet {stem} with its save, "
+                 "the host's older planets are not there", players={'guest': guest}, settle=0)
+        if not ck(host_again(guest, 'Bob'), 'the guest hosts a session of its own'):
+            return
+        print('  guest:', guest.call('coop.continue')['out'].strip(), flush=True)
+        gui = Ui(guest, 'guest')
+        guest.call('coop.uistate 1')
+        want = 'Continue ' + stem[:13]
+        st = gui.wait(lambda x: x['page'] == 'lobby' and x['share']['vis'] and x['share']['text'].startswith(want), 20,
+                      'the Continue button')
+        ck(st, f"the new host's co-op window offers \"{want}\" ({(st or {}).get('share', {}).get('text')})")
+        if not st:
+            return
+        gui.click('share')
+        guest.call('coop.uistate 0')
+        ok = wait(lambda: world_of(guest).lower() == played.lower(), 120)
+        ck(ok and wait_mode(guest, 'Creature', 30) and copy_slot(guest)[0] == slot,
+           f"the new host plays the session's world {played} again from its copy {slot} "
+           f"({world_of(guest) or 'nothing'}, {copy_slot(guest)})")
+        print('  old host joins:', host.call(f'cheat coop join 127.0.0.1:{lane.PORT} Alice')['out'].strip()[:120],
+              flush=True)
+        wait(lambda: not host.call('coop.avatar')['ok'], 60)
+        # (the old host's own game is the same planet: it must play it from a copy of Bob's world now)
+        ok = wait(lambda: "a copy of Bob's world" in host.call('coop.status')['out'] and
+                  world_of(host).lower() == played.lower(), 240)
+        ck(ok, f"the old host, now a guest, plays {played} from its copy of the new host's world "
+               f"({world_of(host) or 'nothing'}, {copy_slot(host)})")
+        keyframe('copy_planets_swap', f"Creature after the role swap: the new host continued {stem}, the old host "
+                 "joined it: both in that world")
+        host.call('coop.leave')
+        guest.call('coop.leave')
+    finally:
+        for p in made:
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--case', choices=('keep', 'notice'), default='keep')
+    ap.add_argument('--case', choices=('keep', 'notice', 'planets'), default='keep')
     a = ap.parse_args()
     host, guest = start('creature')
     ck = Checks()
-    (keep_case if a.case == 'keep' else notice_case)(host, guest, ck)
+    {'keep': keep_case, 'notice': notice_case, 'planets': planets_case}[a.case](host, guest, ck)
     ck.faults(host=host, guest=guest)
     return ck.result()
 

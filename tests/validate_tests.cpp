@@ -574,6 +574,17 @@ static void test_settings()
     CHECK(std::string(kDefs[kDnaPace].ini) == "dna_pace" && std::string(kDefs[kNpcTargets].ini) == "npcs_target_partners");
     // WP-D (BUG-1291): own DNA by default; Rivals reads it as off (own); a session setting
     CHECK(kDefs[kSharedDna].def == 0 && kDefs[kSharedDna].off_in_rivals && kDefs[kSharedDna].scope == Scope::Session);
+    // WP-P1 / P2 of 0.7.17 (BUG-1469): three values, the key and ini key of 0.7.16; on / off stay shared / own wallet
+    {
+        int x = -1;
+        CHECK(kDefs[kSharedDna].max == 2 && kDefs[kSharedDna].def == kSharedDnaDefault && !kDefs[kSharedDna].ini &&
+              std::string(kDefs[kSharedDna].key) == "all.shared_dna");
+        CHECK(value_text(kSharedDna, 0) == "own wallet" && value_text(kSharedDna, 1) == "shared" &&
+              value_text(kSharedDna, 2) == "own progress");
+        CHECK(parse_value(kSharedDna, "on", x) && x == 1 && parse_value(kSharedDna, "off", x) && x == 0);
+        CHECK(parse_value(kSharedDna, "2", x) && x == 2 && parse_value(kSharedDna, "own_progress", x) && x == 2 &&
+              parse_value(kSharedDna, "own progress", x) && x == 2 && !parse_value(kSharedDna, "3", x));
+    }
     // who sets: a guest never; a session setting only before the start; a live one any time
     CHECK(can_set(kCellRegen, false, false) == Refusal::Guest && can_set(kDnaPace, false, true) == Refusal::Guest);
     CHECK(can_set(kDnaPace, true, true) == Refusal::SessionStarted && can_set(kDnaPace, true, false) == Refusal::None);
@@ -591,7 +602,11 @@ static void test_settings()
     CHECK(parse_value(kCreatureMode, "on", v) && v == 1 && !parse_value(kCreatureMode, "hosts", v));
     CHECK(value_name(kCellRegen, 0).empty() && value_text(kCellRegen, 0) == "off");
     for (int i = kNameTags; i < kCount; i++) // every row of step 3 but friendly fire and the creature mode is on by default
-        CHECK(kDefs[i].def == (i == kFriendlyFire || i == kCreatureMode ? 0 : i == kPlayerLimit ? 4 : i == kAutosave ? 2 : 1));
+        CHECK(kDefs[i].def == (i == kFriendlyFire || i == kCreatureMode ? 0 : i == kCivOwnMoney ? kCivOwnMoneyDefault
+                               : i == kPlayerLimit ? 4 : i == kAutosave ? 2 : 1));
+    // BUG-1468: civ.own_money, a session switch of the Civilization group, provisional default off (owner question 1)
+    CHECK(std::string(kDefs[kCivOwnMoney].key) == "civ.own_money" && kDefs[kCivOwnMoney].scope == Scope::Session &&
+          std::string(kDefs[kCivOwnMoney].group) == "Civilization" && kDefs[kCivOwnMoney].max == 1 && kCivOwnMoneyDefault == 0);
     // E2 (BUG-0864): the host's autosave: a choice of minutes, 10 by default, Live
     CHECK(kDefs[kAutosave].scope == Scope::Live && value_text(kAutosave, 2) == "10 min" && value_text(kAutosave, 0) == "off");
     CHECK(autosave_minutes(0) == 0 && autosave_minutes(2) == 10 && autosave_minutes(5) == 60 && autosave_minutes(9) == 10);
@@ -1303,8 +1318,9 @@ static void test_manifest()
         known += msg_info((uint8_t)t).known;
     // types added after 0.7.14 (a 0.7.14 peer ignores them, B6): MSG_HOST_BUSY 70 (BUG-1142), MSG_TRIBE_ANIM 71 (C7,
     // BUG-1160), MSG_CELL_MATE 72 (BUG-1246), MSG_SPECIES_LINE 73 (WP-0 of 0.7.16, BUG-1270)
-    // MSG_PLAYER_HISTORY 75 (WP-H1 of 0.7.17, BUG-1470), MSG_UFO_LEAD 78 (WP-S1 of 0.7.17, BUG-1288)
-    const std::set<int> added_types = {70, 71, 72, 73, 75, 78};
+    // MSG_CIV_WALLET 74 (WP-M1 of 0.7.17, BUG-1468), MSG_PLAYER_HISTORY 75 (WP-H1, BUG-1470), MSG_PROGRESS 76 (WP-P1 / P2,
+    // BUG-1469), MSG_UFO_LEAD 78 (WP-S1 of 0.7.17, BUG-1288)
+    const std::set<int> added_types = {70, 71, 72, 73, 74, 75, 76, 78};
     CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0] + added_types.size()));
     CHECK(MSG_HOST_BUSY == 70 && msg_info(70).known && msg_dir(70) == MsgDir::Host &&
           host_world::msg_class(70) == host_world::MsgClass::Session && dispatch_route(70, false) == Route::HostBusy &&
@@ -1319,6 +1335,11 @@ static void test_manifest()
           msg_info(73).family == Family::creations && msg_dir(73) == MsgDir::Any &&
           host_world::msg_class(73) == host_world::MsgClass::Session && dispatch_route(73, true) == Route::SpeciesLine &&
           dispatch_route(73, false) == Route::SpeciesLine);
+    // WP-M1 (BUG-1468): own Civ money, both directions, gated at dispatch for a guest elsewhere (HostWorld), the civ family
+    CHECK(MSG_CIV_WALLET == 74 && std::string(msg_info(74).name) == "CIV_WALLET" && msg_info(74).family == Family::civ &&
+          msg_dir(74) == MsgDir::Any && host_world::msg_class(74) == host_world::MsgClass::HostWorld &&
+          dispatch_route(74, true) == Route::CivWallet && dispatch_route(74, false) == Route::CivWallet &&
+          reserved_msg(74) && std::string(reserved_msg(74)->name) == "CIV_WALLET");
     CHECK(MSG_PLAYER_HISTORY == 75 && std::string(msg_info(75).name) == "PLAYER_HISTORY" &&
           msg_info(75).family == Family::session && msg_dir(75) == MsgDir::Any &&
           host_world::msg_class(75) == host_world::MsgClass::Session && dispatch_route(75, true) == Route::History &&
@@ -1326,6 +1347,9 @@ static void test_manifest()
     CHECK(MSG_UFO_LEAD == 78 && std::string(msg_info(78).name) == "UFO_LEAD" && msg_info(78).family == Family::space &&
           msg_dir(78) == MsgDir::Any && host_world::msg_class(78) == host_world::MsgClass::Module &&
           dispatch_route(78, true) == Route::Squadron && dispatch_route(78, false) == Route::Squadron);
+    CHECK(MSG_PROGRESS == 76 && std::string(msg_info(76).name) == "PROGRESS" && msg_info(76).family == Family::creature &&
+          msg_dir(76) == MsgDir::Any && host_world::msg_class(76) == host_world::MsgClass::HostWorld &&
+          dispatch_route(76, true) == Route::Progress && dispatch_route(76, false) == Route::Progress);
     for (int t : added_types)
         for (auto& g : golden0714::kTypes)
             CHECK(g.id != t);
