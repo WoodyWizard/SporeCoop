@@ -115,4 +115,54 @@ inline Plan plan(Track& t, float err, float sp, double now, float snap, bool sta
     return p;
 }
 
+// walk_place's placing step this frame (driver.h), as a pure rule. What a frame draws is the placing's step plus the
+// game's own walk of the next frame (at walk_sp). `sp` the target's speed, `gv` the game's walk speed now (its
+// velocity), `err` the distance to the target, `base_catch` WalkPlace::catch_up, `catch_prop` / `lead_fix` BUG-0425's
+// error-proportional catch-up (drive.lead), `lead_speed` BUG-0619's frame bound (> 0: the body's own speed), `held` a
+// placing by marked teleports (keep_lost: the game's walk is undone).
+// BUG-1235 / item 12 of docs/plan-0.7.17.md (`coop.fix drive.lead_cap`): the raw lead's catch-up of a Tribe member mirror
+// that is late (catch_prop) drew 0.86-0.93 m frames at 30 fps (the test's jump limit 3 x 9 m/s x 32 ms = 0.86 m):
+// tribe_walk_player 20261123-023643 member 8 (2.74 m behind at 9 m/s: placing (9 + 11) m/s + the game's walk 9 m/s),
+// member 3 and -071312 member 1 (12 m/s run, 1-1.4 m behind: (12 + 5.6) + 12 m/s). Two holes: (1) the bound's
+// catch-up was catch_prop's (up to sp + 3 m/s), so 2 x lead_speed + catch_up - walk_sp held nothing (sp + catch_up);
+// (2) the raw lead had a bound only while its late lead caught up (lead_speed 0 otherwise, tribe_logic::
+// mirror_lead_speed); and the placing's budget (sp + catch_up) left out that the game walks the mirror at its speed
+// too. With the fix, when the bound is on (lead_speed > 0): a frame draws at most 2 x lead_speed + base_catch (BUG-0619's
+// promise); with catch_prop the frame (the game's walk now included) closes the error at catch_up over the body's
+// speed, sp + catch_up in all (a 6-9 m error, BUG-0674: 12 m/s over a 9 m/s body, under 2 m in ~0.6 s); while it
+// speeds up or slows down (sp under kSlowCapSpeed) with a small error (under kSlowCapErr) at most kSlowCapK x sp +
+// kSlowCapAdd, whether the game's walk of the next frame comes or not (between 0.5 x sp + 0.9 and that: inside the
+// test's "uneven" line, half the target's step + 1 m/s; the stop-and-go half of BUG-1235: surges of the target's speed
+// + 3 m/s at 1-5 m/s, uneven 20 % in 20261123-023643, guest's member 9 at 1.6 m/s drawn 4.8-5.0 m/s). Idea from fix/agy-open-bugs c8c548db (the outside agent's branch). Off: 0.7.16.1.
+inline bool g_lead_cap_fix = true;
+constexpr float kCatchTime = 0.25f;  // s: catch_prop closes the error in about this
+constexpr float kSlowCapSpeed = 5.f; // m/s: a walk starting or stopping
+constexpr float kSlowCapErr = 1.5f;  // m: under body_trail's 2 m
+constexpr float kSlowCapK = 1.5f, kSlowCapAdd = 0.9f;
+inline float catch_speed(float sp, float err, float base_catch, bool catch_prop, bool lead_fix)
+{
+    float c = base_catch;
+    if (catch_prop && lead_fix)
+        c = std::max(c, std::min(err / kCatchTime, sp + base_catch));
+    return c;
+}
+inline float walk_place_max_step(float sp, float walk_sp, float gv, float err, double dt, float base_catch, bool catch_prop,
+                                 bool lead_fix, float lead_speed, bool held, bool fix = g_lead_cap_fix)
+{
+    const float catch_up = catch_speed(sp, err, base_catch, catch_prop, lead_fix);
+    float step = sp + catch_up; // m/s
+    if (lead_speed > 0) {
+        if (!fix)
+            return std::min(step, std::max(0.f, 2.f * lead_speed + catch_up - walk_sp)) * (float)dt;
+        const float hard = 2.f * lead_speed + base_catch;
+        const float walk_now = held || !(gv > 0.f) ? 0.f : std::min(gv, walk_sp);
+        if (catch_prop && lead_fix)
+            step = std::max(0.f, std::min(sp + catch_up, hard) - walk_now);
+        if (sp < kSlowCapSpeed && err < kSlowCapErr)
+            step = std::min(step, std::max(0.f, kSlowCapK * sp + kSlowCapAdd - walk_sp)); // (the next frame's walk)
+        step = std::min(step, std::max(0.f, hard - walk_sp));
+    }
+    return step * (float)dt;
+}
+
 } // namespace drive

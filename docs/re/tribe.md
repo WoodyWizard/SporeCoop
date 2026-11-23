@@ -4954,3 +4954,25 @@ the guest log of lab 20261123-023643 campaign_tribe_noclick (Bob, 03:09:42). Sta
   `mirror_step`; (b) a class guard `coop.fix tribe.makeway_null`: hook Creature_AskGroupToMakeWay 0xC28530 (cdecl,
   2 args, plain ret) and return false for a citizen whose +0x1014 is 0 (the vanilla path for any other kind already
   copes). (b) alone stops the fault for every tribe-less walking citizen, host or guest.
+
+## The raw lead's catch-up frames of a member mirror (2026-11-23, fix/w76-motion)
+<a id="tribe-raw-catch-frames"></a>
+
+BUG-1235 (item 12 of docs/plan-0.7.17.md). GOG 2024, the per-frame tracks of tribe_walk_player on rel/0.7.16 fd28f88f
+(lab 20261123-023643 lane 6, -071312 lane 7, -075458 lanes 4 / 5; out/laneN/track/tribe_walk_*_walks_*.json of the
+rel/0.7.16 tree).
+
+* ✔ (runtime, track) Every jump the test counted (0.85-0.93 m in one 31-33 ms frame, limit 3 x 9 m/s x dt) is a
+  catch-up frame while the game already walks the mirror at its full speed: member 8 at 7.89 s: 2.74 m behind, the game
+  at 9.15 m/s, the frame's own move 0.93 m = the game's walk 0.29 m + a placing of 0.64 m (20 m/s = 9 + 2.74 / 0.25);
+  member 1 at 34.43 s (a 12 m/s run, 1.40 m behind after a late walk start): walk 0.37 m + placing 0.54 m (17.6 m/s =
+  12 + 1.40 / 0.25). Both are walk_place's raw-lead budget (sp + catch_prop's catch-up) with no frame bound:
+  tribe_logic::mirror_lead_speed gave the raw lead a bound only while its late lead catches up, and that bound used
+  catch_prop's catch-up (2 x lead + catch_up - sp = sp + catch_up: no bound at all). Not the smoothed path
+  (tribe.smooth_bound holds that one to 2 x lead + 3 - sp: 0.47 m, not 0.54-0.64 m).
+* ✔ (runtime, track) The stop-and-go frames of the same runs (the guest's own members, uneven 20 % in 023643) are surges,
+  not stands: at 1.6-4.5 m/s targets the frame drew the target's speed + 3.0-3.3 m/s (member 9 at 37.9 s: 1.6 m/s
+  drawn 4.8-5.0 m/s with 0.35-0.55 m of error): walk_place's base catch-up of 3 m/s on top of the game's walk.
+* The fix (`drive.lead_cap`, drive_plan.h walk_place_max_step): the bound for every walked member mirror (the raw lead
+  without a catch-up at the body's speed), with the base catch-up; with catch_prop the game's walk counts in the
+  catch-up's budget (sp + catch_up in all); slow phases with an error under 1.5 m at most 1.5 x sp + 0.9 m/s.

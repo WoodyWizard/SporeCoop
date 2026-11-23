@@ -286,7 +286,10 @@ anchor so other docs can link to it:
   20261122-193406), but 4 of 4 runs on fd28f88f (the same mod code) still had 1-3 jumps of 0.85-0.93 m in one frame
   (20261123-023643, 20261123-071312, 20261123-075458): the catch-up of a walk start that came late over the network
   (BUG-1451, `tribe.smooth_catch`, planned for 0.7.16.1).
-* Next steps: the next release.
+* Known (2026-11-23, fix/w76-motion): those frames are the raw catch-up of a copy the game already walks at full
+  speed, with no frame bound; the uneven frames are surges of 3 m/s at slow speeds. `drive.lead_cap` (0.7.17), waiting
+  for the lab.
+* Next steps: the night run of tribe_walk_player and its twin.
 * Ticket: BUG-1235
 
 ## Civ: a guest gets an "earned money (shared)" card every few seconds (2026-11-18, key-frame review)
