@@ -49,6 +49,9 @@ struct Client {
     bool visit_known = false;
     uint32_t obj_window_ms = 0, obj_in_window = 0; // BUG-9290: its VISITOBJs in this second
     bool eras = true; // BUG-9294: sees and is seen by the planet's other eras (ERAS; on until it says otherwise)
+    bool bans_asked = false;   // 8D A: it sent BANS (an older mod never does: it gets no list)
+    uint32_t bans_crc = 0;     // the crc of the server ban list it keeps (its last BANS)
+    uint32_t bans_sent_ms = 0; // when the list was last sent to it
 };
 // BUG-9287 (step 4 part 5): visitors across eras; --no-visitors turns the stream off
 static bool g_visitors = true;
@@ -81,6 +84,13 @@ struct CrtIn {
 // BUG-9290: the Civ era's objects for the other eras (VISITOBJ), at most this many a second from one player
 constexpr uint32_t kVisitObjPerSecond = 8;
 static std::map<uint16_t, CrtIn> g_crt_in; // by slot: the one creation it is putting now
+// decision 8D A: the creation ban list (load_bans below)
+static bool g_bans_on = true;
+static std::string g_bans_text; // the lines sent to the players
+static uint32_t g_bans_crc = 0; // (0: no list)
+static std::set<uint64_t> g_ban_players;
+static long long g_bans_stamp = -1;
+static uint64_t g_bans_refused_puts = 0, g_bans_refused_gets = 0, g_bans_sends = 0;
 // limits (2026-11-18 review: nothing bounded the players, the worlds or a world's size); each has a switch
 static size_t g_max_players = 1024, g_max_per_address = 64, g_max_worlds = 500;
 // step 4 part 4 (BUG-9285, docs/12-server-and-players.md#server-nest-refresh): an extinct species comes back this many
@@ -317,6 +327,12 @@ static void on_crt_put(Client& c, Reader& r)
         crt_have(c, k, true);
         return;
     }
+    if (g_ban_players.count(k.owner)) { // 8D A: a banned player's creations are not kept (answered as kept: no retries)
+        if (!off)
+            g_bans_refused_puts++;
+        crt_have(c, k, true);
+        return;
+    }
     if (g_crt_index.size() >= g_max_creations)
         return;
     CrtIn& in = g_crt_in[c.slot];
@@ -360,7 +376,9 @@ static void on_crt_get(Client& c, Reader& r)
     if (!r.ok())
         return;
     std::vector<uint8_t> data;
-    if (g_crt_index.count(k)) {
+    if (g_ban_players.count(k.owner)) // 8D A: none of a banned player's are handed out
+        g_bans_refused_gets++;
+    else if (g_crt_index.count(k)) {
         FILE* f = fopen(crt_file(k).c_str(), "rb");
         if (f) {
             fseek(f, 0, SEEK_END);
@@ -390,6 +408,95 @@ static void on_crt_get(Client& c, Reader& r)
             w.u8(data[off + i]);
         send(c, w);
     }
+}
+
+// decision 8D A (owner 2026-11-23): the creation ban list, <worlds>/banned.txt, read at start and again when it changes
+// (checked every few seconds). Lines of the mod's mods\lineages\banned.txt (`source`, `creation`, `keep`) go to every
+// player (BANSPART until its BANS names the list's crc); `player <identity, 16 hex>` lines stay here: that player's
+// creations are not kept in the creation store (a put is answered as kept, nothing is written) and none it has
+// already are handed out (they stay on disk). `--no-bans`: no list is read or sent.
+static std::string bans_path() { return g_worlds_dir + "/banned.txt"; }
+static void load_bans()
+{
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const auto size = fs::file_size(bans_path(), ec);
+    long long stamp = ec ? 0 : (long long)fs::last_write_time(bans_path(), ec).time_since_epoch().count() ^ (long long)size;
+    if (ec)
+        stamp = 0;
+    if (stamp == g_bans_stamp)
+        return;
+    g_bans_stamp = stamp;
+    std::string text, sent;
+    if (stamp && size <= kBansMaxBytes) {
+        if (FILE* f = fopen(bans_path().c_str(), "rb")) {
+            text.resize((size_t)size);
+            if (fread(text.data(), 1, text.size(), f) != text.size())
+                text.clear();
+            fclose(f);
+        }
+    } else if (stamp)
+        say("bans: %s is bigger than %u KB: not read", bans_path().c_str(), kBansMaxBytes >> 10);
+    std::set<uint64_t> players;
+    unsigned lines = 0;
+    size_t at = 0;
+    while (at < text.size()) {
+        size_t end = text.find('\n', at);
+        if (end == std::string::npos)
+            end = text.size();
+        std::string line = text.substr(at, end - at);
+        at = end + 1;
+        std::string bare = line.substr(0, line.find('#'));
+        unsigned long long id = 0;
+        char tail = 0;
+        if (sscanf(bare.c_str(), " player %16llx %c", &id, &tail) == 1 && id) {
+            players.insert(id);
+            continue;
+        }
+        if (bare.find_first_not_of(" \t\r") != std::string::npos)
+            lines++;
+        sent += line + "\n";
+    }
+    g_ban_players = std::move(players);
+    g_bans_text = lines ? sent : std::string();
+    g_bans_crc = g_bans_text.empty() ? 0 : crc32(0, (const uint8_t*)g_bans_text.data(), g_bans_text.size());
+    if (!g_bans_crc && !g_bans_text.empty())
+        g_bans_crc = 1; // (0 means no list)
+    say("bans: %s: %u line(s) for the players (crc %08X), %zu player(s) whose creations are not kept", bans_path().c_str(),
+        lines, g_bans_crc, g_ban_players.size());
+    for (auto& [s, c] : g_clients) // (sent again at once)
+        c.bans_sent_ms = 0;
+}
+static void send_bans(Client& c, uint32_t now)
+{
+    c.bans_sent_ms = now ? now : 1;
+    g_bans_sends++;
+    const uint32_t total = (uint32_t)g_bans_text.size();
+    for (uint32_t off = 0; off < total || (!total && !off); off += kCrtChunk) {
+        Writer w = control(BANSPART);
+        w.u32(total);
+        w.u32(g_bans_crc);
+        w.u32(off);
+        const uint32_t n = std::min<uint32_t>(kCrtChunk, total - off);
+        for (uint32_t i = 0; i < n; i++)
+            w.u8((uint8_t)g_bans_text[off + i]);
+        send(c, w);
+        if (!total)
+            break;
+    }
+}
+static void bans_tick(uint32_t now)
+{
+    static uint32_t last_read;
+    if (!g_bans_on)
+        return;
+    if (now - last_read > 5000) {
+        last_read = now;
+        load_bans();
+    }
+    for (auto& [s, c] : g_clients)
+        if (c.bans_asked && c.bans_crc != g_bans_crc && (!c.bans_sent_ms || now - c.bans_sent_ms > 10000))
+            send_bans(c, now);
 }
 
 static void load_stored()
@@ -718,6 +825,16 @@ static void on_control(const Endpoint& from, Reader& r)
         for (auto& [s, o] : g_clients)
             if (s != c->slot && o.eras && !o.planet.empty() && o.planet != c->planet && crossing_planet(o.planet) == mine)
                 send(o, w);
+        return;
+    }
+    if (type == BANS) { // 8D A: the crc of the list it keeps
+        const uint32_t crc = r.u32();
+        if (!r.ok() || !g_bans_on)
+            return;
+        c->bans_asked = true;
+        c->bans_crc = crc;
+        if (crc != g_bans_crc && (!c->bans_sent_ms || now_ms() - c->bans_sent_ms > 2000))
+            send_bans(*c, now_ms());
         return;
     }
     if (type == ERAS) { // BUG-9294
@@ -1473,6 +1590,8 @@ int main(int argc, char** argv)
             g_max_per_address = (size_t)std::max(1, atoi(argv[++i]));
         else if (!strcmp(argv[i], "--max-worlds") && i + 1 < argc)
             g_max_worlds = (size_t)std::max(1, atoi(argv[++i]));
+        else if (!strcmp(argv[i], "--no-bans")) // 8D A: no creation ban list
+            g_bans_on = false;
         else if (!strcmp(argv[i], "--no-visitors")) // BUG-9287: no visitors across eras
             g_visitors = false;
         else if (!strcmp(argv[i], "--visit-radius") && i + 1 < argc) // BUG-9288: 0 = every player of the other worlds
@@ -1487,7 +1606,7 @@ int main(int argc, char** argv)
             printf("usage: galaxy_server [--local] [--worlds <dir>] [--warm-handover] [--planet-players <n>]\n"
                    "                     [--max-players <n>] [--max-per-address <n>] [--max-worlds <n>] [--max-world-mb <n>]\n"
                    "                     [--refresh-minutes <n>] [--rotate-hours <n>] [--no-visitors] [--visit-radius <m>]\n"
-                   "                     [port] [galaxy name]\n");
+                   "                     [--no-bans] [port] [galaxy name]\n");
             return 0;
         }
         else if (!strcmp(argv[i], "--planet-players") && i + 1 < argc) { // 6E B: the players a planet takes
@@ -1529,6 +1648,8 @@ int main(int argc, char** argv)
         g_max_worlds, g_max_world_bytes >> 20);
     load_stored();
     load_creations(); // BUG-9287
+    if (g_bans_on)
+        load_bans(); // 8D A
     std::vector<uint8_t> buf(65536);
     uint32_t last_status = now_ms(), last_sweep = now_ms();
     uint64_t status_bytes = 0, status_fan_in = 0, status_fan_out = 0;
@@ -1567,6 +1688,7 @@ int main(int argc, char** argv)
             }
             x.pump(now, [&](const Writer& w) { send(c->second, w); });
         }
+        bans_tick(now); // 8D A
         if (now - last_sweep > 1000) { // players silent for 20 s are gone
             last_sweep = now;
             std::vector<uint16_t> gone;
@@ -1590,12 +1712,13 @@ int main(int argc, char** argv)
             const double secs = (now - last_status) / 1000.0;
             say("status: %zu player(s), %zu planet(s), relay %.1f KB/s (%llu packets, %llu dropped in all), "
                 "copies: in %.1f KB/s out %.1f KB/s (%llu sent, %llu dropped in all), parties %zu (%llu requests, %llu views), "
-                "eras: %u migrated, %u uploads of another stage and %u of another planet refused, crossings %u (arrived %u, became the era %u), stage starts %u",
+                "eras: %u migrated, %u uploads of another stage and %u of another planet refused, crossings %u (arrived %u, became the era %u), stage starts %u, bans: %llu list sends, %llu puts and %llu gets of banned players refused",
                 g_clients.size(), g_planets.size(), kbs, (unsigned long long)g_relay_packets,
                 (unsigned long long)g_relay_dropped, (g_fan_in_bytes - status_fan_in) / 1024.0 / secs,
                 (g_fan_out_bytes - status_fan_out) / 1024.0 / secs, (unsigned long long)g_fan_packets,
                 (unsigned long long)g_fan_dropped, g_parties.all().size(), (unsigned long long)g_party_requests,
-                (unsigned long long)g_party_views, g_migrated, g_era_refused, g_save_refused, g_moveons, g_arrivals, g_renamed, g_starts);
+                (unsigned long long)g_party_views, g_migrated, g_era_refused, g_save_refused, g_moveons, g_arrivals, g_renamed, g_starts,
+                (unsigned long long)g_bans_sends, (unsigned long long)g_bans_refused_puts, (unsigned long long)g_bans_refused_gets);
             last_status = now;
             status_bytes = g_relay_bytes;
             status_fan_in = g_fan_in_bytes;

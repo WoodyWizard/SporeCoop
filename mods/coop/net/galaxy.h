@@ -211,7 +211,13 @@ enum Type : uint8_t {
     // answers ROLE host with that world (FETCHed as any stored world); the game plays the stage's end there and ARRIVEs
     // as a party's crossing does (the crossing becomes the new era, or joins it if another player made it first)
     STARTERA = 37, // player -> server: str8 the era it starts from ("Samuth|Creature"), u8 the era to start (the next)
+    // decision 8D A (owner 2026-11-23): the galaxy server's creation ban list (its worlds folder's banned.txt, the format
+    // of the mod's mods\lineages\banned.txt), so a new ban reaches the galaxy's players without a mod release
+    BANS = 38,     // player -> server: u32 the crc of the server list it keeps (0 none); the server sends BANSPART until
+                   //   a BANS names the current one (sent on each WELCOME and after a list arrived)
+    BANSPART = 39, // server -> player: u32 total bytes, u32 crc, u32 offset, the piece (kCrtChunk bytes); total 0: no list
 };
+constexpr uint32_t kBansMaxBytes = 1u << 20;
 constexpr uint8_t kVisitVehicle = 1, kVisitBuilding = 2;
 constexpr size_t kVisitObjBytes = 4 + 12 + 12 + 16 + 12 + 1, kVisitObjMax = 1 + 24 * kVisitObjBytes;
 constexpr uint32_t kCrtChunk = 1100;

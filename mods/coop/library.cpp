@@ -3,7 +3,10 @@
 #include "../../updater/sha256.h"
 #include "creations.h"
 #include "fixes.h"
+#include "galaxy_client.h"
 #include "net/dbpf.h"
+#include "net/galaxy.h"
+#include "net/validate.h"
 #include "net/library_sync.h"
 #include "net/utf8.h"
 #include "slotfs.h"
@@ -113,26 +116,10 @@ static bool ban_token(const std::string &s) { // a hex digest or a plain id such
         return false;
     return std::all_of(s.begin(), s.end(), [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || c == '-'; });
 }
-static void load_ban_list() {
-    const std::wstring path = slotfs::widen(H->mods_dir()) + L"\\lineages\\banned.txt";
-    std::vector<uint8_t> bytes;
-    WIN32_FILE_ATTRIBUTE_DATA st{};
-    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &st) || st.nFileSizeHigh || st.nFileSizeLow > (4u << 20)) {
-        H->log(M, SK_WARN, "library: no ban list (mods\\lineages\\banned.txt): nothing is banned (BUG-9329)");
-        return;
-    }
-    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-    if (f == INVALID_HANDLE_VALUE)
-        return;
-    bytes.resize(st.nFileSizeLow);
-    DWORD got = 0;
-    const bool ok = ReadFile(f, bytes.data(), DWORD(bytes.size()), &got, nullptr) && got == bytes.size();
-    CloseHandle(f);
-    if (!ok)
-        return;
+// the lines of a ban list (the mod's file or a galaxy server's, 8D A) into the sets; the bad lines' count
+static unsigned parse_ban_text(const std::string &text) {
     unsigned bad = 0;
     size_t at = 0;
-    const std::string text(bytes.begin(), bytes.end());
     while (at < text.size()) {
         size_t end = text.find('\n', at);
         if (end == std::string::npos)
@@ -161,6 +148,26 @@ static void load_ban_list() {
         else
             ++bad;
     }
+    return bad;
+}
+static void load_ban_list() {
+    const std::wstring path = slotfs::widen(H->mods_dir()) + L"\\lineages\\banned.txt";
+    std::vector<uint8_t> bytes;
+    WIN32_FILE_ATTRIBUTE_DATA st{};
+    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &st) || st.nFileSizeHigh || st.nFileSizeLow > (4u << 20)) {
+        H->log(M, SK_WARN, "library: no ban list (mods\\lineages\\banned.txt): nothing is banned (BUG-9329)");
+        return;
+    }
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE)
+        return;
+    bytes.resize(st.nFileSizeLow);
+    DWORD got = 0;
+    const bool ok = ReadFile(f, bytes.data(), DWORD(bytes.size()), &got, nullptr) && got == bytes.size();
+    CloseHandle(f);
+    if (!ok)
+        return;
+    const unsigned bad = parse_ban_text(std::string(bytes.begin(), bytes.end()));
     g_ban_list_ok = true;
     H->log(M, SK_INFO, "library: ban list: %zu source(s), %zu creation(s), %zu kept, %u bad line(s) (BUG-9329)",
            g_ban_sources.size(), g_ban_items.size(), g_ban_keep.size(), bad);
@@ -345,6 +352,82 @@ static bool load_index() {
         }
     return true;
 }
+// decision 8D A (owner 2026-11-23): the galaxy server's ban list (net/galaxy.h BANS / BANSPART), the same lines as the
+// mod's file. Kept in the Lineages Cache (galaxy_banned.txt: the last galaxy server's list, read at each game start
+// beside the mod's) and applied at once when it arrives (the same move out as at a game start). A ban the server takes
+// back stays applied until the next game start (a moved creation is never moved back, as with the mod's list).
+// `coop.fix galaxy.server_bans off`: no list is asked for, kept or applied.
+static bool g_srv_bans_fix = true;
+COOP_FIX("galaxy.server_bans", "8D A", g_srv_bans_fix,
+         "Lineages Cache: the galaxy server's creation ban list is kept and applied as the mod's own list");
+static uint32_t g_srv_crc = 0; // the kept list's crc (0 none)
+static bool g_srv_told = false, g_srv_pending = false;
+static std::string g_srv_text;
+static net::ChunkRx g_srv_rx;
+static unsigned g_srv_lists = 0, g_srv_moved = 0;
+static uint32_t ban_crc(const std::string &t) {
+    if (t.empty())
+        return 0;
+    const uint32_t c = net::galaxy::crc32(0, (const uint8_t *)t.data(), t.size());
+    return c ? c : 1; // (as the server: 0 means no list)
+}
+static void on_bans_part(net::Reader &r) {
+    const uint32_t total = r.u32(), crc = r.u32(), off = r.u32();
+    if (!r.ok() || !g_srv_bans_fix)
+        return;
+    if (!total) {
+        g_srv_text.clear();
+        g_srv_pending = true;
+        return;
+    }
+    if (net::chunk_add(g_srv_rx, crc, total, off, r.cur(), r.left(), net::galaxy::kCrtChunk, net::galaxy::kBansMaxBytes) !=
+        net::Chunk::Complete)
+        return;
+    std::string text(g_srv_rx.data.begin(), g_srv_rx.data.end());
+    g_srv_rx = net::ChunkRx{};
+    if (ban_crc(text) != crc) {
+        H->log(M, SK_WARN, "library: the galaxy server's ban list arrived damaged (8D A)");
+        return;
+    }
+    g_srv_text = std::move(text);
+    g_srv_pending = true;
+}
+static void tell_server_bans() {
+    net::Writer w;
+    w.u32(g_srv_crc);
+    g_srv_told = galaxy::send_message(net::galaxy::BANS, w);
+}
+static void load_server_bans() { // (paths(): the kept copy, before the first move out)
+    std::vector<uint8_t> bytes;
+    if (!g_srv_bans_fix || !read_file(g_dir + L"\\galaxy_banned.txt", bytes, net::galaxy::kBansMaxBytes))
+        return;
+    const std::string text(bytes.begin(), bytes.end());
+    g_srv_crc = ban_crc(text);
+    const unsigned bad = parse_ban_text(text);
+    H->log(M, SK_INFO, "library: the galaxy server's ban list kept here (crc %08X): now %zu source(s), %zu creation(s), "
+           "%zu kept, %u bad line(s) (8D A)", g_srv_crc, g_ban_sources.size(), g_ban_items.size(), g_ban_keep.size(), bad);
+}
+static void apply_server_bans() { // (work: outside the frame, the cache's paths known)
+    g_srv_pending = false;
+    const std::string text = std::move(g_srv_text);
+    g_srv_text.clear();
+    const uint32_t crc = ban_crc(text);
+    const std::wstring path = g_dir + L"\\galaxy_banned.txt";
+    if (text.empty())
+        DeleteFileW(path.c_str());
+    else if (!atomic_file(path, std::vector<uint8_t>(text.begin(), text.end())))
+        H->log(M, SK_WARN, "library: galaxy_banned.txt could not be written (8D A)");
+    g_srv_crc = crc;
+    ++g_srv_lists;
+    const unsigned bad = parse_ban_text(text);
+    const unsigned before = g_ban_moved;
+    H->log(M, SK_INFO, "library: the galaxy server's ban list arrived (crc %08X, %zu bytes, %u bad line(s)): now %zu "
+           "source(s), %zu creation(s), %zu kept (8D A)", crc, text.size(), bad, g_ban_sources.size(), g_ban_items.size(),
+           g_ban_keep.size());
+    purge_banned();
+    g_srv_moved += g_ban_moved - before;
+    tell_server_bans();
+}
 // BUG-9329: moves the listed received creations out (see banned() above); the keys moved out before stay hidden from the
 // game's picks (banned\moved.txt: "<hash> <instance> <type> <group> <source>" per line, hex)
 static void purge_banned() {
@@ -502,6 +585,7 @@ static bool paths() {
         g_error = "Library index is unreadable; preserved without overwriting.";
         return false;
     }
+    load_server_bans(); // 8D A
     purge_banned(); // BUG-9329: before anything is imported, offered or loaded
     refresh_received();
     load_onward();
@@ -918,6 +1002,7 @@ void init(const SkHost *host, SkMod *mod, net::Session *session) {
     if (feed && a_Reserve && a_GetKeys && a_GetProps)
         H->hook_create(mod, (void *)feed, (void *)h_FeedKeys, (void **)&o_FeedKeys);
     load_ban_list(); // BUG-9329
+    galaxy::on_message(net::galaxy::BANSPART, on_bans_part); // 8D A
     if (auto find = H->sym("SporeCoop::OTDB_FindObjects"))
         H->hook_create(mod, (void *)find, (void *)h_FindObjects, (void **)&o_FindObjects);
     else
@@ -992,6 +1077,8 @@ static void work(void *) {
     add_category();
     if (!paths())
         return;
+    if (g_srv_pending) // 8D A
+        apply_server_bans();
     if (S->connected()) {
         if (g_offers.empty()) {
             for (auto &hash : g_active_local) {
@@ -1049,6 +1136,10 @@ static void work(void *) {
 void tick(double now, bool safe) {
     g_safe = safe;
     g_now = now;
+    if (!galaxy::welcomed()) // 8D A: on each connection, once the kept copy is read
+        g_srv_told = false, g_srv_rx = net::ChunkRx{};
+    else if (!g_srv_told && g_loaded && g_srv_bans_fix)
+        tell_server_bans();
     if (g_pending || now - g_step_at < 0.05)
         return;
     g_step_at = now;
@@ -1189,6 +1280,7 @@ std::string debug(const std::vector<std::string> &args) {
            " foreign_refused=" + std::to_string(g_foreign_refused) + " no_share_dropped=" + std::to_string(g_no_share_dropped) + " no_share_unsent=" + std::to_string(g_no_share_unsent) +
            " ban_list=" + (g_ban_list_ok ? std::to_string(g_ban_sources.size()) + "/" + std::to_string(g_ban_items.size()) + "/" +
                                             std::to_string(g_ban_keep.size()) : std::string("none")) +
+           " server_bans=" + (g_srv_bans_fix ? std::to_string(g_srv_lists) + "/" + std::to_string(g_srv_moved) + "/" + [] { char b[12]; snprintf(b, sizeof b, "%08X", g_srv_crc); return std::string(b); }() : std::string("off")) +
            " ban_moved=" + std::to_string(g_ban_moved) + " ban_refused=" + std::to_string(g_ban_refused) + " ban_unsent=" +
            std::to_string(g_ban_unsent) + " ban_hidden=" + std::to_string(hidden_count()) + " ban_picks_dropped=" +
            std::to_string(g_ban_picks.load()) + " ban_retries=" + std::to_string(g_ban_retries.load()) + " peers_foreign=" +
