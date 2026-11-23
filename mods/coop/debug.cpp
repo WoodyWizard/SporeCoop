@@ -54,8 +54,13 @@ int c_save(void*, int argc, const char* const* argv, SkOut* out)
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "box")) {
-        SAY("saved_box=%d hold=%d may_start=%d too_early=%u", world::saved_box_up() ? 1 : 0, world::g_box_hold ? 1 : 0,
-            world::save_may_start() ? 1 : 0, world::g_saves_too_early); // BUG-1365
+        SAY("saved_box=%d hold=%d may_start=%d too_early=%u dropped=%u reposted=%u lost=%u", world::saved_box_up() ? 1 : 0,
+            world::g_box_hold ? 1 : 0, world::save_may_start() ? 1 : 0, world::g_saves_too_early, world::g_saves_dropped,
+            world::g_saves_reposted, world::g_saves_lost); // BUG-1365, BUG-1413
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "asplayer")) { // tests (BUG-1413): as the pause menu's Save button, no check of ours
+        SAY(world::post_player_save() ? "posted as the player's save" : "no message manager");
         return 0;
     }
     world::g_box_hold = argc > 1 && !strcmp(argv[1], "hold"); // tests (BUG-0482): the box stays up

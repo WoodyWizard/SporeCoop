@@ -21,7 +21,13 @@
                     refused for now says so and is taken a moment later. SPORE_FIX_OFF=world.save_allowed fails (the
                     second save says "saved" and nothing is written).
 
-  SPORE_LANE=N python3 tools/tests/coop_saved_box.py --case question|cursor|video|twice
+  --case player    BUG-1413: the player's own save (`coop.save asplayer`: the Save message as the pause menu's Save
+                    button posts it, no check of the mod's) right after one of the mod's saves, while the game takes no
+                    Save message (`coop.save box` may_start=0): the game drops it; the mod posts it again once the
+                    game takes one: it is written into the slot within 20 s. SPORE_FIX_OFF=world.save_retry fails
+                    (dropped, nothing written).
+
+  SPORE_LANE=N python3 tools/tests/coop_saved_box.py --case question|cursor|video|twice|player
 """
 import argparse
 import re
@@ -202,6 +208,29 @@ def case_twice(ck, h):
     ck(wait(lambda: not saved_up(h), 20, 0.3), 'no saved box left up')
 
 
+def case_player(ck, h):
+    """BUG-1413: the player's own save while the game's last save is still finishing"""
+    _, folder, _ = save_slot(h, lane.HOST_DIR)
+    ck(os.path.isdir(folder), f'the host\'s save slot is found ({folder})')
+    base = newest(folder)
+    first = h.call('coop.save')['out'].strip()
+    ck(first.startswith('saved (mode'), f'the host saves (as for a world share: {first[:80]})')
+    ck(wait(lambda: saved_up(h), 15, 0.2), 'its saved box is up')
+    ck(wait(lambda: not saved_up(h), 10, 0.1), 'the mod confirmed the box (it closed)')
+    ck(written_after(folder, base, 10), 'the first save is written')
+    ck(wait(lambda: 'saved_box=0' in h.call('coop.save box')['out'], 5, 0.05), 'the mod sees the box closed too')
+    base = newest(folder)
+    before = h.call('coop.save box')['out'].strip()
+    t0 = time.time()
+    posted = h.call('coop.save asplayer')['out'].strip()
+    print(f'  the player\'s save {posted!r}; before it: {before}', flush=True)
+    ck('may_start=0' in before, 'the player\'s save comes while the game takes no Save message (may_start=0)')
+    ok = written_after(folder, base, 20)
+    print(f'  {h.call("coop.save box")["out"].strip()} ({time.time() - t0:.1f} s)', flush=True)
+    ck(ok, 'the player\'s save is written (the game dropped it, the mod made it again)')
+    ck(wait(lambda: not saved_up(h), 20, 0.3), 'no saved box left up')
+
+
 def set_mode(con, w, h):
     """the game's own video mode change (as its options do; coop_window_layout.py)"""
     r = re.search(r'eax=0x([0-9A-F]+)', con.call('call Graphics::IRenderer::Get cdecl')['out'])
@@ -231,12 +260,13 @@ def case_video(ck, h):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--case', choices=('question', 'cursor', 'video', 'twice'), required=True)
+    ap.add_argument('--case', choices=('question', 'cursor', 'video', 'twice', 'player'), required=True)
     a = ap.parse_args()
     h, g = start('creature')
     ck = Checks()
     try:
-        {'question': case_question, 'cursor': case_cursor, 'video': case_video, 'twice': case_twice}[a.case](ck, h)
+        {'question': case_question, 'cursor': case_cursor, 'video': case_video, 'twice': case_twice,
+         'player': case_player}[a.case](ck, h)
     finally:
         close_all(h)
     ck(mode(h) == 'Creature', f'the host is in its game at the end ({mode(h)})')
