@@ -2,6 +2,7 @@
 // functions and the command registrations of sporekit_mod_main, which calls the register_commands_* functions at the
 // places the registrations had (the same order: SporeKit keeps the commands by name, the module inits between them stay
 // where they were). Commands that are the whole interface of a recorder (coop.track, coop.bodyrec) stay next to it.
+#include "lineage_cells.h"
 #include "civ_wallet.h"
 #include "coop_state.h"
 #include "own_progress.h"
@@ -1223,6 +1224,13 @@ void register_commands_core()
                    sreport::command, nullptr, MT);
     H->command_add(M, "coop.settings", "coop.settings [list] | get <key> | set <key> on|off|default|<n> | force <key> <v> (tests) | stored - the session settings (the host decides; session ones before the start)",
                    settings::command, nullptr, MT);
+    H->command_add(M, "coop.lineage",
+                   "coop.lineage [share <0-100>] [consent on|off] - old cells as wild species (cell.lineage_cells, BUG-1477): the pool, the offers, the swaps",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", lineage_cells::command(std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.progress",
                    "coop.progress [resync] - own progress (all.shared_dna 2, BUG-1469): this game's own DNA / bar / food, every player's bar, the host's records; resync: ask the host for our values again",
                    [](void*, int argc, const char* const* argv, SkOut* out) {

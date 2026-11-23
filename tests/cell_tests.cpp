@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "cell_logic.h"
+#include "lineage_cells_logic.h"
 #include "view_centres.h"
 
 using namespace cell_logic;
@@ -431,6 +432,71 @@ static void own_cell_follow()
     printf("  own_cell_follow ok\n");
 }
 
+// the Cell audit fixes of 0.7.17 (BUG-1507..1514): with the fix (must hold) and without (shows the bug)
+static void audit_0717()
+{
+    // BUG-1507: a spend owed while the host left the Cell stage, or owed in world 1 and back in Cell in world 2
+    CHECK(owed_drop(true, false, false, 1, 0));
+    CHECK(owed_drop(true, true, true, 1, 2));
+    CHECK(!owed_drop(true, true, true, 1, 1));  // its own world: paid
+    CHECK(!owed_drop(true, true, false, 1, 2)); // still in the editor: decided back in Cell
+    CHECK(!owed_drop(false, false, false, 1, 2)); // 0.7.16.1: kept for any Cell game
+    // BUG-1510: a plain shadow has no cells
+    CHECK(!tile_entry_populated(false, true, true));
+    CHECK(tile_entry_populated(false, true, false)); // the bug: a shadow counted as populated
+    CHECK(tile_entry_populated(false, false, true));
+    CHECK(!tile_entry_populated(true, false, false));
+    // BUG-1511
+    CHECK(breaking_state(7) && breaking_state(8) && breaking_state(9) && !breaking_state(0) && !breaking_state(6));
+    // BUG-1512: a partner at scale 2 drawn in our scale 1 is twice as far out; bad scales leave the pose
+    CHECK(partner_scale_k(2.f, 1.f) == 2.f && partner_scale_k(1.f, 1.f) == 1.f);
+    CHECK(partner_scale_k(0.f, 1.f) == 1.f && partner_scale_k(NAN, 1.f) == 1.f && partner_scale_k(1.f, 0.f) == 1.f);
+    // BUG-1513: flag 8 only with a product
+    CHECK(state_flags(false, false, true, true) == 12 && state_flags(false, false, true, false) == 4);
+    CHECK(state_flags(true, true, false, true) == 3);
+    // BUG-1514: one level down by the table's ratio, nothing else
+    const float sizes[17] = {10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000, 300000, 1e6f, 3e6f, 1e7f, 3e7f, 1e8f, 3e8f, 1e9f};
+    float k = 0;
+    CHECK(plant_shrink(3, 2, sizes, k) && std::fabs(k - 1.f / 3.f) < 1e-6f);
+    CHECK(!plant_shrink(3, 1, sizes, k) && !plant_shrink(0, -1, sizes, k) && !plant_shrink(17, 16, sizes, k));
+    CHECK(!plant_shrink(3, 2, nullptr, k));
+}
+
+// BUG-1477 (lineage_cells_logic.h): players' old cells as wild species
+static void lineage_rules()
+{
+    using namespace lineage;
+    CHECK(offers(true, true, false) && offers(true, false, true));
+    CHECK(!offers(true, false, false)); // a guest's cells never without its consent
+    CHECK(!offers(false, true, true));  // the setting off: nobody's
+    CHECK(host_swaps(true, {true, true}) && !host_swaps(true, {true, false}) && !host_swaps(false, {}));
+    CHECK(host_swaps(true, {})); // the host alone
+    std::vector<uint32_t> own;
+    for (uint32_t i = 40; i > 0; i--)
+        own.push_back(i);
+    auto o = own_offer(own, 40, {39});
+    CHECK(o.size() == kMaxPerPlayer && o[0] == 38); // newest first, without the cell played and the premade
+    CHECK(std::find(o.begin(), o.end(), 40u) == o.end());
+    CHECK(own_offer({0, 5}, 5, {}).empty());
+    CHECK(diet_fits(true, false, true, false, false) && !diet_fits(true, false, false, true, false));
+    CHECK(diet_fits(true, false, false, true, true));   // the prey-and-threat AI follows the model
+    CHECK(!diet_fits(false, false, true, true, true));  // a model without a mouth never
+    CHECK(diet_fits(true, true, false, true, false));   // an omnivore fits a herbivore species
+    CHECK(spawn_fits(true, false, 5, 5) && spawn_fits(true, false, 4, 5));
+    CHECK(!spawn_fits(true, false, 6, 5)); // a species of the level above: a giant
+    CHECK(!spawn_fits(true, true, 5, 5) && !spawn_fits(false, false, 5, 5) && !spawn_fits(true, false, 5, 0));
+    CHECK(roll(16, 17) && !roll(17, 17) && !roll(0, 0));
+    CHECK(is_shared(0x7B123456u) && !is_shared(0x7B000000u) && !is_shared(0x7C123456u));
+    Cand c;
+    c.key = 0x7B000001u;
+    c.owner = 2;
+    CHECK(!ready(c, {1, 2}, 10, kLead));
+    c.got[1] = 4;
+    CHECK(!ready(c, {1, 2}, 8, kLead) && ready(c, {1, 2}, 9.5, kLead)); // the owner needs none of its own
+    CHECK(!ready(c, {1, 2, 3}, 20, kLead));
+    CHECK(withdrawn(c, 2, 0) && withdrawn(c, 2, 0x7B000001u) && !withdrawn(c, 2, 0x7B000002u) && !withdrawn(c, 1, 0));
+}
+
 int main(int argc, char** argv)
 {
     for (int i = 1; i < argc; i++)
@@ -452,6 +518,8 @@ int main(int argc, char** argv)
     active_set();
     link_pace();
     own_cell_follow();
+    audit_0717();
+    lineage_rules();
     if (g_fail) {
         printf("cell_tests: %d FAILED\n", g_fail);
         return 1;

@@ -9,8 +9,8 @@ source: lab
 role: 
 versions: 
 fixed_in:
-branch: fix/w65-night
-commits: 8fff6369
+branch: fix/w84-tests
+commits: 8fff6369 74980a90
 tests: tools/tests/coop_space_planner_build.py (space_planner_miss)
 signature:
 docs:
@@ -34,12 +34,22 @@ Open question: whether the city's screen point was on screen at the click (`on`,
 Diagnostics only (no check changed): each click that opens no planner prints the point, whether it is on screen, the
 planner line and the busy line, and leaves a shot space_planner_try<N>.png. A rerun should pass; a repeat now says what
 the click hit.
+* fix/w84-tests (74980a90): coop_space_planner_build.py planner_buy(): the 2nd to 4th click go 28 px beside the
+  city's screen point (below, above, right: CLICK_OFFS) after a fresh hover (the pointer off the city and back),
+  instead of four clicks on one pixel. space_planner_miss: when no planner opened after the 4 clicks the run is
+  `RESULT: INCONCLUSIVE ... (BUG-1448)` (the miss case is about a drop on a taken plot, BUG-0902; the click that opens
+  the planner stays a FAIL check of space_planner_build, _host, _away, _menu, which use the same code). Test only.
 
 ## Verification
 Open, waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run space_planner_miss --lane N --retry 0
 --no-build` PASS expected. no-fail-run: cause not found; FAIL 20261122-194210.
 - Still open (2026-11-23): space_planner_miss PASS in 20261123-015558 and 20261123-023643, but the change is diagnostics only and no run missed the click again, so the cause is still unknown.
+- Pending night run (fix/w84-tests): `SPORE_DETECTOR=20 python3 tools/lab.py run space_planner_miss --repeat 3 --lane N --retry 0 --no-build` PASS (or INCONCLUSIVE naming BUG-1448,
+  with the per-click lines and space_planner_try<N>.png); twin `SPORE_LAB_FIXOFF="space_planner_miss=civ.space_planner_closed"
+  SPORE_DETECTOR=20 python3 tools/lab.py run space_planner_miss --lane M --retry 0 --no-build` FAILS; `SPORE_DETECTOR=20 python3 tools/lab.py run space_planner_build space_planner_host --lane M
+  --retry 0 --no-build` PASS.
 
 ## History
 - 2026-11-23: opened; fix/w65-night: evidence collected, diagnostics added.
 - 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.
+- 2026-11-23: fix/w84-tests (WP-T1 of 0.7.17): clicks beside the city point after a fresh hover; no planner in the miss case is INCONCLUSIVE (74980a90).

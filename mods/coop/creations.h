@@ -24,8 +24,7 @@ enum Kind : uint8_t { kCreature = 0, kCell = 1, kUfo = 2, kKinds = 3 };
 // creation: a civ mirror vehicle or a building of a city, a host ship. (Kind stays the creations'
 // own: its numbers are on the wire.)
 enum ModelKind : uint8_t { kMkCreature = 0, kMkCell, kMkUfo, kMkVehicle, kMkBuilding, kMkKinds };
-// MSG_CREATION kinds reserved for 0.7.17 (WP-0 of docs/plan-0.7.17.md, creations 1.2; declared only, nothing sends or
-// handles them yet). Kinds 0-2 are Kind above, 3-8 are in creations.cpp, 9 is retired (WP-C2 of an unreleased 0.7.16
+// MSG_CREATION kinds of 0.7.17 (WP-0 of docs/plan-0.7.17.md, creations 1.2; 10 and 11: creations_captain.cpp). Kinds 0-2 are Kind above, 3-8 are in creations.cpp, 9 is retired (WP-C2 of an unreleased 0.7.16
 // build: never reuse it). An older peer drops a kind it does not know.
 constexpr uint8_t kKindHostProps = 10;   // WP-K1 (feat/w74-captain): the host captain's property lists (BUG-1279)
 constexpr uint8_t kKindCaptain = 11;     // WP-K1: a player's own captain (#217 a, BUG-1262)
@@ -64,6 +63,11 @@ Key player_key(uint8_t player, Kind k);
 Key player_orig(uint8_t player, Kind k);
 // cSpeciesProfile* of a player's creature, nullptr if none
 void* player_species(uint8_t player);
+// BUG-1262: a partner's adventure captain registered here (0x7A......) and baked by this game ({} / nullptr: none yet,
+// not baked yet, or adventure.partner_captain off: the puppet stays this game's own captain)
+Key player_captain_key(uint8_t player);
+void captain_list_recheck(); // tests (BUG-1279, coop.captain plant): the host reads its captain's list again now
+void* player_captain_species(uint8_t player);
 
 // Species of the host's world that a guest's game does not have (creatures of the host's own My
 // Creations or of its Sporepedia downloads live on its planet): the guest asks, the host sends the
@@ -114,8 +118,9 @@ bool have_creepy_cute();
 std::string world_missing_parts();
 std::vector<uint32_t> model_parts(const std::vector<uint8_t>& bem); // part ids a creature model names
 
-// My Creations of this kind, newest first
+// My Creations of this kind, newest first (BUG-1476: a guest without an own cell gets the three premade diet cells)
 std::vector<Option> options(Kind k);
+bool premades_listed(Kind k); // BUG-1476: options(k) are the premades (the co-op window says "game cells")
 Option mine(Kind k);
 bool one_creature(); // F5: creature.mode host (every guest plays the host's cell and creature)
 void choose(Kind k, const Key& key); // {} = keep the world's own

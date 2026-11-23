@@ -1285,6 +1285,17 @@ static int c_captain(void*, int argc, const char* const* argv, SkOut* out)
                 g_species_saved = inst;
             inst = (uint32_t)strtoul(argv[2], nullptr, 16);
         }
+    } else if (argc > 1 && !strcmp(argv[1], "plant") && emp) {
+        // tests (BUG-1279): the captain gets the property list of the galaxy menu's captain template (the game's own path
+        // for a new captain: CaptainProps_Copy, saved into the captain's database), then the host sends it at once
+        static uintptr_t copy = H->sym("SporeCoop::CaptainProps_Copy"), tmpl = H->sym("SporeCoop::GACaptain_PropsTemplate");
+        void* list = nullptr;
+        bool ok = copy && tmpl && skg::cdecl_call<bool>(copy, (const uint32_t*)(emp + 0xC4), (const uint32_t*)tmpl, &list,
+                                                        (void*)nullptr);
+        if (list)
+            skg::vcall<void>(list, 1); // (the copy's reference: Release)
+        creations::captain_list_recheck();
+        H->out_printf(out, "captain list %s\n", ok ? "planted" : "not planted");
     } else if (argc > 1 && !strcmp(argv[1], "open")) {
         void* ui = ui_get ? skg::cdecl_call<void*>(ui_get) : nullptr;
         if (game::mode_id() != modes::kSpace || !ui || !show) {
@@ -1296,6 +1307,13 @@ static int c_captain(void*, int argc, const char* const* argv, SkOut* out)
     }
     const uint32_t* ck = emp && readable(emp + 0xC4, 12) ? (const uint32_t*)(emp + 0xC4) : nullptr;
     const uint32_t* sk = spm ? (const uint32_t*)(spm + 0xA4) : nullptr;
+    // BUG-1279: whether this game has the captain's property list (the game's own lookup, SporeCoop::CaptainProps_Get)
+    static uintptr_t props_get = H->sym("SporeCoop::CaptainProps_Get");
+    void* props = nullptr;
+    bool has_props = ck && ck[0] && props_get && skg::cdecl_call<bool>(props_get, ck, &props);
+    if (props)
+        skg::vcall<void>(props, 1); // (Release)
+    H->out_printf(out, "props=%d ", (int)has_props);
     H->out_printf(out, "captain=%08X/%08X/%08X species=%08X/%08X/%08X%s portraits: species %u skipped %u fix=%d "
                   "items: none %u fix=%d stats: skipped %u fix=%d\n",
                   ck ? ck[0] : 0, ck ? ck[1] : 0, ck ? ck[2] : 0, sk ? sk[0] : 0, sk ? sk[1] : 0, sk ? sk[2] : 0,
@@ -2182,7 +2200,8 @@ void init(const SkHost* host, SkMod* mod)
            items ? "on" : "off", stats);
     H->command_add(M, "coop.captain", "coop.captain [open | species <hex> | species restore] - the player empire's captain and the "
                    "world's species (BUG-1111); tests: open the captain screen as the game's Space update does, point the "
-                   "player species at another instance and back", c_captain, nullptr, SK_CMD_OUTSIDE_FRAME);
+                   "player species at another instance and back; plant: the captain gets a captain's property list "
+                   "(tests, BUG-1279)", c_captain, nullptr, SK_CMD_OUTSIDE_FRAME);
     if (HMODULE exe = GetModuleHandleW(nullptr)) { // the game's code section (the vtable slot checks of BUG-0575)
         auto* nt = (IMAGE_NT_HEADERS*)((uint8_t*)exe + ((IMAGE_DOS_HEADER*)exe)->e_lfanew);
         auto* sec = IMAGE_FIRST_SECTION(nt);

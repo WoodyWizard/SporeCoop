@@ -130,7 +130,23 @@ def main():
     ck(hk[2] == own_model, f'next session: the host\'s game builds it from the guest\'s own model ({hk[2]})')
     hd = wait(lambda: design(host, pid), 30)
     ck(hd and hd.startswith('7B'), f'next session: the City Hall design is back on the host ({hd})')
-    keyframe('next_session', 'no look change (WP-0): the next session in the Creature world')
+    # BUG-1459: the frame waits (up to 20 s) for the guest's game to swap its avatar to its own creature (about 3 s after
+    # the world appeared; since lab 20261120-133703 the frame came at 6 s, the guest still in the host's species on its
+    # own screen): the guest's avatar key is its own creation's ('mine creature') or at least not the host's species
+    def avatar_key(con):
+        return field(con.call('coop.avatar')['out'] or '', r'key=0x([0-9A-F]{8})')
+
+    def own_avatar():
+        g, h = avatar_key(guest), avatar_key(host)
+        mine = field(guest.call('coop.creations')['out'] or '', r'mine creature: ([0-9A-Fa-f]{8})')
+        return bool(g) and ((mine and g == mine.upper()) or (h and g != h))
+    t_av = time.time()
+    swapped = wait(own_avatar, 20)
+    av = f'guest avatar {avatar_key(guest)}, host avatar {avatar_key(host)}: the guest\'s own creature ' + \
+        (f'after {time.time() - t_av:.1f} s' if swapped else 'NOT seen in 20 s (the guest may still wear the host\'s species)')
+    print(f'  next session: {av}', flush=True)
+    keyframe('next_session', 'no look change (WP-0): the next session in the Creature world, the guest with its own '
+             'creature on both screens', extra=[av])
 
     creations_state.restore(guest, st0)  # the profile as it was (BUG-0345)
     ck.faults(host=host, guest=guest)

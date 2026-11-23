@@ -48,6 +48,12 @@ std::string debug(const std::vector<std::string>& a)
         cycle((Kind)k, a[0] == "next" ? 1 : -1);
         return "chosen: " + mine((Kind)k).name;
     }
+    if (a.size() >= 3 && a[0] == "hideown") { // tests (BUG-1476): hideown <kind> on|off: our My Creations of it read as empty
+        int k = a[1] == "cell" ? kCell : a[1] == "ufo" ? kUfo : kCreature;
+        test_hide_own(k, a[2] == "on" || a[2] == "1");
+        return "own " + a[1] + " creations " + (a[2] == "on" || a[2] == "1" ? "hidden" : "shown") + ": " +
+               std::to_string(options((Kind)k).size()) + " choice(s)" + (premades_listed((Kind)k) ? " (game cells)" : "") + "\n";
+    }
     if (a.size() >= 2 && a[0] == "choose") { // choose <kind> <hex instance|none>
         int k = a[1] == "cell" ? kCell : a[1] == "ufo" ? kUfo : kCreature;
         uint32_t inst = a.size() > 2 && a[2] != "none" ? (uint32_t)strtoul(a[2].c_str(), nullptr, 16) : 0;

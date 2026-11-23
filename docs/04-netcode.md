@@ -1006,3 +1006,36 @@ when the host is back from an away time in which the guest's own game made such 
 entry out of bounds is refused (`coop.social solo`: `refused=`). Old peers: a guest sends it only to a host of creature
 1.3 (`host_families`, `social_logic::kSoloMinor`), else drops the events (0.7.16.1: the host's table wins); a 0.7.16.1
 host would ignore the unknown kind. The creature family has no wire file, so the lock does not change.
+## MSG_CREATION kinds 10 and 11: the captains (2026-11-23, feat/w74-captain)
+<a id="netcode-creation-captains"></a>
+
+WP-K1 of docs/plan-0.7.17.md, creations 1.2 (no new message type; the family lock hashes species_line_core.h, unchanged).
+Both kinds are ordinary MSG_CREATION chunks (`owner, kind, id, total, off, n` + bytes), reassembled as every kind; the
+bundle is creations.cpp's `pack()` format. Sent only to a peer whose HELLO / WELCOME lists creations 1.2
+(`captain::kMinor`, `peer_families` on the host, `host_families` on a guest): a 0.7.16.1 peer drops a kind it does not know
+and gets nothing new. With its switch off a game drops the kind before reassembly, as 0.7.16.1 does.
+
+| Kind | Direction | Owner | Body (bundle) | Receiver |
+|---|---|---|---|---|
+| 10 kKindHostProps | host -> guest, in Space | 0 (only from the host, at most 512 KiB) | key = the captain's creature key; one record: its property list {captain, 0x00B1B104, group &#124; 0xE500} without 0x0D8A4BC9, only a list with the item config 0xC339D5C7 | registered under the host's key at priority 500 unless the guest has its own list or EditorSaves creation of that key (`creations.captain_props`, BUG-1279) |
+| 11 kKindCaptain | any -> host -> every guest of 1.2, in an adventure only | the sender (the host checks owner == from) | key = the sender's adventure captain; its model records, creaturedata, property list | the host keeps it for later joiners and relays it; every game registers it as a 0x7A...... copy (`captain::copy_instance`), bakes it, the puppet takes it once baked (`adventure.partner_captain`, BUG-1262) |
+
+## Cell and creations wire of feat/w81-cell (2026-11-23, feat/w81-cell)
+<a id="netcode-w81-cell"></a>
+
+0.7.17 item 9 and the Cell audit items of item 11 (docs/plan-0.7.17.md). No new message type, no lock change (the cell
+family lists no wire files; creations' wire file species_line_core.h is unchanged); all on the minors of WP-0.
+
+* **MSG_CREATION kind 12** (creations 1.2, `creations::kKindLineageCell`, BUG-1477): a player's old cell as a wild
+  species. owner = the cell's player, id = its shared instance (0x7B + 24 bits of the content hash, the key every game
+  registers it under), total / off / n / bytes as every kind: the bundle of `creations::line_pack`. total 0 (one
+  message, no bytes): withdrawn, id 0 = every cell of that owner. A guest sends its own (only after its consent) to the
+  host; the host keeps them, relays each pool cell to every peer whose families have creations 1.2 or newer
+  (`peer_families`) and to a player joining later; a guest sends only to a host of creations 1.2 (`host_families`). An
+  older peer is never sent kind 12 (it would drop it as an unknown kind) and the host swaps no spawn while one is in
+  the session (lineage_cells_logic.h host_swaps).
+* **MSG_CELL_EAT kind ACT_SHRINK 3** (cell 1.2, BUG-1514): a guest's bite shrank a plant of the host one level in
+  place; arg = the new level, food / plant / meal as ACT_GONE (the bite's points). Sent only to a host of cell 1.2 or
+  newer: a host before it took any kind but ACT_GONE for a kill.
+* **MSG_CELL_STATE flag 8** (BUG-1513): the cell is a product (flag 4) of the RECEIVER's own (a cloud the host made
+  for that guest's puppet); written per destination; an older guest reads only 1, 2 and 4.

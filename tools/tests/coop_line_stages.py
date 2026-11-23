@@ -74,12 +74,21 @@ from coop_tribe_outfit import my_creations, profile
 from coop_tribe_own_outfitter import outfitter_route, own_tribe, tribe_line
 from coop_tribe_own_species import closeup as member_closeup, line_key, model_hash, species as members, wait_mix
 from harness import field, fnv, mode, waiter
-from play_civ import frame_city
+from play_civ import answer_talk, frame_city
 from twoinst import Checks, Console, keyframe, start
 
 wait = waiter(step=1.0, final=True)
 CITY_HALL = 0x99E92F05
 VTYPE, VGROUP = cod.VTYPE, cod.VGROUP
+
+
+def talk_before_frames(players):
+    """BUG-1459: a nation's talk (a trade route offer) that waits on a game covers its view: answered before the Civ
+    close-ups (line_stages_outfit 09-11 of lab 20261122-194210 showed the "Red Nation" offer, not the city)"""
+    for r, c in players.items():
+        said = answer_talk(c)
+        if said:
+            print(f'  civ: {r}: a nation\'s talk answered before the key frames: {said}', flush=True)
 
 
 def hx(k):
@@ -377,6 +386,7 @@ def run_civ(ck, camp, a, host, guest, guest_p, pid, want, keys):
     keyframe('civ_guest_city', f'Civ after the live Tribe -> Civ change: the city {tgt} the guest captured, both games: '
              'its citizens walking about are the guest\'s own creature (the same as in Creature and Tribe), not the '
              'civilization\'s species')
+    talk_before_frames(players)
     citizen_closeup(players, gpos, 'civ_guest_citizen', 'one citizen of the guest\'s city up close, the same camera on '
                     'both games: the guest\'s own creature on both screens')
 
@@ -446,6 +456,7 @@ def run_civ(ck, camp, a, host, guest, guest_p, pid, want, keys):
                                   f'built from {h}, the guest\'s model {want_hash}; the culture\'s {hcul})')
         vpos = (civ(host)[1].get(vid) or {}).get('pos')
         if vpos:
+            talk_before_frames(players)
             try:
                 set_ok = keyviews.look_both((host, guest), vpos, dist=12, height=6, k=0, fov=50, look_up=1.0)
                 print(f'  civ: vehicle same view at {vpos}: {set_ok}', flush=True)

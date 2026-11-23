@@ -45,6 +45,9 @@ import sameview as sv  # noqa: E402
 from twoinst import Checks, keyframe, start  # noqa: E402
 
 STAFF = 0x11
+# BUG-1467: the parts (start, rejoin) that could judge the chief's resting grip and its lasting grip, and why a part
+# could not; main() makes the run INCONCLUSIVE when no part judged one of them (and no check failed)
+GRIP_JUDGED, LASTS_JUDGED, NOT_JUDGED = [], [], []
 TAG_UP = 2.6  # m: coop.cpp draw_owner_tags
 ROW = re.compile(r'\s+#(\d+) \S+ owner=(-?\d+) age=(\d+) sel=\d+ hp=([\d.]+) pos=\((-?[\d.]+) (-?[\d.]+) (-?[\d.]+)\).*'
                  r' tool=(-?\d+) leader=(\d) item=(-?\d+) model=(-?\d+) hold=(\d) iscale=([\d.]+) scale=([\d.]+)')
@@ -130,19 +133,34 @@ def check_item(ck, host, guest, tag, strict=True):
     if lead is None:
         return
     ok = held = False
+    judged = both_hold = 0
     t0 = time.time()
-    while time.time() - t0 < 30 and not ok:  # (the chief puts the staff away while it gathers or eats)
+    # (the chief puts the staff away while it gathers or eats). BUG-1467: a sample in which the host's chief itself is in
+    # its staff gesture (hold=1, the long 0x04C6CB02 one) judges nothing: the copy mirrors that hold (tribe.mirror_hold,
+    # BUG-1449). Such samples are skipped and the wait goes on up to 60 s while no sample could be judged.
+    while not ok and (time.time() - t0 < 30 or (judged == 0 and time.time() - t0 < 60)):
         h, g = members(host).get(lead), members(guest).get(lead)
         held = bool(h and h['item'] == STAFF and h['model'] == 1)
+        if held and h['hold']:
+            both_hold += bool(g and g['hold'])
+            time.sleep(1.5)
+            continue
+        judged += held
         ok = bool(held and g and g['item'] == STAFF and g['model'] == 1 and g['hold'] == 0)
         if not ok:
             time.sleep(1.5)
     if held or strict:
         ck(held, f'{tag}: the host\'s game draws its chief #{lead} with the staff (item {h and h["item"]}, model '
                  f'{h and h["model"]})')
-        ck(ok, f'{tag}: the guest\'s game draws the copy of the host\'s chief #{lead} with the staff in its resting grip '
-               f'(item {g and g["item"]}, model {g and g["model"]}, still being taken {g and g["hold"]}; the game\'s tool '
-               f'{g and g["tool"]}, leader {g and g["leader"]})')
+        if held and not judged:
+            NOT_JUDGED.append(f'{tag}: the host\'s chief #{lead} held its staff gesture (hold=1) in every sample of '
+                              f'{time.time() - t0:.0f} s, the copy too in {both_hold}: the resting grip was not seen')
+            print(f'  ({NOT_JUDGED[-1]}; BUG-1467)', flush=True)
+        else:
+            GRIP_JUDGED.append(tag)
+            ck(ok, f'{tag}: the guest\'s game draws the copy of the host\'s chief #{lead} with the staff in its resting '
+                   f'grip (item {g and g["item"]}, model {g and g["model"]}, still being taken {g and g["hold"]}; the '
+                   f'game\'s tool {g and g["tool"]}, leader {g and g["leader"]})')
         # BUG-0912: the staff has the size it has in the host's game (the game sizes an item's model at the attach by
         # the member's size then; the host's chief was made 1.3x after it, its copy before)
         hs = gs = 0.0
@@ -160,9 +178,10 @@ def check_item(ck, host, guest, tag, strict=True):
         # the grip must last: a mirror's "taking it" state never ended by itself (the staff stuck out forward)
         # BUG-1449: a hold the host's member has too is the host's own swing or change, mirrored (tribe.mirror_hold binds
         # the copy's hold to it for up to 8 s, kHoldBoundMax): only samples without the host's hold count, and the loop
-        # waits for 8 of them (up to 20 s); fewer than 4 is a FAIL too (nothing judged)
+        # waits for 8 of them (up to 20 s, up to 40 s while fewer than 4 came); fewer than 4 judges nothing (BUG-1467:
+        # a host chief in its long staff gesture for the whole window): not judged, no FAIL
         stuck, free, host_held, t1 = 0, 0, 0, time.time()
-        while time.time() - t1 < 20 and free < 8:
+        while free < 8 and (time.time() - t1 < 20 or (free < 4 and time.time() - t1 < 40)):
             g2, h3 = members(guest).get(lead), members(host).get(lead)
             if h3 and h3['hold']:
                 host_held += 1
@@ -173,9 +192,15 @@ def check_item(ck, host, guest, tag, strict=True):
             if stuck >= 4:
                 break
             time.sleep(1.0)
-        ck(stuck < 4 and free >= 4, f'{tag}: the copy keeps the staff in the grip (not held as in the middle of taking it '
-                                    f'for 4 s while the host\'s member does not; {free} samples without the host\'s hold, '
-                                    f'{host_held} with it)')
+        if stuck < 4 and free < 4:
+            NOT_JUDGED.append(f'{tag}: the grip check had {free} samples without the host\'s hold in '
+                              f'{time.time() - t1:.0f} s ({host_held} with it; at least 4 needed)')
+            print(f'  ({NOT_JUDGED[-1]}; BUG-1467)', flush=True)
+        else:
+            LASTS_JUDGED.append(tag)
+            ck(stuck < 4, f'{tag}: the copy keeps the staff in the grip (not held as in the middle of taking it for 4 s '
+                          f'while the host\'s member does not; {free} samples without the host\'s hold, {host_held} '
+                          f'with it)')
     else:  # after the rejoin the chief may be away gathering, the staff put away in the host's game too
         print(f'  ({tag}: the host\'s chief #{lead} held no staff in the host\'s game for 30 s (item {h and h["item"]}): '
               f'its hand is compared as every member\'s)', flush=True)
@@ -360,6 +385,9 @@ def main():
     ck = Checks()
     (part_item if a.part == 'item' else part_tags)(ck, host, guest)
     ck.faults(host=host, guest=guest)
+    if a.part == 'item' and (not GRIP_JUDGED or not LASTS_JUDGED):
+        return ck.inconclusive(f'the chief\'s resting grip judged in {GRIP_JUDGED or "no part"}, its lasting grip in '
+                               f'{LASTS_JUDGED or "no part"}: {"; ".join(NOT_JUDGED)} (BUG-1467)')
     return ck.result()
 
 

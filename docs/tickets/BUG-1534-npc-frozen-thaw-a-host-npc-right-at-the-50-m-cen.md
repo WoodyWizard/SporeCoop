@@ -9,8 +9,8 @@ source: lab 20261123-023643
 role: test
 versions: 0.7.16
 fixed_in:
-branch:
-commits:
+branch: fix/w84-tests
+commits: 318e3f9c
 tests: npc_frozen_thaw
 signature:
 docs:
@@ -32,14 +32,24 @@ in that read), or read the guest's proxy radius from the mod. Not fixed on fix/w
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Test boundary (observed, lab 20261123-023643 npc_frozen_thaw.log): 5 host NPCs within 50 m of the guest from 5 s
+on (4 at 3-4 s: one walks about the 50 m line), at 8 s `n35 (50 m from the guest) not on the guest`, at 7 s and 9 s
+it is there; no stale drop (0), no proxy off. The two censuses are read one after the other (host, then guest) and each
+against the guest's avatar of the guest's own game, so an NPC that crosses the 50 m line between the reads is "within 50
+m" on the host and may be missing from the guest's list in that read. Not the mod's radius: the host keeps an NPC for a
+guest within kRelevance 110 m (+ kHysteresis 20 m, npc.cpp) and the census lists 250 m. Not a proxy bug.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+coop_npc_frozen.py missing_near(): a host NPC missing on the guest in the outer EDGE = 5 m of the NEAR circle (45-50 m
+from the guest) is printed as an edge read ("(edge read, not counted: n35 (49.8 m) ...; BUG-1534)") and not counted as
+missing; a proxy missing well inside (BUG-0611's stale drop) and a proxy 15 m off (BUG-1234 / BUG-1376, the
+drive.lead_gap twin) count as before. Used by npc_frozen_death, _caption, _live, _thaw. Test only, no mod change.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Open, pending night run: `SPORE_DETECTOR=20 python3 tools/lab.py run npc_frozen_thaw --repeat 6 --lane N --retry 0 --no-build` PASS 6 of 6 (an "edge read" line may show);
+the twin `SPORE_DETECTOR=20 python3 tools/lab.py run npc_frozen_thaw_lead_gap_off --repeat 3 --lane M --retry 0 --no-build` still FAILS (its "15-18 m off"
+reads are not edge reads). FAIL before: 20261123-023643 (npc_frozen_thaw, rel/0.7.16 fd28f88f).
 
 ## History
 - 2026-11-23: opened.
+- 2026-11-23: fix/w84-tests (WP-T1 of 0.7.17): the census notes a proxy missing in the outer 5 m of its 50 m instead of counting it (318e3f9c).

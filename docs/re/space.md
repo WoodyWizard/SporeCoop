@@ -3717,3 +3717,32 @@ not taken by 0.7.16.1. Static reading of rel/0.7.17 (4daf12d1); no new game addr
   not hold; the seller takes back an offer with no answer after the offer life plus 30 s (a 0.7.16.1 receiver, BUG-1491).
 * Negative: SPC-14 parts a and b (a waiting tick's failed list, the 10 s resend) are harmless and unchanged; SPC-3's
   rel_keys part is never read (a self pair).
+
+## A guest's own captain in Space (2026-11-23, feat/w74-captain)
+<a id="space-own-captain"></a>
+
+BUG-1475 (#217 a, the idea of PR #217 by IltonBJSilva). GOG 2024, Ghidra (static), no game run for this branch.
+* ✔ (Ghidra) cEmpire's serializer table 0x1572B60 (static init 0x1336DF0) has `mCaptainKey` at entry 0x1572D04: id
+  0x07F55DBF, offset 0xC4, write 0xAE33D0 -> Stream_WriteResourceKey 0xAE2DC0 (a key attribute, so the savestrip key
+  filters see it too); cPlayer's mInitCaptainKey (+0x1290) is in table 0x1350CA0.
+* ✔ (Ghidra) 0xC75B40 fastcall(cPlayer*) (its cPlayer comes from 0xF67D40, named Canvas::GetWindow by the March2017 base
+  but the cPlayer getter here) runs `SporeCoop::Captain_TagTraits` 0x555F70(&empire captain, card) for each nonzero card
+  +0x10FC..+0x110C: it rewrites the captain creation's Pollinator metadata {inst, 0x030BDEE3, group} (the card's
+  category replaced) and writes it back into the creation's own database. cEmpire_SetCaptainKey 0xC31100,
+  cEmpire_UpdateCaptainKey 0xC32AE0 (one caller, the Space mode's enter 0x1007612, only with GA installed) and
+  cPlayer_SetConsequenceTrait in Space call it. So setting a player's own creature as captain with the game's setter
+  would retag that creature in its My Creations for good: own_captain.cpp writes +0xC4 as the setter does, without it.
+  (history.cpp's own cards in Space still run it on whatever the captain is then: ~ a guest's own captain gets its own
+  cards in its metadata when a card changes later; not seen at runtime.)
+* ✔ (Ghidra) Readers of +0xC4 in Space (GetCaptainKey 0xC310F0 callers): the comm screen 0xAEC221 (and 0xAE9510 in GA),
+  0xC6E690, 0xFDA740, 0xFDB990 (the captain's model bake into the model world), 0xFDBF80 (the captain's items to the
+  achievements and inventory: skipped without a list), 0xFDF5E0 (the adventure request), 0xFE0F30 ("Name Your
+  Captain"), the captain panel 0xFE7140 / 0xFE7250 / 0xFE7330 / 0xFE7560 / 0xFE7CF0, the outfitter 0xFE7A10 (? its
+  result on a creation that never was a captain is not known), 0x1015F10 (the beam-down creature in GA), the captain
+  screen 0x1072810. No crew reader found.
+* The rule (captain::own_step, own_captain.cpp, `space.own_captain`): a guest of creature.mode own that plays an own
+  creation (not one under a key of the host's world, BUG-0278) gets it as its captain 5 s after the Space world came,
+  when the key is known here and has a species profile (BUG-1111 / BUG-1278 read both); a world without a captain is
+  left to "Name Your Captain"; a captain the game sets later (named, outfitted) is the player's own, kept and noted per
+  world (worlds.ini [captain]). Saves: savestrip's save hooks write the world's captain into +0xC4 for the save and ours
+  after it; the session's end puts the world's back. `coop.owncaptain [save]`.

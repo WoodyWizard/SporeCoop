@@ -10264,3 +10264,58 @@ Each test has its twin (`<name>_off`, SPORE_FIX_OFF=<switch>, suite `twin`): the
   `coop.wobj use <ornament> fade` adds the interact node's FadeOut. `coop.wobj orns` prints `fade=<+0x238>/<delay
   ms>/<fade ms>`. Tests `ornament_fade_dig` / `_gone` / `_settle` (+ two twins).
 * `coop.find labels` shows the partner's health in its tag text (BUG-1526). Test `creature_tag_hp` (+ `_off`).
+## The captain tests of WP-K1 (2026-11-23, feat/w74-captain)
+<a id="testing-captain-0717"></a>
+
+Written by day, not run yet (night run: `SPORE_DETECTOR=20 python3 tools/lab.py run space_captain_items
+space_captain_items_off space_own_captain space_own_captain_off own_prebake own_prebake_off adventure_tutorial
+adventure_tutorial_partner_off space_captain space_captain_none --lane N --retry 0 --no-build`, ~70 min on one lane, or
+split over 4 lanes). Each test reads the game's own state on the other machine:
+* `space_captain_items` (BUG-1279): `coop.captain plant` gives the host's captain a captain's property list (the game's
+  CaptainProps_Copy of the galaxy menu's template 0x15A44C0, ~ not checked to hold the item config), the host saves; the
+  guest's `coop.captain` props=1 (CaptainProps_Get) and its captain panel (Accept, rank badge) leaves BUG-0304's
+  "items: none" unchanged. If the host's list does not reach the package file, the host's "captain lists: none=" grows:
+  the test fails at the guest's props (an INCONCLUSIVE cause, read the host's line). Twin: creations.captain_props.
+* `space_own_captain` (BUG-1475): the guest chooses its first own creature; cEmpire +0xC4 on the guest becomes it, the
+  host's stays; the captain screen opens without a fault; a save of the guest's game names the host's captain only.
+  Twin: space.own_captain. space_captain (BUG-1278's twin) and space_captain_items switch space.own_captain off on both
+  games: they need the fixture's captain.
+* `own_prebake` (BUG-1237): a fresh copy of a guest creature (as civ_own_species: never baked) is chosen in a running
+  Creature world; "own prebake: swap_bake=1" (the game's IsBaked when SetSpecies ran). Cold start only (the copy is
+  written into the guest's My Creations before the games start). Twin: creations.own_prebake.
+* `adventure_tutorial` check 6 (BUG-1262): the puppet's body (modelhash of its species here) is the partner's captain's
+  body on the partner's game, within 30 s after the play. Twin `adventure_tutorial_partner_off`; when both games play a
+  captain of the same body the twin cannot fail (printed).
+
+## Steadier lab tests of 0.7.17 WP-T1 (2026-11-23, fix/w84-tests)
+<a id="testing-wp-t1-0717"></a>
+
+Test-only changes (no mod code) for flakes of the 0.7.16 final checks; each names its ticket in the output.
+* INCONCLUSIVE instead of FAIL when the precondition did not happen: `tribe_held_item` (the host's chief in its staff
+  gesture for every sample, BUG-1467), `latency_step_ingame` (a player in its evolution editor, BUG-1358),
+  `space_planner_miss` (no planner opened after 4 clicks, BUG-1448).
+* Waits instead of one read: `nest_eggs_air` reads the laid eggs every 0.5 s up to 30 s (BUG-1466); the planner
+  clicks after the first go 28 px beside the city after a fresh hover (BUG-1448); the walk's way back to the partner
+  does not click the walker's own nest (BUG-1358, every user of coop_puppet_walk.walk).
+* Boundaries: the npc_frozen census notes a proxy missing in the outer 5 m of its 50 m circle (BUG-1534); the
+  nest_target_probe guest stands 0.3 m over its own ground at each spot, not in the air of its paused game (BUG-1410:
+  its game kept the grounded byte, the state went without PF_JUMPING).
+* Sequential check: `tribe_npc_dash` / `creature_npc_dash` record a second dash when the along-path median is within
+  0.010 s of its limit and judge both dashes' frames (BUG-1452; a clear first dash costs nothing more).
+* Split: `own_cell` judges the populate on any read of its 60 s; the open defect of the pool's trough has its own
+  test `own_cell_steady` (extended; FAILS until BUG-1408 is fixed, docs/known-issues.md#issue-cell-own-pool-trough).
+* `space_planet_runners` allows 5 % of the runner samples over 2.5 m (the fix-on arm 0-1.4 %, lab 20261123-111347) and
+  prints the share over 1-3 m for the fix-off arm's measurement (BUG-1454).
+## Test knobs of feat/w81-cell (2026-11-23, feat/w81-cell)
+<a id="testing-w81-cell"></a>
+
+* `coop.creations hideown <kind> on|off`: this game's My Creations of a kind read as empty (an empty test profile;
+  BUG-1476's premades show for a guest's cell).
+* `coop.pool spend fake <n>`: as if the own cell editor had just spent n DNA (measured at the next tick, BUG-1507).
+* `coop.pool tilestat`: a second line `tilestat shadows= starved= shadow_counted= shadow_empty=` (BUG-1510).
+* `coop.pool` line `cell_audit`: the switches and counters of BUG-1507..1514.
+* `coop.lineage [share <0-100>] [consent on|off]`: the old cells' pool, offers and swaps (BUG-1477); `coop.pool kin 0`
+  line `kin lineage swapped= kept= natives= live= models=` (the live wild old cells of this game, mirrors included).
+* Tests: cell_diet_premade, cell_elsewhere_spend, cell_ko_partner_clouds, cell_flush_all_lists_off (the twin of
+  cell_flush_handover), cell_shadow_empty (4 games), cell_breaking_kill, cell_partner_scale, cell_own_cloud,
+  cell_plant_shrink, lineage_cells (+ _ui), each with its `_off` twin in suite.py.

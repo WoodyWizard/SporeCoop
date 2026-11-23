@@ -9,8 +9,8 @@ source: lab
 role: test
 versions: 0.7.16
 fixed_in:
-branch:
-commits:
+branch: fix/w84-tests
+commits: f8cbe143
 tests: tribe_birth_ask, tribe_birth_species, tribe_kid_species, line_stages_outfit, species_line, civ_citizen_trail, tribe_own_species, tribe_own_outfitter, own_editor_civdrop
 signature:
 docs:
@@ -43,11 +43,41 @@ bug seen in them, the frame just cannot be judged):
 Test scenes (camera placement, key frame timing, a game dialog), not the mod.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Test code only (fix/w84-frames, merged into fix/w84-tests), no mod change:
+* Baby views, cameras in a bush or a head: `keyviews.clear_view` / `look_both_clear` (new) pick the camera round the
+  subject (8 azimuths at 12 m / 5 m up, then 9 m up, then 8.4 m away 12 m up) whose line of sight passes no placed game
+  object (`coop.census all 40 <subject>`: huts, buildings, plants, rocks as upright cylinders 3 m wide, 6.5 m high), no
+  other creature or member (`coop.census creatures`, 1.3 m / 2.8 m) and no terrain (`coop.ground` at 5 points of the
+  line: the terrain and the snap surface). `coop_tribe_own_species.closeup` (tribe_birth_ask, tribe_birth_species,
+  tribe_kid_species baby; tribe_own_species carrying; tribe_own_outfitter host_village; line_stages member views) uses
+  it; the frame's manifest gets a line `view: clear line of sight (...)` or `view: NO clear line of sight found
+  (... blocked by ...): the subject may be hidden in this frame`. The object sizes are generic (the census has no
+  bounds): a heuristic, checked by eye in the next key frame review.
+* civ_citizen_trail run frames: the same choice on the objects only (no coop.ground calls: the citizen runs 8 m/s),
+  then the camera set round the citizen's position read again; the manifest line says which view was taken. Whether a
+  city wall is a census object is not known: the review of run1/run2 tells.
+* line_stages_outfit 09-11: `play_civ.answer_talk` (new) answers a nation's waiting talk as the campaign's bots do
+  (its trade offer accepted, a surrender accepted, its goodbye) on both games before the citizen close-ups and the
+  vehicle frame (`talk_before_frames`); printed as "a nation's talk answered before the key frames".
+* species_line next_session: the frame waits up to 20 s until the guest's avatar is its own creature (`coop.avatar`
+  key = its `mine creature` key, or at least not the host's avatar species); the manifest says after how long or that it
+  was not seen. The note now says what to see (the guest with its own creature).
+* own_editor_civdrop 01 / 02 (civdrop_alone, civdrop_rejoined): after frame_city (it answers a specialty box) the test
+  camera on the guest's city on both games (70 m off, 45 m up, the city in the middle), then the games' own cameras
+  again (lab 20261122-194210 02: the guest's picture had the city at its edge).
+* line_stages_editors 10 (unpainted vehicle): expected by the test's design, unchanged.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Open, pending night run: tribe_birth_ask, tribe_birth_species, tribe_kid_species, line_stages_outfit, species_line,
+civ_citizen_trail, tribe_own_species, tribe_own_outfitter, own_editor_civdrop:
+`SPORE_DETECTOR=20 python3 tools/lab.py run tribe_birth_ask tribe_birth_species tribe_kid_species line_stages_outfit
+species_line civ_citizen_trail tribe_own_species tribe_own_outfitter own_editor_civdrop --lane N --retry 0 --no-build`
+(one lane given by the coordinator; never `--lanes`, which starts at the owner's lane 1), then review the frames of each (frames/sheets): the baby, the carrying member and the
+host's member in the picture with no wall, bush or head in front; no nation's talk over line_stages_outfit 09-11;
+species_line next_session with the guest in its own creature; civdrop 01 / 02 with the guest's city in the middle;
+every close-up's manifest line `view: ...` (a `NO clear line of sight` line names what blocked it).
+no-fail-run: key frame cameras and timing only (no check changed).
 
 ## History
 - 2026-11-23: opened (fix/w66-frames, key frame review of the 0.7.16 final check, lab 20261122-194210 on 5376d388).
+- 2026-11-23: fix/w84-frames (WP-T1): clear-view cameras, nation talk answered, avatar swap waited, civdrop test camera; waits for the night run and the frame review.

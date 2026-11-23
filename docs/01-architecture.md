@@ -985,3 +985,25 @@ reach the species line by WP-C3's queue (`civedit::take_editor`, the result seen
 hook through `civ_arrival_result`); everything the other games show comes from the line's readers. No message, no
 host side: the host never waits. Details: docs/re/civ.md#civ-own-arrival. Console: `coop.civarrival [status | due]`.
 
+## Players' old cells as wild species (2026-11-23, feat/w81-cell)
+<a id="arch-lineage-cells"></a>
+
+BUG-1477 (idea and RE of PR #211 by IltonBJSilva). Modules: `lineage_cells.{h,cpp}` (the pool, the offers, the wire,
+the preloads; inside the creations module's stream), `lineage_cells_logic.h` (the rules, portable, tests/cell_tests.cpp
+lineage_rules), `cellsync_kin.cpp` lineage_filter (the swap inside the population, one chain with the kin filter of
+BUG-1257 in modes.cpp's GetModelKeyForCellResource hook).
+
+* Who offers: the host's own My Creations cells once the session setting `cell.lineage_cells` is on; a guest's only
+  while its co-op window box is ticked (`lineage_cells::box / toggle`, reset at every session end). Never the cell a
+  player plays, never BUG-1476's premades, at most 16 per player.
+* How a cell reaches every game: `creations::line_pack` (its records from My Creations) and `line_register` under the
+  shared key 0x7B + content hash on every game, the owner's too (no collision with a game's own creation of the same
+  id); MSG_CREATION kind 12 (docs/04-netcode.md#netcode-w81-cell). The packages stay registered after the session (a
+  0x7B key is nobody's own).
+* Where: the host's population only (a guest's solo pool never): a native creature spawn (cell type 2 with an AI) at the
+  host's level or below (no giants), not the player species (the kin's), of a fitting diet (any under the AI 0x1006),
+  17 % of them; only while every peer reads creations 1.2 and has had the cell 5 s (a guest's mirror of an unknown key
+  is not made: BUG-0455). Every registered cell is preloaded in Cell on each game (PreloadModel,
+  cCellGFX::PreloadCreature).
+* Saves: nothing of ours: the population's cells are not in a Cell save (#211's RE; coop_lineage_cells.py checks a
+  fresh host save for the 0x7B keys).

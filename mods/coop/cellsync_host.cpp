@@ -179,7 +179,7 @@ void set_fake_model(uint32_t idx, uint32_t inst)
 
 
 // one cell of a MSG_CELL_STATE chunk (63 bytes)
-static void write_cell(net::Writer& w, uint8_t* c, uint32_t idx)
+static void write_cell(net::Writer& w, uint8_t* c, uint32_t idx, int dest)
 {
     void* ref = F<void*>(c, kRes);
     uint32_t inst = ref ? *(uint32_t*)ref : 0;
@@ -198,7 +198,12 @@ static void write_cell(net::Writer& w, uint8_t* c, uint32_t idx)
     w.f32(q.x); w.f32(q.y); w.f32(q.z); w.f32(q.w);
     w.u8(cell_logic::hp_byte(F<int>(c, kHp))); // a negative hp is 0, not 255 (BUG-0160)
     // flag 4 (BUG-0958): a player's product (+0x110, the clouds of a player's poison part; older guests ignore it)
-    w.u8((uint8_t)((F<uint8_t>(c, kDying) ? 1 : 0) | (F<uint8_t>(c, kDead) ? 2 : 0) | (F<uint8_t>(c, 0x110) ? 4 : 0)));
+    // flag 8 (BUG-1513): and the product is the receiver's own (a cloud the host made for its puppet)
+    bool own = false;
+    if (g_fix_own_cloud && F<uint8_t>(c, 0x110) && dest > 0)
+        if (auto pc = g_partner_clouds.find(idx); pc != g_partner_clouds.end())
+            own = pc->second == (uint8_t)dest;
+    w.u8(cell_logic::state_flags(F<uint8_t>(c, kDying), F<uint8_t>(c, kDead), F<uint8_t>(c, 0x110), own));
 }
 
 static void send_state(int dest, const std::vector<SendCell>& cells)
@@ -228,7 +233,7 @@ static void send_state(int dest, const std::vector<SendCell>& cells)
         size_t from = k * per, to = std::min(cells.size(), from + per);
         w.u8((uint8_t)(to - from));
         for (size_t i = from; i < to; i++)
-            write_cell(w, cells[i].c, cells[i].idx);
+            write_cell(w, cells[i].c, cells[i].idx, dest);
         w.f32(world_scale()); // BUG-0511: the scale these poses are in (a guest without the field stops before it)
         C.sess->send_unreliable_to(dest, net::MSG_CELL_STATE, w);
     }
@@ -307,7 +312,7 @@ static void send_paced(int dest, GuestPace& gp, const std::vector<SendCell>& lis
                 f->second.pos = pos_of(c);
                 f->second.sends++;
             }
-            write_cell(w, c, idx);
+            write_cell(w, c, idx, dest);
             n++;
         }
         w.data[at_n] = n;
