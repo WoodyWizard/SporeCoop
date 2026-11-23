@@ -106,6 +106,27 @@ def answer_specialty(con, wait=0.0, prefer=None):
         time.sleep(0.5)
 
 
+# BUG-1459: an NPC nation's talk that waits for the player covers the view (line_stages_outfit 09-11 of lab
+# 20261122-194210: "Red Nation" offers a trade route, the world blurred behind it); the answers a player gives, as the
+# campaign's bots (coop_campaign.CIV_TALK): its offer accepted, its surrender accepted, its goodbye
+NATION_TALK = ('I accept your offer! Start shipments immediately!', 'We happily accept your surrender.',
+               'Agreed. Bye for now.')
+
+
+def answer_talk(con, tries=3):
+    """a nation's talk that waits on this game answered like a player (up to `tries` lines of it); the answers pressed
+    (an answer that took no click is listed with ' (no click)')"""
+    import uifind
+    done = []
+    for _ in range(tries):
+        cap = next((c for c in NATION_TALK if uifind.shown(con, c)), None)
+        if not cap:
+            break
+        done.append(cap if uifind.press(con, cap, timeout=4) else cap + ' (no click)')
+        time.sleep(1)
+    return done
+
+
 def frame_city(players, pos, answer=True):
     """BUG-0981: before a key frame of a city, every game's camera on it (W/A/S/D, as a player pans); a specialty
     question still up is answered first (it pauses the game and covers the city). players: {role: Console};

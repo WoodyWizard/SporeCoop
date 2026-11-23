@@ -168,6 +168,19 @@ def truth(obs_rows, walker_rows):
 ERR_M, ERR_SHARE = 0.15, 0.25
 
 
+def editors(**cons):
+    """BUG-1358: the players whose game is in an editor (the walker's evolution editor: a click or a walk onto its own
+    nest plays the nest cinematic and opens it; the other player then walks with no partner to walk to)"""
+    out = []
+    for name, con in cons.items():
+        try:
+            if 'Editor' in (con.call('game.mode').get('out') or ''):
+                out.append(name)
+        except OSError:
+            continue
+    return out
+
+
 def direction(walker, observer, wname, oname, rng, a, ck):
     proxy = netem.proxy()
     proxy.p['delay'] = float(a.low)
@@ -197,6 +210,11 @@ def direction(walker, observer, wname, oname, rng, a, ck):
         json.dump({'observer': obs, 'walker': wal, 'steps': st.done, 'walk_start': t_walk - t_track}, f)
     print(f'  per-frame samples: {path}', flush=True)
     print(f'  {wname} walked: {"; ".join(log)}', flush=True)
+    ed = editors(**{wname: walker, oname: observer})
+    if ed:
+        print(f'  {" and ".join(ed)} in an editor after the walk {wname} -> {oname} (its evolution editor, BUG-1358): '
+              f'this direction is not judged', flush=True)
+        return ed
     off = t_walk - t_track  # track time of the walk's start (both on this machine's wall clock, ~0.1 s)
     print(f'  latency steps (s into the walk, one-way ms): {st.done}; {proxy.describe()}', flush=True)
     bk, top = buckets(obs, wal)
@@ -239,6 +257,7 @@ def direction(walker, observer, wname, oname, rng, a, ck):
     ck(len(after) >= a.min_high, f'{oname} watches {wname}: and in {len(after)} s from the rise on')
     ck(worst <= a.max_bad, f'{oname} watches {wname}: the puppet moves in steps or jumps for at most {a.max_bad:.0f} s '
        f'in a row ({worst} s' + (f' from {at - off:.0f} s into the walk' if at is not None else '') + ')')
+    return []
 
 
 def main():
@@ -270,11 +289,20 @@ def main():
         time.sleep(1)
     settle((host, guest))
     time.sleep(1)
-    if a.dir in ('host', 'both'):
-        direction(host, guest, 'host', 'guest', rng, a, ck)
-    if a.dir in ('guest', 'both'):
-        direction(guest, host, 'guest', 'host', rng, a, ck)
+    not_judged = []
+    for d in (('host', 'guest') if a.dir == 'both' else (a.dir,)):
+        ed = editors(host=host, guest=guest)
+        if not ed:
+            walker, observer = (host, guest) if d == 'host' else (guest, host)
+            ed = direction(walker, observer, d, 'guest' if d == 'host' else 'host', rng, a, ck)
+        else:
+            print(f'  {" and ".join(ed)} in an editor before {d}\'s walk (BUG-1358): not walked', flush=True)
+        if ed:
+            not_judged.append(f'{d} walks: {" and ".join(ed)} in the evolution editor')
     ck.faults(host=host, guest=guest)
+    if not_judged:
+        return ck.inconclusive(f'a direction was not judged ({"; ".join(not_judged)}; BUG-1358: the walker\'s game '
+                               f'opened its evolution editor at its own nest)')
     return ck.result()
 
 

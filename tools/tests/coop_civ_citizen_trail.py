@@ -32,6 +32,7 @@ import re
 import time
 
 import body_trail
+import keyviews
 import lane
 import sameview as sv
 from twoinst import Checks, keyframe, start
@@ -197,12 +198,18 @@ def run_frames(host, guest, n=2):
             time.sleep(1)
             continue
         place = b[run[0]][0]
-        eye, target = sv.camera_at(place, 0, 4, 14.0, 5.0)
+        # BUG-1459: a camera with a clear line of sight to the citizen (one fixed camera stood in a city wall, lab
+        # 20261122-194210 run2); the manifest says whether one was found
+        cam = {}
+        _, _, info = keyviews.clear_view(host, place, 14.0, 5.0, 1.0, terrain=False, cam=cam)
+        place = wobj_citizens(host).get(run[0], (place,))[0]  # (it ran on while the view was chosen)
+        eye, target = sv.camera_at(place, cam['k'], cam['n'], cam['dist'], cam['height'], 1.0)
+        print(f'  run frame at citizen {run[0]}: {info}', flush=True)
         if all('now=1' in (c.call(sv.view_cmd(eye, target, 50)).get('out') or '') for c in (host, guest)):
             time.sleep(0.3)
             keyframe(f'run{shot + 1}', f'the same camera on both games at host citizen {run[0]} that runs (8 m/s): the same '
                      'citizens at the same places, each running (legs apart, the run animation), none sliding while '
-                     'it stands', kind='sameview', settle=0)
+                     'it stands', kind='sameview', settle=0, extra=[info])
             shot += 1
         for c in (host, guest):
             c.call('coop.view off')

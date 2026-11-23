@@ -481,3 +481,15 @@ anchor so other docs can link to it:
   case space_planet_runners (BUG-1454) never found host citizens running near the guest (INCONCLUSIVE in every run).
 * Next steps: a test that makes host citizens run near the guest, then both arms of the switch.
 * Ticket: BUG-1404, BUG-1454
+## Cell: a guest playing its own Cell world swims in a nearly empty pool for ~20 s every ~45 s (2026-11-23, fix/w84-tests)
+<a id="issue-cell-own-pool-trough"></a>
+
+* What happens: a guest that plays a Cell world of its own while it stays in the session (O1 of 0.7.13) sees its
+  pool filled with ~150-180 cells, then within 5 s all but 0-25 gone, filled again 15-25 s later.
+* Reproduce: `tools/lab.py run own_cell_steady --repeat 2` (FAILS while the defect is there; own_cell itself checks
+  only that the pool fills). The fall is the game's tile cull (DestroyCell from 0xE7C3E6, lab 20261122-193406).
+* Known: on a guest the mod's IsTileActive hook returns the game's own answer; which input of the game's tile check
+  says "not active" while the guest's cell stands still is open (docs/tickets BUG-1408).
+* Next steps: read the game's view box and the tile keys of the guest at a fall (`coop.pool areas`, the cull's last
+  tile `g_last_tile`), then a mod fix with a switch; own_cell_steady is its test.
+* Ticket: BUG-1408

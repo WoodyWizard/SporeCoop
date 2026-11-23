@@ -49,6 +49,28 @@ def around(p, metres, k):
     return q
 
 
+GROUND_UP = 0.3  # m over the guest's own ground (or water) where the guest's creature is put (BUG-1410)
+
+
+def on_ground(con, q):
+    """q moved along its radius to GROUND_UP m over this game's ground there (the higher of the terrain, the snap surface
+    and the water; `coop.ground`). BUG-1410: around() keeps the host's radius, so the 600 m spots were 21.8 / 36.1 m in
+    the air; the guest's game is paused there (busy=cinematic,input_lock,paused), its creature hangs where it was put
+    and its game kept the grounded byte (+0x137) of before the move in some runs: its state then says "on the ground"
+    (flags 0x1, no PF_JUMPING, no agl; 0x9 in the passing runs) and the host drew it 6.3 m lower than the guest has it
+    (the monitor's `drawn` rule, labs 20261121-003202, 20261122-194210). A paused game's creature cannot get into the air
+    by itself; the probe's migration question does not need the height"""
+    import re
+    out = con.call('coop.ground %.2f %.2f %.2f' % tuple(q))['out']
+    v = {k: float(x) for k, x in re.findall(r'\b(ground|surface|water) (-?[\d.]+)', out)}
+    top = max(v.values()) if v else None
+    r = math.dist(q, (0, 0, 0))
+    if not top or r < 1:
+        return q
+    k = (top + GROUND_UP) / r
+    return [x * k for x in q]
+
+
 def s32(v):
     return v - (1 << 32) if v is not None and v >= 1 << 31 else v
 
@@ -100,7 +122,8 @@ def main():
                 q = [hpos[0] - 2, hpos[1], hpos[2] + 2]
             else:
                 q = around(hp, metres, k) if metres else [hp[0] + 3, hp[1], hp[2]]
-            guest.call('coop.npc gopos %.1f %.1f %.1f' % tuple(q))
+            q = on_ground(guest, q)
+            guest.call('coop.npc gopos %.2f %.2f %.2f' % tuple(q))
             time.sleep(5)
             gh, gpos = new_nest(guest)
             gp = avatar_pos(guest)
@@ -109,10 +132,8 @@ def main():
             print(f'  guest {metres} m (dir {k}) at {gp}: its next nest {gpos} ({off if off is None else round(off)} m from the '
                   f"host's), migration state {migration(guest)}", flush=True)
             if gp:
-                # BUG-1410: the host drew the guest, held in the air in its paused game (21.8 / 36.1 m over its ground at
-                # the 600 m spots), 6.3 m lower than the guest's game has it (monitor `drawn`, lab 20261121-003202; 6.8 m in
-                # 20261112-175447, 0 m in 20261120-133703 at the same spots): both games' ground radius under it, so a
-                # run that shows it again says which game's terrain disagrees there
+                # BUG-1410: both games' ground radius under the guest (the two games read the same ground at every spot
+                # in labs 20261122-193406 / -194210); the guest stands GROUND_UP m over its own ground now (on_ground)
                 grounds = [con.call('coop.ground %.2f %.2f %.2f' % tuple(gp))['out'].strip() for con in (host, guest)]
                 print(f"    ground under the guest: host {grounds[0]}, guest {grounds[1]}, radius {math.hypot(*gp):.2f}",
                       flush=True)
