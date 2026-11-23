@@ -100,6 +100,34 @@ inline std::string stable_key(uint64_t salt, const std::string& player_key, bool
     return b;
 }
 
+// BUG-9309 (NET-12 of the 0.7.15.5 audit): what a read of a store file found. Unreadable: the file may be there but
+// could not be opened or read now (a sharing violation of another program, access denied, an I/O error)
+enum class Got { Text, Missing, Unreadable };
+
+// the salt file (salt.txt): what to do with what its read found. Every stored player's key is digest(salt, token):
+// a new salt over the old file loses every stored player of every world of that host, so a new one only when the
+// file is not there or holds no salt (that one is kept as salt.txt.bad); unreadable: no keys now, read again later.
+// fix false: as 0.7.16 (any failure made a new salt and overwrote the file).
+enum class SaltStep { Use, MakeNew, NoKeys };
+inline SaltStep salt_step(Got got, bool parsed, bool fix)
+{
+    if (got == Got::Text && parsed)
+        return SaltStep::Use;
+    if (fix && got == Got::Unreadable)
+        return SaltStep::NoKeys;
+    return SaltStep::MakeNew;
+}
+
+// a world's file: unreadable is no empty store (its first write would replace every stored player of the world);
+// the world stays closed and is read again. fix false: as 0.7.16 (an empty store, then written over the file)
+enum class WorldStep { Parse, Empty, Wait };
+inline WorldStep world_step(Got got, bool fix)
+{
+    if (got == Got::Text)
+        return WorldStep::Parse;
+    return fix && got == Got::Unreadable ? WorldStep::Wait : WorldStep::Empty;
+}
+
 // the world name of a game key (world::current_game_key: "<save database dir>\<planet>.spo", lower case): its last
 // two parts "<slot>/<planet>" ("game3/madas.spo"); "" when it has fewer
 inline std::string world_of_game_key(const std::string& key)

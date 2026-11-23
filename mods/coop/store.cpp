@@ -8,6 +8,7 @@
 #include <ctime>
 #include <vector>
 
+#include "fixes.h"
 #include "modes.h"
 #include "world.h"
 
@@ -75,27 +76,59 @@ static std::wstring file_of(const std::string& world, bool make)
     return dir + L"\\" + widen(world.substr(s + 1)) + L".txt";
 }
 
-static bool read_file(const std::wstring& f, std::string& out)
+// BUG-9309 (NET-12 of the 0.7.15.5 audit): salt.txt was opened with FILE_SHARE_READ only and any failure to open it
+// counted as "no file": a moment in which another program held it with write access (a sync or backup tool, an
+// antivirus) made a new salt and wrote it over the old one, and every stored player of every world of this host had
+// another key from then on (their stored things were never found again). A world's file the same: an empty store,
+// written over the file at the next save. Now the files are opened with every share flag, only a file that is not
+// there is missing, and one that cannot be read now is not replaced (pstore::salt_step / world_step): no keys / the
+// world's store stays closed until it can be read. Off (`coop.fix store.unreadable_kept off`): as 0.7.16.
+static bool g_unreadable_fix = true;
+COOP_FIX_UNSAFE("store.unreadable_kept", "BUG-9309", g_unreadable_fix,
+                "store: a salt or world file another program holds open is read (all share flags), and one that cannot be read now is never replaced (a new salt lost every stored player)");
+static DWORD g_read_error;      // the last failed read's error
+static uint32_t g_unreadable_n; // reads that found a file unreadable (status `unreadable=`)
+
+static pstore::Got read_file(const std::wstring& f, std::string& out)
 {
+    using pstore::Got;
     out.clear();
-    HANDLE h = CreateFileW(f.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (h == INVALID_HANDLE_VALUE)
-        return false;
+    DWORD share = g_unreadable_fix ? FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE : FILE_SHARE_READ;
+    HANDLE h = CreateFileW(f.c_str(), GENERIC_READ, share, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) {
+        g_read_error = GetLastError();
+        bool gone = g_read_error == ERROR_FILE_NOT_FOUND || g_read_error == ERROR_PATH_NOT_FOUND;
+        if (!gone && g_unreadable_fix)
+            g_unreadable_n++;
+        return gone || !g_unreadable_fix ? Got::Missing : Got::Unreadable;
+    }
     LARGE_INTEGER sz{};
-    bool ok = GetFileSizeEx(h, &sz) && sz.QuadPart <= (LONGLONG)pstore::kMaxFileBytes;
+    bool sized = GetFileSizeEx(h, &sz) != 0;
+    bool ok = sized && sz.QuadPart <= (LONGLONG)pstore::kMaxFileBytes;
     if (ok) {
         out.resize((size_t)sz.QuadPart);
         DWORD n = 0;
         ok = out.empty() || (ReadFile(h, out.data(), (DWORD)out.size(), &n, nullptr) && n == (DWORD)out.size());
-    }
+        if (!ok && g_unreadable_fix) { // an I/O error now, not a damaged file
+            g_read_error = GetLastError();
+            sized = false;
+        }
+    } else if (!sized)
+        g_read_error = GetLastError();
     CloseHandle(h);
+    if (!sized && g_unreadable_fix) {
+        out.clear();
+        g_unreadable_n++;
+        return Got::Unreadable;
+    }
     if (!ok)
-        out = "?"; // too big or unreadable: damaged
-    return true;
+        out = "?"; // too big (or, off, unreadable): damaged
+    return Got::Text;
 }
 
 // a temporary file next to it, then a replace: a crash mid-write leaves the old file (or the .tmp) whole
-static bool write_file(const std::wstring& f, const std::string& text, std::string& err)
+// replace false: the file is not replaced when it is there now (a new salt: BUG-9309)
+static bool write_file(const std::wstring& f, const std::string& text, std::string& err, bool replace = true)
 {
     std::wstring tmp = f + L".tmp";
     HANDLE h = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -112,7 +145,7 @@ static bool write_file(const std::wstring& f, const std::string& text, std::stri
         DeleteFileW(tmp.c_str());
         return false;
     }
-    if (!MoveFileExW(tmp.c_str(), f.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    if (!MoveFileExW(tmp.c_str(), f.c_str(), (replace ? MOVEFILE_REPLACE_EXISTING : 0) | MOVEFILE_WRITE_THROUGH)) {
         err = "cannot replace the file (error " + std::to_string(GetLastError()) + ")";
         DeleteFileW(tmp.c_str());
         return false;
@@ -120,20 +153,43 @@ static bool write_file(const std::wstring& f, const std::string& text, std::stri
     return true;
 }
 
-// this host profile's salt (salt.txt in the store folder; made once). 0 until known
+// this host profile's salt (salt.txt in the store folder; made once). 0 until known (also while salt.txt is there
+// but cannot be read: read again at most every 2 s, BUG-9309)
+static double g_salt_retry_at = -1;
+static uint32_t g_salt_waits;
 static uint64_t salt()
 {
     if (g_salt)
         return g_salt;
+    double now = H ? H->time_seconds() : 0;
+    if (g_salt_retry_at >= 0 && now < g_salt_retry_at)
+        return 0;
     std::wstring r = root(true);
     if (r.empty())
         return 0;
     std::wstring f = r + L"\\salt.txt";
     std::string t;
     unsigned long long v = 0;
-    if (read_file(f, t) && sscanf(t.c_str(), "sporecoop-store-salt %16llx", &v) == 1 && v) {
+    pstore::Got got = read_file(f, t);
+    bool parsed = got == pstore::Got::Text && sscanf(t.c_str(), "sporecoop-store-salt %16llx", &v) == 1 && v;
+    pstore::SaltStep step = pstore::salt_step(got, parsed, g_unreadable_fix);
+    if (step == pstore::SaltStep::Use) {
         g_salt = v;
+        g_salt_retry_at = -1;
         return g_salt;
+    }
+    if (step == pstore::SaltStep::NoKeys) {
+        g_salt_retry_at = now + 2.0;
+        if (g_salt_waits++ % 30 == 0)
+            H->log(M, SK_WARN, "store: salt.txt is there but cannot be read now (error %lu): no stored player is looked up "
+                               "until it can, the file stays (BUG-9309, %u tries)",
+                   (unsigned long)g_read_error, g_salt_waits);
+        return 0;
+    }
+    g_salt_retry_at = -1;
+    if (g_unreadable_fix && got == pstore::Got::Text) { // there, no salt in it: kept for a look
+        MoveFileExW(f.c_str(), (f + L".bad").c_str(), MOVEFILE_REPLACE_EXISTING);
+        H->log(M, SK_WARN, "store: salt.txt holds no salt: a new one (the old file is salt.txt.bad, BUG-9309)");
     }
     LARGE_INTEGER q;
     QueryPerformanceCounter(&q);
@@ -142,8 +198,13 @@ static uint64_t salt()
     char b[64];
     snprintf(b, sizeof b, "sporecoop-store-salt %016llx\n", (unsigned long long)x);
     std::string err;
-    if (!write_file(f, b, err))
+    if (!write_file(f, b, err, !g_unreadable_fix)) {
+        if (g_unreadable_fix && GetFileAttributesW(f.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            H->log(M, SK_WARN, "store: salt.txt came meanwhile (%s): read again (BUG-9309)", err.c_str());
+            return 0; // (the next ask reads it)
+        }
         H->log(M, SK_WARN, "store: no salt file (%s): the keys hold for this run only", err.c_str());
+    }
     g_salt = x;
     return g_salt;
 }
@@ -166,11 +227,28 @@ pstore::Store* world() { return g_open ? &g_cur : nullptr; }
 uint32_t serial() { return g_serial; }
 std::string world_name() { return g_open ? g_cur.world : ""; }
 
+static std::string g_unreadable_world; // the world whose file was last found unreadable (said once in the log)
+
 static void open_world(const std::string& w)
 {
     std::wstring f = file_of(w, false);
     std::string text;
-    bool has = !f.empty() && read_file(f, text);
+    pstore::Got got = f.empty() ? pstore::Got::Missing : read_file(f, text);
+    pstore::WorldStep step = pstore::world_step(got, g_unreadable_fix);
+    if (step == pstore::WorldStep::Wait) { // BUG-9309: no empty store over the file; tick() tries again every second
+        if (g_unreadable_world != w)
+            H->log(M, SK_WARN, "store: the file of world '%s' cannot be read now (error %lu): its store stays closed and "
+                               "is read again, the file is not written (BUG-9309)",
+                   w.c_str(), (unsigned long)g_read_error);
+        g_unreadable_world = w;
+        g_open = false;
+        g_cur.reset("");
+        return;
+    }
+    if (g_unreadable_world == w)
+        H->log(M, SK_INFO, "store: the file of world '%s' can be read again (BUG-9309)", w.c_str());
+    g_unreadable_world.clear();
+    bool has = step == pstore::WorldStep::Parse;
     g_parsed = g_cur.parse(has ? text : "", w);
     if (g_parsed == pstore::Parsed::Damaged || g_parsed == pstore::Parsed::Foreign) {
         g_bad_files++;
@@ -299,10 +377,10 @@ void on_player_join(uint8_t id)
 
 static void say_status(SkOut* out)
 {
-    H->out_printf(out, "store: world=%s open=%d serial=%u parsed=%s players=%u records=%u reads=%u writes=%u fails=%u bad=%u saves=%u adopted=%u told=%u since_save=%.0f\n",
+    H->out_printf(out, "store: world=%s open=%d serial=%u parsed=%s players=%u records=%u reads=%u writes=%u fails=%u bad=%u saves=%u adopted=%u told=%u since_save=%.0f unreadable=%u\n",
                   g_cur.world.empty() ? "-" : g_cur.world.c_str(), (int)g_open, g_serial, pstore::parsed_name(g_parsed),
                   (unsigned)g_cur.players.size(), (unsigned)g_cur.records(), g_reads, g_writes, g_write_fails, g_bad_files,
-                  g_saves, g_adopted, g_told, since_save());
+                  g_saves, g_adopted, g_told, since_save(), g_unreadable_n);
     if (!g_last_error.empty())
         H->out_printf(out, "  last error: %s\n", g_last_error.c_str());
     for (auto& [f, r] : g_cur.wrecs)
@@ -376,6 +454,50 @@ int command(void*, int argc, const char* const* argv, SkOut* out)
                argv[2]);
         return 0;
     }
+    if (sub == "saltprobe") { // tests (BUG-9309): another program holds salt.txt open for writing while the salt is read
+        if (!is_host()) {
+            H->out_printf(out, "saltprobe: host only\n");
+            return 1;
+        }
+        int gid = -1;
+        for (auto& p : C.sess->players())
+            if (p.id != C.sess->my_id())
+                gid = p.id;
+        std::wstring r = root(true), f = r + L"\\salt.txt";
+        uint64_t before = salt();
+        std::string kb = gid >= 0 ? key_of((uint8_t)gid) : "", tb, ta, td;
+        auto raw = [&](std::string& t) { // the file's bytes, read with every share flag (as the fix does)
+            bool fx = g_unreadable_fix;
+            g_unreadable_fix = true;
+            read_file(f, t);
+            g_unreadable_fix = fx;
+        };
+        raw(tb);
+        // as a sync or backup tool: read and write access, every share flag
+        HANDLE hold = CreateFileW(f.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                  nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        g_salt = 0; // (as at the first ask of a run)
+        g_salt_retry_at = -1;
+        uint64_t during = salt();
+        std::string kd = gid >= 0 ? key_of((uint8_t)gid) : "";
+        if (hold != INVALID_HANDLE_VALUE)
+            CloseHandle(hold);
+        g_salt_retry_at = -1;
+        uint64_t after = salt();
+        std::string ka = gid >= 0 ? key_of((uint8_t)gid) : "";
+        raw(ta);
+        H->out_printf(out, "saltprobe: held=%d guest=%d salt_same=%d file_same=%d during=%s key_before=%s key_during=%s key_after=%s\n",
+                      hold != INVALID_HANDLE_VALUE ? 1 : 0, gid, (int)(before && after == before), (int)(!tb.empty() && ta == tb),
+                      during == before ? "same" : during ? "other" : "none", kb.empty() ? "-" : kb.c_str(),
+                      kd.empty() ? "-" : kd.c_str(), ka.empty() ? "-" : ka.c_str());
+        // the tests that follow get the salt of before back (the old side wrote a new one)
+        if (!tb.empty() && ta != tb) {
+            std::string err;
+            write_file(f, tb, err);
+        }
+        g_salt = before;
+        return 0;
+    }
     if (sub == "reload") { // tests: read the open world's file again
         std::string w = g_cur.world;
         if (w.empty()) {
@@ -386,7 +508,7 @@ int command(void*, int argc, const char* const* argv, SkOut* out)
         say_status(out);
         return 0;
     }
-    H->out_printf(out, "usage: coop.store [status | save | adopt <player> [<stored name>] | reload]\n");
+    H->out_printf(out, "usage: coop.store [status | save | adopt <player> [<stored name>] | reload | saltprobe]\n");
     return 1;
 }
 
@@ -396,7 +518,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     M = mod;
     C = std::move(ctx);
     H->command_add(M, "coop.store",
-                   "coop.store [status | save | adopt <player> [<stored name>] | reload] - the per-player store on the "
+                   "coop.store [status | save | adopt <player> [<stored name>] | reload | saltprobe] - the per-player store on the "
                    "host's disk (E1, BUG-1149)",
                    command, nullptr, SK_CMD_MAIN_THREAD);
 }
