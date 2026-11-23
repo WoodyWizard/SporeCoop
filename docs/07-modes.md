@@ -199,6 +199,15 @@ then the host is told to use `coop.share` (`core.share_retry`). The tag is the g
 `join_serial`, so a newcomer that got the id of a guest who left is not retried for it. "Planet
 file missing" is not retried (world.cpp saved 3 times already).
 
+BUG-1435 (0.7.16.1): every share (any caller) bumps `world::share_serial(peer)`; follow_phase then
+waits for that guest's load of it (`load_wait`): the guest's frames in the old copy while the world
+is saved and sent are not "joined the phase", and its pass through the galaxy menu and the loading
+screen is not "left to the main menu" (the 5 s window sent the world again every ~50 s on slow PCs).
+The wait ends when the guest is back in the host's mode after the share went out and the guest
+passed the menu or the loading screen, 30 s after it entered them (a guest that really went to the
+main menu gets the world 5 s later, as before), or 120 s after the share went out without the guest
+leaving (`core.share_load_wait`).
+
 Limits: two different planets saved under the same name count as one world (a protocol change would
 fix it). Rivals mode (docs/11-rivals.md 11.8, "Perspective" and "Per-player progress") builds on
 this rule: it answers "whose world is this machine in", the modules decide what to share.

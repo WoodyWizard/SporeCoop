@@ -277,7 +277,10 @@ Adventures (GOG or Steam) and the same SporeCoop version.
 
 **What happens to my saves?** Nothing: the host saves before sending its world; guests keep the
 host's world in a separate save slot, and a guest's own save of the same planet is moved to
-`Games-sporecoop-backup` first.
+`Games-sporecoop-backup` first. That slot is a copy of the host's whole galaxy (the host's older
+planets too). If you play on in it alone or host from it, it becomes your own save: later worlds
+from that host go into another slot, and when you host from a copy the co-op window says whose
+copy it is and which planet it was made for.
 
 **Can we play in different stages?** The host decides the stage; a guest who is somewhere else is
 brought to the host's world.

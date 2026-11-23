@@ -427,3 +427,16 @@ anchor so other docs can link to it:
 * Reproduce: not tried; quit with save within 1.5 s after the host's world-share save for a joining guest.
 * Next steps: hold the game's quit message while a dropped save waits (its message id and handler are not known yet).
 * Ticket: BUG-1413
+
+## Saves: a guest's co-op slot is a copy of the host's whole galaxy (2026-11-22, fix/w64-share)
+<a id="issue-copy-whole-galaxy"></a>
+
+* What happens: a host shares its whole save slot (every planet of its `GameN`, old games too), so the guest's co-op
+  slot holds the host's older planets. After a role swap the new host's galaxy menu shows that copy and the player can
+  start one of those old planets (a player report: an old Cell save at full progress instead of the session's world).
+  Each share is a 20 MB copy for a big galaxy. Since 0.7.16.1 the host is told whose copy it plays and for which planet
+  it was made, and a copy saved in alone or as the host is never replaced by a later share (BUG-1434's safety part).
+* Reproduce: host from a slot with several planets, join, then swap roles: the guest's galaxy menu shows them all.
+* Next steps (0.7.17): share only the played planet's `.spo` plus the galaxy's own files (RE of GGEUserData.dat: a
+  missing `.spo` shows "Bad or Missing Saved Game"); a "continue the last co-op world" entry for a new host.
+* Ticket: BUG-1434

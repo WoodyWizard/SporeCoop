@@ -332,7 +332,10 @@ By hand: delete `steam_api.dll`, rename `steam_api_orig.dll` back to `steam_api.
 
 **Your saves:** a guest stores the host's world as a separate save slot (marked as a co-op world)
 and reuses it next time. If you already have your own save of the same planet, it is moved to
-`Games-sporecoop-backup` next to your `Games` folder first, never overwritten.
+`Games-sporecoop-backup` next to your `Games` folder first, never overwritten. The co-op slot holds
+the host's whole galaxy (its older planets too). Since 0.7.16.1 a co-op slot you saved in alone or
+as the host is your own: a later world from that host never replaces it (it goes into another
+slot), and a host playing from a co-op slot is told whose copy it is and which planet it was made for.
 
 ## 9. Troubleshooting
 
