@@ -51,3 +51,4 @@ the old twin needs ~12 repeats to mean anything.
 ## History
 - 2026-11-23: opened; fix/w65-tests: the claim corrected, a runners case added.
 - 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.
+- 2026-11-23: validation 20261123-023643: space_planet_runners INCONCLUSIVE "0 runner samples" both ways (2 + 2). Inferred from the timing (60 rounds, the wobj read and the fault checks in ~18 s): the 3 reads of a round ran back to back, the two host reads under the 0.05 s guard, every round dropped (not measured: no per-read times). fix/w65-tests: the reads of a round 0.15 s apart, and the wait prints what the rounds saw (reads apart, matched by serial, moving, fastest), so the next INCONCLUSIVE says whether the citizens stand.

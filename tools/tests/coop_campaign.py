@@ -1449,6 +1449,11 @@ class Campaign:
             # one dropped 28 s after it with the hut at 39 of 750 (lab 20261115-154901 village 3) and its village was
             # raided from the start again later (the Tribe advance ran out of its 30 min at 4/5). CAMPAIGN_OLD_RAID_CUT=1: 300 s
             limit = 300 if OLD_RAID_CUT or not raid.get('cut_at') else max(300, raid['cut_at'] - raid['t0'] + RAID_AFTER_CUT)
+            # BUG-1463: the plant's own hold (no blow lands for PLANT_CUT_HOLD s after its cut) is not the raiders' time:
+            # it ate 45 of the 120 s (lab 20261123-023643: dropped at 403 s with the hut at 1 of 400, the village fell 3 s
+            # later). The old rule (CAMPAIGN_OLD_RAID_CUT=1, the twin) keeps its 300 s
+            if not OLD_RAID_CUT and raid.get('cut_at') and raid.get('planted_cut'):
+                limit += PLANT_CUT_HOLD
             if time.time() - raid['t0'] > limit:
                 self.note(f'tribe: the raid on village {raid["tribe"]} did not fell its hut in {limit:.0f} s ({hs.strip()[:80]})')
                 state['raid'] = None
