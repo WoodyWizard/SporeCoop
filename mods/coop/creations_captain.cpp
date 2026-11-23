@@ -565,7 +565,7 @@ std::string captain_status()
         s += b;
     }
     for (auto& [pid, cp] : g_copies) {
-        snprintf(b, sizeof b, "  player %u captain: %08X (orig %08X) '%s' bake=%d shown=%d%s\n", pid, cp.key.instance,
+        snprintf(b, sizeof b, "  player %u captain: %08X (orig %08X) '%s' bake=%d look=%d%s\n", pid, cp.key.instance,
                  cp.orig.instance, cp.name.c_str(), cp.bake, (int)cp.shown, cp.unusable ? " unusable" : "");
         s += b;
     }

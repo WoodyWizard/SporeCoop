@@ -10228,3 +10228,26 @@ Each test has its twin (`<name>_off`, SPORE_FIX_OFF=<switch>, suite `twin`): the
   on, else the next snapshot binds the orphan again) and saves; `coop.tribe tribelists` (members / unlisted per tribe,
   orphans: player tribe members no mirror is bound to) must show unlisted=0 and no new orphan. Twin
   SPORE_FIX_OFF=tribe.save_took_listed (unsafe: the removal refused, the mirror put back as an orphan).
+
+## The captain tests of WP-K1 (2026-11-23, feat/w74-captain)
+<a id="testing-captain-0717"></a>
+
+Written by day, not run yet (night run: `SPORE_DETECTOR=20 python3 tools/lab.py run space_captain_items
+space_captain_items_off space_own_captain space_own_captain_off own_prebake own_prebake_off adventure_tutorial
+adventure_tutorial_partner_off space_captain space_captain_none --lane N --retry 0 --no-build`, ~70 min on one lane, or
+split over 4 lanes). Each test reads the game's own state on the other machine:
+* `space_captain_items` (BUG-1279): `coop.captain plant` gives the host's captain a captain's property list (the game's
+  CaptainProps_Copy of the galaxy menu's template 0x15A44C0, ~ not checked to hold the item config), the host saves; the
+  guest's `coop.captain` props=1 (CaptainProps_Get) and its captain panel (Accept, rank badge) leaves BUG-0304's
+  "items: none" unchanged. If the host's list does not reach the package file, the host's "captain lists: none=" grows:
+  the test fails at the guest's props (an INCONCLUSIVE cause, read the host's line). Twin: creations.captain_props.
+* `space_own_captain` (BUG-1475): the guest chooses its first own creature; cEmpire +0xC4 on the guest becomes it, the
+  host's stays; the captain screen opens without a fault; a save of the guest's game names the host's captain only.
+  Twin: space.own_captain. space_captain (BUG-1278's twin) and space_captain_items switch space.own_captain off on both
+  games: they need the fixture's captain.
+* `own_prebake` (BUG-1237): a fresh copy of a guest creature (as civ_own_species: never baked) is chosen in a running
+  Creature world; "own prebake: swap_bake=1" (the game's IsBaked when SetSpecies ran). Cold start only (the copy is
+  written into the guest's My Creations before the games start). Twin: creations.own_prebake.
+* `adventure_tutorial` check 6 (BUG-1262): the puppet's body (modelhash of its species here) is the partner's captain's
+  body on the partner's game, within 30 s after the play. Twin `adventure_tutorial_partner_off`; when both games play a
+  captain of the same body the twin cannot fail (printed).

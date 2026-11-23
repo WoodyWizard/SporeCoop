@@ -125,3 +125,17 @@ about 3 s after the host's game showed the guest's puppet). GOG 2024, objdump an
 * Lab only: a game that loaded before the galaxy menu's start-up video ended showed no main menu panel when it came
   back to the menu (BUG-1260, fixed by world.menu_intro_return: docs/re/space.md#space-menu-intro-state); the test sent
   the video's end message first (`coop.menuintro`) until then.
+
+## Where an adventure's captain comes from (2026-11-23, feat/w74-captain)
+<a id="adventure-captain-copy"></a>
+
+BUG-1262. GOG 2024, Ghidra (static). Adds to #adventure-puppet-herd ("the captains' species keys are made per game").
+* ✔ The galaxy menu's Galactic Adventures launcher (vtable 0x147ED9C): choosing an adventure (0xDFFD70) reads its
+  "captain locked" flag; locked: launcher +0xA4 = the adventure's captain (likely resource +0x130), no copy; not locked
+  (the tutorial): +0x7C = 1 (a copy), +0x7F = 1 (a name). Play (SporeCoop::GAMenu_Play 0xDFBD40) copies the picked
+  captain with 0x6462E0 (a new key of this profile, EditorSaves.package, metadata tag 0x4178B8E8) unless it is a copy
+  already; the request's captain (+0x18 of 0x15ACCC8) is +0xA4. From Space (0xFDF5E0) the request takes cEmpire +0xC4;
+  cScenarioMode's enter 0xEF1D20 then calls SetCaptainAsset 0xF42420 (resource +0x130) after the adventure loads.
+* So each game's adventure captain is a creation in its own EditorSaves.package, readable by records_from_game; a
+  partner's key names another creation here. creations_captain.cpp sends it (MSG_CREATION kind 11) and the puppet takes
+  the copy (docs/re/creations.md#creations-captain-0717).

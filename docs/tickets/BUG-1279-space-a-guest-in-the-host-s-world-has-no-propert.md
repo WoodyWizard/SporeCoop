@@ -9,12 +9,13 @@ source: static RE for GitHub issue #203
 role: guest
 versions: 0.7.15.1
 fixed_in:
-branch:
+branch: feat/w74-captain
 commits:
-tests: 
+tests: space_captain_items, space_captain_items_off, space_captain
 signature: 
-docs: docs/re/space.md#space-captain-items-null
-related: BUG-0304, BUG-0200, BUG-0017
+docs: docs/re/space.md#space-captain-items-null, docs/re/creations.md#creations-captain-0717, docs/04-netcode.md#netcode-creation-captains
+related: BUG-0304, BUG-0200, BUG-0017, BUG-1475
+switch: creations.captain_props
 ---
 
 ## Report
@@ -30,13 +31,27 @@ pictures and creaturedata); the property list lives in group | 0xE500 with type 
 the creation). Observed in the reporter's guest log and the crash stack (292845D0 / 00B1B104 / 4062E500 looked up).
 
 ## Fix
-Not done (not a hotfix): send that resource with the host's own creation and register it on the guest under the
-HOST's key (the save names the captain by it), in its own package, not aliased; mind cEmpire 0xC32AE0 following
-0x0D8A4BC9 on the guest, the creations bundle format of older guests (msg_manifest minor bump) and that the guest's
-game can write the list back (0x5BF220 at an adventure's end): it must not reach the host's save.
+creations_captain.cpp (`coop.fix creations.captain_props`, off = 0.7.16.1): in Space the host reads its empire captain's
+property list from the game's own package file (only a captain's: it has the item config 0xC339D5C7; without the
+newer-version link 0x0D8A4BC9) and sends it as MSG_CREATION kind 10 to each guest of creations 1.2 (an older guest gets
+nothing); again on a captain change, on the way back into Space and every 30 s. The guest registers it under the host's
+key in its own package at priority 500 (below EditorSaves), not when it has its own list of that key or its own
+EditorSaves creation of the captain's id (BUG-0278's class), and drops cPropManager's cached list of the key
+(RemovePropertyLists vt 0x3C). The hook on SporeCoop::CaptainProps_Save (now verified: arg 3 = async; every caller but
+CaptainProps_Copy drops the result) refuses to save a list of ours (that host list on a connected guest, a 0x7A captain
+copy, a creation of a SporeCoop package) so none reaches Pollination.package; the guest's own creation under that id is
+saved as the game does. Port of the idea of 4e7490e6 (fix/agy-open-bugs) with the review's findings fixed (#8 signature
+and callers, collision case, #11/#12 only the Space captain's list is sent). Rules: captain_logic.h (host_prop,
+refuse_props_save, strip_prop).
 
 ## Verification
-no-fail-run: open, not fixed.
+open, waiting for the lab run (no game run on this branch by day). Built, `make test` passes (tests/core_tests.cpp captain_rules). pending night run: space_captain_items (PASS: the guest's
+CaptainProps_Get finds the host captain's list, props=1, and its captain panel by Accept and the rank badge gets an item
+list: BUG-0304's "items: none" unchanged) and its twin space_captain_items_off (SPORE_FIX_OFF=creations.captain_props,
+must FAIL); regressions near it: space_captain, space_captain_none, space_coop. Old-peer run against 0.7.16.1 in the
+final check (creations 1.1: no kind 10 sent). ~ Not known yet: whether the galaxy menu's template 0x15A44C0 that `coop.captain
+plant` copies holds the item config (the test says so on the host's line).
 
 ## History
 - 2026-11-18: opened while fixing BUG-0304 (GitHub #203), for 0.7.16 or later.
+- 2026-11-23: feat/w74-captain (WP-K1): fix, unit tests, lab test and twin written; waits for the night run.
