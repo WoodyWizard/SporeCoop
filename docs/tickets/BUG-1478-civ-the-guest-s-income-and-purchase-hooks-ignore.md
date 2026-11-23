@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.16.1 and earlier
 fixed_in:
 branch: feat/w68-wallet
-commits: 162b29f0 ebe0e45a
+commits: 162b29f0 ebe0e45a 86ef0e48
 tests: tests/civ_tests.cpp (local_play_gate), tools/tests/coop_civ_other_world.py --income (civ_other_world_income, twin civ_other_world_income_off)
 signature:
 docs: docs/re/civ.md#civ-own-money

@@ -10,7 +10,7 @@ role:
 versions: 0.7.17
 fixed_in:
 branch: feat/w68-wallet
-commits: 162b29f0 ebe0e45a
+commits: 162b29f0 ebe0e45a 86ef0e48
 tests: tests/civ_tests.cpp (wallets), tests/validate_tests.cpp (manifest 74, settings row), tools/tests/coop_civ_own_money.py (civ_own_money, civ_own_money_merge, civ_own_money_old, twins civ_own_money_setting_off, civ_own_money_row_off), coop_campaign.py segment civ_own_money_space
 signature:
 docs: docs/re/civ.md#civ-own-money, docs/04-netcode.md#netcode-civ-wallet, docs/01-architecture.md#arch-player-store, docs/07-modes.md#modes-session-settings

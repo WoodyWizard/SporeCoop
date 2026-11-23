@@ -10,7 +10,7 @@ role:
 versions: 0.7.15, 0.7.16
 fixed_in:
 branch: feat/w68-wallet
-commits: 162b29f0 ebe0e45a
+commits: 162b29f0 ebe0e45a 86ef0e48
 tests: wsync_civ (tools/tests/coop_wsync_civ.py), tools/tests/coop_civ_money_pause.py (civ_money_pause, twin civ_money_pause_off)
 signature:
 docs: docs/re/civ.md#civ-own-money

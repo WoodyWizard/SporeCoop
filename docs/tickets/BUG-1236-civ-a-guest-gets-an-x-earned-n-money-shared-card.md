@@ -10,7 +10,7 @@ role:
 versions: 0.7.10, 0.7.14.1, unreleased
 fixed_in:
 branch: feat/w68-wallet
-commits: 162b29f0 ebe0e45a
+commits: 162b29f0 ebe0e45a 86ef0e48
 tests: tests/civ_tests.cpp (passive_income_cause), tools/tests/coop_civ_income_cause.py (civ_income_cause, twin civ_income_cause_off)
 signature:
 docs: docs/known-issues.md#issue-civ-money-cards
