@@ -52,6 +52,9 @@ void drop_copy(MateCopy& m, const char* why, int id)
 }
 } // namespace
 
+unsigned g_mate_elsewhere_refused; // host (BUG-1507): poses of a guest that plays another world
+unsigned g_mate_elsewhere_held;    // guest (BUG-1507): poses not sent while we play another world
+
 // host: the pool index of the copy of player `id`'s mate (0: none); is `idx` a copy of anyone's mate
 uint32_t mate_copy_of(int id)
 {
@@ -105,6 +108,14 @@ void mate_in(int from, net::Reader& r)
     }
     if (kind != 0)
         return;
+    if (g_fix_elsewhere_spend && own_world::peer_elsewhere((uint8_t)from)) { // BUG-1507: its mate is in its own world
+        g_mate_elsewhere_refused++;
+        if (auto it = g_copies.find(from); it != g_copies.end()) {
+            drop_copy(it->second, "its player plays another world", from);
+            g_copies.erase(it);
+        }
+        return;
+    }
     MateCopy n;
     n.inst = r.u32();
     n.key[0] = r.u32(); n.key[1] = r.u32(); n.key[2] = r.u32();
@@ -144,6 +155,10 @@ void mate_tick(double now)
     if (is_guest()) {
         uint8_t* m = g_fix_partner_mate ? modes::cell_at(mate_idx()) : nullptr;
         bool live = m && !F<uint8_t>(m, kDying) && !F<uint8_t>(m, kDead);
+        if (live && not_host_world()) { // BUG-1507: our mate is in our own world, not in the host's
+            live = false;
+            g_mate_elsewhere_held++;
+        }
         if (live && now - g_mate_sent_at >= kMateSend) {
             g_mate_sent_at = now;
             void* ref = F<void*>(m, kRes);

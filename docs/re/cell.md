@@ -2887,3 +2887,55 @@ B / A on Windows; data, not re-run by us yet: marked "PR #209"), set against our
   once every partner is at the line (own_progress_logic.h food_cap).
 * ? Not tried: PopulateTiles with a partner's level base for its area (BUG-0975: lower levels' tiles at the host's world
   scale overflow the 511-entry buffer unless the box is scaled).
+
+## The diets' premade cells in "My cell" (2026-11-23, feat/w81-cell)
+<a id="cell-diet-premades"></a>
+
+BUG-1476, the small part of PR #210 (IltonBJSilva's RE, taken as data; their runtime on the Steam build, the GOG 2024
+code).
+* ✔ (#210, runtime) The game's 44 cell models (bem, group 0x40616200, Spore_Content.package) by diet
+  (GetCellModelData +0x1250 carnivore, +0x1251 herbivore): the Cell wizard's herbivore card plays E219E5D2, the
+  carnivore card 252A132F; the wizard has no omnivore card, 0C176D89 is a game cell with both mouths.
+* ✔ (#210) A premade needs no records between the games (every game has the model): creations sends its key alone, as
+  for any premade (make_bundle: no EditorSaves entry), and the receivers build it by key (apply: key_exists).
+* ✔ (objdump, feat/w70-history) Cell_GetConsequenceTrait 0xE5C9D0 (in the sym file): the Cell card from the meal
+  counters, not from the model; a premade's diet does not set the card.
+* ? Not checked here: the editor of a premade played as the own cell saves a new My Creations cell (inferred from
+  BUG-0278's "Save New" path: then the guest has an own cell and the premades leave the picker).
+
+## Players' old cells as wild species: what was taken from #211 (2026-11-23, feat/w81-cell)
+<a id="cell-lineage-cells-0717"></a>
+
+BUG-1477; docs/01-architecture.md#arch-lineage-cells for the design. From PR #211 (IltonBJSilva), their runtime on the
+Steam build:
+* ✔ (#211, runtime) GetModelKeyForCellResource 0xE65640 answered with a player cell's key inside PopulateMarker makes
+  the native spawn a cell of that model, drawn with its paint, and the guests' mirrors are built from the same key; no
+  call outside a marker on the host.
+* ✔ (#211, runtime) Behaviour follows the model's mouths under the prey-and-threat AI 0x1006 (a carnivore-only model
+  chased meat only, an omnivore both); other AI types keep the native diet (so a cell goes only onto a fitting diet).
+* ✔ (#211, runtime) The Cell pool is not saved: a cold game that loaded the planet had only the native species.
+* ✔ (#211, log) The owner's test of the fork ("many giants"): a player cell on a species of the levels above is drawn
+  large. ~ Inferred: CreateCellObject's level argument is the cell's +0x358 (the population passes the marker's
+  level); lineage_filter swaps only spawns at the host's level (level_of_food(S+0x1C)) or below.
+* ✔ (objdump 2026-11-23, GOG 2024) cCellGFX::PreloadCreature 0xE64980: cdecl void(u32 instance), plain ret; the group
+  global on GOG 2024 is *(0x015A7D0C) (#211 named the Steam-relocated one); it reads the cCellGFX at *(0x016B3C08)
+  without a null check (call it only in Cell).
+* ? Not checked: whether a cell is drawn without the preloads (#211 did not test it either; both games preload).
+
+## The Cell audit items of 0.7.17 (2026-11-23, feat/w81-cell)
+<a id="cell-audit-0717"></a>
+
+BUG-1507..1514 (CELL-4, 6, 7, 8, 9, 11, 13, 14 of the external audit of 0.7.15.5, out/research/ext-audit-verify-uifx-cell.md:
+static reading, confirmed in rel/0.7.17's code; the night run decides each).
+* ✔ (objdump 2026-11-23, GOG 2024) EatFood 0xE7DF40 after OnEat 0xE7D760: the food's level L = +0x358; 0xE56F20(L-1)
+  (is L-1 within [W-1, W+3] of the player's world level W from S+0x1C) false -> DestroyCell(food, 1, 0.0, 0)
+  0xE780A0; true -> +0xB4 (target size) *= TileSizes[L-1] / TileSizes[L] (0x1483B10), +0x358 = L-1, +0x1F0 > 0 -> 0
+  (0xE7DFDB). The guest's shrink of a host plant is sent as ACT_SHRINK and done the same way on the host (BUG-1514).
+* ✔ (code) puppet_poison lends a partner's puppet the avatar index G+0x411C, so inside its poison step avatar() is the
+  puppet (BUG-1508: a check `maker == avatar()` there is true for the partner).
+* ✔ (code) A shadow tile entry (tiles_shared / tiles_bg) has no cells; tile_elsewhere counted it as populated (BUG-1510).
+  The deletes keep a tile active in any player's box (h_TileActive with g_union), so a hand-over to a partner list's
+  shadow needs a tile outside every box while another list still holds it: narrow.
+* ✔ (code) BreakOrSwallow's states +0x18C 7/8/9 come 0.1-0.3 s before event 5 without +0x113 (BUG-1511).
+* Switches: cell.elsewhere_spend, cell.ko_partner_clouds, cell.flush_all_lists, cell.shadow_empty, cell.breaking_dying,
+  cell.partner_scale, cell.own_cloud, cell.plant_shrink; their counters in `coop.pool`'s `cell_audit` line.

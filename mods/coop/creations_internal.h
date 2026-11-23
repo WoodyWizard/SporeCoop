@@ -101,6 +101,7 @@ struct BarState {
 
 // creations.cpp
 extern const SkHost* H;
+extern SkMod* M;
 extern Ctx C;
 extern const KindInfo kInfo[3];
 extern uintptr_t a_RmPtr;
@@ -115,6 +116,7 @@ uint32_t world_record(int k, uint32_t world);
 void world_record_set(int k, uint32_t world, uint32_t inst);
 extern unsigned int g_ps_test_null;
 extern double g_last_check;
+void test_hide_own(int k, bool on); // tests (BUG-1476): hideown
 extern std::map<uint8_t, std::set<uint32_t>> g_own_sent;
 uint32_t fnv(const void* p, size_t n, uint32_t h = 0x811C9DC5);
 std::string hex(uint32_t v);

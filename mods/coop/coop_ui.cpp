@@ -388,6 +388,7 @@ struct Dialog {
     Win creation = nullptr, creation_prev = nullptr, creation_next = nullptr, give_btn = nullptr, give_next = nullptr, jump_btn = nullptr;
     Win creation_up = nullptr, cup_prev = nullptr, cup_next = nullptr; // BUG-1403: the creature row above the role row
     Win space_btn = nullptr; // lobby -> the Space page (Space stage only)
+    Win lineage_btn = nullptr; // BUG-1477: a guest's consent box "my old cells as wild species" (Cell, setting on)
     // settings page: group headers and the rows of settings_core.h kDefs, a value button and a scope tag each
     std::vector<Win> page_settings;
     Win set_title = nullptr, set_note = nullptr, set_line = nullptr, set_back = nullptr, set_prev = nullptr,
@@ -1096,6 +1097,12 @@ static void build_dialog()
             A.creation_cycle(1);
         g_dirty = true;
     });
+    // BUG-1477: a guest's consent to its old cells as wild species (only in Cell with the host's setting on)
+    D.lineage_btn = add_button(L, "lineage", {260, 66, 720, 98}, "", [] {
+        if (A.lineage_toggle)
+            A.lineage_toggle();
+        g_dirty = true;
+    });
     D.space_btn = add_button(L, "space", {580, 66, 720, 98}, T("Space >", "Космос >"), [] {
         g_space_page = true;
         g_dirty = true;
@@ -1404,6 +1411,8 @@ static void refresh_lobby()
                   : me_host ? T("your world's species", "вид вашего мира") : T("the host's species", "вид хоста");
         if (one && ck != 2)
             cl += T(" (the host evolves it for everybody)", " (хост развивает его для всех)");
+        else if (ck == 1 && cown > 0 && A.creation_premades && A.creation_premades()) // BUG-1476
+            cl += std::string(T("  (game cells: ", "  (клетки игры: ")) + std::to_string(cown) + ")";
         else if (ck != 2 && cown > 0)
             cl += std::string(T("  (in My Creations: ", "  (своих: ")) + std::to_string(cown) + ")";
         else if (ck != 2 && !me_host) { // no arrows: how to get a choice
@@ -1933,6 +1942,13 @@ static void refresh()
     for (Win w : D.page_space)
         show(w, lobby && g_space_page);
     show(D.space_btn, space && !g_space_page && !sett);
+    { // BUG-1477
+        const int lb = A.lineage_box ? A.lineage_box() : -1;
+        show(D.lineage_btn, lobby && !g_space_page && !sett && !space && lb >= 0);
+        if (lb >= 0)
+            text(D.lineage_btn, lb ? T("[x] My old cells as wild species", "[x] Мои старые клетки как дикие виды")
+                                   : T("[ ] My old cells as wild species", "[ ] Мои старые клетки как дикие виды"));
+    }
     if (!lobby || g_space_page || sett) {
         show(D.chat_up, false);
         show(D.chat_down, false);

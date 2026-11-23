@@ -17,6 +17,8 @@
 #include "cellsync_internal.h"
 
 #include "creations.h"
+#include "lineage_cells.h"
+#include "lineage_cells_logic.h"
 #include "species_line.h"
 
 namespace cellsync {
@@ -40,6 +42,8 @@ static cell_logic::OwnCellFollow g_follow; // this game's own cell (S+0x10) at t
 
 static int g_pop_depth;           // inside PopulateMarker (recursive)
 static const float* g_new_pos;    // the position of the gameplay cell the population is making now (CreateCellObject)
+static int g_new_level = -1;      // BUG-1477: its level argument (the cell's +0x358)
+static void* g_new_res;           // BUG-1477: its resource reference
 static struct {
     uint32_t own = 0, partner = 0, no_key = 0, unknown = 0, one_mode = 0, follow = 0;
     uint32_t per_player[8] = {};
@@ -91,11 +95,53 @@ static size_t kin_centres(KinCentre* out, size_t max)
     return n;
 }
 
+// BUG-1477 (lineage_cells.h): a model's mouths, bit 0 carnivore, bit 1 herbivore (-1: not a model this game knows: an
+// unknown key faults in GetCellModelData, BUG-0455)
+static int model_diet(uint32_t inst)
+{
+    if (!a_ModelData || !creations::key_known({inst, 0x3D97A8E4u, 0x40616200u}))
+        return -1;
+    uint8_t* md = skg::cdecl_call<uint8_t*>(a_ModelData, inst, 0x3D97A8E4u, 0x40616200u);
+    return md ? (md[0x1250] ? 1 : 0) | (md[0x1251] ? 2 : 0) : -1;
+}
+static std::unordered_map<uint32_t, int> g_native_diet; // the level species' models -> their mouths
+static unsigned g_lin_swapped, g_lin_kept;
+// host, a native spawn of the population (not the player species): a player's old cell in some of them
+static void lineage_filter(uint32_t key[3], int own_level)
+{
+    if (!is_host() || !lineage_cells::active())
+        return;
+    int ct = -1, ai = -1;
+    const bool creature = ref_types(g_new_res, &ct, &ai) && ct == 2 && ai != 0;
+    if (!lineage::spawn_fits(creature, false, g_new_level, own_level))
+        return;
+    auto it = g_native_diet.find(key[0]);
+    if (it == g_native_diet.end()) {
+        if (g_native_diet.size() > 512)
+            g_native_diet.clear();
+        it = g_native_diet.emplace(key[0], model_diet(key[0])).first;
+    }
+    const int nd = it->second < 0 ? 0 : it->second;
+    uint32_t out[3];
+    const bool swapped = lineage_cells::pick(ai == lineage::kPreyAi, nd & 1, nd & 2, model_diet, out);
+    lineage_cells::count_swap(swapped);
+    if (!swapped) {
+        g_lin_kept++;
+        return;
+    }
+    key[0] = out[0], key[1] = out[1], key[2] = out[2];
+    g_lin_swapped++;
+}
+
 static void kin_filter(uint32_t key[3], void*)
 {
     if (!g_new_pos || !in_cell())
         return;
     uint8_t* s = S();
+    if (s && key[0] && key[0] != F<uint32_t>(s, 0x10)) { // BUG-1477: a level species' spawn
+        lineage_filter(key, cell_logic::level_of_food(F<int32_t>(s, 0x1C)));
+        return;
+    }
     if (!s || key[0] != F<uint32_t>(s, 0x10) || key[1] != F<uint32_t>(s, 0x14) || key[2] != F<uint32_t>(s, 0x18) || !key[0])
         return; // not a kind-5 answer (the player's cell): the level's own species
     g_follow.seen(key, H->time_seconds()); // BUG-1333
@@ -160,9 +206,15 @@ static uint32_t SK_CDECL h_CreateCell(void* q, const float* pos, uint32_t elev, 
     if (g_pop_depth <= 0 || !pos || q != fg_query())
         return o_CreateCell(q, pos, elev, res, level, size, csize, apply, orient, group);
     const float* keep = g_new_pos;
+    const int keep_level = g_new_level;
+    void* keep_res = g_new_res;
     g_new_pos = pos;
+    g_new_level = (int)level;
+    g_new_res = res;
     uint32_t r = o_CreateCell(q, pos, elev, res, level, size, csize, apply, orient, group);
     g_new_pos = keep;
+    g_new_level = keep_level;
+    g_new_res = keep_res;
     return r;
 }
 
@@ -176,7 +228,7 @@ void kin_init()
 // the population of this game may make a partner's kin (the model hook must be in before its pass)
 void kin_before_pass()
 {
-    if (g_fix_kin)
+    if (g_fix_kin || lineage_cells::active()) // (BUG-1477: the old cells use the same hook)
         modes::ensure_cell_model_hook();
 }
 
@@ -195,6 +247,27 @@ std::string kin_report(float r)
              (int)g_fix_kin, g_kin.own, g_kin.partner, g_kin.no_key, g_kin.unknown, g_kin.one_mode, g_kin.follow, g_pop_depth,
              vb ? vb[3] - vb[0] : 0.f, vb ? vb[4] - vb[1] : 0.f);
     out = b;
+    { // BUG-1477: the live wild cells of a player's old cell in this game (the host's own, or a guest's mirrors of them)
+        unsigned live = 0;
+        std::map<uint32_t, unsigned> per;
+        if (in_cell())
+            for_each_cell([&](uint8_t* c, uint32_t) {
+                const uint32_t m = F<uint32_t>(c, kModelKey);
+                if (c == avatar() || modes::cell_is_puppet(c) || F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) ||
+                    !lineage_cells::is_lineage(m))
+                    return;
+                live++;
+                per[m]++;
+            });
+        snprintf(b, sizeof b, "kin lineage swapped=%u kept=%u natives=%u live=%u models=", g_lin_swapped, g_lin_kept,
+                 (unsigned)g_native_diet.size(), live);
+        out += b;
+        for (auto& [m, n] : per) {
+            snprintf(b, sizeof b, "%08X:%u,", m, n);
+            out += b;
+        }
+        out += "\n";
+    }
     if (!in_cell() || !C.sess)
         return out + "not in Cell\n";
     struct P {

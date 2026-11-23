@@ -1008,3 +1008,23 @@ and gets nothing new. With its switch off a game drops the kind before reassembl
 |---|---|---|---|---|
 | 10 kKindHostProps | host -> guest, in Space | 0 (only from the host, at most 512 KiB) | key = the captain's creature key; one record: its property list {captain, 0x00B1B104, group &#124; 0xE500} without 0x0D8A4BC9, only a list with the item config 0xC339D5C7 | registered under the host's key at priority 500 unless the guest has its own list or EditorSaves creation of that key (`creations.captain_props`, BUG-1279) |
 | 11 kKindCaptain | any -> host -> every guest of 1.2, in an adventure only | the sender (the host checks owner == from) | key = the sender's adventure captain; its model records, creaturedata, property list | the host keeps it for later joiners and relays it; every game registers it as a 0x7A...... copy (`captain::copy_instance`), bakes it, the puppet takes it once baked (`adventure.partner_captain`, BUG-1262) |
+
+## Cell and creations wire of feat/w81-cell (2026-11-23, feat/w81-cell)
+<a id="netcode-w81-cell"></a>
+
+0.7.17 item 9 and the Cell audit items of item 11 (docs/plan-0.7.17.md). No new message type, no lock change (the cell
+family lists no wire files; creations' wire file species_line_core.h is unchanged); all on the minors of WP-0.
+
+* **MSG_CREATION kind 12** (creations 1.2, `creations::kKindLineageCell`, BUG-1477): a player's old cell as a wild
+  species. owner = the cell's player, id = its shared instance (0x7B + 24 bits of the content hash, the key every game
+  registers it under), total / off / n / bytes as every kind: the bundle of `creations::line_pack`. total 0 (one
+  message, no bytes): withdrawn, id 0 = every cell of that owner. A guest sends its own (only after its consent) to the
+  host; the host keeps them, relays each pool cell to every peer whose families have creations 1.2 or newer
+  (`peer_families`) and to a player joining later; a guest sends only to a host of creations 1.2 (`host_families`). An
+  older peer is never sent kind 12 (it would drop it as an unknown kind) and the host swaps no spawn while one is in
+  the session (lineage_cells_logic.h host_swaps).
+* **MSG_CELL_EAT kind ACT_SHRINK 3** (cell 1.2, BUG-1514): a guest's bite shrank a plant of the host one level in
+  place; arg = the new level, food / plant / meal as ACT_GONE (the bite's points). Sent only to a host of cell 1.2 or
+  newer: a host before it took any kind but ACT_GONE for a kill.
+* **MSG_CELL_STATE flag 8** (BUG-1513): the cell is a product (flag 4) of the RECEIVER's own (a cloud the host made
+  for that guest's puppet); written per destination; an older guest reads only 1, 2 and 4.

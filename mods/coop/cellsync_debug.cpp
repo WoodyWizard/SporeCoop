@@ -1009,6 +1009,8 @@ std::string debug(const std::vector<std::string>& a)
         return o + b;
     }
     if (!a.empty() && a[0] == "spend") { // tests (BUG-1249): the guest's own editor spends, the DNA this game shows
+        if (a.size() >= 3 && a[1] == "fake") // tests (BUG-1507): as if our own editor had just spent <n>
+            spend_fake(atoi(a[2].c_str()));
         uint8_t* s = S();
         char b[320];
         snprintf(b, sizeof b, "%s spent=%d dna=%d food=%d", spend_status().c_str(), s ? F<int32_t>(s, 0x2C) : -1,
@@ -1904,7 +1906,7 @@ std::string debug(const std::vector<std::string>& a)
                  "check_warns=%u passes=%u lists=%u views=%u unshared=%u scale_flushes=%u\n", g_n.views_empty_skips, g_n.tiles_flush, g_n.tiles_handed, g_n.handed_flushed,
                  g_n.tile_resets, g_n.tile_check_warns_between, g_n.tile_checks_bad, g_n.tile_passes, (unsigned)g_ptiles.size(), (unsigned)g_views.size(),
                  g_n.tiles_unshared, g_n.tiles_scale_flush);
-        return b;
+        return std::string(b) + tiles_shadow_status(); // BUG-1510
     }
     if (!a.empty() && a[0] == "lootbig") { // tests (BUG-1004): `lootbig <n>`: the next foreground loot drop makes <n> cells; `lootbig`: the counters
         if (a.size() > 1)
