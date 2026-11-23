@@ -68,7 +68,7 @@ struct Mission {
 
 // K_TERRA 4 (any): u32 place, 3 x f32 atmosphere / temperature / water deltas since the last one;
 // K_TERRA_REC 9 (any, BUG-0883): u32 place, 3 x f32 the planet record's values now. Non-finite values are the
-// handler's to refuse (apply_terra / apply_terra_rec), as before.
+// handler's to refuse (apply_terra since BUG-1489, which also clamps a delta to +-1; apply_terra_rec).
 struct Terra {
     uint32_t place = 0;
     float v[3] = {};
