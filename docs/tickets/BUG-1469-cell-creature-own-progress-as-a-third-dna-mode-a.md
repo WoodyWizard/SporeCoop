@@ -10,7 +10,7 @@ role: host, guest
 versions: 0.7.17
 fixed_in:
 branch: feat/w69-progress
-commits: 02127826, ffb010e2
+commits: 02127826, ffb010e2, 37a2dd5c, 4fc580f1
 tests: own_progress_cell, own_progress_cell_guest, own_progress_afk, own_progress_levels, own_progress_creature, own_progress_deeds, own_progress_rejoin, own_progress_store
 signature:
 docs: docs/03-gameplay.md#gameplay-own-progress, docs/01-architecture.md#arch-player-store, docs/re/creature.md#creature-own-progress, docs/re/cell.md#cell-own-progress
