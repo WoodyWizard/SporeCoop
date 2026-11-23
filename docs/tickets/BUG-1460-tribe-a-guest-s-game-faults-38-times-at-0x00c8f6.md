@@ -10,7 +10,7 @@ role:
 versions: 0.7.16
 fixed_in:
 branch:
-commits:
+commits: 1a8e910f
 tests: campaign_tribe_noclick (tools/tests/coop_campaign.py)
 signature: dc04aee5:0x00C8F6D3 read 0x0 (ecx=0), function 0xC8F6D0 called at 0xC286B1 with the result of 0xC230B0
 docs: docs/re/tribe.md#tribe-makeway-null-tribe
