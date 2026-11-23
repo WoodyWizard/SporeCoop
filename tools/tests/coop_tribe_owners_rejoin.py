@@ -10,14 +10,15 @@ and the balance (a player with no member gets an even share) gave it the host's 
 the leader first.
 
 1. Tribe fixture; the owners of the player tribe's members and the leader (`coop.tribe` leader=1) are noted.
-   Default: `coop.tribe claims_at_join 1` on the host makes the claims follow due in the tick of the next join (the
-   window, hit every time). --back: the guest first gives all of its members to the host (it has no claim, so the
+   Default: the host gives the guest all its members but the leader (the guest owns more than the share a balance
+   would give it back), and `coop.tribe claims_at_join 1` on the host makes the claims follow due in the tick of the
+   next join (the window, hit every time). --back: the guest first gives all of its members to the host (it has no claim, so the
    balance gives it its share at the join).
 2. The guest leaves (`coop.leave`), 4 s later joins again.
 3. PASS (default): the hook fired; every member the guest owned is its own again and every other member keeps its
    owner (on the host and in the guest's game); the leader is the host's on both games.
-   SPORE_FIX_OFF=tribe.claims_order,tribe.balance_leader (0.7.16): the guest's claims are lost, the leader goes to
-   the guest: FAIL.
+   SPORE_FIX_OFF=tribe.claims_order: the guest's claims are lost at the join, the balance gives it only its share:
+   FAIL. (With tribe.balance_leader off too, as 0.7.16, the leader is the first member given.)
    PASS (--back): the guest owns its share (the members / 2) again and the leader is still the host's on both games.
    SPORE_FIX_OFF=tribe.balance_leader: the leader is the first member the host gives: FAIL.
 
@@ -69,8 +70,15 @@ def main():
         give(guest, theirs, 0)
         ck(wait(lambda: 1 not in owners(host).values(), 15), f'the guest owns no member now ({owners(host)})')
         before = owners(host)
-    elif not ck(1 in before.values(), 'the guest owns members before it leaves'):
-        return ck.result()
+    else:  # the host gives the guest all its members but the leader: the guest owns more than a balance would give it
+        mine = [i for i, o in before.items() if o == 0 and i != lead]
+        if mine:
+            give(host, mine, 1)
+            ck(wait(lambda: list(owners(host).values()).count(0) == 1, 15), f'the host owns only its chief now ({owners(host)})')
+        before = owners(host)
+        if not ck(list(before.values()).count(1) > len(before) // 2,
+                  f'the guest owns more than half of the members before it leaves ({before})'):
+            return ck.result()
     time.sleep(4)  # the claims follow every 2 s
     if not back:
         print('  host:', host.call('coop.tribe claims_at_join 1').get('out', '').strip(), flush=True)
