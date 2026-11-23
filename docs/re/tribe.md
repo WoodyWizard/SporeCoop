@@ -4875,3 +4875,21 @@ lead's, BUG-0651). A 32 ms frame then draws 0.52 m of placing + 0.43 m of the ga
 0.86 m). How to read it in a track: the jumping frames have rv (aim speed) and gv (the game's walk speed) at 13-14 m/s,
 err 0.75-2 m just before, and a step of (2 x gv + 3) x dt. tribe.smooth_bound bounds the placing by the body's own speed
 (lead_sp / late_rate) there too. ? The stop-and-go half of BUG-1235 (uneven 12-14 %) is another cause, not found.
+
+## The galaxy menu's world reset and the destroy hook's walks (2026-11-22, fix/w63-net)
+<a id="tribe-reset-walks"></a>
+
+BUG-9312, the analogue of BUG-9272 found by IltonBJSilva in their fork (PR #212, commit 6d94b4ae6).
+* ~ (runtime in the fork, Steam exe on Windows 11, their data) A guest leaving its Tribe world for the host's at a
+  rejoin tears the world down inside `SporeCoop::GalaxyMenu_SimReset` 0xB32C30: 283-314 creatures and citizens go
+  through cGameNounManager::DestroyInstance there; with the destroy hook's walks the reset took 13.2 and 16.5 s
+  (12-31 s stalls, once past the 30 s watchdog), without them 0.9-2.2 s. Not yet seen in our lab: coop_reset_stall.py
+  logs it (`game fixes: the world reset took ...`).
+* ✔ (asm, GOG 2024) 0xB32C30 is cdecl void() with one exit (plain `ret` at 0xB32D63); its first instruction is a
+  5-byte `call 0x67CA60` (a hook's trampoline moves it).
+* ✔ (code) The cost in our destroy hook: for each animal or citizen destroyed, forget_sender walks every object of
+  the noun list (IsBadReadPtr, in_exe, the noun's virtual call) and calls skg::readable (one VirtualQuery each) twice
+  for each live animal or citizen; forget_last_attacker walks again with one readable each. A reset destroying D of A
+  creatures: about 2 * D walks of the whole list and 1.5 * D * A VirtualQuery (300 x 300: ~135 000). Under Wine a
+  VirtualQuery is cheap; on Windows it is a system call (BUG-0791: readable took 97-99 % of the main thread in a
+  438-actor adventure), which is where the seconds go.
