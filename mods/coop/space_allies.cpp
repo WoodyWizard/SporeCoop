@@ -514,6 +514,15 @@ COOP_FIX("allies.near_rebuild", "BUG-1144", g_near_fix,
          "space: after the allies mirror goes (a save, the end of the session) the game's list of owned stars nearby is "
          "rebuilt without its star (possible crash when an NPC ship would visit)");
 static uint32_t g_near_rebuilds;
+// BUG-1484 (audit SPC-5): apply() gives a star back to its old owner (usually nobody) when the partner's colony there is
+// lost or blocked and nothing else of the mirror uses it, but only unapply() rebuilt the list above: with the star
+// visited (in the list) the next NPC visitor spawn could pick it and fault at 0xC32817 (BUG-1144's crash). Now apply()
+// rebuilds the list too after it gave a star back. `coop.fix allies.apply_near_rebuild off`: 0.7.16.1.
+static bool g_apply_near_fix = true;
+COOP_FIX("allies.apply_near_rebuild", "BUG-1484", g_apply_near_fix,
+         "space: when a partner's colony goes from the allies mirror its star leaves the game's list of owned stars nearby "
+         "(possible crash when an NPC ship would visit)");
+static uint32_t g_apply_star_back;
 
 static void* near_stars()
 {
@@ -734,6 +743,7 @@ static void apply(Mirror& m)
             vcall<void>(it->second.rec, 1);
         it = m.planets.erase(it);
     }
+    bool star_back = false;
     if (m.applied)
         for (auto it = m.stars.begin(); it != m.stars.end();) {
             bool used = false;
@@ -742,9 +752,14 @@ static void apply(Mirror& m)
             if (!used) {
                 restore_star(m, it->first);
                 it = m.stars.erase(it);
+                star_back = true;
             } else
                 ++it;
         }
+    if (star_back && g_apply_near_fix) { // BUG-1484: no star of nobody in the game's list of owned stars nearby
+        g_apply_star_back++;
+        rebuild_near();
+    }
     if (todo.empty() && own_todo.empty() && !m.applied)
         return;
     if (!ensure_empire(m))
@@ -1624,7 +1639,8 @@ static std::string debug(const std::vector<std::string>& a)
             return "no near list\n";
         std::vector<void*> v = ptr_vec((uint8_t*)ns + 0x7C, 256);
         uint32_t me = my_pol();
-        std::string o = "near " + std::to_string(v.size()) + " rebuilds=" + std::to_string(g_near_rebuilds) + "\n";
+        std::string o = "near " + std::to_string(v.size()) + " rebuilds=" + std::to_string(g_near_rebuilds) +
+                        " apply_star_back=" + std::to_string(g_apply_star_back) + "\n";
         int stale = 0;
         for (void* s : v) {
             if (!readable(s, 0x74))
