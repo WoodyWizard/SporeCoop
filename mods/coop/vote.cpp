@@ -73,6 +73,10 @@ unsigned g_switch_votes, g_switch_held, g_switch_guest_held, g_switch_arrivals; 
 bool g_editor_now_fix = true;
 // F5 (BUG-0769): the session setting creature.mode = host (everybody plays the host's creature) is in force here
 bool host_creature_mode() { return settings::get(settings::kCreatureMode) == 1; }
+static bool g_host_mode_vote_fix = true;
+COOP_FIX("core.host_mode_vote", "BUG-1503", g_host_mode_vote_fix,
+         "core: with creature.mode host the end of the Creature stage still waits for the vote, and a guest playing "
+         "its own world elsewhere can evolve there");
 // BUG-0920: an editor request the mod took and will never submit (evo_flag_tick clears the game's flag at once)
 bool g_evo_flag_refused = false;
 COOP_FIX("core.editor_now", "BUG-0516", g_editor_now_fix, "core: the host's Creature evolution editor opens at once; each guest gets an Evolve now offer instead of the ready vote");
@@ -870,10 +874,16 @@ bool SK_CDECL h_Submit(void* req)
         // F5 (BUG-0769): creature.mode host: one creature for everyone, only the host evolves it (no vote, no offer);
         // a guest's own editor request is refused (the game's nest / mating call of a guest)
         bool one = host_creature_mode() && (mode == modes::kCell || mode == modes::kCreature);
-        if (one && g_sess.role() == net::Role::Host) {
+        // CORE-4 (BUG-1503): the host's request opened at once before the stage-end and running-vote checks (no "move
+        // on to the Tribe stage" vote; a request during a vote opened anyway), and a guest's was refused also when it
+        // played its own world elsewhere (it could not evolve there). On: the stage end and a running vote go the
+        // vote's way, a guest outside the host's world evolves its own. Off (core.host_mode_vote): as 0.7.16.1
+        bool one_host = one && !(g_host_mode_vote_fix && (stage_end || g_vote.active));
+        bool one_guest = one && !(g_host_mode_vote_fix && host_world_now() != host_world::HostWorld::Same);
+        if (one_host && g_sess.role() == net::Role::Host) {
             LOG("evolution: creature.mode host: the host's editor opens at once, every player gets the result");
             notice(g_name + " evolves the creature of everybody", -1);
-        } else if (one) {
+        } else if (one_guest && g_sess.role() != net::Role::Host) {
             LOG("evolution: creature.mode host: this guest's editor request is refused (the host evolves)");
             feed("the host evolves the creature for everybody (session setting: one creature for everyone)");
             g_evo_flag_refused = true; // BUG-0920: the game sets its "editor pending" flag after this call
