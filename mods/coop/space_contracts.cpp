@@ -335,8 +335,8 @@ void owed_tick()
             continue;
         }
         bool need_inv = o.hash || o.key[0];
-        if ((o.money && !empire()) || (need_inv && !inventory())) {
-            g_owed.push_back(o); // not yet (the inventory comes a moment after the Space frames start)
+        if ((o.money && !empire()) || (need_inv && (!inventory() || spaceext::hold_grants()))) {
+            g_owed.push_back(o); // not yet (the inventory comes a moment after the Space frames start; BUG-9300: the restore)
             continue;
         }
         if (o.money)
@@ -593,7 +593,8 @@ void on_result(uint32_t id, bool ok, uint8_t reason, uint32_t money_, uint32_t t
     bool pay = spaceext::rivals() ? mine : host();
     // BUG-0694: outside Space (no empire / no inventory) the reward is owed, paid back in the same Space world
     bool owe_money = g_owed_fix && pay && money_ && (!spaceext::in_space() || !empire());
-    bool owe_tool = g_owed_fix && mine && tool && (!spaceext::in_space() || !inventory());
+    // BUG-9300: also while a rejoined guest's own hold is still to come (the restore would take the tool out again)
+    bool owe_tool = g_owed_fix && mine && tool && (!spaceext::in_space() || !inventory() || spaceext::hold_grants());
     if (owe_money || owe_tool) {
         OwedReward o;
         o.money = owe_money ? (int)money_ : 0;
