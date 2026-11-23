@@ -139,9 +139,11 @@ void* tribe_holding(void* c)
     }
     return nullptr;
 }
+std::unordered_set<uint16_t> g_test_gone; // tests (BUG-1522, coop.tribe savekill): member ids the host's states skip here
 void remove_member(void* c)
 {
     game::air_hold(c, false); // BUG-0946: no hold on a citizen the game frees later
+    took_return(c);           // BUG-1522: a save has it out of its tribe now: back first, then removed as always
     if (g_member_lifetime_fix && !g_detached.count(c)) {
         void* lt = tribe_holding(c);
         if (!lt) {
@@ -228,6 +230,8 @@ void guest_state(net::Reader& r)
         m.hp = r.f32();
         if (!r.ok())
             return cut();
+        if (!g_test_gone.empty() && g_test_gone.count(id))
+            continue; // tests (BUG-1522): the host's state as if it no longer had this member
         g_guest.snap.saw(id);
         GEntry& e = g_guest.mirrors.at(id);
         GMember& g = e.data;

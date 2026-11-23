@@ -31,6 +31,7 @@
 #include "stage_epoch.h"
 #include "world.h"
 #include "owner_claims.h"
+#include "own_world.h"
 #include "autosave_glue.h"
 #include "store.h"
 #include "wsync.h"
@@ -2024,6 +2025,28 @@ static void pause_net_tick(double now)
     H->run_outside_frame(pause_net_release, nullptr);
 }
 
+// BUG-1495 (audit TR-9 part 2): MSG_TRIBE_ANIM / MSG_NPC_ANIM are class Module (not dropped at dispatch for a guest
+// elsewhere: the module gates them per place) and on_member_anims had no place check: a guest playing another Tribe
+// world stood under the host's game-over caption ("The tribe is out: waiting for <host>", kind 20) and heard the host's
+// theme and party music (kinds 4, 5, 7) in its own world. Now such a guest drops the plays and a wait's start; the
+// stops and a wait's end pass (tribe_logic::elsewhere_drops). `coop.fix tribe.elsewhere_anims off`: 0.7.16.1.
+static bool g_elsewhere_anims_fix = true;
+COOP_FIX("tribe.elsewhere_anims", "BUG-1495", g_elsewhere_anims_fix,
+         "tribe: a guest playing another world is not paused by the host's game-over caption and does not hear the host's music");
+static uint32_t g_elsewhere_anims_dropped;
+static bool elsewhere_drop(uint8_t kind, bool up)
+{
+    if (!tribe_logic::elsewhere_drops(g_elsewhere_anims_fix, is_guest() && own_world::elsewhere(), kind, up))
+        return false;
+    if (g_elsewhere_anims_dropped++ % 50 == 0)
+        H->log(M, SK_INFO, "tribe: the host's news (kind %u%s) not applied: this guest plays another world (BUG-1495, %u)", kind,
+               up ? ", up" : "", g_elsewhere_anims_dropped);
+    return true;
+}
+
+// 0.7.17 WP-B1 (audit TR items, BUG-1522): one status line of their counters (tests read it)
+static std::string audit_status();
+
 // guest: MSG_NPC_ANIM kinds 2 / 3 (npc.cpp passes them on after the kind byte)
 void on_member_anims(uint8_t kind, net::Reader& r)
 {
@@ -2033,6 +2056,8 @@ void on_member_anims(uint8_t kind, net::Reader& r)
             why = kGoHostPaused;
         bool up = why != 0;
         if (!r.ok() || !g_ok || !is_guest())
+            return;
+        if (elsewhere_drop(kind, up)) // BUG-1495
             return;
         bool fix = kind == kGameOverKind ? g_gameover_wait_fix : g_host_pause_wait_fix;
         // C3 (BUG-1142): a 0.7.15 host's pause comes as MSG_HOST_BUSY (host_busy.cpp waits for it): kind 21 is the
@@ -2060,6 +2085,12 @@ void on_member_anims(uint8_t kind, net::Reader& r)
     if (kind == 8 && g_party_stop_fix && g_ok && is_guest() && game::mode_id() != modes::kTribe) { // BUG-0890
         g_party_stops_outside++;
         on_party(kind, r);
+        return;
+    }
+    if (g_ok && (kind == 4 || kind == 5 || kind == 7) && elsewhere_drop(kind, true)) // BUG-1495
+        return;
+    if (kind == 6 && g_ok && is_guest() && game::mode_id() != modes::kTribe) { // BUG-1496: the stop comes back later
+        theme_stop_outside(r);
         return;
     }
     if (!g_ok || !is_guest() || game::mode_id() != modes::kTribe)
@@ -2592,8 +2623,75 @@ struct TookT {
     void* t;
     uintptr_t off;
     void* p;
+    void* c;         // the citizen (p is c + 0xC0 in the selectable vector)
+    uint32_t serial; // its cGameData serial when it was taken out
 };
 static std::vector<TookT> g_took_t;
+// BUG-1522 (CIV-1's bug, BUG-1416, in Tribe): save_start runs inside the save's first write, save_end only on the next
+// frame's savestrip::tick, after that frame's network receive. A host state in between that no longer names a mirror
+// called remove_member: the mirror was out of every member vector, so tribe_holding found no tribe and the mirror was
+// only forgotten (BUG-0844's refusal; with tribe.member_lifetime off RemoveMember(c, destroy) freed it), and save_end
+// put it back: an orphan member nobody mirrors (or a freed pointer in the member and selectable vectors). Now a member
+// the host removes during the window goes back first and is then removed the usual way (took_return), and save_end puts
+// back only a member still listed as the same object, of a tribe still listed, not in the vector already
+// (tribe_logic::took_goes_back). World change and session end clear the list. `coop.fix tribe.save_took_listed off`
+// (unsafe): every taken entry back, a removal in the window refused (0.7.16.1).
+static bool g_took_listed_fix = true;
+COOP_FIX_UNSAFE("tribe.save_took_listed", "BUG-1522", g_took_listed_fix,
+                "tribe: a guest's save puts back only the members the game still has (one the host removed during the save goes)");
+static bool g_debug_save_kill; // tests (coop.tribe savekill): the next save_end first removes a taken mirror, as a host state
+static uint32_t g_took_back, g_took_gone, g_took_returned, g_took_cleared, g_took_killed;
+static bool in_vector(void* t, uintptr_t off, void* p)
+{
+    void** b = F<void**>(t, off);
+    void** e = F<void**>(t, off + 4);
+    for (void** it = b; it && it < e && e - b < 1024; ++it)
+        if (*it == p)
+            return true;
+    return false;
+}
+static void took_put(const TookT& t)
+{
+    void**& e = F<void**>(t.t, t.off + 4);
+    if (e < F<void**>(t.t, t.off + 8))
+        *e++ = t.p;
+}
+// a member the host removes while a save has it out of its tribe's vectors: back first (true: it was taken)
+bool took_return(void* c)
+{
+    if (!g_took_listed_fix || g_took_t.empty())
+        return false;
+    bool any = false;
+    for (auto it = g_took_t.begin(); it != g_took_t.end();)
+        if (it->c == c) {
+            if (game::listed(c, kCitizenNoun) && game::object_serial(c) == it->serial && !in_vector(it->t, it->off, it->p))
+                took_put(*it);
+            it = g_took_t.erase(it);
+            any = true;
+        } else
+            ++it;
+    if (any) {
+        g_took_returned++;
+        H->log(M, SK_INFO, "tribe: member %p removed while a save has it out of its tribe: back first, then removed (BUG-1522)", c);
+    }
+    return any;
+}
+static void took_clear()
+{
+    if (!g_took_listed_fix || g_took_t.empty())
+        return;
+    g_took_cleared += (uint32_t)g_took_t.size();
+    g_took_t.clear();
+}
+void took_debug_kill(bool on) { g_debug_save_kill = on; }
+std::string took_status()
+{
+    char b[200];
+    snprintf(b, sizeof b, "save_took: fix=%d taken=%u back=%u gone=%u returned=%u cleared=%u killed=%u armed=%d\n",
+             (int)g_took_listed_fix, (unsigned)g_took_t.size(), g_took_back, g_took_gone, g_took_returned, g_took_cleared,
+             g_took_killed, (int)g_debug_save_kill);
+    return b;
+}
 // the food mat of a tribe: the noun 0x629BAFE object that holds the tribe's pointer (offset found at runtime)
 static uintptr_t g_mat_off;
 static bool mat_of(void* o, void* t)
@@ -2640,7 +2738,7 @@ static void save_start()
             for (void** it = b; it != e; ++it) {
                 void* c = *it ? (off == kMembersOff ? *it : (uint8_t*)*it - 0xC0) : nullptr;
                 if (c && (whole || ours_in(g_ours_c, c))) {
-                    g_took_t.push_back({t, off, *it});
+                    g_took_t.push_back({t, off, *it, c, game::object_serial(c)});
                     g_strip_now.insert(c);
                 } else
                     *w++ = *it;
@@ -2672,7 +2770,37 @@ static void save_start()
 }
 static void save_end()
 {
+    if (g_debug_save_kill && !g_took_t.empty()) { // tests: as if this frame's host state removed a taken mirror first
+        g_debug_save_kill = false;
+        for (auto& t : g_took_t) {
+            uint16_t id;
+            if (t.off != kMembersOff || !g_guest.mirrors.id_of(t.c, id))
+                continue;
+            H->log(M, SK_INFO, "tribe: savekill: the taken mirror #%u %p removed before the save's end (tests, BUG-1522)", id, t.c);
+            g_test_gone.insert(id); // (the host's states skip it from now on: no new mirror binds the member again)
+            g_guest.mirrors.detach(id);
+            remove_member(t.c); // (as guest_state's sweep: may change g_took_t)
+            g_took_killed++;
+            break;
+        }
+    }
+    std::vector<void*> tribes;
+    if (g_took_listed_fix && !g_took_t.empty() && game::mode_id() == modes::kTribe)
+        tribes = all_tribes();
     for (auto& t : g_took_t) { // back at the end of the list (the capacity is the one they left)
+        if (g_took_listed_fix) {
+            bool tribe_here = std::find(tribes.begin(), tribes.end(), t.t) != tribes.end();
+            bool listed = tribe_here && game::listed(t.c, kCitizenNoun);
+            if (!tribe_logic::took_goes_back(true, tribe_here, listed, listed && game::object_serial(t.c) == t.serial,
+                                             listed && in_vector(t.t, t.off, t.p))) {
+                g_took_gone++;
+                H->log(M, SK_INFO, "tribe: a member %p taken out for the save is gone or back already: not put back (BUG-1522)", t.c);
+                continue;
+            }
+            took_put(t);
+            g_took_back++;
+            continue;
+        }
         void**& e = F<void**>(t.t, t.off + 4);
         if (game::object_alive(t.t) && e < F<void**>(t.t, t.off + 8))
             *e++ = t.p;
@@ -3224,7 +3352,7 @@ static void away_conquest_tick(double now)
 }
 
 // BUG-0879: host, a guest's game conquered the NPC village at p while this game was away: its hut falls here
-void conquer_on_host(uint8_t from, const net::Vec3& p)
+static void* village_near(const net::Vec3& p)
 {
     void* pt = player_tribe();
     void* best = nullptr;
@@ -3236,8 +3364,16 @@ void conquer_on_host(uint8_t from, const net::Vec3& p)
             best = t;
         }
     }
+    return best;
+}
+// 1 conquered here, 0 refused, -1 not now (a cinematic plays) and `last` is false: not counted, tried again
+static int conquer_now(uint8_t from, const net::Vec3& p, bool last)
+{
+    void* best = village_near(p);
     void* hut = best && skg::readable(best, 0x36C) ? F<void*>(best, 0x368) : nullptr;
     int r = best && !F<uint8_t>(best, 0x556) ? fell_hut_by(hut, from) : 0;
+    if (r < 0 && !last)
+        return -1;
     if (r > 0) {
         g_conquests_done++;
         H->log(M, SK_INFO, "tribe: player %u conquered the village at (%.0f %.0f %.0f) while this game was away: conquered here (BUG-0879)",
@@ -3246,6 +3382,58 @@ void conquer_on_host(uint8_t from, const net::Vec3& p)
         g_conquests_refused++;
         H->log(M, SK_INFO, "tribe: player %u's conquest of the village at (%.0f %.0f %.0f) not made here: %s (BUG-0879)", (unsigned)from,
                p.x, p.y, p.z, !best ? "no village there" : F<uint8_t>(best, 0x556) ? "already conquered" : r < 0 ? "a cinematic plays" : "no standing hut");
+    }
+    return r;
+}
+// BUG-1492 (audit TR-5): the village a guest conquered while the host was away fell here without counting for the stage's
+// goal: the goal bar counts a village when its cTribeToTribeMission ends, and only the host's own input or a guest's raid
+// order (BUG-1068, tribe.guest_mission) makes that mission; the away raid ran in the guest's own game. Now the conquest
+// first makes the village's mission (wsync::goal_target, SetTargetTribe outside the frame, as BUG-1068 does at the order)
+// and the hut falls 0.5 s later, once the mission is there (its update ends it from the conquered flag: lab
+// 20261113-072313-2). The audit's part 2 on the way: a fall refused for a playing cinematic is tried again every second
+// for 30 s instead of being dropped (the held commands run all at once). `coop.fix tribe.away_goal off`: at once, no
+// mission, a cinematic drops it (0.7.16.1).
+static bool g_away_goal_fix = true;
+COOP_FIX("tribe.away_goal", "BUG-1492", g_away_goal_fix,
+         "tribe: a village a guest conquered while the host was away counts for the stage's goal when the host is back");
+struct AwayConquest {
+    uint8_t from;
+    net::Vec3 p;
+    double at, until;
+};
+static std::vector<AwayConquest> g_away_pending;
+static uint32_t g_away_goals, g_away_retries;
+void conquer_on_host(uint8_t from, const net::Vec3& p)
+{
+    if (!g_away_goal_fix) {
+        conquer_now(from, p, true);
+        return;
+    }
+    void* best = village_near(p);
+    if (best && !F<uint8_t>(best, 0x556) && wsync::goal_target(best)) {
+        g_away_goals++;
+        H->log(M, SK_INFO, "tribe: the village at (%.0f %.0f %.0f) player %u conquered while this game was away gets its goal mission first (BUG-1492)",
+               p.x, p.y, p.z, (unsigned)from);
+    }
+    double now = H->time_seconds();
+    g_away_pending.push_back({from, p, now + 0.5, now + 30.0});
+}
+// host, every tick in Tribe: the conquests whose mission had its time
+static void away_goal_tick(double now)
+{
+    for (size_t i = 0; i < g_away_pending.size();) {
+        AwayConquest& a = g_away_pending[i];
+        if (now < a.at) {
+            i++;
+            continue;
+        }
+        if (conquer_now(a.from, a.p, now >= a.until) < 0) {
+            g_away_retries++;
+            a.at = now + 1.0;
+            i++;
+            continue;
+        }
+        g_away_pending.erase(g_away_pending.begin() + i);
     }
 }
 
@@ -4375,8 +4563,11 @@ void tick(double now)
         frame_tool_run();
     village_stamps_tick(now); // BUG-0947
     species_tick(now);        // BUG-1271 (also after the session: the members the mod changed go back)
-    if (game::mode_id() == modes::kTribe)
+    if (game::mode_id() == modes::kTribe) {
         hand_repair_tick(now); // BUG-1335
+        if (g_ok)
+            theme_tick(); // BUG-1496
+    }
     if (!active())
         return;
     g_cmd_world = modes::current_world();
@@ -4388,6 +4579,8 @@ void tick(double now)
     });
     drop_foreign_selection();
     away_conquest_tick(now); // BUG-0879 (guest)
+    if (is_host() && game::mode_id() == modes::kTribe)
+        away_goal_tick(now); // BUG-1492
     if (is_host())
         host_tick(now);
     else if (is_guest()) {
@@ -4485,6 +4678,9 @@ void before_save()
 
 void on_session_end()
 {
+    took_clear(); // BUG-1522
+    g_test_gone.clear();
+    g_away_pending.clear(); // BUG-1492
     g_held.clear(); // BUG-0693
     g_hold_seen.clear(); // BUG-0906
     for (auto& [c, t] : g_detached) // BUG-0667: the bodies stay in this world; the game tears them down later
@@ -4494,7 +4690,7 @@ void on_session_end()
     g_bt_frozen.clear();
     g_bt_freeze_at.clear();
     g_bt_local.clear(); // (g_left_tribe stays until the world goes: its citizens are torn down later)
-    theme_forget(); // BUG-0568
+    theme_session_end(); // BUG-0568, BUG-1496: the relay's slots stop here
     party_forget(); // BUG-0646
     baby_forget(); // BUG-0671
     clear_coop_tables(true);
@@ -4518,6 +4714,9 @@ LIFECYCLE_HOOK("tribe.session", lifecycle::kSessionEnd, -50, [](const lifecycle:
 // on_session_end, whose restoring clear would touch the old world if the order ever changed)
 void on_world_change()
 {
+    took_clear(); // BUG-1522: the taken members' tribes are freed with the world
+    g_test_gone.clear();
+    g_away_pending.clear(); // BUG-1492 (a conquest of the old world)
     theme_forget(); // BUG-0568
     party_forget(); // BUG-0646
     baby_forget(); // BUG-0671
@@ -4638,6 +4837,17 @@ void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), 
     });
 }
 
+static std::string audit_status()
+{
+    char b[400];
+    snprintf(b, sizeof b,
+             "tribe audit 0.7.17: away_goal fix=%d missions=%u pending=%u retries=%u (BUG-1492); elsewhere_anims fix=%d "
+             "dropped=%u (BUG-1495); theme_end ended=%u later=%u lost=%u (BUG-1496); air_released=%u (BUG-1493)\n",
+             (int)g_away_goal_fix, g_away_goals, (unsigned)g_away_pending.size(), g_away_retries, (int)g_elsewhere_anims_fix,
+             g_elsewhere_anims_dropped, g_theme_ended, g_theme_later_n, g_theme_lost, g_air_released);
+    return b + took_status();
+}
+
 std::string status()
 {
     char b[1024];
@@ -4684,6 +4894,7 @@ std::string status()
     snprintf(b, sizeof b, "tribe anim msg: fix=%d sent_new=%u sent_old=%u rx_new=%u rx_bad=%u (BUG-1160)\n", (int)g_anim_msg_fix,
              g_anim_sent_new, g_anim_sent_old, g_anim_rx_new, g_anim_rx_bad);
     out += b;
+    out += audit_status(); // 0.7.17 WP-B1
     snprintf(b, sizeof b, "tribe pause net: releases=%u rebalanced=%u standing=%.0f s (BUG-1101)\n", g_net_releases,
              g_net_rebalanced, g_net_since ? H->time_seconds() - g_net_since : 0.0);
     out += b;
