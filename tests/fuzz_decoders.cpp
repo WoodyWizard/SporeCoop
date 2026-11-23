@@ -49,6 +49,7 @@
 #include "wire/space_eco.h"
 #include "wire/space_rivalry.h"
 #include "wire/space_trade.h"
+#include "wire/space_ufo.h"
 
 using namespace net;
 
@@ -1099,6 +1100,9 @@ static const WireDec kWireDecoders[] = {
     wire_dec<wire::space_planets::Spice>, wire_dec<wire::space_planets::SpiceTaken>,
     // wire/space_eco.h
     wire_dec<wire::space_eco::Eco>,
+    // wire/space_ufo.h (BUG-1288)
+    wire_dec<wire::space_ufo::LeadState>, wire_dec<wire::space_ufo::LeadHit>, wire_dec<wire::space_ufo::LeadDamage>,
+    wire_dec<wire::space_ufo::Leads>,
     // wire/shared_res.h, fields_wire.h
     wire_dec<wire::shared_res::Res>, wire_dec<wire::shared_res::ResAdd>, wire_dec<FieldsPacket>,
 };
@@ -1250,6 +1254,56 @@ static void fuzz_wire_modules(Rng& R, int iters)
                 for (float& f : sp.pos) f = (float)R.below(2000) - 1000.f;
                 v->push_back(sp);
             }
+        return x;
+    });
+
+    namespace u = wire::space_ufo; // BUG-1288 (the agy branch's cases, and K_LEADS)
+    fuzz_struct<u::LeadState>("ufo LeadState", R, iters, [](Rng& R) {
+        u::LeadState x;
+        x.leader = (uint8_t)(1 + R.below(15));
+        x.mode = R.u32();
+        x.world = R.u32() | 1u;
+        size_t n = 1 + R.below(R.below(8) ? 64u : (uint32_t)u::kMaxStateBody);
+        x.body.resize(n);
+        for (auto& b : x.body)
+            b = R.u8();
+        return x;
+    });
+    fuzz_struct<u::LeadHit>("ufo LeadHit", R, iters, [](Rng& R) {
+        u::LeadHit x;
+        x.leader = (uint8_t)(1 + R.below(15));
+        x.mode = R.u32();
+        x.world = R.u32() | 1u;
+        x.shooter = (uint8_t)(1 + R.below(15));
+        if (x.shooter == x.leader)
+            x.shooter = (uint8_t)(x.leader + 1);
+        x.ship_id = R.u16();
+        x.dmg = (float)R.below(100001);
+        x.type = (int32_t)R.u32();
+        for (float& d : x.dir)
+            d = ((float)R.below(2001) - 1000.f) / 100.f;
+        return x;
+    });
+    fuzz_struct<u::LeadDamage>("ufo LeadDamage", R, iters, [](Rng& R) {
+        u::LeadDamage x;
+        x.leader = (uint8_t)(1 + R.below(15));
+        x.mode = R.u32();
+        x.world = R.u32() | 1u;
+        x.victim = (uint8_t)(1 + R.below(15));
+        if (x.victim == x.leader)
+            x.victim = (uint8_t)(x.leader + 1);
+        x.dmg = (float)R.below(100001);
+        x.type = (int32_t)R.u32();
+        for (float& d : x.dir)
+            d = ((float)R.below(2001) - 1000.f) / 100.f;
+        x.attacker = R.u16();
+        return x;
+    });
+    fuzz_struct<u::Leads>("ufo Leads", R, iters, [](Rng& R) {
+        u::Leads x;
+        size_t n = R.below(u::kMaxLeads + 1);
+        for (size_t i = 0; i < n; i++)
+            x.rows.push_back({R.u32(), R.u32() | 1u, (uint8_t)(1 + R.below(15))});
         return x;
     });
 

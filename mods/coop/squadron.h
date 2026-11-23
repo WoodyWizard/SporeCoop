@@ -3,8 +3,12 @@
 //    in the same place see mirrors of them (their own NPC ships there are removed)
 //  - guest shots on mirrors are applied by the host; NPC shots that hit a guest's ship on
 //    the host are applied to the guest's own ship; mirrors never fire on their own
+//  - BUG-1288 (switch fleet.leader): a place without the host where two or more guests are has a
+//    guest leader the host names (squadron_logic.h); it plays the host's part there, every message
+//    through the host (MSG_UFO_LEAD, wire/space_ufo.h)
 #pragma once
 
+#include "squadron_logic.h"
 #include "syncdbg.h"
 
 #include <cstdint>
@@ -20,8 +24,11 @@ namespace squadron {
 struct Ctx {
     net::Session* sess = nullptr;
     std::function<bool()> with_host;            // guest: the host is in our place
-    std::function<int(void* ufo)> puppet_owner; // host: player id of a puppet ship, -1 if none
-    std::function<void*(uint8_t id)> puppet_of; // host: the puppet ship of a player
+    std::function<int(void* ufo)> puppet_owner; // player id of a puppet ship, -1 if none
+    std::function<void*(uint8_t id)> puppet_of; // the puppet ship of a player
+    // BUG-1288: this game's place (mode, world) and every other player's latest one (echo remotes left out)
+    std::function<squadron_logic::Place()> my_place;
+    std::function<std::vector<squadron_logic::PeerPlace>()> peer_places;
 };
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx);
