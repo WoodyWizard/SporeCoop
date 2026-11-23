@@ -143,3 +143,32 @@ ported). Code: `mods/coop/dna_own.h` (portable, tests/dna_tests.cpp), `dna.cpp` 
 Not covered: a guest's own editor opened in the first 2 s after its game loaded the host's world shows the host's
 saved DNA until the next total (the host resends every 2 s); Rivals' own income ("keep what I hunt", model O) is 0.8.
 
+## Own progress: the third DNA mode (2026-11-23, feat/w69-progress)
+<a id="gameplay-own-progress"></a>
+
+WP-P1 / P2 of docs/plan-0.7.17.md, BUG-1469, owner decision 2026-11-20 (a lobby setting with three values). The idea,
+the "waiting for X 64 %" notice, the stage-end gate, the social-win credit and the brain level's name come from PR #209
+by IltonBJSilva; the storage is ours (the per-player store, not a side file), and the Cell gate sits on our one hook of
+the end sequence (`SporeCoop::CellStage_End`, BUG-1269), not a second one. Code: `mods/coop/own_progress_logic.h`
+(portable, tests/dna_tests.cpp), `own_progress.cpp`, and the steps aside in `dna.cpp`, `session_glue.cpp`,
+`cellsync.cpp`, `cellsync_combat.cpp`, `wsync.cpp`, `social.cpp`, `vote.cpp`.
+
+| Question | Answer |
+|---|---|
+| The setting | `all.shared_dna`: 0 own wallet (default, [own DNA](#gameplay-own-dna)), 1 shared, 2 own progress; the lobby row "DNA and progress"; own wallet in Rivals mode. Read with `settings::get()` (on() would read 2 as shared) |
+| What is own | Cell: the food S+0x1C (the bar and the level) and the spent count S+0x2C; Creature: the DNA, the evolution bar cPlayer +0x10F0 and the brain level (`SporeCoop::g_BrainLevel`). Each game keeps its own: no MSG_DNA total, no Cell food total applied (only the meals' acknowledgement), no 1/N pace (each bar fills at a solo game's pace), a spend stays the spender's (no MSG_DNA_ADD, no Cell spend message, the wsync row cell_spent not applied) |
+| Income | a game's own gains stay there (its meals, the game's rewards, its own goal card: each game pays its own card). What the host's game pays for a guest's deed goes to that guest (MSG_PROGRESS kGain): a kill of a host animal (the hunt credit of npc.cpp, 2.5 s, or an Actor scope of WP-H1), a social win (social.cpp: the host's game no longer adds it to its own DNA; the guest takes it from the result) |
+| The stage end | nobody evolves alone. Cell: the host's click on History's check is kept before the game's end sequence (History closes, the pool stays drawn) until every player's bar is full; then it runs by itself and the switch vote follows. A guest's click in the host's world is never its own switch (its I'm ready during the vote, else a notice). Creature: the host's stage-end request (tag 0x64AA168) is refused until every bar is full (brain level 4), then BUG-1085's vote. A second click within 10 s moves on without the others (a partner away from the keyboard): the vote decides (it passes when its time is up). Guests in another world are not waited for |
+| Levels together (Cell) | the one pool is the host's game, populated at the host's level (PR #209's BUG-9287: a guest a level below found nothing to eat). An own meal over the next level line (every 100 food) while a partner is below it is clipped; the rest is banked and added (in the cell step, `cellsync::set_food_total`) once every partner reached the line; level 10 (900 food) is not clipped (the stage end waits instead). A partner who left this session keeps its level until it is back |
+| Notices | "Your evolution bar is full. Nobody evolves alone ... Waiting for: Bob 64 %" (again every 60 s), "Every player's bar is full ...", "Not yet: ... (waiting for: ...)", "Nobody grows alone: your cell waits at level N until ..." |
+| Kept | a guest reports its values every second (kReport); the host keeps them by the guest's stable key and in the per-player store (record `progress`, [the table](01-architecture.md#arch-player-store)); a guest whose game opened a copy of the host's world (a join, a rejoin, a reload, the next session) asks (kAsk) and gets its own values of this world and stage back (kSet: food and spent; the bar up through AddEvolutionPoints, down written; the DNA set; a lower brain level written back). First sight (no record): the copy's values (the host's) are its own from then on |
+| The host's save | only the host's own values (the game's own fields); a guest's progress is never written into the host's game |
+| Old peers | the gate is creature 1.3 and cell 1.2 (`own_progress::peer_reads`). A 0.7.16.1 peer in the session when the host's world starts with value 2: own progress is refused, own wallet is played, the host is told who; a late joiner below it while own progress is played is not let in ("update SporeCoop to 0.7.17"). The host tells its guests whether own progress is played (MSG_PROGRESS kTable flag): a guest plays it only on the host's word |
+| Switches | `core.own_progress` (off: value 2 plays as own wallet), `cell.end_click` (off: the click held after the end sequence: the white picture of PR #209's BUG-9266 stays), `cell.level_together` (off: each level on its own), `core.progress_restore` (off: a guest keeps the host's values after a load) |
+| Tests | tools/tests/coop_own_progress.py (suite `own_progress_*` and their twins) |
+
+Not covered (risks): the hunt credit's 2.5 s window credits a host's own kill in it to the guest (the Actor scope of
+WP-H1 is the exact way); a lower brain level written back keeps the avatar's larger size and health until its next brain
+upgrade (PR #209's runtime note); a Cell food a guest ate that another player ate first is not taken back (the host's
+total no longer corrects a guest's food); BUG-1261 nit 7 (a guest's TierBoneCleanup) is not checked under own progress
+yet; the debt column of `progress` is WP-R1's.

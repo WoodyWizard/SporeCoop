@@ -2864,3 +2864,26 @@ BUG-1400. GOG 2024, lab logs only (no new run). Extends [#cell-partner-attack-an
   is the eat (chomp) animation; an idle herbivore cell plays it whenever a plant reaches its mouth, with no partner
   involved. Tests that judge "no new animation" of an idle cell must keep its own meals apart (`coop.pool anims`
   prints `own_eats` since BUG-1400).
+
+## Own progress in Cell: the held click, own food, levels apart (2026-11-23, feat/w69-progress)
+<a id="cell-own-progress"></a>
+
+BUG-1469 (own progress, all.shared_dna 2). Runtime notes of PR #209 (IltonBJSilva, Steam build = the GOG 2024 code, lane
+B / A on Windows; data, not re-run by us yet: marked "PR #209"), set against our entries.
+* ✔ PR #209's `Cell_EndSequence` 0xE72C80 is our `SporeCoop::CellStage_End` (BUG-1269, the same address and reading:
+  History's handler 0xE75B80 jumps to it when G+0x5158 == 5; its 0xE4F640(1) brings the white end picture, ~ inferred,
+  not checked alone). Own progress keeps its click on our one hook (vote.cpp h_CellStageEnd), not a second one.
+* ✔ (PR #209) Refusing the click at 0xE72C80 leaves History closed, G+0x5158 at 5 (a later click works) and the pool
+  drawn; calling the original later from outside the frame plays the whole sequence and the switch as the game's own
+  click. Held after it instead (at CellStage_ToCreature): the host's screen 0.69 white 10 s after its early click, a
+  guest's 0.52 (the twin of `cell.end_click`).
+* ✔ (PR #209) With each player's own food each HUD shows its own bar and DNA (host 300 food: 22 DNA, guest 120: 11 DNA);
+  the players then are on other levels in the host's one pool. A guest's own food after a load of the host's save is
+  given back through AddFoodPoints by the difference in the cell step (`cellsync::set_food_total`, the food guard).
+* ✔ (PR #209, BUG-9287 there) Host at food 312 (level 4, world scale 15), guest at 24 (level 1, scale 0.5): the guest's
+  `coop.pool see 80` listed nothing it could eat for minutes: the pool is populated at the host's level
+  (docs/re/host-centric.md G7). Both at level 1: plants eaten by either gave points on that player's game only. Hence
+  `cell.level_together` (nobody grows a level alone); both at 499 held each other for good until the next level opened
+  once every partner is at the line (own_progress_logic.h food_cap).
+* ? Not tried: PopulateTiles with a partner's level base for its area (BUG-0975: lower levels' tiles at the host's world
+  scale overflow the 511-entry buffer unless the box is scaled).

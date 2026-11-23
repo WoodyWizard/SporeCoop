@@ -136,6 +136,7 @@ struct Counters {
     uint32_t save_stripped = 0;
     unsigned veh_design_checked = 0, veh_design_fallback = 0;
     unsigned bound_redesigned = 0;
+    unsigned wait_design = 0, wait_design_spared = 0; // BUG-1481: candidates waiting for the design answer, spared
     unsigned bld_rekeys = 0, bld_pending = 0, bld_restored = 0;
     uint32_t founds_outside = 0; // BUG-0319 diagnostics: city foundings received outside the Civ mode
     uint32_t space_held_built = 0, space_relayed = 0, space_relay_in = 0;
@@ -397,6 +398,7 @@ extern std::unordered_set<void*> g_joint_told;
 extern bool g_fix_specialty_buyer;
 extern std::deque<SpecialtyAsk> g_spec_queue;
 extern int g_spec_open;
+extern void* g_spec_took_at; // BUG-1479 (tests)
 extern std::unordered_map<void*, Boost> g_boost;
 extern std::unordered_map<void*, double> g_alarm_at;
 extern int g_sw_last_req;
