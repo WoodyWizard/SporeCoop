@@ -1538,6 +1538,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     if (!in_space() || !player_ufo())
         return;
+    if (is_guest())
+        sync_role(); // BUG-1288: the host's state only once this game mirrors the host (a guest leader's ids went first)
     if (type == net::MSG_UFO_STATE && is_guest()) {
         guest_state(r);
     } else if (type == net::MSG_UFO_HIT && is_host()) {
