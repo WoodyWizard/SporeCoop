@@ -17,9 +17,17 @@ stood.
 
 SPORE_FIX_OFF=tribe.fruit_order must FAIL (rejected: no such target here).
 
-  SPORE_LANE=7 python3 tools/tests/coop_tribe_fruit_order.py
+--empty-trees (BUG-1494, audit TR-8): before the order every tree of the host's game within 12.5 m of the fruit is
+picked empty (`coop.tribe untree`: cTreeData +0x48, the fruit left, = 0, as the game leaves a tree its members
+emptied). The host's game must not send the guest's members to such a tree: its order's target (`coop.tribe ai`, the
+member's order record in the game, and the host's last order line) is a fruit, or the order is rejected (nothing to
+gather there). SPORE_FIX_OFF=tribe.tree_mask must FAIL (+0x48 and +0x4C read as one u64: the nearest empty tree is the
+target). No tree within 12.5 m: INCONCLUSIVE.
+
+  SPORE_LANE=7 python3 tools/tests/coop_tribe_fruit_order.py [--empty-trees]
 """
 import re
+import sys
 import time
 
 from coop_tribe_gather_stall import ai, pos_of
@@ -65,6 +73,13 @@ def main():
     at = both[0][1]
     x, y, z = at
     print('  host: ' + host.call(f'coop.tribe unfruit {x} {y} {z} 8.5')['out'].strip(), flush=True)
+    emptied = []
+    if '--empty-trees' in sys.argv:  # BUG-1494
+        out = host.call(f'coop.tribe untree {x} {y} {z} 12.5')['out']
+        print('  host: ' + ' | '.join(out.strip().splitlines())[:400], flush=True)
+        emptied = [m.lower().removeprefix('0x').lstrip('0') for m in re.findall(r'^tree (\S+)', out, re.M)]
+        if not emptied:
+            return ck.inconclusive('no tree of the host\'s game within 12.5 m of the fruit')
     print('  guest: ' + guest.call(f'coop.tribe fruit {x} {y} {z}')['out'].strip(), flush=True)
     g0 = pos_of(guest, mid)
     time.sleep(1.5)
@@ -72,6 +87,25 @@ def main():
     print(f'  host: last order {lo}', flush=True)
     left = [p for p, _ in fruit(host) if dist(p, at) < 8]
     ck(not left, f'the host\'s game has no fruit within 8 m of the guest\'s ({len(left)})')
+    if emptied:
+        m = re.search(r'no such fruit here: (tree|fruit) (\S+) instead', lo)
+        took = (m.group(1), m.group(2).lower().removeprefix('0x').lstrip('0')) if m else None
+        ck(not took or took[1] not in emptied,
+           f'the host\'s game did not send the guest\'s order to a tree with no fruit left ({took}, emptied {emptied})')
+        rec, out = None, ''
+        t0 = time.time()
+        while time.time() - t0 < 4:
+            out, _, _ = ai(host, mid)
+            mm = re.match(r'rec=(-?\d+) target=(\S+)', out)
+            rec = (int(mm.group(1)), mm.group(2).lower().removeprefix('0x').lstrip('0')) if mm else None
+            if rec and rec[0] == 2:
+                break
+            time.sleep(0.5)
+        print(f'  host #{mid}: {out[:200]}', flush=True)
+        ck(not rec or rec[0] != 2 or rec[1] not in emptied,
+           f'the host\'s member #{mid} has no Gather order on an emptied tree ({rec})')
+        ck.faults(host=host, guest=guest)
+        return ck.result()
     ck('action=2' in lo and 'rejected' not in lo, f'the host\'s game took the guest\'s gather order ({lo[-120:]})')
     rec, out = None, ''
     t0 = time.time()

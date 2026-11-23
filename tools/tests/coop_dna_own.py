@@ -55,7 +55,13 @@ SetEvolutionPoints, as the editor's result):
           game has the guest's 20 (the party's gain) and the guest's still has them. FAIL:
           SPORE_FIX_OFF=core.away_through_editor (the guest's editor ended the away state, its 20 were dropped)
 
-  SPORE_LANE=2 python3 tools/tests/coop_dna_own.py [--case spend|shared|reload|rejoin|store|editors|host_editor|setback|away_editor]
+  --case rejoin_failed  BUG-1498 (audit NET-2): as rejoin, but between the leave and the join the guest tries a
+          join that fails at once (`coop.join 127.0.0.1:99999`, a port that does not parse): the real join after it
+          still brings the guest back as itself (its DNA the host's - 25). FAIL: SPORE_FIX_OFF=net.rejoin_slot_pair
+          (the failed join's token was left in the slot and sent: the host saw a new player, the guest's DNA is the
+          host's)
+
+  SPORE_LANE=2 python3 tools/tests/coop_dna_own.py [--case spend|shared|reload|rejoin|rejoin_failed|store|editors|host_editor|setback|away_editor]
 """
 import os
 import re
@@ -213,7 +219,7 @@ def reload_case(host, guest, ck):
              f"{h2[0]:.0f}; the evolution bars equally full")
 
 
-def rejoin_case(host, guest, ck):
+def rejoin_case(host, guest, ck, failed_join=False):
     h0, g0 = prepare(host, guest, ck)
     guest.call('coop.dna spend 25')
     time.sleep(5)
@@ -221,6 +227,11 @@ def rejoin_case(host, guest, ck):
     show('the guest spent 25', h1, g1)
     guest.call('coop.leave')
     time.sleep(3)
+    if failed_join:  # BUG-1498: a join that fails at once (a port that does not parse) wrote its fresh token first
+        r = guest.call('coop.join 127.0.0.1:99999 Bob')
+        print('  guest joins a bad address:', (r.get('out') or '').strip()[:120], flush=True)
+        ck(not r.get('ok') and 'join failed' in (r.get('out') or ''), 'the join to the bad address failed at once')
+        time.sleep(1)
     print('  guest joins again:', guest.call(lane.JOIN)['out'].strip()[:120], flush=True)
     wait(lambda: not guest.call('coop.avatar')['ok'], 40)
     ck(wait_guest_in(host, guest), "the guest is in the host's world again")
@@ -467,6 +478,7 @@ def main():
         twoinst.forget_settings()
     try:
         r = {'spend': spend_case, 'shared': shared_case, 'reload': reload_case, 'rejoin': rejoin_case,
+             'rejoin_failed': lambda h, g, c: rejoin_case(h, g, c, failed_join=True),
              'store': store_case, 'editors': editors_case, 'host_editor': host_editor_case,
              'setback': setback_case, 'away_editor': away_editor_case}[CASE](host, guest, ck)
         if CASE == 'store' and r:

@@ -1118,6 +1118,32 @@ static void test_model_paint_runs()
     CHECK(!model_paint::effects_read(lead, eff, at, len, p2));
 }
 
+// CORE-8 (BUG-1504): a base layer written byte by byte whose top byte a run repeats into the coat and detail (`19 55 77
+// 00 FE 08`: base 0x00775519, coat and detail 0) is not patchable: a substitute's top byte would be repeated by the run
+static void test_model_paint_run_after()
+{
+    printf("paint: a layer followed by a run is not patched in place (BUG-1504)\n");
+    std::vector<uint8_t> m;
+    for (int i = 0; i < 26; i++)
+        m.push_back((uint8_t)(0x10 + i));
+    m.insert(m.end(), {0x19, 0x55, 0x77, 0x00, 0xFE, 0x08}); // base 00775519, then 8 more 00: coat 0, detail 0
+    for (int i = 0; i < 8; i++)
+        m.push_back((uint8_t)(0x40 + i));
+    uint32_t eff[3] = {};
+    size_t at[3] = {}, len[3] = {};
+    bool patch[3] = {};
+    CHECK(model_paint::effects_read(m, eff, at, len, patch, true));
+    CHECK(eff[0] == 0x00775519u && eff[1] == 0 && eff[2] == 0);
+    CHECK(!patch[0] && !patch[1] && !patch[2]); // the base's last byte is the run's byte
+    bool old[3] = {};
+    CHECK(model_paint::effects_read(m, eff, at, len, old, false));
+    CHECK(old[0]); // 0.7.16.1: patched in place, the run then repeats the substitute's top byte
+    // a literal 0xFE after the layer (FE 00) is no run: still patchable
+    std::vector<uint8_t> f(m.begin(), m.begin() + 30);
+    f.insert(f.end(), {0xFE, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B});
+    CHECK(model_paint::effects_read(f, eff, at, len, patch, true) && patch[0]);
+}
+
 // B3 of 0.7.15 (BUG-1136): the message manifest (net/messages.def, net/space_kinds.def). Every type and kind listed
 // once; the generated tables equal 0.7.14's (tests/manifest_golden.h: the wire values, the classes, the Space
 // directions, the dispatch of every type on both roles); the host's direction gate drops exactly the host-only types;
@@ -1572,6 +1598,7 @@ int main(int argc, char** argv)
     test_planet_rx();
     test_task_drop();
     test_model_paint_runs();
+    test_model_paint_run_after();
     if (g_fail) {
         printf("%d FAILED\n", g_fail);
         return 1;

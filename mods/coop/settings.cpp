@@ -30,6 +30,17 @@ static uint32_t g_msgs_in, g_msgs_out, g_loaded, g_saved;
 
 #define SAY(...) H->out_printf(out, __VA_ARGS__)
 
+// NET-8 (BUG-1502): world_key() is empty unless this game plays a stage, so during the host's editor or a load the world
+// closed: started() was false, a new player got in although late join was off, the Session settings unlocked, and a
+// change made then was "for the next world" (g_pending), which the next world opened took (wrong when the host went
+// from A's editor to the menu and loaded B). On: the open world stays open through an editor and a load (Ctx::
+// holds_world) and closes only in the menu; the file is written atomically (.tmp, MoveFileEx). Off (`coop.fix
+// settings.world_kept off`): as 0.7.16.1
+static bool g_world_kept_fix = true;
+COOP_FIX("settings.world_kept", "BUG-1502", g_world_kept_fix,
+         "settings: the host's editor or a load keeps the session started (late join off and the session settings hold)");
+static uint32_t g_kept_frames; // status: frames the open world was kept through an editor / load
+
 static bool is_client() { return C.sess && C.sess->role() == net::Role::Client; }
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
 
@@ -79,14 +90,20 @@ static void save()
     if (g_open.empty())
         return;
     std::wstring f = file_of(g_open);
-    FILE* fp = f.empty() ? nullptr : _wfopen(f.c_str(), L"wb");
+    std::wstring tmp = f + L".tmp"; // BUG-1502: a crash mid-write leaves the old file
+    FILE* fp = f.empty() ? nullptr : _wfopen((g_world_kept_fix ? tmp : f).c_str(), L"wb");
     if (!fp) {
         H->log(M, SK_WARN, "settings: cannot write the file of world '%s'", g_open.c_str());
         return;
     }
     std::string s = format_file(g_open, g_cur);
-    fwrite(s.data(), 1, s.size(), fp);
-    fclose(fp);
+    bool ok = fwrite(s.data(), 1, s.size(), fp) == s.size();
+    ok = fclose(fp) == 0 && ok;
+    if (g_world_kept_fix && (!ok || !MoveFileExW(tmp.c_str(), f.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))) {
+        DeleteFileW(tmp.c_str());
+        H->log(M, SK_WARN, "settings: cannot write the file of world '%s'", g_open.c_str());
+        return;
+    }
     g_saved++;
 }
 
@@ -131,7 +148,14 @@ void tick()
             broadcast();
         return;
     }
-    if (k.empty()) { // the world closed (menu, load, editor): the values stay, the lobby may change them
+    if (k.empty() && g_world_kept_fix && !g_open.empty() && C.holds_world && C.holds_world()) {
+        g_kept_frames++; // BUG-1502: an editor or a load of the open world: it stays open, the session started
+        if (is_host() && started() != g_sent_started)
+            broadcast();
+        return;
+    }
+    if (k.empty()) { // the world closed (menu; with settings.world_kept off also a load, an editor): the values stay,
+                     // the lobby may change them
         g_open.clear();
         if (is_host())
             broadcast();
@@ -229,6 +253,8 @@ bool started()
 {
     if (is_client())
         return g_host_started;
+    if (g_world_kept_fix && !g_open.empty() && C.holds_world && C.holds_world())
+        return true; // BUG-1502: the host's editor or a load of the open world
     return !world_key().empty();
 }
 
@@ -262,8 +288,9 @@ bool set(Id id, int value, bool force, std::string* why)
 static void list(SkOut* out)
 {
     const char* who = is_host() ? "host" : is_client() ? (g_have_host ? "guest (the host's table)" : "guest (own values: no table from the host)") : "alone";
-    SAY("settings: %s, world '%s', started=%d pending=%d in=%u out=%u loaded=%u saved=%u\n", who,
-        g_open.empty() ? "-" : g_open.c_str(), (int)started(), (int)g_pending, g_msgs_in, g_msgs_out, g_loaded, g_saved);
+    SAY("settings: %s, world '%s', started=%d pending=%d in=%u out=%u loaded=%u saved=%u kept_frames=%u\n", who,
+        g_open.empty() ? "-" : g_open.c_str(), (int)started(), (int)g_pending, g_msgs_in, g_msgs_out, g_loaded, g_saved,
+        g_kept_frames);
     for (int i = 0; i < kCount; i++) {
         const Def& d = kDefs[i];
         int v = raw((Id)i), e = get((Id)i);

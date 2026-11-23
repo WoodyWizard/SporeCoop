@@ -2,9 +2,26 @@
 // in wire/common.h.
 #pragma once
 
+#include <vector>
+
 #include "common.h"
+#include "../net/protocol.h"
 
 namespace wire::space_rivalry {
+
+constexpr uint8_t kFamily = 8;       // the space family of net/messages.def
+constexpr uint16_t kAdoptMinor = 3;  // space 1.3 (0.7.17) takes K_SET have 3 (BUG-1482); 0.7.16.1 has space 1.2
+
+// does a peer whose HELLO listed `families` (`has`: it sent CAP_FAMILIES) take K_SET have 3?
+inline bool reads_adopt(bool has_families, const std::vector<net::FamilyRev>& families)
+{
+    if (!has_families)
+        return false;
+    for (const auto& f : families)
+        if (f.family == kFamily)
+            return f.rev == 1 && f.minor >= kAdoptMinor;
+    return false;
+}
 
 // K_STATE (host): u8 rivals, u16 split seq, i32 split total, i32 split share, u16 merge seq, u8 n x {u8 id, i32 the
 // budget the last merge counted}, u8 n x {u8 a, u8 b, u8 relation}, u8 n x {u8 from, u8 to, u8 kind} (the open
@@ -179,7 +196,9 @@ struct Ask {
     bool read(net::Reader& r) { return r.ok(); }
 };
 
-// K_SET (host): u8 to, u8 have (0 not known, 1 kept, 2 a newcomer's 0), i32 budget. The range check (BUG-1110) is the
+// K_SET (host): u8 to, u8 have (0 not known, 1 kept, 2 a newcomer's 0, 3 the host gave it a stored player's budget by
+// `coop.store adopt`: taken even when the budget is known, BUG-1482, space 1.3; a 0.7.16.1 guest drops it when its
+// budget is known, so the host sends it only to space 1.3 peers), i32 budget. The range check (BUG-1110) is the
 // receiver's: it has a switch
 struct Set {
     uint8_t to = 0, have = 0;

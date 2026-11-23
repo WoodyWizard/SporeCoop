@@ -143,6 +143,11 @@ constexpr uint8_t kBodyBit = 0x80; // in a snapshot entry's age byte: a body (th
 extern std::unordered_map<void*, void*> g_detached;
 extern bool g_body_still_fix;     // BUG-1460 (tribe_mirrors.cpp)
 extern uint32_t g_bodies_stilled; // BUG-1460
+extern uint32_t g_air_released;
+extern std::unordered_set<uint16_t> g_test_gone; // tests (BUG-1522): member ids the host's states skip on this guest
+bool took_return(void* c); // BUG-1522: a member removed while a save has it out of its tribe goes back first
+void took_debug_kill(bool on); // tests (coop.tribe savekill)
+std::string took_status();   // BUG-1493: air holds released (the host away, no news for 3 s)
 extern uintptr_t a_BTTerminate;
 extern uint32_t g_teardown_restored;
 void detach_body(void* c);
@@ -525,6 +530,10 @@ static void playing_tracks(void* c, Fn fn)
 
 void send_member_anims(double now);
 void theme_forget();
+void theme_session_end();                   // BUG-1496: the relay's slots stop (in Tribe) or wait for the return
+void theme_stop_outside(net::Reader& r);   // BUG-1496: a kind 6 stop while this game is not in Tribe
+void theme_tick();                         // BUG-1496: in Tribe, every frame
+extern uint32_t g_theme_ended, g_theme_later_n, g_theme_lost;
 void on_theme(uint8_t kind, net::Reader& r);
 extern bool g_party_fix;
 extern bool g_party_stop_fix;

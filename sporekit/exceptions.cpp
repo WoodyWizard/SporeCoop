@@ -186,6 +186,21 @@ static void log_real_stack(uintptr_t lo, uintptr_t hi)
     }
 }
 
+// BUG-0956: a fault whose stack pointer is outside its thread's stack cannot be dispatched (the game ends at once): its
+// real stack is logged and the crash report written from here, once per run
+static void offstack_check(DWORD code, const CONTEXT* c, EXCEPTION_POINTERS* ep)
+{
+    uintptr_t lo, hi;
+    static volatile LONG offstack_told;
+    if (code != EXCEPTION_STACK_OVERFLOW && fixed(g_fix_offstack) && off_stack(c->Esp, &lo, &hi) &&
+        InterlockedCompareExchange(&offstack_told, 1, 0) == 0) {
+        logf(&g_kit_mod, SK_ERROR, "the stack pointer %08X is outside this thread's stack: this fault cannot be dispatched, "
+             "the game ends now (BUG-0956)", (unsigned)c->Esp);
+        log_real_stack(lo, hi);
+        diag_offstack_report(ep);
+    }
+}
+
 // The handler runs at the first chance of every fault, on the faulting thread, maybe inside a lock
 // of SporeKit (BUG-0115):
 //  * a fault inside the handler itself, or while this thread holds g_mu (SK_TF_IN_EXC), is not
@@ -259,6 +274,7 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
             } else if (m < 8 && module_return_address(*q))
                 r.mrets[m++] = *q;
     }
+    bool seen = false; // a place seen before, or the 64 places full: not logged again
     {
         std::lock_guard<std::mutex> lk(g_mu);
         if (!vb) {
@@ -270,11 +286,21 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
         for (auto& x : g_recs)
             if (x.code == code && x.eip == eip) {
                 x.count++;
-                return EXCEPTION_CONTINUE_SEARCH;
+                seen = true;
+                break;
             }
-        if (g_recs.size() >= 64)
-            return EXCEPTION_CONTINUE_SEARCH;
-        g_recs.push_back(r); // the name is filled in below
+        if (!seen && g_recs.size() >= 64)
+            seen = true;
+        if (!seen)
+            g_recs.push_back(r); // the name is filled in below
+    }
+    if (seen) {
+        // KIT-13 (BUG-1520): the dedup and the cap returned before the off-stack check below: after 64 distinct fault
+        // places in one run (the game's caught faults, IsBadReadPtr probes) a fault Wine cannot dispatch (BUG-0956) got
+        // no crash report and no real stack. `kit.fix offstackcap 0`: 0.7.16.1
+        if (fixed(g_fix_offstackcap))
+            offstack_check(code, c, ep);
+        return EXCEPTION_CONTINUE_SEARCH;
     }
     r.where = symbols_reverse(eip);
     if (r.where.empty()) {
@@ -335,15 +361,7 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
         }
         logf(&g_kit_mod, SK_ERROR, "  module calls:%s", ms.c_str());
     }
-    uintptr_t lo, hi;
-    static volatile LONG offstack_told;
-    if (code != EXCEPTION_STACK_OVERFLOW && fixed(g_fix_offstack) && off_stack(c->Esp, &lo, &hi) &&
-        InterlockedCompareExchange(&offstack_told, 1, 0) == 0) {
-        logf(&g_kit_mod, SK_ERROR, "the stack pointer %08X is outside this thread's stack: this fault cannot be dispatched, "
-             "the game ends now (BUG-0956)", (unsigned)c->Esp);
-        log_real_stack(lo, hi);
-        diag_offstack_report(ep);
-    }
+    offstack_check(code, c, ep);
     return EXCEPTION_CONTINUE_SEARCH;
 }
 

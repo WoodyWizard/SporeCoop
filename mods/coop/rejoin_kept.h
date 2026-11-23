@@ -159,4 +159,44 @@ private:
     std::vector<Entry> e_;
 };
 
+// NET-2 (BUG-1498): the slot file (rejoin-<instance>-<slot>.txt) holds the token of the current join and, since 0.7.17,
+// for whom: a hash of the host address and the name (`<token> <pair>`, both 16 hex digits). The slot outlives a crash
+// and a join that failed at once (an address that does not parse): the next join sent that token although it went to
+// another host (or under another name), the kept token of a clean leave lost against it and the host's per-player
+// store did not know the player. A slot of another pair is ignored now (net.rejoin_slot_pair); a slot written by an
+// older version (the token alone) still counts for any join, as before.
+struct SlotLine {
+    uint64_t token = 0, pair = 0; // pair 0: an older version's slot (no pair)
+
+    // the pair's hash: KeptFile::key under a fixed salt (the slot is emptied by every clean end; no plain address)
+    static uint64_t pair_of(const std::string& host, const std::string& name)
+    {
+        KeptFile k;
+        k.ensure_salt(0x51071A1BC0DE5107ull);
+        return k.key(host, name);
+    }
+    static std::string text(uint64_t token, uint64_t pair)
+    {
+        if (!token)
+            return "";
+        char b[48];
+        snprintf(b, sizeof b, "%016llx %016llx\n", (unsigned long long)token, (unsigned long long)pair);
+        return b;
+    }
+    // the slot's bytes; false: no token (empty, damaged)
+    bool parse(const std::string& t)
+    {
+        token = pair = 0;
+        unsigned long long a = 0, b = 0;
+        if (t.size() < 16 || sscanf(t.c_str(), "%16llx", &a) != 1 || !a)
+            return false;
+        token = a;
+        if (t.size() >= 33 && t[16] == ' ' && sscanf(t.c_str() + 17, "%16llx", &b) == 1)
+            pair = b;
+        return true;
+    }
+    // may a join of this pair send the slot's token? (pair_check off: always, 0.7.16.1)
+    bool usable_for(uint64_t want, bool pair_check) const { return token && (!pair_check || !pair || pair == want); }
+};
+
 } // namespace rejoin

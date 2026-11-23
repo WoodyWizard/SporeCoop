@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "net/buffer.h"
+#include "net/protocol.h"
 #include "space_logic.h"
 #include "spacecoop.h"
 
@@ -76,6 +77,9 @@ std::string name_of(uint8_t id);
 // net::Session::player_key (its rejoin token, else its name). "" = no such player. `coop.fix space.kept_token off`:
 // the session name (0.7.14: two players of the same name who rejoin in the other order swap their kept state)
 std::string kept_key(uint8_t id);
+// the host: the families guest `id`'s HELLO listed (net::Session::peer_families; false on a guest and for an unknown id),
+// for the old-peer gate of a new message meaning (BUG-1282, docs/04-netcode.md#netcode-host-families)
+bool peer_families(uint8_t id, bool& has, std::vector<net::FamilyRev>& out);
 // (map, trade, badges and rivalry keep a rejoiner's state through space_kept.h under this key: C5, BUG-1132)
 bool in_space();          // the Space stage is running (false while the `away` test hook is on)
 // tests (BUG-0226, BUG-0228, BUG-0229): `coop.space away 1|0` makes the Space modules act as

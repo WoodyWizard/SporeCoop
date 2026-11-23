@@ -13,8 +13,14 @@ the host was back its state stood the village up again in the guest's game too.
 3. The host loads its world again. Within 60 s of the guest seeing it back, the host's game has the village
    conquered (cTribe +0x556, `coop.realign planet village` fl bit 2) and its hut down, and the guest's game still has.
    SPORE_FIX_OFF=tribe.away_conquest: the host's village stands unconquered: FAIL.
+
+--goal (BUG-1492, audit TR-5): also the stage's goal: within 30 s of the host's conquest the host's goal progress
+(cPlayer +0x10F0, `coop.wsync dump tribe_goal`) is one village higher than the save's (read at the start: the host
+loads the same save again). The fixture's village is one of the save's: without its cTribeToTribeMission its fall
+counts nothing (BUG-1068). SPORE_FIX_OFF=tribe.away_goal must FAIL (the progress stays).
 """
 import re
+import sys
 import time
 
 from coop_tribe_conquest_guest import near, planet
@@ -23,6 +29,7 @@ from coop_tribe_gather_stall import pos_of
 from coop_tribe_tools import dist, members
 from play_tribe import frame_point
 from twoinst import Checks, keyframe, lane_state, start
+from coop_tribe_guest_raid_goal import goal
 
 
 def main():
@@ -40,6 +47,11 @@ def main():
     tp = npcv[0][0]
     hp = min(huts_, key=lambda r: dist(r[0], tp))[0]
     print(f'  the NPC village at {tp}, its hut at {hp}', flush=True)
+    want_goal = '--goal' in sys.argv
+    g0 = goal(host) if want_goal else None
+    p0 = g0['progress'][0] if g0 else 0.0
+    if want_goal:
+        print(f'  host goal at the start: {g0 and g0["raw"]}', flush=True)
     print(' ', host.call('coop.menu')['out'].strip(), flush=True)
     t0 = time.time()
     while time.time() - t0 < 90 and 'host_away=1' not in guest.call('coop.status')['out']:
@@ -107,6 +119,18 @@ def main():
     ck(hv and hv[2] & 2, f"the host's game has the village conquered ({hv})")
     ck(not hh or hh[2] & 2, f"the host's hut of that village is down ({hh})")
     ck(gv and gv[2] & 2 and (not gh or gh[2] & 2), f"the guest's game still has it conquered ({gv}, hut {gh})")
+    if want_goal:  # BUG-1492
+        t0, g2 = time.time(), None
+        while time.time() - t0 < 30:
+            g2 = goal(host)
+            if g2 and g2['progress'][0] > p0 + 0.5:
+                break
+            time.sleep(2)
+        print(f'  host goal after the conquest: {g2 and g2["raw"]}; ' +
+              next((ln for ln in host.call('coop.tribe')['out'].splitlines() if 'tribe audit' in ln), ''), flush=True)
+        ck(g2 and g2['progress'][0] > p0 + 0.5,
+           f"the village the guest conquered while the host was away counted for the host's goal ({p0} -> "
+           f"{g2 and g2['progress'][0]})")
     frame_point({'host': host, 'guest': guest}, hp)  # BUG-0981: the village in view, not the home village
     keyframe('conquered', 'the village the guest conquered: down on both screens')
     ck.faults(host=host, guest=guest)
