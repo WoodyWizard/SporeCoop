@@ -1,14 +1,14 @@
 ---
 id: BUG-1407
 title: cell_kin_species: the host knocked out in spite of invulnfor as it is sent to the guest's place; the kin are judged where it lies, 185 m away
-status: open
+status: fixed
 kind: test
 stage: Cell
 reported: 2026-11-21
 source: lab rel/0.7.16 20261121-003202 cell_kin_species
 role: 
 versions: unreleased
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w62-flake-cc
 commits: 4c7f2925
 tests: cell_kin_species
@@ -44,7 +44,10 @@ more. A new check states that the host is at the guest's place before the kin th
 no-fail-run: test-only change (a knockout at that moment cannot be forced). Lab: `SPORE_DETECTOR=20 python3
 tools/lab.py run cell_kin_species --lane N --retry 0 --no-build` PASS; twin `SPORE_FIX_OFF=cell.kin_species` FAIL as
 before. To find why invulnfor does not hold: the same run's log prints the diagnostics line "the host is not at the
-guest's place ... last_hit=..." whenever it happens. Open, waiting for the lab run.
+guest's place ... last_hit=..." whenever it happens. Was waiting for the lab run.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): cell_kin_species PASS in 20261123-015558 and 20261123-023643; the twin SPORE_FIX_OFF=cell.kin_species FAIL in 20261123-021322. Closed.
 
 ## History
 - 2026-11-21: opened from the third final check of 0.7.16 (fix/w62-flake-cc); fixed in the test.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

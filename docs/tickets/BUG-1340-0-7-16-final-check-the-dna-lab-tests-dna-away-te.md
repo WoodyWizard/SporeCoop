@@ -1,14 +1,14 @@
 ---
 id: BUG-1340
 title: 0.7.16 final check: the DNA lab tests dna_away, team, dna_resend, dna_notice compare the guest's DNA with the host's (the shared pool) while own DNA is the default
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-20
 source: lab 20261120-041304
 role: guest
 versions: 0.7.16 (unreleased)
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w60-dna
 commits: 1165c4fd
 tests: dna_away, dna_away_shared, team, dna_resend, dna_resend_shared, dna_notice, dna_notice_shared
@@ -47,9 +47,12 @@ variants dna_away_shared, dna_resend_shared, dna_notice_shared keep the shared-p
 behaviour: own DNA default, shared on).
 
 ## Verification
-Open, waiting for the lab run (no lab today, owner rule). To run:
+Was waiting for the lab run (no lab today, owner rule). To run:
   SPORE_DETECTOR=20 python3 tools/lab.py run dna_away dna_away_shared team dna_resend dna_resend_shared dna_notice dna_notice_shared --lane 2 --lane 3 --retry 0 --no-build
 Twins that must FAIL: SPORE_CELL_FIX=0 dna_resend (own) and with --shared (`SPORE_CELL_FIX=0 python3 tools/tests/coop_dna_resend.py [--shared]`), `coop_dna_away.py --nofix` (the 7 are lost).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): dna_away, dna_away_shared, team, dna_resend, dna_resend_shared, dna_notice and dna_notice_shared PASS in 20261120-133703, 20261121-003202, 20261122-194210, 20261123-023643 (the FAILs of the old checks: the final check named in the Report). The hand twins were not run again (test change only; the mod's switches unchanged). Closed.
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

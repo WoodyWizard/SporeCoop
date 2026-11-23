@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: final check 20261120-133703
 role: 
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-creature-d
 commits: c67ac9af
 tests: creature_ufo_nomodel, space_npc_model, space_npc_model_coop
@@ -55,3 +55,4 @@ key reaches the game's own null-model path.
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-23: released in 0.7.16.

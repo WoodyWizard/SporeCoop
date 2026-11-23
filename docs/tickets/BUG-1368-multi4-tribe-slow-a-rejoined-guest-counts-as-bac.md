@@ -1,14 +1,14 @@
 ---
 id: BUG-1368
 title: multi4_tribe_slow: a rejoined guest counts as back before the host's world share to it, the round measures it while it reloads
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-20
 source: lab 20261120-133703
 role: guest
 versions: rel/0.7.16 673f7a55
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w61-multi
 commits: ed6666e0, 26b2b711
 tests: multi4_tribe_slow, multi3_round_rejoin, multi3_round_rejoin_oldwait (twin)
@@ -45,14 +45,17 @@ count wait. New `--round-churn`: Bob rejoins right before every round and, once 
 in the host's world for 15 s; `MULTI_WAIT=together` is the old wait.
 
 ## Verification
-Open, waiting for the lab run.
+Was waiting for the lab run.
 * FAIL (the old wait): out/lab/20261120-133703 multi4_tribe_slow.
 * Wanted PASS: `SPORE_DETECTOR=20 python3 tools/lab.py run multi4_tribe_slow multi3_round_rejoin --lane N --retry 0
   --no-build`.
 * Wanted FAIL (twin, the old wait): `SPORE_DETECTOR=20 python3 tools/lab.py run multi3_round_rejoin_oldwait --lane N
   --retry 0 --no-build` (`left: ['Bob']`: the host's share reloads him after he counted as back).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): multi4_tribe_slow and multi3_round_rejoin PASS in 20261121-003202 and 20261122-194210 (multi3_round_rejoin also 20261121-002710); the twin multi3_round_rejoin_oldwait FAIL in 20261121-000724 (left: ['Bob']). Closed.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-multi): the rejoined guest's world share was not waited for; coop_multi waits for the settled
   state, --round-churn and its twin added.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

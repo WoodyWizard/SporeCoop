@@ -372,7 +372,7 @@ def main():
         got = wait(lambda: (vs := [x for x in own(con)[0].values() if x['owner'] == 1 and x['did'] in vdids]) and
                    all(mhash(con, x['model'], VTYPE, VGROUP) == vb for x in vs) and house_hashes(con, 1) == [bb], 30)
         vs = [x for x in own(con)[0].values() if x['owner'] == 1]
-        print(f'  {who} after the load: the guest\'s vehicles {[(f"{x["did"]:08X}", mhash(con, x["model"], VTYPE, VGROUP)) for x in vs]}, '
+        print(f'  {who} after the load: the guest\'s vehicles {[(format(x["did"], "08X"), mhash(con, x["model"], VTYPE, VGROUP)) for x in vs]}, '
               f'houses {house_hashes(con, 1)}', flush=True)
         ck(got, f'{who}: after the load the guest\'s vehicles and houses show the guest\'s designs again')
     frame_city({'host': host, 'guest': guest}, gpos)

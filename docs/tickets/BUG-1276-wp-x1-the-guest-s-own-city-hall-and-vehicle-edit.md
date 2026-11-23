@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: plan-0.7.16
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: feat/w54-x1
 commits: 176cc77e a083aaee f00246eb 800a17e6 39aebbea 42fc4f09
 tests: civ_own_arrival, civ_own_arrival_off (twin)
@@ -59,3 +59,4 @@ FAIL fix/w57-own-editors worktree out/lab/20261119-130049 ("the guest's OWN City
 - 2026-11-18: static RE, code, test and twin on feat/w54-x1; lab pending (night run).
 - 2026-11-19: fix/w57-own-editors: civ_own_arrival: own City Hall and vehicle editors at the arrival PASS on the merged tree (fix/w57-own-editors worktree out/lab/20261119-142554: both opened, both designs one shared key on both games, the guest's city's City Hall and its bought vehicle show them on both games) after BUG-1306 and BUG-1323; the test buys in the nearest NPC city of the editor's land design now (a guest may not buy in the capital). The only FAIL left is the host save's design line keys (fix/w57-civlook, BUG-1274). Twin civ_own_arrival_off FAIL in -130049. Open until that save strip is in.
 - 2026-11-19: fix/w57-own-editors: PASS whole on the merged tree (20261119-153243), twin FAIL (20261119-130049): fixed.
+- 2026-11-23: released in 0.7.16.

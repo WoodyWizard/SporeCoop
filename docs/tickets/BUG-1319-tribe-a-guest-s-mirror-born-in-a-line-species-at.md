@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: guest
 versions: 0.7.16 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w57-tribe-keys
 commits: 2da18ac6
 tests: tribe_stray_line_key, tribe_stray_line_key_off (coop_own_editors_robust.py stray)
@@ -43,3 +43,4 @@ Seen in the wild: late_species_rowclear_off 20261119-112300 step 4 (before the f
 ## History
 - 2026-11-19: opened (fix/w57-tribe-keys).
 - 2026-11-19: fixed on fix/w57-tribe-keys.
+- 2026-11-23: released in 0.7.16.

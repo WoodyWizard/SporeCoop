@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: final check 20261121-003202
 role: 
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w62-flake-tcs
 commits: 50052a59, fa98a003
 tests: space_npc_model, space_npc_model_coop
@@ -54,3 +54,4 @@ today, owner rule). Lab: `SPORE_DETECTOR=20 python3 tools/lab.py run space_npc_m
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: test waits for a ship that asks for its model after the planted arrival (fix/w62-flake-tcs).
+- 2026-11-23: released in 0.7.16.

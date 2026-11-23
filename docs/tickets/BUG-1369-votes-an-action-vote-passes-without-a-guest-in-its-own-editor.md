@@ -1,14 +1,14 @@
 ---
 id: BUG-1369
 title: Votes: an action vote (stage switch, superweapon) passes without a guest that is in its own editor; BUG-1239's rule was meant for the evolution vote only (vote_net_4p)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-20
 source: lab 20261120-133703
 role: host
 versions: 0.7.15.1 and later
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w61-multi
 commits: af0576ca
 tests: vote_net_4p, vote_net_4p_editor_off (twin)
@@ -44,15 +44,18 @@ host's Cell / Creature evolution vote, the arrival vote) is unchanged. docs/09-c
 CHANGELOG [Unreleased] Fixed has the player line.
 
 ## Verification
-Open, waiting for the lab run.
+Was waiting for the lab run.
 * FAIL (the behaviour the switch off restores): out/lab/20261120-133703 vote_net_4p (the action vote ended 3/4 while
   Dave was in his editor).
 * Wanted PASS: `SPORE_DETECTOR=20 python3 tools/lab.py run vote_net_4p --lane N --retry 0 --no-build` (4 games).
 * Wanted FAIL (twin): `SPORE_DETECTOR=20 python3 tools/lab.py run vote_net_4p_editor_off --lane N --retry 0 --no-build`
   (`SPORE_FIX_OFF=core.vote_editor_evo_only`: the two [leaver] checks fail as in 20261120-133703).
 * BUG-1239's own test should still PASS: `evo_screens_cell_both` (an evolution vote).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): vote_net_4p PASS in 20261121-003202, 20261122-194210, 20261123-065537; the twin vote_net_4p_editor_off FAIL in 20261121-000724 (the [leaver] checks); evo_screens_cell_both PASS in the same runs. Closed.
 
 ## History
 - 2026-11-20: opened (as a test ticket: the test seemed to assert the 0.7.15 behaviour).
 - 2026-11-20 (fix/w61-multi): BUG-1239's commit, switch and ticket scope it to the evolution vote; the action vote
   skipping is that fix's side effect. Restricted with core.vote_editor_evo_only, twin vote_net_4p_editor_off.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

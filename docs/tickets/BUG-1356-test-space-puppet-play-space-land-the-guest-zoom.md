@@ -1,14 +1,14 @@
 ---
 id: BUG-1356
 title: Test space_puppet (play_space.land): the guest zooms in on the planet it is still at when its clicks miss the wanted one
-status: open
+status: fixed
 kind: test
 stage: Space
 reported: 2026-11-20
 source: final-check-20261120-041304
 role: 
 versions: 0.7.15.5, unreleased
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w60-misc
 commits: 8273ee9a
 tests: space_puppet
@@ -37,6 +37,9 @@ play_space.py `land(want)`: when a planet is wanted and the clicks did not make 
 ## Verification
 no-fail-run: test-only change (the harness's landing). Lab tonight: space_puppet PASS (rounds 1-4). Open, waiting for
 the lab run.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): space_puppet PASS in 20261120-133703, 20261121-003202, 20261122-194210, 20261123-023643. Closed.
 
 ## History
 - 2026-11-20: opened from the 0.7.16 final check; fixed in play_space.py on fix/w60-misc.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

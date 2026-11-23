@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: guest
 versions: rel/0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w57-own-editors
 commits: 6b93ebd6 5e4f14e1
 tests: tribe_own_outfitter, own_editor_drop
@@ -45,3 +45,4 @@ own_editor_key PASS 20261119-130049. tribe_own_outfitter's last check (the host'
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: fixed on fix/w57-own-editors, lab runs above.
+- 2026-11-23: released in 0.7.16.

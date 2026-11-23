@@ -48,6 +48,9 @@ terrain disagrees. The monitor rule is unchanged.
 Lab (shows the cause): `SPORE_DETECTOR=20 python3 tools/lab.py run nest_target_probe --repeat 4 --lane N --retry 0
 --no-build`: in a run with the `drawn` violation, the line "ground under the guest: host ..., guest ..." at the 600 m
 spots. Open: waiting for that run, then the fix.
+- Still open (2026-11-23): nest_target_probe FAIL in 20261122-194210 and 3 of 4 in 20261122-193406 (#2-#4: host draws the guest 6.3 m off, from s 120). The new lines "ground under the guest" agree on both games at every spot (ground, point and water the same; once the host's snap surface 506.34 against the guest's 505.93, 0.41 m): the 6.3 m is not the terrain under the guest. Next: the guest's held position in its paused game against the host's drawn one.
 
 ## History
 - 2026-11-21: opened from the third final check of 0.7.16 (fix/w62-flake-cc); diagnostics added to the test.
+- 2026-11-23: again in lab 20261122-194210 (nest_target_probe, lane 7, gate monitor drawn 6.3 m, the test RESULT OK): the same numbers (agl 15.48 / 21.82 at s 120, 29.76 / 36.10 at s 130, d=565), and the new ground lines show both games read the same ground there (dir 1 483.55 / 483.55, dir 3 469.27 / 469.27): the 6.3 m is in the host's drawn placement, not in GetHeightAt. Still open, 0.7.16.1.
+- 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.

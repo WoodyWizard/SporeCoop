@@ -1,14 +1,14 @@
 ---
 id: BUG-1349
 title: tribe_mirror_hold: the host's chief lets go of the staff at once in every round of some runs (the test's hand lever)
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-20
 source: lab
 role: 
 versions: rel/0.7.16
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w60-tribe
 commits: b9ce678f 063376e4
 tests: tribe_mirror_hold
@@ -45,12 +45,15 @@ round that still lets go: each attach's animation / held / cleared, the chief's 
 The checks (rounds >= 2, the guest's copy follows each, puts it back) are unchanged.
 
 ## Verification
-Open, waiting for the lab run: tribe_mirror_hold must PASS; if a round still lets go, its printed attaches and
+Was waiting for the lab run: tribe_mirror_hold must PASS; if a round still lets go, its printed attaches and
 handbone line say whether pending tracks were there (cleared=1) and whether creature.fx_bone refused the bone
 (fx_skips).
 `SPORE_FIX_OFF=tribe.mirror_hold` (by hand, BUG-0914's twin) must still FAIL on the guest's copy. If it fails again with cleared=0
 and no fx_skips, this ticket gets a runtime probe of the chief's modifier table (cause still open).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): tribe_mirror_hold PASS in 20261120-133703, 20261121-003202, 20261122-194210, 20261123-023643 (the FAIL before: the final check named in the Report). Closed.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: cause and fix on fix/w60-tribe (no lab today, owner rule); lab run pending.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

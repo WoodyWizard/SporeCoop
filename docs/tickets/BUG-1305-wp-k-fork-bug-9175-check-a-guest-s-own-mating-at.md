@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: plan
 role: guest
 versions: 0.7.15.2 and older (observed on the 0.7.16 tree before the fix)
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: feat/w56-cocoon
 commits: cc4dc305 b67a4a56
 tests: guest_mating, guest_mating_off
@@ -45,3 +45,4 @@ the creature waits (0.7.15). docs/re/creature.md#creature-guest-mating.
 ## History
 - 2026-11-19: opened; test written.
 - 2026-11-19: reproduced on lane 6 and fixed (creature.guest_mating).
+- 2026-11-23: released in 0.7.16.

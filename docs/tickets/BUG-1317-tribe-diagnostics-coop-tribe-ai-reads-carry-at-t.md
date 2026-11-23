@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w57-savestrip
 commits: 0db36ea8
 tests: tribe_own_species
@@ -40,3 +40,4 @@ for tests (`coop.tribe ai`), no behaviour.
 ## History
 - 2026-11-19: opened (fix/w57-savestrip, found while fixing tribe_own_species for BUG-1271).
 - 2026-11-19: fixed on fix/w57-savestrip.
+- 2026-11-23: released in 0.7.16.

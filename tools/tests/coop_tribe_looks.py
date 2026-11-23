@@ -123,6 +123,10 @@ def check_item(ck, host, guest, tag, strict=True):
     ck(len(armed) >= 1, f'{tag}: the host\'s game has members with something in the hand ({len(armed)})')
     lead = next((i for i, m in sorted(hm.items()) if m['player'] and m['leader']), None)
     ck(lead is not None, f'{tag}: the host\'s player tribe has a leader (#{lead})')
+    # BUG-1450: the leader stays the host's own member across the guest's leave and join (BUG-1154; lab 20261122-194210:
+    # after the rejoin #1 was "Bob's chief" on both screens, the host had no owner=0 leader)
+    if lead is not None:
+        ck(hm[lead]['owner'] == 0, f'{tag}: the host\'s chief #{lead} is still the host\'s member (owner {hm[lead]["owner"]})')
     if lead is None:
         return
     ok = held = False
@@ -154,14 +158,24 @@ def check_item(ck, host, guest, tag, strict=True):
            f'{tag}: the staff of the chief\'s copy has the size of the host\'s (the model\'s scale: guest {gs:.3f}, host '
            f'{hs:.3f}; the chief itself guest {g2 and g2["scale"]}, host {h2 and h2["scale"]})')
         # the grip must last: a mirror's "taking it" state never ended by itself (the staff stuck out forward)
-        stuck, t1 = 0, time.time()
-        while time.time() - t1 < 8:
-            g2 = members(guest).get(lead)
-            stuck = stuck + 1 if g2 and g2['item'] and g2['hold'] else 0
+        # BUG-1449: a hold the host's member has too is the host's own swing or change, mirrored (tribe.mirror_hold binds
+        # the copy's hold to it for up to 8 s, kHoldBoundMax): only samples without the host's hold count, and the loop
+        # waits for 8 of them (up to 20 s); fewer than 4 is a FAIL too (nothing judged)
+        stuck, free, host_held, t1 = 0, 0, 0, time.time()
+        while time.time() - t1 < 20 and free < 8:
+            g2, h3 = members(guest).get(lead), members(host).get(lead)
+            if h3 and h3['hold']:
+                host_held += 1
+                stuck = 0
+            else:
+                free += 1
+                stuck = stuck + 1 if g2 and g2['item'] and g2['hold'] else 0
             if stuck >= 4:
                 break
             time.sleep(1.0)
-        ck(stuck < 4, f'{tag}: the copy keeps the staff in the grip (not held as in the middle of taking it for 4 s)')
+        ck(stuck < 4 and free >= 4, f'{tag}: the copy keeps the staff in the grip (not held as in the middle of taking it '
+                                    f'for 4 s while the host\'s member does not; {free} samples without the host\'s hold, '
+                                    f'{host_held} with it)')
     else:  # after the rejoin the chief may be away gathering, the staff put away in the host's game too
         print(f'  ({tag}: the host\'s chief #{lead} held no staff in the host\'s game for 30 s (item {h and h["item"]}): '
               f'its hand is compared as every member\'s)', flush=True)

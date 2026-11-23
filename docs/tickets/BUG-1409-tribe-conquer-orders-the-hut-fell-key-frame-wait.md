@@ -1,14 +1,14 @@
 ---
 id: BUG-1409
 title: tribe_conquer_orders: the hut_fell key frame waits out the conquest cinematic, the test's watch for it starts after it ended
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-21
 source: nightly 20261121-003202
 role: 
 versions: unreleased
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w62-flake-tcs
 commits: 8fff6d2e
 tests: tribe_conquer_orders
@@ -42,9 +42,12 @@ cinematic in the 60 s after the fall). No mod change, no switch.
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
-FAIL before: out/lab/20261121-003202 (rel/0.7.16), feat/w51-tribe out/lab/20261115-182010. Open, waiting for the lab run:
+FAIL before: out/lab/20261121-003202 (rel/0.7.16), feat/w51-tribe out/lab/20261115-182010. Was waiting for the lab run:
 `lab.py run tribe_conquer_orders --repeat 4` must PASS 4 of 4 (a test change: no twin; the failing order needs the
 cinematic to start before the poll reads the fall, 2 of 12 runs).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): tribe_conquer_orders PASS 4 of 4 in 20261122-193406, and in 20261122-194210 and 20261123-023643. Closed.
 
 ## History
 - 2026-11-21: opened (fix/w62-flake-tcs); cause found in the frames manifest, the key frame moved after the watch.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

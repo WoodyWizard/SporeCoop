@@ -58,9 +58,11 @@ tribe_hold_only, tribe_hold_guest, same_view_tribe must still PASS.
 - FAIL twin (the case came twice, retry off): lab 20261120-130608 tribe_chief_still_retry_off.log (1.7 s at 27.1 s,
   1.1 s at 188.3 s, retried=0) and .env1.log (1.4 s at 87.3 s); the lab listed the twin OK only because its rule for a
   game that did not start matched this switch's description and kept the third run's PASS (BUG-1379).
+- Still open (2026-11-23). tribe_chief_still PASS in 20261120-133703, 20261121-003202, 20261122-194210 and 20261123-071312, and the twin tribe_chief_still_retry_off FAIL in 20261121-000724, but it FAILed once more on fd28f88f: 20261123-023643, a 1.4 s stretch at 83.4 s with the item in the hand on one game only although the guest retried (retried=69, an 'A' retry at 84.83 s): the retry helps, the case is not gone. The CHANGELOG line now says so ("still open"); docs/known-issues.md has the entry.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: cause and fix on fix/w60-tribe (no lab today, owner rule); lab run pending.
 - 2026-11-20 (fix/w61-civ): the twin's runs of the second final check FAILed twice as wanted (BUG-1379 explains the
   OK in the twins' list).
+- 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.

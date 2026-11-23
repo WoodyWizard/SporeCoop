@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: key-frame review
 role: host
 versions: 0.7.15.1
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w54-visual
 commits: 849bcc13
 tests: evo_screens_switch, evo_screens_switch_lowfps, evo_screens_switch_noready, evo_screens_switch_slow
@@ -63,3 +63,4 @@ Tonight (lanes 2 and 3, build first with `make -j8`):
 ## History
 - 2026-11-18: opened; pre-existing, not a blocker of 0.7.15.2; planned for 0.7.16.
 - 2026-11-18: root cause from Ghidra and the logs (fix/w54-visual); fix `core.switch_vote_world` and the check written; lab pending the night run.
+- 2026-11-23: released in 0.7.16.

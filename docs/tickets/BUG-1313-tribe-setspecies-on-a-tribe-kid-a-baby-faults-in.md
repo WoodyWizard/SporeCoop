@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: 
 versions: 0.7.16 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w57-tribe-keys
 commits: 4ce6f9de
 tests: tribe_kid_species, tribe_kid_species_off (coop_own_editors_robust.py kid)
@@ -43,3 +43,4 @@ both games, the host faulted: EIP 0xFFFFFFFF, calls 00BC326E 00C03A94); before t
 ## History
 - 2026-11-19: opened (fix/w57-tribe-keys, from the night run's twin).
 - 2026-11-19: fixed on fix/w57-tribe-keys.
+- 2026-11-23: released in 0.7.16.

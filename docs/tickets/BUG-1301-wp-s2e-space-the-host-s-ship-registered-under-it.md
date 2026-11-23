@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: plan
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: feat/w56-editors
 commits: 86c18d41 0d159edb 6c1e3959
 tests: space_own_ship_key, space_own_ship_key_off (coop_own_editors_robust.py ship)
@@ -44,3 +44,4 @@ model 5DC76FCE for its own ship).
 - 2026-11-19: opened.
 - 2026-11-19: feat/w56-editors: fix and its test written (switch, FAIL twin entry); the lab run waits for the orchestrator.
 - 2026-11-19: fix/w57-tribe-keys: the test made to catch the bug (host ship with records, BUG-1314); PASS and twin FAIL; fixed.
+- 2026-11-23: released in 0.7.16.

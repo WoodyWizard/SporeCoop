@@ -1,14 +1,14 @@
 ---
 id: BUG-1375
 title: Tribe: a guest's copy of a host NPC tribe whose species it lacked waits 5 s after the species came (campaign_civ_jump sync-check t missing)
-status: open
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-11-20
 source: lab
 role: guest
 versions: rel/0.7.16
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w61-civ
 commits: 34cb98e5
 tests: tribe_npc_form, tribe_npc_form_late, tribe_npc_form_late_off (twin), campaign_civ_jump
@@ -47,9 +47,12 @@ formation.
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 - FAIL (before, the lab gate): 20261120-133703:campaign_civ_jump (sync-check on extra1 at s 824).
-- Open, waiting for the lab run: tribe_npc_form and tribe_npc_form_late must PASS (the copy within about 0.6 s),
+- Was waiting for the lab run: tribe_npc_form and tribe_npc_form_late must PASS (the copy within about 0.6 s),
   tribe_npc_form_late_off must FAIL (about 5 s); campaign_civ_jump without the Tribe sync-check gate.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): tribe_npc_form and tribe_npc_form_late PASS in 20261121-003202, 20261122-194210, 20261123-023643; the twin tribe_npc_form_late_off FAIL in 20261121-000724 (5.3 s); campaign_civ_jump PASS in 20261121-003202, 20261122-194210, 20261123-023643 without the gate. Closed.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-civ): cause from the logs, fix, knob, test and twin; no lab run (owner rule).
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w58-assignnames
 commits: 3afe08a4, ad2b5683
 tests: civ_late_arrival, civ_late_arrival_tag_off, creation_props_key0, civ_own_arrival
@@ -76,3 +76,4 @@ The lab missed it: civ_late_arrival restarts the guest twice and `Checks.faults(
 ## History
 - 2026-11-19: opened (fix/w58-cityname, found while testing BUG-1328; outside that task).
 - 2026-11-19: fixed on fix/w58-assignnames (own request tag `core.own_civ_tag`; the harness counts killed games' faults).
+- 2026-11-23: released in 0.7.16.

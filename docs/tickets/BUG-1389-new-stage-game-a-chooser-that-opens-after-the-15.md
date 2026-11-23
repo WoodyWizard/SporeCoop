@@ -1,14 +1,14 @@
 ---
 id: BUG-1389
 title: new_stage_game: a chooser that opens after the 150-frame check takes the next click on slot 818 669 as the Space icon (798 646), a Space wizard opens (cell_new_game)
-status: open
+status: fixed
 kind: test
 stage: Menu
 reported: 2026-11-21
 source: lab rel/0.7.16 20261121-003202 cell_new_game
 role: 
 versions: unreleased
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w62-flake-cc
 commits: 372de2c3
 tests: cell_new_game, cell_far_guest, join_new_game
@@ -45,6 +45,9 @@ to 600 frames before the slot is clicked again. A chooser that opens late is now
 no-fail-run: harness-only change; the late chooser cannot be forced on purpose. Lab: `SPORE_DETECTOR=20 python3
 tools/lab.py run cell_new_game,cell_far_guest,join_new_game --lane N --retry 0 --no-build` PASS. Open, waiting for the
 lab run.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): cell_new_game, cell_far_guest and join_new_game PASS in 20261122-194210 and 20261123-023643 (FAIL before: 20261121-003202 cell_new_game, "planet slot 0 did not open the chooser"). Closed.
 
 ## History
 - 2026-11-21: opened from the third final check of 0.7.16 (fix/w62-flake-cc); fixed in the test.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

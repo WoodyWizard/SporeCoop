@@ -1,14 +1,14 @@
 ---
 id: BUG-1331
 title: C: the creature test's M3 and ui_golden's settings references still expect one shared DNA pool (BUG-1291 own DNA)
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-20
 source: plan
 role: 
 versions: 
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w59-tests
 commits: d679a5e5 7459b4da
 tests: creature, ui_golden
@@ -55,6 +55,9 @@ Tests, not the mod.
 ## Verification
 Pending the lab ("lab ok"): creature PASS; twin `SPORE_FIX_OFF=creature.own_dna` must FAIL ("the guest's spend of 4
 came off the guest's DNA only"); ui_golden PASS after the references are refreshed.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): creature PASS in 20261122-194210, 20261123-022904, 20261123-023643; the twin SPORE_FIX_OFF=creature.own_dna FAIL in 20261120-132626 ("the guest's spend of 4 came off the guest's DNA only"); ui_golden PASS with the new references in 20261120-133703, 20261121-003202, 20261122-194210, 20261123-023643. Closed.
 
 ## History
 - 2026-11-20: opened; M3 rewritten, golden refresh prepared (fix/w59-tests).
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

@@ -1,14 +1,14 @@
 ---
 id: BUG-1398
 title: session_restart: the host's quit save right after a share save was dropped by the game (species_line, every run), refused since BUG-1365 and not asked again
-status: open
+status: fixed
 kind: test
 stage: All
 reported: 2026-11-21
 source: final check 20261121-003202
 role: host
 versions: 0.7.16
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w62-saves
 commits: ff3f8986
 tests: species_line, own_editor_drop, civ_own_species, civ_own_species_hostmode, civ_owners_session, dna_own_store, space_session, space_session_npc, tribe_owners_session, tribe_own_species
@@ -53,11 +53,14 @@ Tests only (no mod change, `world.save_allowed` kept as it is):
   content_civ, civ_save_strip, space_save_strip, tribe_save_strip.
 
 ## Verification
-Open, waiting for the lab run (no lab runs today, owner rule). FAIL run: 20261121-003202 (species_line). Lab:
+Was waiting for the lab run (no lab runs today, owner rule). FAIL run: 20261121-003202 (species_line). Lab:
 `SPORE_DETECTOR=20 python3 tools/lab.py run species_line own_editor_drop civ_own_species civ_own_species_hostmode
 tribe_epic civ_owners_session tribe_owners_session --lane N --lane M --retry 0 --no-build`: all must PASS;
 species_line must show `refused for now` then `store writes 2 -> 3`. The twin of the mod's side stays
 saved_box_twice_off (BUG-1365).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): species_line, own_editor_drop, civ_own_species, civ_own_species_hostmode, tribe_epic, civ_owners_session, tribe_owners_session, dna_own_store, space_session, space_session_npc and tribe_own_species PASS in 20261122-194210 and 20261123-023643. Closed.
 
 ## History
 - 2026-11-21: opened (fix/w62-saves): the logs of three runs show the quit save was always lost; test helpers save_taken / save_fresh.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

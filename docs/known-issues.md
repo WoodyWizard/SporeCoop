@@ -281,7 +281,11 @@ anchor so other docs can link to it:
   host's) sometimes jump once while walking, or start and stop unevenly in 12-14% of the frames (the test allows 10%).
 * Reproduce: `lab.py run tribe_walk_player --repeat 4` (about 3 of 4 runs fail on both builds).
 * Known: not a 0.7.15 regression (v0.7.14.1 fails 4 of 4 the same night); worse when the headless Xwayland is saturated.
-* Known (2026-11-21): the jump is a walk start driven by the smoothed target while the late lead catches up (13.4-13.7 m/s, no frame bound in that path since 0.7.9); fixed by `tribe.smooth_bound` (BUG-1235), waiting for the lab. The stop-and-go part is not explained yet.
+* Known (2026-11-21): the jump is a walk start driven by the smoothed target while the late lead catches up (13.4-13.7 m/s, no frame bound in that path since 0.7.9); bounded by `tribe.smooth_bound` (BUG-1235) in 0.7.16. The stop-and-go part is not explained yet.
+* Known (2026-11-23, 0.7.16 final check): no jump in 5 runs on rel/0.7.16 5376d388 (lab 20261122-194210,
+  20261122-193406), but 4 of 4 runs on fd28f88f (the same mod code) still had 1-3 jumps of 0.85-0.93 m in one frame
+  (20261123-023643, 20261123-071312, 20261123-075458): the catch-up of a walk start that came late over the network
+  (BUG-1451, `tribe.smooth_catch`, planned for 0.7.16.1).
 * Next steps: the next release.
 * Ticket: BUG-1235
 
@@ -440,3 +444,27 @@ anchor so other docs can link to it:
 * Next steps (0.7.17): share only the played planet's `.spo` plus the galaxy's own files (RE of GGEUserData.dat: a
   missing `.spo` shows "Bad or Missing Saved Game"); a "continue the last co-op world" entry for a new host.
 * Ticket: BUG-1434
+## Tribe: on a guest's screen the host's chief sometimes holds its staff differently for about a second (2026-11-23, 0.7.16 final check)
+<a id="issue-tribe-chief-grip"></a>
+
+* What happens: while the host's chief swings or holds its staff, the guest's copy of the chief can show the staff in
+  the resting grip (or none in the hand) for about 1-1.5 s.
+* Reproduce: `tools/lab.py run tribe_chief_still` (failed 1 of 5 runs on rel/0.7.16 with the fix: lab 20261123-023643,
+  a 1.4 s stretch at 83.4 s).
+* Known: 0.7.16 attaches the staff again when the copy's first grip did not start (`tribe.hold_retry`, BUG-1347): the
+  twin without it failed (lab 20261121-000724) and the test passed in 4 of 5 runs; in the failing run the guest had
+  retried (retried=69) and the stretch still came, so another case remains.
+* Next steps: the hold events of 20261123-023643 tribe_chief_still (the guest changed item 1.7 s before the host).
+* Ticket: BUG-1347
+
+## Space: on a colony planet a guest may see running citizens 3-4 m away from where the host has them (2026-11-23, 0.7.16 final check)
+<a id="issue-space-colony-runners"></a>
+
+* What happens: a host's colony citizen that starts or stops running can stand 3-4 m from its place on the guest's
+  screen for a moment (the old final checks: 4 of 57 and 6 of 57 citizens off in space_planet_citizens).
+* Reproduce: `tools/lab.py run space_planet_citizens --repeat 4` (about half of the runs before 0.7.16).
+* Known: 0.7.16 sends the citizens' snapshots twice as often (`space.citizen_lead`, BUG-1404), but the lab cannot
+  show it helps yet: space_planet_citizens passed also with it off (4 of 4, lab 20261122-192851), and the runner
+  case space_planet_runners (BUG-1454) never found host citizens running near the guest (INCONCLUSIVE in every run).
+* Next steps: a test that makes host citizens run near the guest, then both arms of the switch.
+* Ticket: BUG-1404, BUG-1454

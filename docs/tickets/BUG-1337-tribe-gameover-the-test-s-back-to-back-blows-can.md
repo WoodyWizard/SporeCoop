@@ -1,16 +1,16 @@
 ---
 id: BUG-1337
 title: tribe_gameover: the test's back-to-back blows can fell two members in one behaviour tick, then the game shows no game over at all
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-20
 source: lab
 role: host
 versions: 0.7.14.1,0.7.16
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w59-tribe
-commits:
+commits: f6daf30c c0792a81
 tests: tribe_gameover, tribe_gameover_reload, tribe_gameover_reload2, tribe_gameover_slow (coop_tribe_gameover.py); twin tribe_gameover_reload2_sameframe
 signature: tribe_gameover*: ui "Alas": no window with caption 'Alas', then FAIL after the bounce back the player tribe has members again (player tribe {<chief>: 0.0})
 docs: docs/re/tribe.md#tribe-gameover-list
@@ -44,11 +44,14 @@ unchanged. `--same-frame` (the twin `tribe_gameover_reload2_sameframe`): the las
 frame), the old race made sure: must FAIL (no caption).
 
 ## Verification
-Lab: not run yet (the 0.7.16 final check holds the lab): tribe_gameover_reload2 (and tribe_gameover,
+Lab: not run then (the 0.7.16 final check holds the lab): tribe_gameover_reload2 (and tribe_gameover,
 tribe_gameover_reload) must PASS, tribe_gameover_reload2_sameframe must FAIL with no caption. Natural FAIL runs of the
 old blows: 20261118-033459 (tribe_gameover #3), 20261119-214823 (tribe_gameover_reload2).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): tribe_gameover, tribe_gameover_reload, tribe_gameover_reload2 and tribe_gameover_slow PASS in 20261120-133703, 20261121-003202, 20261122-194210, 20261123-023643; the twin tribe_gameover_reload2_sameframe FAIL in 20261120-130608 and 20261122-191140 (no caption). Closed.
 
 ## History
 - 2026-11-20: opened (fix/w59-tribe, triage package F of the 0.7.16 final check): a flake of the test's blows, not a
   0.7.16 regression.
 - 2026-11-20: the test's blows one at a time on fix/w59-tribe; lab runs pending.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

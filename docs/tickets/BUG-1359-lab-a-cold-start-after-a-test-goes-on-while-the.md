@@ -1,14 +1,14 @@
 ---
 id: BUG-1359
 title: Lab: a cold start after a test goes on while the lane's old host still holds its console port (evolve_world JSONDecodeError)
-status: open
+status: fixed
 kind: tooling
 stage: Tools
 reported: 2026-11-20
 source: final-check-20261120-041304
 role: 
 versions: 0.7.15.5, unreleased
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w60-misc
 commits: 52a307a4
 tests: evolve_world
@@ -41,7 +41,10 @@ start's own "did not answer in 90 s: the lane starts again" path behind it) inst
 ## Verification
 no-fail-run: harness change (the lab's start); the case needs a killed game that keeps its port, which no test makes
 on purpose. Lab tonight: evolve_world PASS; any cold start that prints "console ports ... were still held after the
-kill" shows the wait at work. Open, waiting for the lab run.
+kill" shows the wait at work. Was waiting for the lab run.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): evolve_world PASS in 20261120-133703, 20261121-003202, 20261122-194210, 20261123-023643; the wait at work in 20261123-022904 select ("the lane's console ports [47808, 47809] were still held after the kill"). Closed.
 
 ## History
 - 2026-11-20: opened from the 0.7.16 final check; fixed in twoinst.py on fix/w60-misc.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

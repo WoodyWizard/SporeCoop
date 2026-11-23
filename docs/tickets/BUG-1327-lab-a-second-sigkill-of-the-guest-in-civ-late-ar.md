@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w58-wineserver
 commits: 7fd8a094 d858be0b
 tests: lane_guest_restart, lane_guest_restart_off (twin), civ_late_arrival
@@ -75,3 +75,4 @@ test's restarts with `spore.sh` starting the guest outside a new sandbox.
 - 2026-11-19: opened.
 - 2026-11-19: fix/w58-wineserver: cause found (the wineserver SIGKILLs its own pid for a game of another PID namespace), lane games share the wineserver's PID namespace; self-check lane_guest_restart; civ_late_arrival PASS to its end. Fixed.
 - 2026-11-19: on the tree merged with rel/0.7.16 (1d5f3532): lane_guest_restart PASS, lane_guest_restart_off FAIL, civ_late_arrival PASS (out/lab/20261119-171000).
+- 2026-11-23: released in 0.7.16.

@@ -80,6 +80,7 @@ def main():
     ground = airborne = samples = air = low = tried = 0
     nid, tries = None, []
     for nid, (x, y, z) in cands[:8]:
+        guest.call('coop.team hp 10')  # BUG-1443: a fresh guest for each NPC (the bites of the earlier ones add up)
         guest.call(f'coop.npc gopos {x + 2:.2f} {y:.2f} {z:.2f}')
         time.sleep(2)
         guest.call('coop.hp dmglog clear')
@@ -87,7 +88,7 @@ def main():
         t0 = time.time()
         while time.time() - t0 < 8:
             time.sleep(1)
-            guest.call('coop.social hp 10')
+            guest.call('coop.team hp 10')  # BUG-1443: `coop.social hp` does not exist (it turned the overlay on)
         ground = host_hits(guest)
         print(f'  NPC #{nid} ({npc_line(host, nid)[:60]}): {ground} bites on the ground in 8 s', flush=True)
         if not ground:
@@ -99,6 +100,7 @@ def main():
             t0, k, moves = time.time(), 0, 0
             while time.time() - t0 < 20:
                 if k % 20 == 0:  # BUG-0601: the guest back beside the NPC (it strikes only in reach), every 5 s
+                    guest.call('coop.team hp 10')  # BUG-1443: not knocked out over the 3 rounds (the bites are counted)
                     n = npc_pos(host, nid)
                     d = npc_from(host, nid, guest, n) if n else None
                     if n and d is not None and 3 < d <= WALKED_OFF:

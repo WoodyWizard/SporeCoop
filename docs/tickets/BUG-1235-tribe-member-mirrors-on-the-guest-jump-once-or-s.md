@@ -61,8 +61,10 @@ before: 20261121-003202, 20261119-214823, 20261117-154911). The case is the game
 spike of the player network, about 1 run in 3), so no suite twin: `SPORE_FIX_OFF=tribe.smooth_bound lab.py run
 tribe_walk_player --repeat 4` is expected to show the 0.95 m jump in some runs; the deterministic proof is
 tribe_tests smooth_bound (PASS with the rule, FAIL with `--nofix`).
+- Still open (2026-11-23). On 5376d388 no jump: tribe_walk_player PASS in 20261122-194210 and 3 of 4 in 20261122-193406 (no jump in any of the 5; #1 FAIL on the speed part, "at its speed in 83% >= 85%"). On fd28f88f (the same mod code) every run FAILs on jumps of 0.85-0.93 m in one ~32 ms frame, on the host's members and the guest's own: 20261123-023643 (3 jumps, and the stop-and-go part 20%), 20261123-071312 (3), 20261123-075458 #1 and #2 (2 each). Those are the catch-up frames of a late walk start (BUG-1451, tribe.smooth_catch, for 0.7.16.1), so the jump this ticket is about is not proven gone; the speed / stop-and-go part is open too. The CHANGELOG line was removed; the known issue stays.
 
 ## History
+- 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.
 - 2026-11-21 (fix/w62-flake-tcs): the jump's cause found (the smoothed walk start without the frame bound, since
   1fcf09b2), tribe.smooth_bound; the stop-and-go half stays open.
 - 2026-11-18: opened in the second 0.7.15 final-check triage; old (0.7.14.1 fails it too), left for the next release.

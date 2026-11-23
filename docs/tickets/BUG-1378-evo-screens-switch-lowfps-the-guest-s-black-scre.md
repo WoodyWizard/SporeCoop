@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: final check 20261120-133703
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-creature-b
 commits: 14aa9dc9
 tests: evo_screens_switch_lowfps, evo_screens_switch, evo_screens_switch_slow, evo_screens_switch_noready
@@ -54,3 +54,4 @@ run: `SPORE_DETECTOR=20 python3 tools/lab.py run evo_screens_switch_lowfps evo_s
 ## History
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-creature-b): the guest's own load and stage-entry pause measured apart (ENTRY_LIMIT 45 s).
+- 2026-11-23: released in 0.7.16.

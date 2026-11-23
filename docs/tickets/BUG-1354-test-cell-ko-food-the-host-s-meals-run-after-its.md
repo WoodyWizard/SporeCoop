@@ -1,14 +1,14 @@
 ---
 id: BUG-1354
 title: Test cell_ko_food: the host's meals run after its knockout ended (8 s spent looking for plants)
-status: open
+status: fixed
 kind: test
 stage: Cell
 reported: 2026-11-20
 source: final-check-20261120-041304
 role: 
 versions: 0.7.15.5, unreleased
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w60-misc
 commits: c74bf7ee
 tests: cell_ko_food
@@ -37,7 +37,10 @@ took of the knockout. Nothing the test checks changed.
 
 ## Verification
 no-fail-run: test-only change (the test's own timing; the mod's ko_no_eat / ko_no_swallow unchanged). Lab tonight:
-cell_ko_food PASS; `SPORE_FIX_OFF=cell.ko_no_swallow` cell_ko_food FAIL (its twin). Open, waiting for the lab run.
+cell_ko_food PASS; `SPORE_FIX_OFF=cell.ko_no_swallow` cell_ko_food FAIL (its twin). Was waiting for the lab run.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): cell_ko_food PASS in 20261120-133703, 20261121-003202, 20261122-194210, 20261123-023643; the twin SPORE_FIX_OFF=cell.ko_no_swallow FAIL in 20261120-132626. Closed.
 
 ## History
 - 2026-11-20: opened from the 0.7.16 final check; fixed in the test on fix/w60-misc.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

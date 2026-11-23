@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: plan-0.7.16
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: feat/w54-x2, fix/w58-linestages
 commits: a65aa814 b7d8fe0f 0db36ea8 79ee9769 08bce529 869bc4fa ae084a94 13d4c653 0489143d 8c2b99ed 08ad0bc2
 tests: line_stages, line_stages_outfit, line_stages_editors, line_stages_off, line_stages_nodesign_off
@@ -111,3 +111,4 @@ Tribe members). Once WP-X1 is in: `SPORE_DETECTOR=20 python3 tools/lab.py run li
 - 2026-11-19: fix/w57-savestrip: save checks pass (BUG-1315), the Civ cities' wait and the cinematic end; open for the WP-C2 / WP-X1 / WP-T2 steps (other packages).
 - 2026-11-19: fix/w57-civlook: the Civ vehicle (BUG-1274) and citizen paint (BUG-1321) steps fixed, line_stages passes; line_stages_outfit / line_stages_editors wait for the guest's own editors (fix/w57-own-editors).
 - 2026-11-19: fix/w58-linestages: the arrival editors' wait, the guest's own vehicle model, the editors on every path, BUG-1328's red cross; all three PASS, both twins FAIL: fixed.
+- 2026-11-23: released in 0.7.16.

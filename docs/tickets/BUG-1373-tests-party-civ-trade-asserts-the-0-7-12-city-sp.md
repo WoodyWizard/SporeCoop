@@ -1,17 +1,17 @@
 ---
 id: BUG-1373
 title: Tests: party_civ_trade asserts the 0.7.12 city split: since BUG-0875 the host keeps the cities its captures took
-status: open
+status: fixed
 kind: test
 stage: Civ
 reported: 2026-11-20
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w61-civ
 commits: 28b70c3d
-tests: party_civ_trade
+tests: party_civ_trade (tools/tests/coop_party_civ_trade.py)
 signature: FAIL [owners] three cities: Alice, Bob and Carol own one each, no shared capital ({0: 253, 1: 0, 2: 0})
 docs: docs/re/civ.md#civ-capture-keeps
 related: BUG-0875, BUG-0877, BUG-0152
@@ -43,8 +43,11 @@ steps.
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 - FAIL (the old test against 0.7.13's rule): 20261120-133703:party_civ_trade.
 - no-fail-run: a test correction (the test asserted the 0.7.12 split); BUG-0875's own twin civ_capture_keeps covers the
-  rule. Open, waiting for the lab run: party_civ_trade must PASS.
+  rule. Was waiting for the lab run: party_civ_trade must PASS.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): party_civ_trade PASS in 20261121-003202, 20261122-194210, 20261123-065537. Closed.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-civ): cause from the logs and the code; the guests buy their cities; no lab run (owner rule).
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: host
 versions: rel/0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w58-savestrip2
 commits: a70bcafd
 tests: tribe_own_outfitter, own_editor_drop
@@ -71,3 +71,4 @@ the scan must still catch the members' line key in the .spo. No switch (a test c
 - 2026-11-19: fix/w58-savestrip2: no writer: the hit is the host's own planet script id from the game's clock-seeded
   id counter (equal to the guest's creation id when both games start in the same second); the save scan reads records
   now; tribe_own_outfitter and own_editor_drop PASS (20261119-164857), the savestrip twin FAILs on the .spo line key.
+- 2026-11-23: released in 0.7.16.

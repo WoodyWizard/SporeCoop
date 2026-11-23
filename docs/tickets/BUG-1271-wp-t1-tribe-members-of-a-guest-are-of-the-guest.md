@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: plan-0.7.16
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: feat/w54-tribe, feat/w54-shims
 commits: d6ffc32d e7dcf746 696d51e2 48dd3e02 0db36ea8
 tests: tribe_own_species
@@ -50,3 +50,4 @@ tribe_guest_baby, tribe_portraits, tribe_owners_session, tribe_mirror_hunger, tr
 - 2026-11-18: implemented on feat/w54-tribe (code, test, docs); lab runs pending.
 - 2026-11-18: feat/w54-shims: the WP-0 shim `line_key` is species::key(owner, Stage::Tribe), on_change starts the next pass, the save strip also takes members showing a line key (species::is_line_key); the test sets a tribe outfit with `coop.species test tribe next` and checks the 0x7B key, its return from the store after a new evening, and the outfit's instance in the save. Still open: the night run.
 - 2026-11-19: fix/w57-savestrip: the night run's failures were the save (BUG-1315), the test's carry read-out (BUG-1317) and a fault of SetSpecies on a young member (BUG-1320, a duplicate of BUG-1313 fixed on fix/w57-tribe-keys); PASS / FAIL runs above.
+- 2026-11-23: released in 0.7.16.

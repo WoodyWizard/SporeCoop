@@ -1,14 +1,14 @@
 ---
 id: BUG-1393
 title: Creature: the host's respawn floors its evolution bar (36.9 -> 36.0), a guest's bar never follows the party's down: sync-check bar mismatch until the next gain
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-11-21
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w62-core
 commits: 57941e27
 tests: tools/tests/coop_dna_own.py (dna_own_setback, twin dna_own_setback_off), tests/dna_tests.cpp
@@ -41,11 +41,14 @@ tests/dna_tests.cpp. New lab case `coop_dna_own.py --case setback` (the party's 
 the guest's bar within half a point of the host's), twin `dna_own_setback_off`.
 
 ## Verification
-Open, waiting for the lab run (no lab runs in this task):
+Was waiting for the lab run (no lab runs in this task):
 - PASS expected: `SPORE_DETECTOR=20 python3 tools/lab.py run dna_own_setback mem_census --lane N --retry 0 --no-build`
 - FAIL expected: `... run dna_own_setback_off ...` (the guest's bar stays 0.8 ahead).
 - The FAIL run of the bug before the fix: 20261121-003202 mem_census.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): dna_own_setback PASS in 20261122-193225, 20261122-194210, 20261123-023643; the twin dna_own_setback_off FAIL in 20261122-191140 (the guest's bar ahead of the host's); mem_census PASS in 20261122-194210. Closed.
 
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: fix/w62-core: cause from mem_census's logs, fix creature.bar_setback, lab case setback.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

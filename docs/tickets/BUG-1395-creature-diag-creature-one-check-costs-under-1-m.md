@@ -1,14 +1,14 @@
 ---
 id: BUG-1395
 title: diag_creature: 'one check costs under 1 ms' fails on a loaded machine (wall time of the check 30x, the cost did not grow in 0.7.16)
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-21
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w62-core
 commits: 22a8b5ca
 tests: tools/tests/coop_diag.py (diag_creature, diag_cell)
@@ -44,10 +44,13 @@ INCONCLUSIVE with the load printed (never a pass; a cost under the limit still p
 fails). The limits themselves are unchanged. The final check should run on an idle CPU (owner rule).
 
 ## Verification
-Open, waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run diag_creature diag_cell --lane N --retry 0
+Was waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run diag_creature diag_cell --lane N --retry 0
 --no-build` on an idle machine must PASS (cost ~0.04 ms) and print the load average; under load it must say
 INCONCLUSIVE, not FAIL. no-fail-run: test change for a flake outside the mod (no FAIL twin).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): diag_creature and diag_cell PASS in 20261122-194210 and 20261123-023643. Closed.
 
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: fix/w62-core: cause load (evidence of all runs), the cost checks are INCONCLUSIVE on an overloaded machine.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

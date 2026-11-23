@@ -1,16 +1,16 @@
 ---
 id: BUG-1335
 title: Tribe: a guest's game faults in CreateEffect+0x146 when a member just made chief gets its staff on a hand bone its skeleton does not have
-status: open
+status: fixed
 kind: crash
 stage: Tribe
 reported: 2026-11-20
 source: lab
 role: guest
 versions: 0.7.16
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w59-tribe
-commits:
+commits: 617d7380
 tests: tribe_hand_bone, tribe_hand_bone_off (coop_tribe_hand_bone.py); unit tribe_tests hand_bone (--nofix fails)
 signature: dc04aee5:SporeApp.exe Simulator::cCreatureBase::CreateEffect+0x146 < Creature_StartBoneEffect 0xC17EC0 < SporeCoop::Citizen_SetHandheldItem+0x379 (guest, Tribe)
 docs: docs/re/tribe.md#tribe-hand-bone, docs/06-testing.md#testing-tribe-hand-bone
@@ -51,9 +51,12 @@ re-apply next round. (3) An item whose effect was skipped is attached again once
 
 ## Verification
 Unit: tests/tribe_tests.cpp `hand_bone` passes, `--nofix` (the game's only check) fails 6 checks.
-Lab: not run yet (the 0.7.16 final check holds the lab): tribe_hand_bone must PASS, tribe_hand_bone_off must FAIL
+Lab: not run then (the 0.7.16 final check holds the lab): tribe_hand_bone must PASS, tribe_hand_bone_off must FAIL
 (the planted call faults the guest), late_species must PASS again.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): tribe_hand_bone PASS in 20261120-133703, 20261121-003202, 20261122-194210, 20261123-023643; the twin tribe_hand_bone_off FAIL in 20261120-130608 (guest faults: 2); late_species PASS in the same four runs. Closed.
 
 ## History
 - 2026-11-20: opened (fix/w59-tribe, triage package E of the 0.7.16 final check).
 - 2026-11-20: code, unit test and lab test on fix/w59-tribe; lab runs pending.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

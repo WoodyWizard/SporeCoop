@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: plan
 role: guest
 versions: 0.7.15.2, rel/0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: feat/w56-late
 commits: c29e3ba4 4b9fe0de 4ce6f9de
 tests: late_species, late_species_civ, late_species_off and late_species_civ_off (twins)
@@ -54,3 +54,4 @@ dropped: the right reason); late_species_civ_off FAIL 20261119-105127.
 - 2026-11-19: opened.
 - 2026-11-19: code, tests and twins on feat/w56-late; lab pending.
 - 2026-11-19: fix/w57-tribe-keys: night run causes found (BUG-1312, choose() order), lab PASS and twin FAIL; fixed.
+- 2026-11-23: released in 0.7.16.

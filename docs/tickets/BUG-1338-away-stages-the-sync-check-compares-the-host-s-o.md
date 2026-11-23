@@ -1,16 +1,16 @@
 ---
 id: BUG-1338
 title: away_stages: the sync-check compares the host's own creature while the test makes its states report the menu, so the guest's hidden puppet is a mismatch
-status: open
+status: fixed
 kind: test
 stage: Space
 reported: 2026-11-20
 source: lab
 role: host
 versions: 0.7.16
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w59-tribe
-commits:
+commits: 9161752f
 tests: away_stages, away_stages_override_off (coop_away_stages.py)
 signature: gate sync-check: p: 1 missing on the guest (p0), while the host runs coop.hoststate mode 02CCD1D2
 docs: docs/06-testing.md#testing-away-stages-override
@@ -39,9 +39,12 @@ it finds no difference (the host's counters). Off (`SPORE_FIX_OFF=diag.override_
 the check differs (then mismatches): FAIL.
 
 ## Verification
-Lab: not run yet (the 0.7.16 final check holds the lab): away_stages must PASS with the gate clean,
+Lab: not run then (the 0.7.16 final check holds the lab): away_stages must PASS with the gate clean,
 away_stages_override_off must FAIL (the sync-check of part 2 differs). Seen in the wild: 20261119-214823 away_stages.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): away_stages PASS in 20261120-133703, 20261121-003202, 20261122-194210, 20261123-023643 with the gate clean; the twin away_stages_override_off FAIL in 20261120-130608 (the sync-check differs). Closed.
 
 ## History
 - 2026-11-20: opened (fix/w59-tribe, triage package G of the 0.7.16 final check).
 - 2026-11-20: fix and test on fix/w59-tribe; lab runs pending.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

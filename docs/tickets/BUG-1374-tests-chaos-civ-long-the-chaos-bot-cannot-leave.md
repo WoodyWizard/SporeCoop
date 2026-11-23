@@ -1,17 +1,17 @@
 ---
 id: BUG-1374
 title: Tests: chaos_civ_long: the chaos bot cannot leave a guest's new empty design editor (0.7.16 own Civ editors), no crash
-status: open
+status: fixed
 kind: test
 stage: Civ
 reported: 2026-11-20
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w61-civ
 commits: ab8a6e1e, 34cb98e5, a22b1ccf
-tests: chaos_civ_long
+tests: chaos_civ_long (tools/tests/coop_chaos.py)
 signature: FAIL the games survived the chaos / !! guest did not get back into the host world
 docs:
 related: BUG-1275, BUG-1158
@@ -44,10 +44,13 @@ The verdict rule is unchanged (the guest must get back into the host's world).
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 - FAIL (the bot stuck, before): 20261120-133703:chaos_civ_long.
-- no-fail-run: a test bot change. Open, waiting for the lab run: the replay
+- no-fail-run: a test bot change. Was waiting for the lab run: the replay
   `SPORE_LANE=3 python3 tools/tests/coop_chaos.py --fixture civ --minutes 8.0 --seed 919811266 --churn 1` (the same
   actions up to the churn) must get the guest out of its editor and PASS; chaos_civ_long must PASS.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): chaos_civ_long PASS in 20261121-003202 and 20261122-194210. Closed.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-civ): triage (no crash), the bot leaves an empty editor; no lab run (owner rule).
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

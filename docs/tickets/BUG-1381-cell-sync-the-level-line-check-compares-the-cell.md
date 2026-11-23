@@ -1,14 +1,14 @@
 ---
 id: BUG-1381
 title: cell_sync: the level-line check compares the cell's target size across a world rescale (food 60 -> 101: level 1 -> 2, the target shrinks 0.82 -> 0.49)
-status: open
+status: fixed
 kind: test
 stage: Cell
 reported: 2026-11-20
 source: lab rel/0.7.16 20261120-133703 cell_sync
 role: 
 versions: unreleased
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w61-cell
 commits: 14417063
 tests: cell_sync
@@ -39,7 +39,10 @@ instead of the fixed 3 s). The checks (grew by >10 %, the guest within 5 % of th
 ## Verification
 no-fail-run: test-only change (the comparison unit). Lab: `SPORE_DETECTOR=20 python3 tools/lab.py run cell_sync
 --lane N --retry 0 --no-build` PASS (warm or cold; its log prints both sizes and "settled True/True"). The BUG-0041 twin
-`SPORE_CELL_FIX=0` keeps failing as before (manual). Open, waiting for the lab run.
+`SPORE_CELL_FIX=0` keeps failing as before (manual). Was waiting for the lab run.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): cell_sync PASS in 20261121-003202, 20261122-194210, 20261123-023643. Closed.
 
 ## History
 - 2026-11-20: opened from the second final check of 0.7.16; fixed in the test on fix/w61-cell.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

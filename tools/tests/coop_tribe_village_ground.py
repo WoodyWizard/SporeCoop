@@ -88,6 +88,41 @@ def ground_map(con, pts):
     return [ground(con, p) for p in pts]
 
 
+def stamp_calls(con):
+    """the game's count of terrain stamp calls (Apply/Remove/Clear: `live stamp calls=` of `coop.terrain`)"""
+    m = re.search(r'live stamp calls=(\d+)', out(con, 'coop.terrain'))
+    return int(m.group(1)) if m else None
+
+
+def settled_maps(host, guest, pts, quiet=8.0, limit=240.0):
+    """both games' ground at pts, read point by point while neither game's terrain takes a stamp: a village the host's
+    game forms during play (~60 s into Tribe) stamps the ground on both games, and a map read across it compares one
+    game's ground before the village with the other's after (BUG-1440; lab 20261122-194210, 20261117-154911,
+    20261115-182010).
+    The stamp counts of both games must stand still for `quiet` s before the read and be the same after it, else the
+    map is read again; None when that never happened within `limit` s."""
+    t0 = time.time()
+    while time.time() - t0 < limit:
+        n0, since = (stamp_calls(host), stamp_calls(guest)), time.time()
+        while time.time() - since < quiet:
+            time.sleep(2)
+            n = (stamp_calls(host), stamp_calls(guest))
+            if n != n0:
+                n0, since = n, time.time()
+        if None in n0:
+            return None
+        hm, gm = [], []
+        for p in pts:
+            hm.append(ground(host, p))
+            gm.append(ground(guest, p))
+        n1 = (stamp_calls(host), stamp_calls(guest))
+        if n1 == n0:
+            return hm, gm
+        print(f'  (the terrain took stamps during the map read: host calls {n0[0]} -> {n1[0]}, guest {n0[1]} -> '
+              f'{n1[1]}: reading the map again)', flush=True)
+    return None
+
+
 def map_report(label, pts, hm, gm, lim=0.3):
     """the points where the two games' grounds differ, grouped into patches (within 40 m of each other)"""
     bad = [(p, h, g) for p, h, g in zip(pts, hm, gm) if h is not None and g is not None and abs(h - g) > lim]
@@ -130,7 +165,12 @@ def main():
         c0 = tuple(float(a0.group(i)) for i in (1, 2, 3)) if a0 else None
         if c0:
             mpts = cap_points(c0)
-            cmap = (mpts, ground_map(host, mpts), ground_map(guest, mpts))
+            maps = settled_maps(host, guest, mpts)
+            # BUG-1440: terrain that never stops taking stamps is not luck (the mod could stamp in a loop): a FAIL
+            if not ck(maps, 'both games\' terrain stood still for a Creature map read (no stamp call for 8 s and '
+                            'during the read, within 240 s)'):
+                return ck.result()
+            cmap = (mpts,) + maps
             map_report('Creature (before the change)', *cmap)
     host.call('coop.dna add 3000')
     last_kick = time.time()
@@ -212,14 +252,13 @@ def main():
             print(f'  host ground at ({spec}) before: {ground(host, q)}; ' + out(host, 'coop.tribe npc_tribe_at 2 %.2f %.2f %.2f' % q).strip(), flush=True)
             time.sleep(8)
             print(f'  guest ground there: {ground(guest, q)}', flush=True)
-    places = [('the player tribe\'s members', c)] + villages(host)
-    # and the NPC tribe spawn markers: where the host's controller forms the next villages during play (BUG-0332)
-    places += [(f'marker {k}', tuple(float(m.group(i)) for i in (1, 2, 3))) for k, m in enumerate(re.finditer(
-        r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', out(host, 'coop.tribe markers')))]
-    places = [(n, q) for n, q in places if math.dist(q, (0, 0, 0)) > 50]
     if cmap:
         mpts = cmap[0]
-        hm, gm = ground_map(host, mpts), ground_map(guest, mpts)
+        maps = settled_maps(host, guest, mpts)
+        if not ck(maps, 'both games\' terrain stood still for a Tribe map read (no stamp call for 8 s and during the '
+                        'read, within 240 s)'):
+            return ck.result()
+        hm, gm = maps
         bad = map_report('Tribe', mpts, hm, gm)
         worst_map = max((abs(hh - gg) for _, hh, gg in bad), default=0.0)
         ck(not bad, f'the guest\'s ground is the host\'s over the whole region ({len(mpts)} points within 45 deg of the '
@@ -312,6 +351,12 @@ def main():
                     print(f'    after reapply from {frm}: stamp {k} at r {h[k][3]}: host {a} guest {b}', flush=True)
                 print(f'    still differing: {left} of {min(12, len(diff))}', flush=True)
         print('  host coop.terrain (calls):\n' + '\n'.join(l for l in out(host, 'coop.terrain').splitlines() if l.startswith('call'))[:5000], flush=True)
+    # after the map: a village the host's game formed meanwhile is in the list too (BUG-0947)
+    places = [('the player tribe\'s members', c)] + villages(host)
+    # and the NPC tribe spawn markers: where the host's controller forms the next villages during play (BUG-0332)
+    places += [(f'marker {k}', tuple(float(m.group(i)) for i in (1, 2, 3))) for k, m in enumerate(re.finditer(
+        r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', out(host, 'coop.tribe markers')))]
+    places = [(n, q) for n, q in places if math.dist(q, (0, 0, 0)) > 50]
     result = {}
     for k in range(2):
         for name, at in places:

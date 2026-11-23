@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: final check 20261120-133703
 role: guest
 versions: 0.7.15.2,0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-creature-b
 commits: 14aa9dc9
 tests: evo_screens_switch, net_tests test_lead_gap
@@ -65,3 +65,4 @@ no-fail-run: lab runs pending (owner rule: no lab today); the FAIL is reproduced
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-creature-b): root cause in late_time (a path across the host's 70 s stand), fixed with drive.lead_gap; evo_screens_switch checks the copies after the caption.
 - 2026-11-21: fix/w62-core: the fix-off twin passed in lab 20261121-001418 (nothing moved over the gap); the test now moves one host animal during the stand (BUG-1396).
+- 2026-11-23: released in 0.7.16.

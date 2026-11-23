@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w59-tests
 commits: bdf8814c
 tests: lab_selftest.py mem_cases (make test, unit-lab)
@@ -47,3 +47,4 @@ detached worktree) FAILs 4 checks (the 2-game test starts while the campaign wai
 
 ## History
 - 2026-11-20: opened and fixed on fix/w59-tests.
+- 2026-11-23: released in 0.7.16.

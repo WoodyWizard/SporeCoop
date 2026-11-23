@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: found by the Lineages fork (PR #196), its BUG-9231
 role: guest
 versions: 0.7.15.2
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w56-general
 commits: 989c2748
 tests: npc_host_key
@@ -45,3 +45,4 @@ Test command `coop.creations breakremap <host hex>` (our key for that species po
 - 2026-11-19: opened.
 - 2026-11-19: fix committed on fix/w56-general (WP-F1), lab runs pending; found by the Lineages fork (PR #196), its BUG-9231.
 - 2026-11-19: fixed (fix/w57-sync): the first lab run passed, its twin failed for the right reason (run dirs above).
+- 2026-11-23: released in 0.7.16.

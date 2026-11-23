@@ -1,14 +1,14 @@
 ---
 id: BUG-1372
 title: Tests: civ_preach_far: the NPC city's retaliation ends all three forced preachers before their first conversion (flake)
-status: open
+status: fixed
 kind: test
 stage: Civ
 reported: 2026-11-20
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w61-civ
 commits: 5c29c021
 tests: civ_preach_far, civ_preach_far_off (twin)
@@ -47,9 +47,12 @@ places).
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 - FAIL (the race, before): 20261120-133703:civ_preach_far.
-- Open, waiting for the lab run: civ_preach_far must PASS (preachers alive while it waited: 3 of 3), the twin
+- Was waiting for the lab run: civ_preach_far must PASS (preachers alive while it waited: 3 of 3), the twin
   civ_preach_far_off must FAIL (slots 0 / 0, nobody converted).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): civ_preach_far PASS in 20261121-003202, 20261122-194210, 20261123-023643; the twin civ_preach_far_off FAIL in 20261121-000724 (the far city's preaching slots empty). Closed.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-civ): cause from the logs, the test keeps its preachers alive; no lab run (owner rule).
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

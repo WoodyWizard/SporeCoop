@@ -72,12 +72,29 @@ def accept_route(guest, ck):
     up = fz.wait(lambda: uifind.where(guest, ACCEPT) is not None, 10)
     if not ck(up, 'guest: the adventure mission screen is up (Decline, Accept)'):
         return
+    # BUG-1455: the control is "shown" (coop.ui where) before the screen is drawn and takes clicks (lab 20261122-194210:
+    # captain_mission.png without the screen, the click missed, the screen came after it and then blocked the rank
+    # badge's click): its place must hold for 1.5 s, and a click the screen did not take (no palette, Accept still
+    # there) is given again, up to 3 times, printed
+    p, t_same = uifind.where(guest, ACCEPT), time.time()
+    while time.time() - t_same < 1.5:
+        time.sleep(0.25)
+        q = uifind.where(guest, ACCEPT)
+        if q != p:
+            p, t_same = q, time.time()
     shot(guest, 'captain_mission.png')
-    p = uifind.where(guest, ACCEPT)
-    guest.call(f'move {p[0]} {p[1]}')
-    time.sleep(0.3)
-    guest.call(f'click {p[0]} {p[1]}')
-    ran = fz.wait(lambda: hits(guest, 'CaptainItems_Palette') > 0, 10)
+    ran = False
+    for k in range(3):
+        if p is None:
+            break
+        guest.call(f'move {p[0]} {p[1]}')
+        time.sleep(0.3)
+        guest.call(f'click {p[0]} {p[1]}')
+        ran = fz.wait(lambda: hits(guest, 'CaptainItems_Palette') > 0, 4 if k < 2 else 10)
+        if ran or play_space.captain_open(guest):
+            break
+        p = uifind.where(guest, ACCEPT)
+        print(f'  guest: the Accept click {k + 1} was not taken (Accept now at {p}): again', flush=True)
     time.sleep(2)
     shot(guest, 'captain_accepted.png')
     ck(ran, 'guest: Accept ran the captain\'s items palette (the route of the report\'s accept crash)')

@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w57-own-editors
 commits: 800a17e6 6b93ebd6 39aebbea 2cb5861c
 tests: civ_guest_editors, civ_guest_editors_off, own_editor_civdrop, own_editor_civdrop_off
@@ -48,3 +48,4 @@ fails on a changed entry or a guest key.
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: fixed on fix/w57-own-editors, lab runs above.
+- 2026-11-23: released in 0.7.16.

@@ -1,14 +1,14 @@
 ---
 id: BUG-1384
 title: cell_new_game: the guest's meat probe runs while a caption holds both games (input lock, own_locks 0010): 0/6
-status: open
+status: fixed
 kind: test
 stage: Cell
 reported: 2026-11-20
 source: lab rel/0.7.16 20261120-133703 cell_new_game
 role: 
 versions: unreleased
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w61-cell
 commits: c82df964
 tests: cell_new_game
@@ -37,7 +37,10 @@ the probe presses Enter, then the green check (1410 1048), like a player; the fi
 
 ## Verification
 no-fail-run: test-only change. Lab: `SPORE_DETECTOR=20 python3 tools/lab.py run cell_new_game --lane N --retry 0
---no-build` PASS (a probe line may show "(a caption was up: confirmed it ...)"). Open, waiting for the lab run.
+--no-build` PASS (a probe line may show "(a caption was up: confirmed it ...)"). Was waiting for the lab run.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): cell_new_game PASS in 20261122-194210 and 20261123-023643 (its FAIL in 20261121-003202 was the late stage chooser of BUG-1389). Closed.
 
 ## History
 - 2026-11-20: opened from the second final check of 0.7.16; fixed in the test on fix/w61-cell.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

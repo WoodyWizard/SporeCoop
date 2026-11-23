@@ -5660,6 +5660,16 @@ by side and the creatures in them counted.
   x3, find_partners creature_arrow, play_cell start, play_tribe start and mid, play_civ start's money). Not seen:
   BUG-0922, BUG-0938. New: BUG-0948 (the host's tag over empty grass on the guest, play_creature mid), BUG-0949 (arrow
   labels and tags over each other and over the HUD). creature_kills has no key frames.
+* Review of the 0.7.16 final check (lab 20261122-194210 on 5376d388, 80 sheets plus 35 frame pairs of the own-species
+  and editor tests the 80 left out: civ_role_row, dna_own*, own_editor_*, late_species*, civ_guest_editors,
+  civ_own_designs, species_line, tribe_species_probe, space_own_ship_key, cell_kin_species, nest_species;
+  fix/w66-frames): the own species hold on both games in every stage (guest members in Tribe, the Civ citizens of the
+  guest's city painted, the guest's vehicle and houses, the ship); new: BUG-1456 (Civ city decorations differ per game),
+  BUG-1457 (after a capture the guest's city citizens at other places on the guest), BUG-1458 (BUG-1072 again: the
+  chief in the same animation stands another way), BUG-1459 (unjudgeable frames: baby views behind the hut, an NPC offer
+  over line_stages_outfit, species_line next_session before the guest's swap). Seen again: BUG-1450 (tribe_held_item
+  after the rejoin: the host's chief labelled "Bob's chief"), BUG-1231 (Civ citizens' poses differ, e.g. lying on the
+  host and standing on the guest in line_stages_editors 09). space_captain failed without key frames.
 * Not done: Cell (no planet: the camera is the cell camera, docs/re/cell.md#cell-camera), Civ and Space (other
   cameras, other census rows).
 
@@ -10099,3 +10109,39 @@ by chance. Their tests open the window with a host knob that stands for the real
   `world.copy_own_save` off). `copy_slot_notice`: the host leaves, the guest hosts from the copy; its notification
   panel (`coop.notify` lists the visible toasts) says whose copy it is. win_tests `test_slot_own_progress` covers the
   slot rules (`win_unit.py --old-own` must FAIL it).
+## Test fixes of the fourth 0.7.16 final check (2026-11-22, fix/w65-night)
+<a id="testing-w65-night"></a>
+
+* evo_screens_switch (all variants): the host's evolution caption does not end by itself, the test's Enter ends it
+  (`confirm_captions()` in `good()`); it comes while the guest is still in its own editor or after it. `HostStand`
+  (ticked by every wait after both editors) keeps the host's caption up until the BUG-1396 move is done and 10 s more,
+  then confirms it and reads the copies 8 s after the host's game went on (BUG-1437). The move is a difference made on
+  purpose: `LAB-MARK sync-force` from the move to those reads (BUG-1438). No host animal 3-25 m away in any caption
+  stand is INCONCLUSIVE; no stand, or no guest copies of the host's near animals, stays a FAIL.
+* monitor_plant: the guest spawns its proxies 1 s after its world changed (BUG-0842); after a warm reset the list can be
+  empty; the test waits for a spawned proxy and checks that the proxies plant was issued (BUG-1439).
+* tribe_village_cadian (`--map`): the host's game forms NPC tribe 1 about 60-65 s into Tribe and its stamps land on both
+  games within 0.3 s; a map read (host's half, then guest's, ~75 s) across it compared the ground before the village
+  with the ground after. The maps are read point by point on both games after `live stamp calls=` (`coop.terrain`)
+  stood still 8 s on both, again when a count changed during the read; no still terrain in 240 s is a FAIL
+  (BUG-1440).
+* cell_kin_species: a knockout in the AI step respawns the host next to the guest; the host's place is taken before
+  that step, the way back is measured from the guest's position, a place within 2 r of the guest is replaced by one
+  `dist` away, and the kin there are sampled every 3 s for up to 45 s (BUG-1441).
+* migration_probe and the other users of coop_migration.new_nest(): CreatureGame_NestHerdFor is called only while
+  game.mode is Creature (the game function faults without a creature game: the probe crashed a guest reloading the
+  host's world, BUG-1442).
+* creature_air heals the guest with `coop.team hp` (there is no `coop.social hp`, BUG-1443); creature_aggression waits
+  for the guest's mirrors before its pick (BUG-1444).
+* civ_religion_state waits for the guest's meter too (it follows the follower map in the city's next update,
+  BUG-1445); civ_mirror_lifetime does not count a new vehicle inside the 25 m bind-by-kind radius (BUG-1446);
+  coop_mode clicks again while the host's Tribe / Civ marker is back at its start (BUG-1447); space_planner_miss prints
+  what each unanswered click hit (BUG-1448).
+* tribe_held_item: the grip check leaves out samples in which the host's member holds too (tribe.mirror_hold) and
+  checks that the host's leader is still the host's member (BUG-1449, BUG-1450).
+* defer_identity: CORRECTION (2026-11-23, BUG-1453) of the reuse hunt above: the frees 1026-1295 frames after the
+  destroy were the cinematic's end (5-8 frames after the Enter that ends it), not a late free; a block the game lets go
+  of during the cinematic is free 9-19 frames after the destroy. The hunt is 300 frames, up to 60 rounds in 9 minutes.
+* space_planet_citizens cannot show space.citizen_lead (it reads mostly standing citizens); `--case runners` (suite
+  space_planet_runners) compares only running host citizens at the guest's moment (host, guest, host dumps by serial);
+  its limits are provisional until both arms are measured (BUG-1454).

@@ -1,14 +1,14 @@
 ---
 id: BUG-1399
 title: tribe_bounce_world and five more tests: back-to-back blows on every member fell two in one tick, no game over (BUG-1337 class)
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-21
 source: final check 20261121-003202
 role: host
 versions: 0.7.7,0.7.16
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w62-saves
 commits: c0792a81
 tests: tribe_bounce_world, tribe_bounce_mirrors, tribe_bounce_goal, tribe_attack_stale, wsync_transitions, realign_tribe (coop_realign_planet.py), tribe_gameover* (coop_tribe_gameover.py, twin tribe_gameover_reload2_sameframe)
@@ -47,11 +47,14 @@ tribe_bounce_goal, tribe_attack_stale, wsync_transitions and coop_realign_planet
 loop. The checks are unchanged.
 
 ## Verification
-Open, waiting for the lab run (no lab runs today, owner rule). Natural FAIL runs of the old loop: 20261121-003202
+Was waiting for the lab run (no lab runs today, owner rule). Natural FAIL runs of the old loop: 20261121-003202
 (tribe_bounce_world), the 2026-11-04 runs above. Lab: `SPORE_DETECTOR=20 python3 tools/lab.py run tribe_bounce_world
 tribe_bounce_mirrors tribe_bounce_goal tribe_attack_stale wsync_transitions tribe_gameover_reload2
 tribe_gameover_reload2_sameframe --lane N --lane M --retry 0 --no-build`: all PASS except
 tribe_gameover_reload2_sameframe, which must FAIL (no caption: the race made sure).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): tribe_bounce_world, tribe_bounce_mirrors, tribe_bounce_goal, tribe_attack_stale, wsync_transitions, realign_tribe and tribe_gameover_reload2 PASS in 20261122-194210 and 20261123-023643; the twin tribe_gameover_reload2_sameframe FAIL in 20261122-191140 (no caption). Closed.
 
 ## History
 - 2026-11-21: opened (fix/w62-saves): not a save problem; the BUG-1337 blows as one shared method in the six tests.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

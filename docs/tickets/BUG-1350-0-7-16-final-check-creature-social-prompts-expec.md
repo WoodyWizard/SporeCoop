@@ -1,14 +1,14 @@
 ---
 id: BUG-1350
 title: 0.7.16 final check: creature_social_prompts expects the fail right after one wrong answer; a game of 2+ prompts fails only at the end of its list
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-20
 source: lab 20261120-041304
 role: guest
 versions: 0.7.16 (unreleased)
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w60-dna
 commits: 48dfc9fa
 tests: creature_social_prompts
@@ -34,8 +34,11 @@ host counts the fail or the game is gone (at most 4 + 15 s per prompt); the chec
 host counts the fail) unchanged.
 
 ## Verification
-Open, waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run creature_social_prompts --lane 2 --lane 3 --retry 0 --no-build` PASS (the log line
+Was waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run creature_social_prompts --lane 2 --lane 3 --retry 0 --no-build` PASS (the log line
 "after K answer(s) of another kind to a game of P prompt(s)", P >= 2 must pass). no-fail-run: test change only.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): creature_social_prompts PASS in 20261120-133703, 20261121-003202, 20261122-194210, 20261123-023643 (FAIL before: 20261120-041304). Closed.
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

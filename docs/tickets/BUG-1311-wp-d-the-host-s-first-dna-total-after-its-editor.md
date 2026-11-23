@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w57-dna
 commits: bbf4a90c b8821455 83a0781a 9699771d cd156c33
 tests: tools/tests/coop_dna_own.py --case host_editor (dna_own_host_editor, twin dna_own_host_editor_off)
@@ -54,3 +54,4 @@ dna_own_host_editor_off.
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: fix/w57-dna: fixed, lab runs above.
+- 2026-11-23: released in 0.7.16.

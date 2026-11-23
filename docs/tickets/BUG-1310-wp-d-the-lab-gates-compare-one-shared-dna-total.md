@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w57-dna
 commits: bbf4a90c b8821455 93f3a585
 tests: tools/tests/gates_selftest.py, tools/tests/tools_selftest.py, tests/net_tests.cpp (test_diag_own_dna), tools/tests/coop_dna_own.py (dna_own_gates_off)
@@ -80,3 +80,4 @@ Switch `diag.own_dna`; twin `dna_own_gates_off` (SPORE_FIX_OFF=diag.own_dna coop
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: fix/w57-dna: gates teach the own-wallet model; lab runs above; fixed.
+- 2026-11-23: released in 0.7.16.

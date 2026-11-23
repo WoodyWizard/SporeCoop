@@ -1,14 +1,14 @@
 ---
 id: BUG-1344
 title: civ_guest_creature: the fixture's creature shift leaves host creatures 40-45 m from the place (shift radius 40, check 45)
-status: open
+status: fixed
 kind: test
 stage: Civ
 reported: 2026-11-20
 source: lab
 role: 
 versions: rel/0.7.16
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w60-tribe
 commits: 200633bf
 tests: civ_guest_creature
@@ -35,9 +35,12 @@ away; the check (none within 45 m) is unchanged and now holds by construction. C
 
 ## Verification
 no-fail-run: a test setup fix (the FAIL was the precondition: lab 20261120-041304, 20261113-040703).
-Open, waiting for the lab run: civ_guest_creature must PASS (the nearest host creature printed over 45 m); `--off`
+Was waiting for the lab run: civ_guest_creature must PASS (the nearest host creature printed over 45 m); `--off`
 (coop.fix civ.creature_target off, run by hand) must still FAIL on the rejected orders.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): civ_guest_creature PASS in 20261120-133703, 20261121-003202, 20261122-194210, 20261123-023643. Closed.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: cause and fix on fix/w60-tribe (no lab today, owner rule); lab run pending.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

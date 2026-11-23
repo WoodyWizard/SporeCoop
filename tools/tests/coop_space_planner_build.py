@@ -123,9 +123,17 @@ def planner_buy(ck, buyer, bi, who, miss=False):
         time.sleep(0.8)
         buyer.call(f'click {int(x)} {int(y)}')
         time.sleep(6)
-        if 'city=00000000' not in buyer.call('coop.civ planner')['out']:
+        pl = buyer.call('coop.civ planner')['out']
+        if 'city=00000000' not in pl:
             opened = True
             break
+        # BUG-1448: the click did not open it with the ship steady over the city (lab 20261122-194210, cause not found):
+        # what the click hit, for the next failure (diagnostics only)
+        st = buyer.call('coop.status')['out']
+        busy = next((l for l in st.splitlines() if l.startswith('busy:')), 'busy: ?')
+        print(f'  {who}: click {attempt + 1} at ({int(x)} {int(y)}) on screen {on}: no planner '
+              f'({pl.strip().splitlines()[0][:100] if pl.strip() else "-"}; {busy})', flush=True)
+        shot(buyer, f'space_planner_try{attempt + 1}.png')
     shot(buyer, 'space_planner_open.png')
     ck(opened, f'the {who} opened the city planner by a click on the city')
     free, busy = [], []

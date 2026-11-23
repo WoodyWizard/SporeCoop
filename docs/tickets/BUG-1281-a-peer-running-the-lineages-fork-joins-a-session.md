@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: PR #196 review
 role: 
 versions: 0.7.15.2
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w56-general
 commits: e364b36b
 tests: unit (net_tests test_fork_refused)
@@ -52,3 +52,4 @@ Test seams Session::test_hello / test_welcome send recorded bytes. Docs: docs/04
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: fixed on fix/w56-general (WP-F1).
+- 2026-11-23: released in 0.7.16.

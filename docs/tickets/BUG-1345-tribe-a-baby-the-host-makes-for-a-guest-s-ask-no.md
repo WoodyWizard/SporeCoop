@@ -1,14 +1,14 @@
 ---
 id: BUG-1345
 title: Tribe: a baby the host makes for a guest's ask (no relayed hut effect) is born in the tribe's species and keeps it until grown up
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-20
 source: lab
 role: guest
 versions: rel/0.7.16
-fixed_in:
+fixed_in: 0.7.16
 branch: fix/w60-tribe
 commits: cbd9f035
 tests: tribe_birth_ask, tribe_birth_ask_off (twin), tribe_kid_species
@@ -52,9 +52,12 @@ must FAIL at "host: the new member is of the guest's species when it is first se
 
 ## Verification
 FAIL (before the fix, the natural path): rel/0.7.16 out/lab/20261120-041304 tribe_kid_species.
-Open, waiting for the lab run (2026-11-20 night): tribe_birth_ask must PASS (host `made=1`), tribe_birth_ask_off must
+Was waiting for the lab run (2026-11-20 night): tribe_birth_ask must PASS (host `made=1`), tribe_birth_ask_off must
 FAIL, tribe_kid_species and tribe_birth_species must PASS.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): tribe_birth_ask, tribe_kid_species and tribe_birth_species PASS in 20261120-133703, 20261121-003202, 20261122-194210, 20261123-023643; the twin tribe_birth_ask_off FAIL in 20261120-130608 (host: the new member is of the tribe's species when first seen). Closed.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: cause and fix on fix/w60-tribe (no lab today, owner rule); lab run pending.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.
