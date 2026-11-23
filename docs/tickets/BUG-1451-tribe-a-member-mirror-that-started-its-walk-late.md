@@ -10,7 +10,7 @@ role:
 versions: 0.7.16
 fixed_in:
 branch: fix/w65-night
-commits:
+commits: fdea37ed
 tests: tools/tests/coop_body_trail.py (body_trail_tribe_player)
 signature:
 docs: docs/re/tribe.md#tribe-smooth-catch
