@@ -102,6 +102,8 @@ bool last_move(int& x, int& y)
     return true;
 }
 
+void forget_move() { g_moved = false; }
+
 std::u16string take_chars(std::u16string* after_click)
 {
     if (after_click)

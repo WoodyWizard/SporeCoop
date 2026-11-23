@@ -56,6 +56,8 @@ void test_tick();
 // tests (BUG-0280): the local Tribe / Civ pointer stays at `p` (as if the mouse pointed there);
 // pin=false: the mouse again
 void test_pin_marker(bool pin, const net::Vec3& p);
+// tests (BUG-1457): unpinned, at (0 0 0), the last mouse move over the game window forgotten
+void test_unplace_marker();
 // Tribe / Civ: the pointer marker `e` of adapter `a` (own or a partner's) moved in the last `within` s
 // (false for every other adapter); the sync-check leaves a moving pointer out (BUG-0380)
 bool rts_marker_moving(const Adapter* a, void* e, double within);

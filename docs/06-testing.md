@@ -10145,3 +10145,18 @@ by chance. Their tests open the window with a host knob that stands for the real
 * space_planet_citizens cannot show space.citizen_lead (it reads mostly standing citizens); `--case runners` (suite
   space_planet_runners) compares only running host citizens at the guest's moment (host, guest, host dumps by serial);
   its limits are provisional until both arms are measured (BUG-1454).
+
+## A lab game's Tribe / Civ pointer may be unplaced (2026-11-23, fix/w67-citizens)
+<a id="testing-pointer-unplaced"></a>
+
+* A Tribe / Civ player's position is the planet point under the last mouse move over its game window; the lab's
+  games get no mouse move now and then, and the position stays (0 0 0) for a whole test (the frame manifests'
+  `games.<role>.pos`, the key frame sheets' "Civ at (0.0 0.0 0.0)"). The host then centres what it sends that guest
+  around the host's capital (worldobj `citizen`, BUG-1457, docs/re/civ.md#civ-citizens-pointer). Since
+  `civ.pointer_view` a Civ game without a mouse move is at the point under its window's centre.
+* `coop.npc marker unplace` (tests): the pointer at (0 0 0) and the last mouse move forgotten, as such a game has it.
+  `civ_own_species` does it for the guest at the start and checks after the capture that at most 2 of the host's
+  citizens of the guest's city have no guest citizen within 15 m and at most 2 have no own copy (the guest's citizen
+  bound to it, `coop.wobj list citizen`) within 15 m, in one sample of 20 s (the position rule alone: a crowd in the
+  plaza paired by chance, 3 of 19 unpaired in a twin run). Twin `civ_own_species_pointer_off`
+  (`SPORE_FIX_OFF=civ.pointer_view`): FAILs (7-14 of 19 unpaired, 19 of 19 without their copy).

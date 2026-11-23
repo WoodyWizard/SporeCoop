@@ -1543,6 +1543,23 @@ void test_pin_marker(bool pin, const net::Vec3& p)
     if (pin)
         g_local_marker.pos = p;
 }
+// tests (BUG-1457): the pointer as a game has it before the first mouse move over its window (at the planet's centre)
+void test_unplace_marker()
+{
+    g_marker_pinned = false;
+    g_local_marker.pos = {};
+    mouse::forget_move();
+}
+
+// BUG-1457: in Civ a game's pointer is the planet point under the last mouse move over its window (BUG-0713); a game
+// that had none (the lab's guest now and then: no WM_MOUSEMOVE ever reached its window) stayed at (0 0 0), the host
+// took the host's capital for that guest's place and sent it only the city citizens there (worldobj `citizen`, 200 m,
+// BUG-0476): the guest's camera at another city (its captured one, 430 m off) saw its own citizens walk elsewhere (12
+// of 19 without a partner within 15 m, civ_own_species lab 20261122-194210). On: until the first mouse move, the point
+// under the centre of the game window (where its camera looks). Off: (0 0 0) until the mouse moves (0.7.16).
+static bool g_civ_pointer_view_fix = true;
+COOP_FIX("civ.pointer_view", "BUG-1457", g_civ_pointer_view_fix,
+         "civ: before the first mouse move over the game, a player is where its camera looks (the host sends the citizens of the city it looks at)");
 
 static void* noun_manager()
 {
@@ -1550,9 +1567,11 @@ static void* noun_manager()
     return get ? skg::cdecl_call<void*>(get) : nullptr;
 }
 
-// a point on the planet surface of the player's community (sets the ray-cast sphere radius)
-static bool rts_anchor(net::Vec3& p)
+// a point on the planet surface of the player's community (sets the ray-cast sphere radius); *is_civ: it is a Civ city
+static bool rts_anchor(net::Vec3& p, bool* is_civ = nullptr)
 {
+    if (is_civ)
+        *is_civ = false;
     void* nm = noun_manager();
     if (!nm)
         return false;
@@ -1570,6 +1589,8 @@ static bool rts_anchor(net::Vec3& p)
         if (b && e > b && skg::readable(b, 4) && *b && skg::readable(*b, 0x130)) {
             auto v = skg::field<skg::Vector3>(*b, 0x124);
             p = {v.x, v.y, v.z};
+            if (is_civ)
+                *is_civ = true;
             return drive::speed(p) > 1;
         }
     }
@@ -1600,7 +1621,8 @@ static void* rts_local()
 static bool mouse_on_planet(net::Vec3& out)
 {
     net::Vec3 anchor;
-    if (!rts_anchor(anchor))
+    bool civ = false;
+    if (!rts_anchor(anchor, &civ))
         return false;
     HWND w = (HWND)g_host_for_modes->game_window();
     POINT pt;
@@ -1609,8 +1631,15 @@ static bool mouse_on_planet(net::Vec3& out)
     int mx = 0, my = 0;
     if (mouse::g_window_input) {
         mouse::install(w);
-        if (!w || !mouse::last_move(mx, my))
+        if (!w)
             return false;
+        if (!mouse::last_move(mx, my)) {
+            RECT rc; // BUG-1457 (civ.pointer_view): no move yet: the centre of the window, where the camera looks
+            if (!civ || !g_civ_pointer_view_fix || !GetClientRect(w, &rc) || rc.right <= 0 || rc.bottom <= 0)
+                return false;
+            mx = rc.right / 2;
+            my = rc.bottom / 2;
+        }
         pt = {mx, my};
     } else if (!w || !GetCursorPos(&pt) || !ScreenToClient(w, &pt))
         return false;

@@ -519,6 +519,11 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         }
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "marker") && !strcmp(argv[2], "unplace")) { // tests (BUG-1457)
+        modes::test_unplace_marker();
+        SAY("pointer unplaced (0 0 0), the last mouse move forgotten");
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "marker")) { // tests (BUG-0280): pin the Tribe / Civ pointer (x y z | off)
         bool pin = argc > 4;
         net::Vec3 p{};
