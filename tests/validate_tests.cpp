@@ -1100,14 +1100,14 @@ static void test_model_paint_runs()
 }
 
 // CORE-8 (BUG-1504): a base layer written byte by byte whose top byte a run repeats into the coat and detail (`19 55 77
-// 00 FE 07`: base 0x00775519, coat and detail 0) is not patchable: a substitute's top byte would be repeated by the run
+// 00 FE 08`: base 0x00775519, coat and detail 0) is not patchable: a substitute's top byte would be repeated by the run
 static void test_model_paint_run_after()
 {
     printf("paint: a layer followed by a run is not patched in place (BUG-1504)\n");
     std::vector<uint8_t> m;
     for (int i = 0; i < 26; i++)
         m.push_back((uint8_t)(0x10 + i));
-    m.insert(m.end(), {0x19, 0x55, 0x77, 0x00, 0xFE, 0x07}); // base 00775519, then 7 more 00: coat 0, detail 0
+    m.insert(m.end(), {0x19, 0x55, 0x77, 0x00, 0xFE, 0x08}); // base 00775519, then 8 more 00: coat 0, detail 0
     for (int i = 0; i < 8; i++)
         m.push_back((uint8_t)(0x40 + i));
     uint32_t eff[3] = {};
