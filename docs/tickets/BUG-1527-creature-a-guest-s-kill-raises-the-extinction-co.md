@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.15.5
 fixed_in:
 branch: fix/w82-creature
-commits: 2649938f, 9a4c9bc3
+commits: 2649938f, 9a4c9bc3, fdf81c3f
 tests: tools/tests/coop_creature_solo_kills.py (creature_solo_kills, twin creature_solo_kills_off), tests/npc_tests.cpp (test_social_logic)
 signature:
 docs: docs/re/creature.md#creature-meter-hold, docs/04-netcode.md#netcode-social-solo
