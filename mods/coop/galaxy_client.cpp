@@ -627,8 +627,18 @@ static void on_control(net::Reader& r)
     }
 }
 
+// BUG-9354: the crossing's ARRIVE was sent once per game session: the flag was reset only by MOVED (a party moving on),
+// so a second stage start (a start crossing comes by ROLE) never arrived as the planet's next era. Reset with the
+// planet's other steps (leaving, a lost server, MOVED). Off: as before
+static bool g_arrive_reset = true;
+COOP_FIX("galaxy.arrive_reset", "BUG-9354", g_arrive_reset, "galaxy: each stage start's crossing arrives as the planet's next era");
+
 static void reset_planet_steps()
 {
+    if (g_arrive_reset) {
+        g_arrive_sent = false;
+        g_arrive_ready_since = 0;
+    }
     g_waiting_host = false;
     g_pending_join.clear();
     g_hstep = kNoHost;
