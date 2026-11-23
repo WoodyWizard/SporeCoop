@@ -59,6 +59,8 @@ game addresses.
   tribe no longer makes the guest's game fault when its way is blocked. (BUG-1460)
 - Tribe: on a laggy connection a guest's copy of a tribe member that started to walk late catches up with the host's
   member again instead of trailing it by a few metres for a second. (BUG-1451)
+- Tribe: the host's chief (the tribe's leader with the staff) no longer becomes a guest's member when a guest rejoins
+  or joins with no members of its own. (BUG-1450)
 
 ## [0.7.16] - 2026-11-23
 
