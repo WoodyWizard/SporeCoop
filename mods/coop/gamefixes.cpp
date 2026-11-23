@@ -1948,6 +1948,22 @@ static int c_menuhover(void*, int argc, const char* const* argv, SkOut* out)
     if (argc >= 2 && !strcmp(argv[1], "off"))
         g_menu_hover_arm = -1;
     MenuPlanets m = menu_planets(menu_planet_set());
+    if (argc >= 2 && !strcmp(argv[1], "list")) { // BUG-1434: the menu's planet entries (docs/re/space.md#space-lineages-menu-card)
+        for (size_t i = 0; i < m.count(); i++) {
+            uint8_t* e = m.begin + i * 0xBC;
+            if (!readable(e, 0xBC))
+                continue;
+            std::string name; // +0x00 the planet's name, an eastl::wstring {begin, end, capacity}
+            const char16_t* nb = at<const char16_t*>(e, 0);
+            const char16_t* ne = at<const char16_t*>(e, 4);
+            if (nb && ne > nb && ne - nb < 64 && readable(nb, (size_t)(ne - nb) * 2))
+                for (const char16_t* c = nb; c < ne; c++)
+                    name += *c < 0x80 ? (char)*c : '?';
+            snprintf(b, sizeof b, "planet %u name='%s' saved=%u shown=%u state=%u tech=%u\n", (unsigned)i, name.c_str(),
+                     (unsigned)at<uint8_t>(e, 0xAC), (unsigned)at<uint8_t>(e, 0xAD), at<uint32_t>(e, 0x8C), at<uint32_t>(e, 0xA8));
+            H->out_printf(out, "%s", b);
+        }
+    }
     int panels = 0;
     for (size_t i = 0; i < m.count(); i++)
         panels += m.entry(m.begin + i * 0xBC);
@@ -2197,7 +2213,7 @@ void init(const SkHost* host, SkMod* mod)
     if (!menu)
         g_menu_rebuild_orig = nullptr;
     H->log(M, SK_INFO, "game fixes: galaxy menu rollover guard %s", menu ? "on" : "off");
-    H->command_add(M, "coop.menuhover", "coop.menuhover [arm <i> | off] - the galaxy menu's planets and its rollover; tests: the next rebuild puts the mouse on planet i first (BUG-0676)",
+    H->command_add(M, "coop.menuhover", "coop.menuhover [arm <i> | off | list] - the galaxy menu's planets and its rollover; tests: the next rebuild puts the mouse on planet i first (BUG-0676); list: each entry's name, has-a-save, shown, save state, tech level (BUG-1434)",
                    c_menuhover, nullptr, SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.staleref", "coop.staleref on | off | [creature] - RE / tests (BUG-0926): pointers into the creature destroyed last (or the one at that address), by where they sit",
                    c_staleref, nullptr, SK_CMD_MAIN_THREAD);

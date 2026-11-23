@@ -2221,6 +2221,22 @@ void init_ui()
         return g_offer_editor && !g_vote.active ? std::max(1, (int)(g_offer_until - H->time_seconds())) : 0;
     };
     a.share_state = [] { return !(g_adapter && g_local) ? 1 : g_sess.players().size() > 1 ? 0 : 2; };
+    a.resume = [](std::string& planet) { // BUG-1434: continue the co-op world played last (world.continue_coop)
+        if (g_sess.role() != net::Role::Host || game::mode_id() != modes::kMenu || world::load_queued())
+            return false;
+        static double next; // (the window asks every frame: the Games folder is read once a second)
+        static bool have;
+        static std::string last;
+        double now = H->time_seconds();
+        if (now >= next) {
+            next = now + 1.0;
+            std::string slot, host;
+            have = world::last_coop_world(slot, host, last);
+        }
+        planet = last;
+        return have;
+    };
+    a.resume_do = [](std::string& said) { return world::continue_coop(said); };
     a.say = [](const std::string& t) {
         if (support::chat_command(t)) // "/bug <text>" (docs/REPORTING.md#reporting-support)
             return;

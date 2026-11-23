@@ -402,7 +402,12 @@ void copy_notice_tick()
         return;
     told = key;
     std::string text;
-    if (!stage)
+    std::string cs, ch, cp;
+    if (!stage && world::copy_old_planets() == 0) // BUG-1434 (0.7.17): a share of one planet, no old games in it
+        text = "This galaxy (" + slot + ") is your copy of " + host + "'s world: " + planet + " is the world you played together" +
+               (world::last_coop_world(cs, ch, cp) ? " (Continue in the co-op window loads it); " : "; ") + host +
+               "'s own save is on " + host + "'s PC";
+    else if (!stage)
         text = "This galaxy (" + slot + ") is your copy of " + host + "'s world, made for the planet " + planet +
                ". Its other planets are " + host + "'s older games; " + host + "'s own save is on " + host + "'s PC";
     else if (cur == planet)

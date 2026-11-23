@@ -213,6 +213,21 @@ static int c_menuslot(void*, int argc, const char* const* argv, SkOut* out)
     return open ? 0 : 1;
 }
 
+// coop.continue [go] (BUG-1434): the co-op world played last (what the co-op window's Continue loads); `go` loads it from
+// the galaxy menu as the button does
+static int c_continue(void*, int argc, const char* const* argv, SkOut* out)
+{
+    std::string slot, host, planet, said;
+    if (argc < 2 || strcmp(argv[1], "go") != 0) {
+        bool have = last_coop_world(slot, host, planet);
+        H->out_printf(out, "%s\n", have ? ("continue: " + planet + " in " + slot + " (" + host + "'s world)").c_str() : "continue: none");
+        return have ? 0 : 1;
+    }
+    bool ok = continue_coop(said);
+    H->out_printf(out, "%s\n", said.c_str());
+    return ok ? 0 : 1;
+}
+
 void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)> feed)
 {
     H = host;
@@ -227,6 +242,8 @@ void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)
                    c_menuslot, nullptr, SK_CMD_OUTSIDE_FRAME);
     H->command_add(M, "coop.menuintro", "coop.menuintro - tests: in the galaxy menu, the start-up video's end message (the menu plays its "
                    "intro and shows its main menu panel; BUG-1254, BUG-1260)", c_menuintro, nullptr, SK_CMD_OUTSIDE_FRAME);
+    H->command_add(M, "coop.continue", "coop.continue [go] - the co-op world played last, the co-op window's Continue (BUG-1434); "
+                   "go: load it from the galaxy menu", c_continue, nullptr, SK_CMD_MAIN_THREAD);
     install_intro_hook(); // BUG-0626
     install_save_hook();  // BUG-1413
 }
@@ -1581,8 +1598,25 @@ static struct SlotWatch {
     slotfs::Marker m;
     uint64_t base = 0; // the newest planet file write seen while a guest or at the first sight
     double next = 0;
+    int old_planets = 0; // planet files of the copy other than its marker's planet (0 in a share of one planet)
 } g_sw;
 static unsigned g_own_marks; // tests: copies marked as the player's own this run
+
+// the "<name>.spo" files of a folder (not snapshot.spo)
+static std::vector<std::string> planet_files(const std::wstring& dir)
+{
+    std::vector<std::string> out;
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW((dir + L"\\*.spo").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        return out;
+    do {
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && _wcsicmp(fd.cFileName, L"snapshot.spo") != 0)
+            out.push_back(narrow(fd.cFileName));
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+    return out;
+}
 
 static uint64_t newest_planet_write(const std::wstring& dir)
 {
@@ -1608,6 +1642,8 @@ void slot_tick(bool guest)
     std::wstring db = current_db_dir(false);
     if (db != g_sw.slot) {
         g_sw = SlotWatch{db, db.empty() ? slotfs::Marker{} : slotfs::marker(db), db.empty() ? 0 : newest_planet_write(db), now + 1.0};
+        if (g_sw.m.coop)
+            g_sw.old_planets = share_logic::other_planets(planet_files(db), g_sw.m.planet);
         return;
     }
     if (!g_sw.m.coop || g_sw.m.own || !slotfs::g_own_fix)
@@ -1641,6 +1677,82 @@ bool copy_origin(std::string& slot, std::string& host, std::string& planet, bool
     host = g_sw.m.host;
     planet = g_sw.m.planet;
     own = g_sw.m.own;
+    return true;
+}
+
+int copy_old_planets() { return g_sw.m.coop ? g_sw.old_planets : 0; }
+
+// BUG-1434 (0.7.17): "continue the last co-op world". After a role swap the new host's galaxy menu showed its copy of
+// the first host's galaxy and it started an old planet there. A host without a game (the galaxy menu) gets a Continue
+// button in the co-op window for the co-op world it played last: the copy the save database points to when it is one
+// and holds its planet, else the co-op copy (sporecoop.txt) whose planet file was written last. Off
+// (`coop.fix world.continue_coop off`): no such button (0.7.16.1).
+static bool g_continue_fix = true;
+COOP_FIX("world.continue_coop", "BUG-1434", g_continue_fix, "world: a host in the galaxy menu can continue the co-op world it played last (its copy of that world) from the co-op window");
+static unsigned g_continues; // tests: continue loads started
+
+bool last_coop_world(std::string& slot_name, std::string& host, std::string& planet)
+{
+    if (!g_continue_fix)
+        return false;
+    std::wstring games = games_dir(), best;
+    uint64_t bt = 0;
+    slotfs::Marker bm;
+    auto consider = [&](const std::wstring& dir, bool prefer) {
+        slotfs::Marker m = slotfs::marker(dir);
+        if (!m.coop || m.planet.empty())
+            return;
+        WIN32_FILE_ATTRIBUTE_DATA a;
+        if (!GetFileAttributesExW((dir + L"\\" + widen(m.planet + ".spo")).c_str(), GetFileExInfoStandard, &a))
+            return;
+        uint64_t t = prefer ? UINT64_MAX : ((uint64_t)a.ftLastWriteTime.dwHighDateTime << 32) | a.ftLastWriteTime.dwLowDateTime;
+        if (best.empty() || t > bt) {
+            best = dir;
+            bt = t;
+            bm = m;
+        }
+    };
+    std::wstring db = current_db_dir(false);
+    if (!db.empty())
+        consider(db, true);
+    if (best.empty()) {
+        WIN32_FIND_DATAW fd;
+        HANDLE h = FindFirstFileW((games + L"\\Game*").c_str(), &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            do
+                if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                    consider(games + L"\\" + fd.cFileName, false);
+            while (FindNextFileW(h, &fd));
+            FindClose(h);
+        }
+    }
+    if (best.empty())
+        return false;
+    slot_name = narrow(best.substr(best.find_last_of(L'\\') + 1));
+    host = bm.host;
+    planet = bm.planet;
+    return true;
+}
+
+bool continue_coop(std::string& said)
+{
+    std::string slot, host, planet, err;
+    if (!last_coop_world(slot, host, planet)) {
+        said = g_continue_fix ? "no co-op world to continue" : "continue is off (world.continue_coop)";
+        return false;
+    }
+    if (game::mode_id() != modes::kMenu) {
+        said = "continue works from the galaxy menu";
+        return false;
+    }
+    if (!load_local(slot, planet, err)) {
+        said = err;
+        return false;
+    }
+    g_continues++;
+    H->log(M, SK_INFO, "world: continuing the co-op world %s (%s's world) from %s (BUG-1434)", planet.c_str(), host.c_str(),
+           slot.c_str());
+    said = "continuing " + planet + " from " + slot + " (" + host + "'s world)";
     return true;
 }
 
@@ -2331,7 +2443,14 @@ std::string status()
     s += b;
     if (g_sw.m.coop) // BUG-1434: the slot the save database points to is a co-op copy
         s += "slot " + narrow(g_sw.slot) + ": a copy of " + g_sw.m.host + "'s world, made for " + g_sw.m.planet +
-             (g_sw.m.own ? ", your own save" : "") + " (own marks " + std::to_string(g_own_marks) + ")\n";
+             (g_sw.m.own ? ", your own save" : "") + " (own marks " + std::to_string(g_own_marks) + "), old planets " +
+             std::to_string(g_sw.old_planets) + "\n";
+    {
+        std::string cs, ch, cp;
+        s += last_coop_world(cs, ch, cp) ? "continue: " + cp + " in " + cs + " (" + ch + "'s world), loads " +
+                                               std::to_string(g_continues) + "\n"
+                                         : "continue: none (loads " + std::to_string(g_continues) + ")\n";
+    }
     if (g_in.active) {
         snprintf(b, sizeof b, "receiving world: %u/%u bytes\n", g_in.received, g_in.offer.total_size);
         s += b;

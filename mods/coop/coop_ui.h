@@ -54,6 +54,10 @@ struct Api {
     // BUG-0597: what "Send my world" would do now: 0 send it, 1 no world loaded (a menu: the world goes
     // to everyone once the host plays), 2 nobody has joined
     std::function<int()> share_state;
+    // BUG-1434 (0.7.17): a host without a game in the galaxy menu may continue the co-op world it played last: its
+    // planet's name (false: none, then "Send my world" stays greyed out); resume_do loads it, `said` for the status
+    std::function<bool(std::string& planet)> resume;
+    std::function<bool(std::string& said)> resume_do;
     // own creation of the current stage: kind 0 creature / 1 cell / 2 ship, its name ("" = the
     // world's own), how many own creations of that kind exist; false = not shown. cycle: -1 / +1
     std::function<bool(int& kind, std::string& name, int& own)> creation;
