@@ -10177,3 +10177,35 @@ by chance. Their tests open the window with a host knob that stands for the real
   (creature.avatar_bhv_anims off, BUG-1244): the FAIL halves of their tickets.
 * npc_nest_backoff (BUG-1530): its preconditions (NPCs at a nest, the roar backs them off, one inside the host's mound,
   on the guest's screen) end the test INCONCLUSIVE, not FAIL; only the drawn-inside and the 4 m follow checks fail it.
+
+## Tribe audit fixes of 0.7.17 WP-B1 (2026-11-23, fix/w79-tribe)
+<a id="testing-tribe-audit-wp-b1"></a>
+
+Each test has its twin (`<name>_off`, SPORE_FIX_OFF=<switch>, suite `twin`): the twin must FAIL, the test PASS.
+`coop.tribe` prints `tribe audit 0.7.17: ...` and `save_took: ...` (the counters the tests print).
+* `tribe_fruit_empty_tree` (coop_tribe_fruit_order.py --empty-trees, tribe, warm, ~3 min, BUG-1494 / TR-8): after the
+  host loses its fruit near the guest's one, `coop.tribe untree <x y z> 12.5` (host, test hook) sets cTreeData +0x48
+  (the fruit left) to 0 on every tree within 12.5 m; the guest's gather order must not go to one of them (the host's
+  last order line and the member's order record, `coop.tribe ai`). No tree there: INCONCLUSIVE. Twin
+  SPORE_FIX_OFF=tribe.tree_mask.
+* `tribe_air_release` (coop_tribe_air_release.py, tribe, warm, ~3 min, BUG-1493 / TR-7): the host holds a member 12 m
+  up for 30 s (`coop.tribe hang`), the guest takes no tribe state (`coop.tribe statehold 1`); 7 s later the guest's
+  mirror is under 2 m over the guest's ground, and up again within 6 s of `statehold 0`. Twin
+  SPORE_FIX_OFF=tribe.air_release (it hangs at 12 m). The host-away half (local_play) shares the release, unit test only.
+* `tribe_gameover_elsewhere` (coop_tribe_gameover_elsewhere.py, ~6 min, not warm: the guest loads Game9/Otherworld as
+  tribe_other_world does, BUG-1495 / TR-9): the host knocks out its tribe until its game-over caption; for 10 s the
+  guest's `busy:` has no `paused`. Twin SPORE_FIX_OFF=tribe.elsewhere_anims. The music kinds: unit test only (a
+  guest's own trees play the same theme sounds in its own world: the audio list cannot tell them apart).
+* `tribe_theme_end` (coop_tribe_theme_end.py, tribe, warm, ~3 min, BUG-1496 / TR-11): the host's members fight, the
+  guest's `coop.audio list` has a theme play (caller 0xBC2414) still playing; the guest leaves (`coop.leave`); within
+  4 s each of those tracks got the game's stop command. Twin SPORE_FIX_OFF=tribe.theme_end. A twin that passes means
+  the themes end by themselves: then the ticket's session-end half is closed as not reachable.
+* `tribe_away_goal` (coop_tribe_away_conquest.py --goal, tribe, warm, ~9 min, BUG-1492 / TR-5): BUG-0879's away
+  conquest, then the host's goal progress (`coop.wsync dump tribe_goal`) one village above the save's within 30 s.
+  Twin SPORE_FIX_OFF=tribe.away_goal.
+* `tribe_save_took` (coop_tribe_save_took.py, tribe, warm, ~3 min, BUG-1522): the host makes 3 members (the guest
+  spawns mirrors: only spawned mirrors leave a save), the guest arms `coop.tribe savekill on` (its next save's end first
+  removes one taken mirror as guest_state's sweep does, and the host's states skip that member on the guest from then
+  on, else the next snapshot binds the orphan again) and saves; `coop.tribe tribelists` (members / unlisted per tribe,
+  orphans: player tribe members no mirror is bound to) must show unlisted=0 and no new orphan. Twin
+  SPORE_FIX_OFF=tribe.save_took_listed (unsafe: the removal refused, the mirror put back as an orphan).
