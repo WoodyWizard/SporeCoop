@@ -1791,3 +1791,22 @@ ban reaches the galaxy's players without a mod release.
 * ✔ In game (TITAN): switch off nothing moved; on, the banned creation moved at once and the kept copy applied at the
   next start; a banned player's creature was not stored. Not run: a refused get, the MSI.
 
+## Starting the Space stage from a planet's Civ era (5R A, 2026-11-23, feat/lineages-alpha)
+<a id="server-space-start"></a>
+
+BUG-9346, switch `galaxy.space_start`. After #server-civ-start: a planet whose latest era is Civ offers its Space stage
+as new to a player who reached Space in their own Spore.
+* The press makes the player a start crossing from the Civ era's stored world. Hosted, the game ends Civ as a nation's
+  surrender would: the planet's cities still to come are founded, then every city of another nation joins the player
+  civ (docs/re/civ.md#civ-stage-end, the instant path). Spore then shows "Global domination is yours!", the Advance to
+  Space button, History, the spacecraft editor and the Space stage; the crossing arrives as the planet's Space era.
+* ✔ In game (TITAN, Abber): images/bug9346_space_new.png, bug9346_domination.png, bug9346_history.png,
+  bug9346_ship_editor.png, bug9346_space.png, bug9346_space_ship.png; switch off: images/bug9346_off.png.
+* Open: the Space era is stored only once the ship is in a solar system (Spore saves Space only there): BUG-9348. Not
+  run: a party, the MSI.
+* ? Design question for later (decisions 2H-2K): what a planet's "Space era" is once its players fly off; today it is
+  the world of the players who started Space there.
+
+Social Menu, 2026-11-23 (BUG-9347, switch `ui.menu_beside_social`): a player's right-click menu from the Social Menu
+opens beside the panel (it opened over or under it). Pictures of the Social Menu for sharing: images/social_share/.
+

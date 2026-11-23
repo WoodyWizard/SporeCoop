@@ -2885,3 +2885,14 @@ docs/06-testing.md#testing-reload-spend-sw-price).
 * (code, BUG-9317 `civ.global_sw_party_price`) h_SwCost: for types 2 and 8 of a party nation, a city of any party nation
   does not count; the price is the game's unit x max(1, the cities hit). The tooltip, the affordable check and the charge
   follow. Live: host 48000 -> 24000 (2 outsider cities), seat 4 48000 -> 12000 (1). Type 5 is unchanged (it hits no city).
+
+## The end of Civ asked from the mod (2026-11-23, feat/lineages-alpha)
+<a id="civ-stage-end-asked"></a>
+
+BUG-9346 (a galaxy start crossing), runtime on TITAN (Abber, the test galaxy):
+* ✔ SpawnNextCity(ex, 1, 0) once a second until cCivExpansion +0xB0 (sites left) is 0 founded 6 cities; then
+  Capture(player pol, the player city's specialty +0x540, 1, 0, 1) on each other nation's city, one a second (9),
+  ended the stage through the game's own check (#civ-stage-end, the instant path): "Congratulations! Global domination
+  is yours!", the Advance to Space button (bottom right, 985,750 at 1024x768), History, the spacecraft editor
+  (0x96B24187), Space. No capture cinematic, no specialty box.
+
