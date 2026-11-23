@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits: 9188054a
+commits: a8f9306c, 9188054a
 tests: tools/qa_win (manual, 2026-11-23): TITAN, QA 9 in Abber (Space) at the planet, QA 8 entering Abber (Civ); coop.fix galaxy.space_ships off/on
 signature:
 docs: docs/12-server-and-players.md#server-space-ships
@@ -43,9 +43,15 @@ planet (sent 256 VISITs); QA 8 entered Abber (Civ) from the galaxy:
   same place (images/bug9349_off_on.png, left off, right on).
 - QA 9 took off to the solar system: QA 8's ship went (live 0).
 - Not run: the ship moving (the first Space tutorial step kept QA 9's ship in place), a Creature or Tribe game seeing
-  it, a name tag over the ship, the MSI.
+  it, the MSI.
+- Follow-up (same day, a8f9306c): Abber's stored Space era loaded with the ship at the planet at 775 m from the
+  centre (its player's zoom altitude), out of a Civ camera's view: the ship now shows at most 60 m over the ground
+  (`coop.visit status`: "shown at r=567", the UFO's own position the same, model 7DBBF9ED/476A98C7/40656200), and wears
+  a name tag "<name> / Space era" over it (images/bug9349_tag.png, the ship small at the horizon under the tag:
+  images/bug9349_tag_zoom.png). The tag now shows the player's shown name (no -NoShare- test tag): built, not seen.
 no-fail-run: a feature, Windows QA by hand; the runs above are the switch off and on.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: built on feat/lineages-alpha and seen in game (a Space ship over Abber in its Civ era).
+- 2026-11-23: a name tag over the ship; the ship flies at most 60 m over the ground in the other eras.

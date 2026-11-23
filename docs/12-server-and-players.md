@@ -1820,4 +1820,6 @@ creation store). It goes when the ship leaves the planet. Look-only, kept out of
 * ✔ In game (TITAN): Abber's Space ship over Abber's Civ city (images/bug9349_ship_in_civ.png); switch off: no ship
   (images/bug9349_off_on.png). Not run: the ship moving, Creature or Tribe games, a name tag, the MSI.
 * BUG-9348: the Space era is stored once the ship is in the solar system (Spore saves Space only there); seen.
+* The ship flies at most 60 m over the ground in the other eras (its player's zoom altitude, 775 m from the centre at
+  Abber, put it out of a Civ camera's view) and wears a name tag with "Space era" (images/bug9349_tag.png).
 
