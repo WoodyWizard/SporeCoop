@@ -797,3 +797,27 @@ npc_alpha "host_sends=0"). `Session::host_families(has, out)` is the guest's que
 false for a host before 0.7.15), false on the host and before the WELCOME. Test `net_tests --only test_host_families`
 (a 0.7.16 host passes the npc 1.2 gate, an npc 1.1 host and one without revisions do not; peer_families(0) on the guest
 stays false). New guest-side gates use host_families, never peer_families(0).
+
+## A game standing in an editor and the other side's timeout (2026-11-22, fix/w63-editor)
+<a id="netcode-editor-long-wait"></a>
+
+BUG-9304 (ported from PR #216 by IltonBJSilva), BUG-9305 (its reverse case, the owner's rule).
+
+The host standing: a guest ends its session after `Session::timeout_ms` (30 s) without a packet from the host. An
+editor's first load can stand the host's main thread longer (45-52 s seen by the PR's author on a loaded PC: the City
+Hall editor's palette images, the spaceship editor's property files) and the host sends nothing then; the keepalive
+(BUG-0687) cannot help, the thread is in the game's load, not in a message loop. Right before an editor request of the
+host's own reaches the game (vote.cpp: the held vote request and the direct path) the host tells its guests
+MSG_HOST_BUSY with state Editor and why bit `kWhyLongWait` (0x100), at once and flushed (`Session::flush_now`). A guest
+waits `busy_model::kLongWaitMs` (120 s) while the host's last told state is such a stand (kWhyLongWait, Editor, or Away
+in a load); else 30 s. The host keeps its guests anyway: their packets wait in its socket and are read before its own
+timeout check. No wire change: a new why bit (an older guest reads plain Editor, an older host never sends it).
+Switch `core.editor_long_wait`. Test: `editor_stand_host` (`kit.test.hang 45000` on the host after its editor request).
+
+A guest standing: the host keeps one timeout for every guest (30 s, no longer wait). A guest dropped for silence is
+told (`net.timeout_told`: a REJECT with Session::kTimeoutText, sent as coop.kick's): when its game goes on it reads the
+host's older packets and then the REJECT, so its session ends at once instead of playing on a dead link; it may join
+again (its token). A guest whose window pumps messages (a dialog) keeps its link through the keepalive; a vote that
+waits for it removes it once its game sent no state for 30 s (`core.vote_stuck_kick`, coop.kick with the reason).
+Nothing else on the host waits for a guest in its editor (the evolution vote skips it, BUG-1239; the Civ arrival
+editors hold nothing). Test: `editor_stand_guest` (a 50 s box during an action vote, a 45 s hang).

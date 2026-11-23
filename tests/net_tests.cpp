@@ -4550,6 +4550,46 @@ static void test_kick()
     b.leave();
 }
 
+// BUG-9305: a guest whose game stands (its own editor's load) longer than the host's timeout: the host drops it and
+// tells it; when the guest's game goes on it reads the host's older packets and the REJECT, so its session ends at once
+// with the reason (and it may join again). FAILS with `--off timeout_told`: the older packets make it believe the host
+// is there, it plays on a dead link (its own timeout, 120 s with BUG-9304 while the host is in an editor)
+static void test_timeout_told()
+{
+    printf("a guest dropped by the host's timeout while its game stood is told so when it goes on (BUG-9305)\n");
+    const bool fix = g_fix.timeout_told;
+    Session h, a, b;
+    a.rejoin_token = 1;
+    b.rejoin_token = 2;
+    h.timeout_ms = 1500;
+    b.timeout_ms = 20000; // its own timeout is far (a guest whose host is in an editor: BUG-9304)
+    std::string err, why;
+    b.cb.disconnected = [&](const std::string& w) { why = w; };
+    int a_saw_leave = 0;
+    a.cb.player_leave = [&](uint8_t, uint8_t r) { a_saw_leave += r == 1 ? 1 : 100; };
+    CHECK(h.host(0, "Alice", err));
+    std::string addr = "127.0.0.1:" + std::to_string(h.port());
+    CHECK(a.join(addr, "Bob", err) && b.join(addr, "Carol", err));
+    tick({&h, &a, &b}, 400);
+    tick({&h, &a}, 2200); // Carol's game stands: no reads, no sends
+    bool b_in = id_named(h, "Carol") != 0xFF;
+    tick({&h, &a, &b}, 500); // it goes on
+    printf("  host: Carol in %d, told %u; Carol: connected %d '%s'; Bob saw %d timeout leave(s)\n", (int)b_in,
+           h.timeouts_told(), (int)b.connected(), why.c_str(), a_saw_leave);
+    CHECK(!b_in && a_saw_leave == 1 && id_named(h, "Bob") != 0xFF); // the host's 30 s rule (1.5 s here) as before
+    CHECK(!b.connected() && why == std::string("rejected: ") + Session::kTimeoutText); // fails with timeout_told off
+    if (fix)
+        CHECK(h.timeouts_told() == 1);
+    // not a ban: it joins again
+    if (!b.connected())
+        CHECK(b.join(addr, "Carol", err));
+    tick({&h, &a, &b}, 400);
+    CHECK(b.connected() && id_named(h, "Carol") != 0xFF);
+    h.leave();
+    a.leave();
+    b.leave();
+}
+
 // ---- 0.7.15 B3 / B6: the message manifest's direction gate and the message family revisions ----
 
 // BUG-1136: a guest that sends a type only the host sends (net/messages.def dir Host): the host drops it before any
@@ -5105,6 +5145,7 @@ int main(int argc, char** argv)
                                                {"dir_gate", &g_fix.dir_gate},
                                                {"family_check", &g_fix.family_check},
                                                {"refuse_fork", &g_fix.refuse_fork},
+                                               {"timeout_told", &g_fix.timeout_told},
                                                {"update_paths", &upd::g_path_fix}};
             for (size_t a = 0; a <= list.size();) {
                 size_t b = list.find(',', a);
@@ -5250,6 +5291,7 @@ int main(int argc, char** argv)
         {"test_queue_cap", test_queue_cap},
         {"test_relay_budget", test_relay_budget},
         {"test_kick", test_kick},
+        {"test_timeout_told", test_timeout_told},
         {"test_fork_refused", test_fork_refused},
         {"test_bulk_bottleneck", test_bulk_bottleneck},
     };

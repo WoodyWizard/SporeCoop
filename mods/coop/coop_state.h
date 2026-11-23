@@ -275,6 +275,7 @@ extern uint32_t g_menu_hidden;
 extern uint32_t g_owed_dropped;
 extern uint32_t g_place_dropped;
 extern uint32_t g_solo_dropped;
+extern uint32_t g_away_kept_in_editor; // BUG-9307 (tests)
 extern uint32_t g_solo_mode;
 extern uint32_t g_stage_world;
 extern uint32_t g_tags_drawn;
@@ -314,6 +315,7 @@ void host_busy_pause_menu(bool shown);
 void host_busy_join(uint8_t id);
 void host_busy_message(uint8_t from, net::Reader& r);
 std::string host_busy_status();
+void host_busy_long_wait(const char* what); // BUG-9304, host: an editor is asked for: the guests wait longer
 
 // ---- defined in coop_cmds.cpp ----
 void register_commands_cell();
@@ -418,8 +420,11 @@ extern uint32_t g_offer_editor;
 extern uint32_t g_own_editor_due;
 extern bool g_own_editor_arriving;  // BUG-1240
 extern bool g_own_editor_arrival_fix;
+extern bool g_own_editor_no_avatar_fix; // BUG-9306
+extern double g_vote_noavatar_until; // BUG-9306 (tests)
 extern unsigned g_own_editor_arrivals;
 unsigned vote_in_editor_count(); // BUG-1239 (tests)
+unsigned vote_stuck_kicks(); // BUG-9305 (tests)
 unsigned vote_mates_held();      // BUG-1245 (tests)
 unsigned arrival_not_waited();   // BUG-1245 (tests)
 unsigned arrival_waited();       // BUG-1336 (tests)

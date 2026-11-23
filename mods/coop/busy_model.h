@@ -77,6 +77,9 @@ enum : uint16_t {
     kWhyCaption = 1u << 5,  // the game stands on its own (a caption, a cinematic pause): not Paused, Tribe waits
     kWhyStill = 1u << 6,    // the game time stands for any reason (busy.h kPaused)
     kWhySporepedia = 1u << 7, // Paused: the Sporepedia (reason 0x4BF38A6 while no editor is coming)
+    // BUG-9304 (PR #216 by IltonBJSilva): the host's main thread is about to stand for long (an editor's first load:
+    // 30-60 s on a busy PC), told just before; its guests wait up to kLongWaitMs for its packets, not the session's 30 s
+    kWhyLongWait = 1u << 8,
 };
 
 // what the host's game shows this frame (the game glue fills it: game::mode_id, busy.h readings, world::pause_reasons,
@@ -244,11 +247,34 @@ struct Announcer {
         sends++;
         return true;
     }
+    // BUG-9304: told now, without the debounce (the host's main thread stands right after it): the state as sent
+    Msg announce(const Classified& c, uint32_t mode, uint32_t world)
+    {
+        sent = c;
+        told = true;
+        pending_since = 0;
+        sends++;
+        return Msg{1, c.state, c.why, mode, world, ++seq};
+    }
     // the message for a guest that just joined (the state as last told)
     Msg current(uint32_t mode, uint32_t world) const { return Msg{1, sent.state, sent.why, mode, world, seq}; }
     // a new session: the next state is told whatever it is
     void reset() { *this = Announcer{}; }
 };
+
+// BUG-9304 (PR #216 by IltonBJSilva): how long a guest waits for the host's packets (net::Session::timeout_ms) while the
+// host's last told state is a long stand of its game: an editor coming or open (its first load reads hundreds of
+// property files), or a load; else the session's own timeout. 120 s: over twice the 51.8 s seen, while a host that
+// really died in its editor is noticed within two minutes (the PR had 180 s)
+constexpr uint32_t kLongWaitMs = 120000;
+inline uint32_t guest_timeout_ms(bool heard, const Msg& last, uint32_t normal)
+{
+    if (!heard)
+        return normal;
+    bool long_stand = (last.why & kWhyLongWait) || last.state == State::Editor ||
+                      (last.state == State::Away && (last.why & kWhyLoad));
+    return long_stand && kLongWaitMs > normal ? kLongWaitMs : normal;
+}
 
 // ---------------------------------------------------------------- 3. the guest's view
 // the 0.7.14 fallback: the host's PlayerState mode as coop.cpp host_out_of_stage reads it ('m' menu, 'e' editor,
