@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w65-night
-commits:
+commits: 8fff6369
 tests: tools/tests/coop_mode.py (civ, and the other click modes)
 signature:
 docs:

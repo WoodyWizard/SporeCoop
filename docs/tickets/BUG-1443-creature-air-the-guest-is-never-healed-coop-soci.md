@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w65-night
-commits:
+commits: 2811d2c2
 tests: tools/tests/coop_creature_air.py (creature_air)
 signature:
 docs:

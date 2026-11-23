@@ -10066,3 +10066,14 @@ over the gap itself, not wait for the game to make one.
 * cell_kin_species: a knockout in the AI step respawns the host next to the guest; the host's place is taken before
   that step, the way back is measured from the guest's position, a place within 2 r of the guest is replaced by one
   `dist` away, and the kin there are sampled every 3 s for up to 45 s (BUG-1441).
+* migration_probe and the other users of coop_migration.new_nest(): CreatureGame_NestHerdFor is called only while
+  game.mode is Creature (the game function faults without a creature game: the probe crashed a guest reloading the
+  host's world, BUG-1442).
+* creature_air heals the guest with `coop.team hp` (there is no `coop.social hp`, BUG-1443); creature_aggression waits
+  for the guest's mirrors before its pick (BUG-1444).
+* civ_religion_state waits for the guest's meter too (it follows the follower map in the city's next update,
+  BUG-1445); civ_mirror_lifetime does not count a new vehicle inside the 25 m bind-by-kind radius (BUG-1446);
+  coop_mode clicks again while the host's Tribe / Civ marker is back at its start (BUG-1447); space_planner_miss prints
+  what each unanswered click hit (BUG-1448).
+* tribe_held_item: the grip check leaves out samples in which the host's member holds too (tribe.mirror_hold) and
+  checks that the host's leader is still the host's member (BUG-1449, BUG-1450).

@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w65-night
-commits:
+commits: fb569645
 tests: tools/tests/coop_tribe_looks.py (tribe_held_item)
 signature:
 docs:

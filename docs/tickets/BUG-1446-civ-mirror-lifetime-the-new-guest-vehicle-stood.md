@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w65-night
-commits:
+commits: 8fff6369
 tests: tools/tests/coop_civ_mirror_lifetime.py (civ_mirror_lifetime)
 signature:
 docs:

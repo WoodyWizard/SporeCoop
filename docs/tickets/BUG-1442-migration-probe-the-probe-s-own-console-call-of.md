@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w65-night
-commits:
+commits: e06d3a16
 tests: tools/tests/coop_migration_probe.py (migration_probe), tools/tests/coop_migration.py new_nest (also migration, nest_follow, nest_target_probe)
 signature: dc04aee5:SporeApp.exe SporeCoop::Herd_NestPosition (0xC0000005 at 0x00C6AE60, read 0x160) from CreatureGame_NestHerdFor+0x47 <- sporekit c_call (the console `call`)
 docs:
