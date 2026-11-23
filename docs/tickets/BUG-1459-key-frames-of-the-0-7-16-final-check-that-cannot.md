@@ -71,8 +71,8 @@ Test code only (fix/w84-frames, merged into fix/w84-tests), no mod change:
 Open, pending night run: tribe_birth_ask, tribe_birth_species, tribe_kid_species, line_stages_outfit, species_line,
 civ_citizen_trail, tribe_own_species, tribe_own_outfitter, own_editor_civdrop:
 `SPORE_DETECTOR=20 python3 tools/lab.py run tribe_birth_ask tribe_birth_species tribe_kid_species line_stages_outfit
-species_line civ_citizen_trail tribe_own_species tribe_own_outfitter own_editor_civdrop --lanes 4 --retry 0 --no-build`
-(or `--lane N` one at a time), then review the frames of each (frames/sheets): the baby, the carrying member and the
+species_line civ_citizen_trail tribe_own_species tribe_own_outfitter own_editor_civdrop --lane N --retry 0 --no-build`
+(one lane given by the coordinator; never `--lanes`, which starts at the owner's lane 1), then review the frames of each (frames/sheets): the baby, the carrying member and the
 host's member in the picture with no wall, bush or head in front; no nation's talk over line_stages_outfit 09-11;
 species_line next_session with the guest in its own creature; civdrop 01 / 02 with the guest's city in the middle;
 every close-up's manifest line `view: ...` (a `NO clear line of sight` line names what blocked it).
