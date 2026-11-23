@@ -159,6 +159,15 @@ bool ship_on_planet(float pos[3], uint32_t key[3])
     return std::isfinite(p.x) && (key[0] || key[2]);
 }
 
+bool ship_at_home()
+{
+    static uintptr_t home = H->sym("SporeCoop::GetPlayerHomePlanetRecord");
+    void* p = a_ActivePlanet ? cdecl_call<void*>(a_ActivePlanet) : nullptr;
+    void* rec = p && !IsBadReadPtr(p, 0x140) ? F<void*>(p, 0x13C) : nullptr;
+    void* h = rec && home ? cdecl_call<void*>(home) : nullptr;
+    return rec && h == rec;
+}
+
 // The distance that counts for a repair. On a planet the ships fly on spheres around the planet's
 // centre (the origin of the planet scene) whose radius is each player's own zoom (cGameDataUFO
 // mZoomAltitude, ~520 m zoomed in to ~970 m before leaving to the system on the home planet of the
@@ -2456,6 +2465,11 @@ std::string debug(const std::vector<std::string>& a)
         if (!cdecl_call<void*>(a_ActivePlanet) || !u || F<uint32_t>(u, kCinematic) || cinematic_playing() ||
             F<int>(u, kState) == 2)
             return "no active planet / the ship is not flying";
+        // BUG-9352: landing while the ship still flew to a planet never visited crashed in the terrain (GetHeight,
+        // its height map not loaded): only when the game's own zoom landing would land (Space_ZoomLandReady)
+        static uintptr_t ready = H->sym("SporeCoop::Space_ZoomLandReady");
+        if (!F<uint8_t>(u, 0x74C) || (ready && !cdecl_call<bool>(ready)))
+            return "not ready to land (the ship is still flying there, or the game would not land now)";
         thiscall<void>(f, mode);
         return "landing";
     }

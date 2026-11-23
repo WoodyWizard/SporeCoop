@@ -544,6 +544,11 @@ static bool shows_visitors(uint8_t era) { return era == net::galaxy::kEraCreatur
 // show it (they fly UFOs of their own); kept out of saves (savestrip_filter). Off: no ships sent or shown
 static bool g_ships = true;
 COOP_FIX("galaxy.space_ships", "BUG-9349", g_ships, "galaxy: a Space era player's ship at the planet shows as a UFO in its other eras");
+// BUG-9351: the ship was sent at any planet (another planet of the system, another star), so the planet's other eras
+// showed it over their planet where the ship was over another one. Sent only at its home planet (the era's planet)
+static bool g_ships_home = true;
+COOP_FIX("galaxy.space_ships_home", "BUG-9351", g_ships_home, "galaxy: a Space era ship is shown only while it is at its own planet");
+static unsigned long long g_ships_away;
 constexpr uint32_t kUfoNoun = 0x018EBADCu;
 constexpr float kShipOverGround = 60.f; // m: a visiting ship's height over the ground at most
 static uint64_t g_ships_sent, g_ships_shown, g_ships_default;
@@ -713,7 +718,9 @@ static void stream_tick(double now)
         for (uint32_t k : ship_k)
             w.u32(k);
         w.f32(ship_p[0]), w.f32(ship_p[1]), w.f32(ship_p[2]);
-        if (galaxy::send_message(net::galaxy::VISIT, w)) {
+        if (g_ships_home && !spacecoop::ship_at_home()) // BUG-9351: at another planet: not over this one
+            g_ships_away++;
+        else if (galaxy::send_message(net::galaxy::VISIT, w)) {
             g_ships_sent++;
             galaxy_crt::put(ship_k[0], ship_k[1], ship_k[2]);
         }
@@ -1263,8 +1270,9 @@ std::string stream_status()
         unsigned live = 0;
         for (auto& [k, v] : g_visitors)
             live += ship_alive(v);
-        snprintf(b, sizeof b, "space ships (BUG-9349): on=%d sent=%llu shown=%llu default_model=%llu live=%u\n", (int)g_ships,
-                 (unsigned long long)g_ships_sent, (unsigned long long)g_ships_shown, (unsigned long long)g_ships_default, live);
+        snprintf(b, sizeof b, "space ships (BUG-9349): on=%d sent=%llu shown=%llu default_model=%llu live=%u; away from its planet "
+                 "(BUG-9351, %s): %llu not sent\n", (int)g_ships, (unsigned long long)g_ships_sent, (unsigned long long)g_ships_shown,
+                 (unsigned long long)g_ships_default, live, g_ships_home ? "on" : "off", g_ships_away);
         out += b;
         for (auto& [k, v] : g_visitors) // (tests: where each ship is and where it shows on the screen)
             if (ship_alive(v)) {
