@@ -330,6 +330,9 @@ extern KitFix g_fix_vehbounds; // BUG-1028: the fault logger's stack reads stay 
 extern KitFix g_fix_trireset;  // BUG-1026: the overlay state block is reset on a new device, retried after a Reset
 extern KitFix g_fix_cmdkeep;   // BUG-1018: a mod's image is freed only after its running console commands returned
 extern KitFix g_fix_postinit;  // BUG-1021: SK_EV_POST_INIT is not fired after a failed cSporeApp::Init
+extern KitFix g_fix_offstackcap; // BUG-1520 (KIT-13): the off-stack check also after the logger's dedup and its cap
+extern KitFix g_fix_reportzip;   // BUG-1521 (KIT-21): report archives written to .part, never over another of the second
+extern KitFix g_fix_hitchpause;  // BUG-1529: a stop while minimized / unfocused is logged as a pause, not a hitch
 // BUG-1033: a module's file name, "" when GetModuleFileNameW fails (a module unloaded meanwhile) or cuts the path;
 // the callers' stack buffers were used whatever the call returned
 inline std::wstring module_path(HMODULE m)
