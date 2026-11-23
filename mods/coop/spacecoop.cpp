@@ -145,6 +145,19 @@ static net::Vec3 ufo_pos(void* u)
     auto& p = F<float[3]>(u, kPos);
     return {p[0], p[1], p[2]};
 }
+bool ship_on_planet(float pos[3], uint32_t key[3])
+{
+    if (!in_space() || !a_Context || cdecl_call<int>(a_Context) != 0)
+        return false;
+    void* u = my_ufo();
+    if (!u || F<uint32_t>(u, kCinematic))
+        return false;
+    const net::Vec3 p = ufo_pos(u);
+    pos[0] = p.x, pos[1] = p.y, pos[2] = p.z;
+    for (int i = 0; i < 3; i++)
+        key[i] = F<uint32_t>(u, 0x780 + 4 * i);
+    return std::isfinite(p.x) && (key[0] || key[2]);
+}
 
 // The distance that counts for a repair. On a planet the ships fly on spheres around the planet's
 // centre (the origin of the planet scene) whose radius is each player's own zoom (cGameDataUFO

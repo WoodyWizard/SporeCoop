@@ -69,6 +69,9 @@ void* star_record(uint32_t id);
 // star of ours), positions in the coordinates of that view
 std::vector<syncdbg::Entry> nav_entries();
 std::string status();
+// BUG-9349: this player's ship while it is at a planet (the planet's scene, context 0): where it is (the planet's
+// centre at the origin) and its model key (cGameDataUFO +0x780); false elsewhere
+bool ship_on_planet(float pos[3], uint32_t key[3]);
 std::string debug(const std::vector<std::string>& args);
 // a raid on one of our colonies changed its state (cMission::SetState hook): 3 started, 5 defended,
 // 6 lost; place = PlanetID | 0x40000000 (space_contracts.cpp: the armada's waves are raids); the

@@ -34,6 +34,7 @@
 #include "notify.h"
 #include "partner_marker.h"
 #include "savestrip.h"
+#include "spacecoop.h"
 #include "civ.h"
 #include "tribe.h"
 #include "sporekit_game.hpp"
@@ -282,8 +283,11 @@ static void on_visit_objects(net::Reader& r); // BUG-9290 (below)
 static bool our_object_prop(void* obj);       // BUG-9290 (below)
 
 // our props are not the player's world (CLAUDE.md 2): a save never holds them
+static bool ship_ours(void* obj); // BUG-9349 (below)
 static bool savestrip_filter(void* obj, uint32_t noun)
 {
+    if (noun == 0x018EBADCu) // BUG-9349: our visitor ships
+        return ship_ours(obj);
     if (noun != kOrnamentNoun)
         return false;
     for (auto& pr : g_props)
@@ -503,6 +507,9 @@ struct Visitor {
     net::Vec3 walk_to{};
     bool walking = false;
     bool waiting = false, missing = false; // its creature asked from the store / not buildable here
+    void* ship = nullptr; // BUG-9349: a Space era player's ship (a UFO of ours)
+    uint32_t ship_serial = 0;
+    double ship_wait = 0; // when its model was first asked from the store
 };
 static bool g_tags = true;
 COOP_FIX("galaxy.visitor_tags", "BUG-9289", g_tags, "galaxy: a visitor of another era wears a name tag (its name, its era)");
@@ -516,8 +523,10 @@ static bool visitor_alive(const Visitor& v)
 {
     return v.c && game::creature_listed(v.c) && game::object_serial(v.c) == v.serial && game::object_alive(v.c);
 }
+static void ship_remove(Visitor& v); // BUG-9349 (below)
 static void visitor_remove(Visitor& v)
 {
+    ship_remove(v);
     if (visitor_alive(v)) {
         creature_hp::forget_puppet(v.c);
         game::destroy_creature(v.c); // (the deferred path; it leaves the puppet list)
@@ -527,6 +536,58 @@ static void visitor_remove(Visitor& v)
     v.walking = false;
 }
 static bool shows_visitors(uint8_t era) { return era == net::galaxy::kEraCreature || era == net::galaxy::kEraTribe; }
+
+// BUG-9349: a Space era player whose ship is at the planet is a ship over the planet in its other eras: a UFO of ours
+// (SpawnUFO with the ship's model as installed from the creation store, the default UFO when it never comes) moved to
+// where its player's ship is (on the sphere of its zoom altitude, as a partner's ship). Creature, Tribe and Civ games
+// show it (they fly UFOs of their own); kept out of saves (savestrip_filter). Off: no ships sent or shown
+static bool g_ships = true;
+COOP_FIX("galaxy.space_ships", "BUG-9349", g_ships, "galaxy: a Space era player's ship at the planet shows as a UFO in its other eras");
+constexpr uint32_t kUfoNoun = 0x018EBADCu;
+static uint64_t g_ships_sent, g_ships_shown, g_ships_default;
+static bool shows_ships(uint8_t era) { return shows_visitors(era) || era == net::galaxy::kEraCiv; }
+static bool ship_alive(const Visitor& v)
+{
+    return v.ship && game::object_alive(v.ship) && game::object_serial(v.ship) == v.ship_serial;
+}
+static void ship_remove(Visitor& v)
+{
+    if (ship_alive(v)) {
+        if (void* nm = noun_mgr())
+            skg::thiscall<void>(a_DestroyInstance, nm, v.ship);
+    }
+    v.ship = nullptr;
+}
+static void ship_show(Visitor& v)
+{
+    if (!ship_alive(v)) {
+        v.ship = nullptr;
+        if (!a_SpawnUFO || !a_DestroyInstance)
+            return;
+        uint32_t lk[3] = {0, 0, 0};
+        if (!galaxy_crt::local_key(v.owner, v.key, lk)) { // asked from the store: the default UFO after 15 s
+            const double now = H->time_seconds();
+            if (!v.ship_wait)
+                v.ship_wait = now;
+            if (now - v.ship_wait < 15)
+                return;
+            lk[0] = lk[1] = lk[2] = 0;
+            g_ships_default++;
+        }
+        uint32_t pol = 0xFFFFFFFFu; // (no empire)
+        void* u = skg::cdecl_call<void*>(a_SpawnUFO, 7, &pol, (void*)lk);
+        if (!u)
+            return;
+        v.ship = u;
+        v.ship_serial = game::object_serial(u);
+        g_ships_shown++;
+        H->log(M, SK_INFO, "era visitors: %s's ship (Space) shown, model %08X/%08X/%08X (BUG-9349)", v.name.c_str(), lk[0],
+               lk[1], lk[2]);
+    }
+    const net::Vec3 up = norm(v.pos);
+    g_axes = 0;
+    place(v.ship, v.pos, basis_quat(net::Vec3{0, 0, 1}, up));
+}
 
 static void on_visitor(net::Reader& r)
 {
@@ -542,7 +603,7 @@ static void on_visitor(net::Reader& r)
     if (!r.ok() || !g_stream || !slot || !std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z))
         return;
     Visitor& v = g_visitors[slot];
-    if (v.c && (v.key[0] != key[0] || v.key[2] != key[2])) // another creature now (an editor, a new stage)
+    if ((v.c || v.ship) && (v.key[0] != key[0] || v.key[2] != key[2] || v.era != era)) // another creature now (an editor, a new stage)
         visitor_remove(v);
     v.owner = owner;
     v.name = std::move(name);
@@ -634,6 +695,21 @@ static void stream_tick(double now)
         objects_show(now);
     else
         objs_clear();
+    float ship_p[3];
+    uint32_t ship_k[3];
+    if (!av && g_ships && era == net::galaxy::kEraSpace && now >= g_next_visit &&
+        spacecoop::ship_on_planet(ship_p, ship_k)) { // BUG-9349: this player's ship at the planet
+        g_next_visit = now + net::galaxy::kVisitEveryMs / 1000.0;
+        net::Writer w;
+        w.u8(era);
+        for (uint32_t k : ship_k)
+            w.u32(k);
+        w.f32(ship_p[0]), w.f32(ship_p[1]), w.f32(ship_p[2]);
+        if (galaxy::send_message(net::galaxy::VISIT, w)) {
+            g_ships_sent++;
+            galaxy_crt::put(ship_k[0], ship_k[1], ship_k[2]);
+        }
+    }
     if (av && now >= g_next_visit) { // where this player is, for the planet's other worlds
         g_next_visit = now + net::galaxy::kVisitEveryMs / 1000.0;
         const game::Key k = game::species_key(av);
@@ -657,7 +733,12 @@ static void stream_tick(double now)
             it = g_visitors.erase(it);
             continue;
         }
-        if (av && shows_visitors(era))
+        if (v.era == net::galaxy::kEraSpace) { // BUG-9349: a ship
+            if (g_ships && shows_ships(era))
+                ship_show(v);
+            else
+                ship_remove(v);
+        } else if (av && shows_visitors(era))
             visitor_show(v, av);
         else if (v.c)
             visitor_remove(v);
@@ -665,6 +746,14 @@ static void stream_tick(double now)
     }
     if (shows_visitors(era))
         solid_tick(era);
+}
+
+static bool ship_ours(void* obj)
+{
+    for (auto& [s, v] : g_visitors)
+        if (v.ship == obj)
+            return true;
+    return false;
 }
 
 // BUG-9289: a name tag over each visitor near this player (its name, its era), in grey: a visitor, not a partner
@@ -1161,6 +1250,14 @@ std::string stream_status()
              (unsigned long long)g_visits_got, (unsigned)g_visitors.size(), (unsigned long long)g_shown,
              (unsigned long long)g_no_species, (unsigned long long)g_gone);
     std::string out = b;
+    { // BUG-9349
+        unsigned live = 0;
+        for (auto& [k, v] : g_visitors)
+            live += ship_alive(v);
+        snprintf(b, sizeof b, "space ships (BUG-9349): on=%d sent=%llu shown=%llu default_model=%llu live=%u\n", (int)g_ships,
+                 (unsigned long long)g_ships_sent, (unsigned long long)g_ships_shown, (unsigned long long)g_ships_default, live);
+        out += b;
+    }
     {
         size_t live = 0, waiting = 0;
         for (auto& [k, o] : g_objs)
