@@ -511,7 +511,23 @@ static void mirror_drive(GEntry& e, double now)
         o.lead_speed = tribe_logic::mirror_lead_speed(net::g_lead_keep_fix, g_smooth_bound_fix, g.lead_sp, sp,
                                                       g.buf.late_catching(), g.buf.late_rate(), g_smooth_catch_fix,
                                                       net::dist(game::position(c), g.aim));
+        // BUG-1451 (tribe.smooth_catch): keep walk_speed within the body/catch-up cap so placing gets the rest of
+        // the 2 x v + 3 m/s frame budget (<= 21 m/s total) even when the game walks ~0 m/s or sp decayed
+        {
+            const float lag = net::dist(game::position(c), g.aim);
+            const tribe_logic::CatchBound cb = tribe_logic::mirror_catch_bound(
+                o.lead_speed, g_smooth_catch_fix, g.lead_sp, sp, g.buf.late_rate(), o.catch_up, o.catch_prop,
+                net::g_lead_fix, lag);
+            o.lead_speed = cb.lead_speed;
+            o.walk_speed = cb.walk_speed;
+            o.catch_up = cb.catch_up;
+            g.diag_walk_speed = cb.walk_speed;
+            g.diag_game_walk = drive::speed(game::velocity(c));
+            g.diag_walked = g.ds.kinematic && now > g.ds.last_step
+                                ? net::dist(game::position(c), g.ds.placed_to) / (float)(now - g.ds.last_step) : 0.f;
+        }
         o.keep_lost = g_mirror_keep_fix; // BUG-0386
+        g.diag_lead_speed = o.lead_speed;
         drive::walk_place(c, g.aim, rot, vel, g.ds, now, o);
         // tests (BUG-0386): the game's walk and a placing without the teleport mark are undone, the mirror crawls 0.04 m
         // a frame towards its aim (what the guest's game did to the held mirror); a marked teleport (keep_lost's held) is
