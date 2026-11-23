@@ -10247,3 +10247,20 @@ Each test has its twin (`<name>_off`, SPORE_FIX_OFF=<switch>, suite `twin`): the
   on, else the next snapshot binds the orphan again) and saves; `coop.tribe tribelists` (members / unlisted per tribe,
   orphans: player tribe members no mirror is bound to) must show unlisted=0 and no new orphan. Twin
   SPORE_FIX_OFF=tribe.save_took_listed (unsafe: the removal refused, the mirror put back as an orphan).
+
+## WP-C1 test hooks of 0.7.17 (2026-11-23, fix/w82-creature)
+<a id="testing-wpc1-hooks"></a>
+
+* `coop.mirrorfx drain <s>` (host, BUG-1516): the relay's rate limit is held empty for s seconds (a long fight);
+  `ends_unlimited=` in `coop.mirrorfx` counts the ends sent past it. Test `mirror_fx_burst` (+ `_off`).
+* `coop.effects nopuppet <player> [0|1]` (any game, BUG-1517): this game treats the player as having no puppet here
+  (the host relays a one-shot it cannot play). Test `effects_party_oneshot` (+ `_off`, 3 players).
+* `coop.social meter` prints `visible_after_win=` (BUG-1515): the meter window's own visible byte 0.5 s after the win.
+  Test `creature_social_meter` (+ `creature_social_meter_hold_off`).
+* `coop.social solo` (BUG-1527): the guest's kept own species events, `sent=`, the host's `applied=` / `refused=`.
+  With `coop.awaytest 1` on the guest and `coop.social event <species> 0` (the game's ApplyEvent) a kill of the guest's
+  own game is made on demand. Test `creature_solo_kills` (+ `_off`).
+* `coop.wobj ornkill <ornament>` (BUG-1261): the game's DestroyInstance of a bone, as TierBoneCleanup's off-screen path;
+  `coop.wobj use <ornament> fade` adds the interact node's FadeOut. `coop.wobj orns` prints `fade=<+0x238>/<delay
+  ms>/<fade ms>`. Tests `ornament_fade_dig` / `_gone` / `_settle` (+ two twins).
+* `coop.find labels` shows the partner's health in its tag text (BUG-1526). Test `creature_tag_hp` (+ `_off`).

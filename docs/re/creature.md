@@ -5522,3 +5522,42 @@ BUG-1261, ported from the outside agent's fix/agy-open-bugs 576df657 (its static
   guest was out of the stage (`gone_trusted`, counted `gone_held=` in `coop.wobj`); a guest reports fades only to such
   a host. The host sends no ornament list while its reward handler is not there. `coop.wobj ornkill <orn>` (tests):
   DestroyInstance as TierBoneCleanup's off-screen path.
+
+## WP-C1 of 0.7.17: the meter's finish, FX ends, one-shots on the relay, kills while the host is away, the partner's health (2026-11-23, fix/w82-creature)
+<a id="creature-meter-hold"></a>
+
+Static reading and the 2026-11-22 world-switch report (A as a guest on B's Creature world, 0.7.15.5, Steam). No game
+run by day; the night runs named in each ticket check the claims.
+
+* ~ (static, BUG-1515) The game hides its social meter at the session end 0xD9F7A0, after the win's reaction; the
+  guest's meter closed one frame after `SocialMeter_Finish` (K_RESULT ends the engagement, meter_tick queued op 3).
+  `social.meter_hold` keeps the finished meter up 1.5 s (kWinHold, a guess: the reaction's length is not measured).
+  `coop.social meter` prints `visible_after_win=`: the layout's visible byte 0.5 s after the win.
+* ✔ (static, BUG-1516) mirror_fx.cpp's limit (60/s) dropped stops too, and the key was taken from the table before the
+  send: a dropped stop never went again. Ends (stops, evictions, the off edge of K_VOICE / K_SPRINT) now pass the empty
+  limit (`mirror.fx_stops`, `ends_unlimited=` in `coop.mirrorfx`; tests: `coop.mirrorfx drain <s>`).
+* ✔ (static, BUG-1517) effects.cpp checked a pool-3 one-shot's bone against the receiver's puppet before the host's
+  relay: a host without a puppet of guest 1 dropped guest 1's one-shots for guests 2-3. The bone is now checked on the
+  puppet that plays it (`effects.bone_local`; tests: `coop.effects nopuppet <player> [0|1]`).
+* ✔ (report log, BUG-1527) While the host was in its editor (host_away=1 for 3 minutes) the guest killed its own game's
+  animals: `social: relationship event 0 species ... (npc -1): killed 0 -> 1` four times for the same species, each
+  time from 0: social.cpp enforce_table wrote the host's last table over the guest's record every 0.5 s (its log line
+  is capped at 400, so the resets were silent). Now the guest keeps its record while the host is away and keeps the
+  events 0 / 3 / 5 (social_logic.h), sends them when the host is back (MSG_SOCIAL K_SOLO = 6, a host of creature 1.3)
+  and the host replays each through ApplyEvent 0xBA49E0 with no creature (the egg node's way): the extinction, the
+  alliance and the cards follow in the host's game. `coop.social solo` prints the kept events.
+* ✔ (static, BUG-1526) A player sees a creature's health in the game's rollover; puppets.cpp h_HoverFilter lets the
+  hover pass through a partner's creature (the pass-through and the social stance), so no player ever saw the
+  partner's health. The partner's name tag now carries it (`creature.tag_hp`): the partner's state's health / max,
+  the numbers of its own game's HUD.
+* ✔ (report, BUG-1524) The report's module list has SporeApp.exe at 0x00CF0000 (not 0x00400000): Windows relocated
+  the exe, so 0.7.15.5's portrait fix compared a raw vtable that never matched (BUG-1426, fixed in 0.7.16.1 with the
+  symbol `UTFWin::ImageDrawable::vftable`). The HUD portrait kept the Cell creature for that reason.
+* ✔ (report log, BUG-1525) "100 % Cell progress at once": the host started Cell on a planet whose Cell save was at the
+  end (`cell: DNA on entering Cell: food=1000 ... budget=15` on the guest at the load, the host's vote for Creature 80 s
+  later): an old planet of the other player's galaxy played from the co-op copy (BUG-1434). No mod path gives or takes a
+  DNA bonus for legs (no code names one); the guest entered Creature with the world's 65 DNA and spent 60 in its own
+  editor into 0.7.15.5's shared pool. ? Not known: whether the game gives the first Creature editor a bonus.
+* ? (report, BUG-1523) "the host's creature not visible at first": the guest's log has the host's puppet made and
+  shown 2-10 m away from 14:14:11 (`puppet=shown d=2`, `puppet_hp=10/10`) and the mark at 14:15:11; every mark's
+  screenshot has the co-op window over the middle of the screen. Not reproduced; no further lead.
