@@ -4025,3 +4025,4 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   load starts while it is open. Reproduce: a guest of a planet's host goes back to the galaxy menu (`coop.menu`),
   presses Play on that planet (the ring opens, then the rejoin card), then enters an era of it from the menu. Its X
   closes it.
+  Fixed on feat/lineages-alpha (2026-11-23, ee08d149): the screen is closed before the load.

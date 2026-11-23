@@ -1832,6 +1832,7 @@ creation store). It goes when the ship leaves the planet. Look-only, kept out of
 * Seen on the way: a player new to Space who joins a Space era's host gets the host's Civilization victory to
   design a ship first ("Loading your Civilization victory so you can design your spacecraft"): the designed
   guest path, not a bug. BUG-9350 (open): Spore's Choose A Stage ring can stay on screen into the planet.
+* BUG-9350 fixed (ee08d149, switch `galaxy.stage_screen_close`): the ring is closed before a load from the menu.
 * The ship flies at most 60 m over the ground in the other eras (its player's zoom altitude, 775 m from the centre at
   Abber, put it out of a Civ camera's view) and wears a name tag with "Space era" (images/bug9349_tag.png).
 

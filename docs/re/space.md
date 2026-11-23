@@ -3669,3 +3669,15 @@ Found for BUG-9337 (decision 8L A), Ghidra on the Steam 3010a413 dump (GOG 2024 
 * ~ The first Space tutorial step ("Click on ... to communicate with planet") kept the ship from flying to a clicked
   point at the home planet, and the mouse wheel zoom stopped at the orbit (2026-11-23, 10 FPS).
 
+## The new-game screen's Back outside the galaxy menu (2026-11-23, feat/lineages-alpha)
+<a id="space-stage-screen-outside-menu"></a>
+
+Adds to #space-native-stage-choice.
+* ✔ (runtime, the MSI) A planet load started from the galaxy menu while the menu is in state 4 (the new-game screen,
+  Choose A Stage) leaves that screen drawn over the planet: GGE +0x108 stays 4, nothing closes it (BUG-9350).
+* ✔ Its Back (the X: NewGameFlow_OnButton 0x595E0A8 -> 0xDF0640(flow, 0), GGE_SetState(2, 0)) run from a planet (Civ)
+  crashed once: access violation at hash_map__int_int__Find+0xD (0x4C5E4D), the stack through 0xDF0640 into
+  GGE_PlayStep code; an earlier click there closed it without a crash. Press Back only while the game is in the menu.
+* ✔ Back pressed from outside the frame while in the menu, then the load: the menu left state 4 within one frame and
+  the planet loaded without the screen (BUG-9350's fix).
+
