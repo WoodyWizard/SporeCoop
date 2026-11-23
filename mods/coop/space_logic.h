@@ -3,6 +3,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <iterator>
 #include <map>
@@ -154,5 +155,86 @@ inline OwedAction owed_action(const WorldLedger& l, const WorldTag& t, uint32_t 
     return l.saved_after(t) ? OwedAction::Pay : OwedAction::Drop;
 }
 constexpr size_t kOwedKeepMax = 32; // owed items kept for another game: the oldest go beyond this
+
+// ---------------- the audit items of 0.7.17 (WP-X1, fix/w77-space) ----------------
+// BUG-1485 (audit SPC-6): a sale's or an offer's payment that arrives now goes into the game now only when the seller
+// is in Space (`here`) in the world the spice was taken from; else it is owed (paid by the owed-sales path, which
+// decides by the world tag). `by_world`: the world tags are used (spaceext::owed_id(), BUG-0225)
+inline bool sale_pays_now(bool here, bool by_world, uint32_t taken_epoch, uint32_t epoch_now)
+{
+    return here && (!by_world || taken_epoch == epoch_now);
+}
+
+// BUG-1486 (audit SPC-11): a planet record is a colony of the host's own empire (an armada contract's target): tech
+// level 5 (any empire's colony, docs/re/space.md 5.2) with a cCivData of the host's political id, and not a partner's
+// own-star mirror colony that carries the host's id (space_allies.cpp add_planet_own, BUG-0543)
+inline bool host_colony(int tech, const std::vector<uint32_t>& civ_pols, uint32_t my_pol, bool own_mirror)
+{
+    if (tech != 5 || my_pol == 0xFFFFFFFFu || own_mirror)
+        return false;
+    return std::find(civ_pols.begin(), civ_pols.end(), my_pol) != civ_pols.end();
+}
+
+// BUG-1489 (audit SPC-15): a partner's terraforming delta (K_TERRA). A game tool's delta per message is a small part of
+// the 0..1 range of the planet record; a non-finite value (a modified peer) is refused, a finite one is clamped to
+// +-kTerraDeltaMax (more than the whole range never comes from a tool). true: `out` is the delta to apply
+constexpr float kTerraDeltaMax = 1.0f;
+inline bool terra_delta(float d, float& out)
+{
+    if (!std::isfinite(d))
+        return false;
+    out = std::clamp(d, -kTerraDeltaMax, kTerraDeltaMax);
+    return true;
+}
+
+// BUG-1482 (audit SPC-3): the host gave a stored Rivals budget to a present guest (`coop.store adopt`). It sends the
+// budget with a forced K_SET (have = kSetAdopted) until the guest's own report is that budget; until then the guest's
+// reports (its money before the K_SET reached it) do not replace the adopted budget.
+constexpr uint8_t kSetAdopted = 3;       // K_SET have: the host's word, taken even when the budget is known
+constexpr double kAdoptResend = 2.0;     // s between forced K_SETs
+constexpr double kAdoptGiveUp = 600.0;   // s: a guest that never confirms (stuck in an editor) gets its reports back
+struct AdoptHold {
+    int v = 0;
+    double since = 0, sent = -1e18;
+    bool on = false;
+    void start(int value, double now)
+    {
+        v = value;
+        since = now;
+        sent = -1e18;
+        on = true;
+    }
+    // a report of the guest's budget: true = take it as its budget (a report of the adopted value ends the hold)
+    bool report(int got)
+    {
+        if (!on)
+            return true;
+        if (got == v) {
+            on = false;
+            return true;
+        }
+        return false;
+    }
+    // send the forced K_SET now?
+    bool due(double now)
+    {
+        if (!on)
+            return false;
+        if (now - since > kAdoptGiveUp) {
+            on = false;
+            return false;
+        }
+        if (now - sent < kAdoptResend)
+            return false;
+        sent = now;
+        return true;
+    }
+};
+
+// BUG-1491 (audit SPC-17): an offer of ours that no answer came for: the receiver declines an offer it holds after
+// kOfferLife (its tick), so with no answer kOfferLife + kOfferAnswerSlack after it went the receiver never took it (a
+// full list on a 0.7.16.1 receiver, which sends no answer then): it comes back
+constexpr double kOfferAnswerSlack = 30.0;
+inline bool offer_unanswered(double sent, double now, double offer_life) { return now - sent > offer_life + kOfferAnswerSlack; }
 
 } // namespace spacelogic

@@ -1,6 +1,7 @@
 // Native tests for the portable Space co-op decisions (space_logic.h): the co-op jump's target
 // (BUG-0072) and the aborted-raid set (BUG-0136); the kept state of a rejoining guest (space_kept.h, C5)
 // (make test; built with AddressSanitizer).
+#include <cmath>
 #include <cstdio>
 #include <map>
 #include <set>
@@ -530,6 +531,49 @@ static void test_fleet_leads()
     CHECK(!step_role(FleetRole::Mirror, 2, B, FleetRole::Mirror, 2, B).changed);
 }
 
+// WP-X1 of 0.7.17 (audit SPC-3, 6, 11, 15, 17): BUG-1482, 1485, 1486, 1489, 1491
+static void test_audit_0717()
+{
+    printf("audit 0.7.17 (space)\n");
+    using namespace spacelogic;
+    // BUG-1485: a payment goes into the game now only in Space, in the world the spice came from
+    CHECK(sale_pays_now(true, true, 4, 4));
+    CHECK(!sale_pays_now(true, true, 4, 5));  // another Space world (a load, an own save)
+    CHECK(!sale_pays_now(false, true, 4, 4)); // loading, an editor
+    CHECK(sale_pays_now(true, false, 4, 5));  // no world tags (space.owed_id off): as before
+    // BUG-1486: the host's colony only
+    const uint32_t me = 0x10, npc = 0x22;
+    CHECK(host_colony(5, {me}, me, false));
+    CHECK(host_colony(5, {npc, me}, me, false));
+    CHECK(!host_colony(5, {npc}, me, false));    // an NPC empire's colony
+    CHECK(!host_colony(5, {}, me, false));       // no civilization data
+    CHECK(!host_colony(4, {me}, me, false));     // not a colony
+    CHECK(!host_colony(5, {me}, me, true));      // a partner's own-star mirror colony (my pol)
+    CHECK(!host_colony(5, {0xFFFFFFFFu}, 0xFFFFFFFFu, false)); // no empire
+    // BUG-1489: non-finite deltas refused, finite ones clamped
+    float o = 7;
+    CHECK(terra_delta(0.05f, o) && o == 0.05f);
+    CHECK(terra_delta(-0.2f, o) && o == -0.2f);
+    CHECK(terra_delta(1e30f, o) && o == kTerraDeltaMax);
+    CHECK(terra_delta(-5.f, o) && o == -kTerraDeltaMax);
+    o = 7;
+    CHECK(!terra_delta(std::nanf(""), o) && o == 7);
+    CHECK(!terra_delta(INFINITY, o) && !terra_delta(-INFINITY, o));
+    // BUG-1482: the adopted budget's hold
+    AdoptHold h;
+    CHECK(h.report(123) && !h.due(0)); // no hold: every report is the budget
+    h.start(9000, 100);
+    CHECK(h.due(100) && !h.due(101) && h.due(102.5)); // resent every 2 s
+    CHECK(!h.report(0));                              // the guest's money before the K_SET: not its budget
+    CHECK(h.on && h.report(9000) && !h.on);           // its report of the adopted budget ends the hold
+    CHECK(h.report(8000) && !h.due(200));
+    h.start(5, 0);
+    CHECK(h.due(0) && !h.due(kAdoptGiveUp + 1) && !h.on && h.report(1)); // never confirmed: given up
+    // BUG-1491: an offer with no answer after the receiver's own life plus the slack comes back
+    CHECK(!offer_unanswered(10, 10 + 120 + kOfferAnswerSlack - 1, 120));
+    CHECK(offer_unanswered(10, 10 + 120 + kOfferAnswerSlack + 1, 120));
+}
+
 int main()
 {
     test_jump_target();
@@ -542,6 +586,7 @@ int main()
     test_restore_window();
     test_rejoin_kept();
     test_fleet_leads();
+    test_audit_0717();
     printf(g_fail ? "space_tests: %d FAILED\n" : "space_tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }
