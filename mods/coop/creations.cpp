@@ -257,6 +257,18 @@ uint32_t fnv(const void* p, size_t n, uint32_t h)
     return h;
 }
 
+// BUG-9308 (CORE-11 of the 0.7.15.5 audit): the size was not checked before the buffer was made. GetFileSizeEx's
+// result was ignored and the whole file size allocated (out.resize) before the 256 MB limit was looked at: a My
+// Creations file of several hundred MB (heavy Sporepedia use) was zero-filled in the 32-bit game for nothing, or threw
+// std::bad_alloc where no such block was free (unhandled: the game ended). Now a failed size or one above the limit is
+// refused before anything is allocated, said once per size in the log. Off (`coop.fix creations.size_first off`): the
+// allocation first (0.7.16).
+static bool g_size_first_fix = true;
+COOP_FIX("creations.size_first", "BUG-9308", g_size_first_fix,
+         "creations: a My Creations file above 256 MB (or of no known size) is refused before its size is allocated (bad_alloc in the 32-bit game)");
+constexpr LONGLONG kMaxReadBytes = 256 << 20;
+static LONGLONG g_refused_size = -1; // the size last said in the log
+
 static bool read_file(const std::wstring& path, std::vector<uint8_t>& out)
 {
     HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0,
@@ -264,7 +276,18 @@ static bool read_file(const std::wstring& path, std::vector<uint8_t>& out)
     if (f == INVALID_HANDLE_VALUE)
         return false;
     LARGE_INTEGER sz{};
-    GetFileSizeEx(f, &sz);
+    bool sized = GetFileSizeEx(f, &sz) != 0;
+    if (g_size_first_fix && (!sized || sz.QuadPart < 0 || sz.QuadPart >= kMaxReadBytes)) {
+        LONGLONG s = sized ? sz.QuadPart : -2;
+        if (s != g_refused_size)
+            H->log(M, SK_WARN, "creations: %s is %s: not read, own creations are off (BUG-9308)",
+                   slotfs::narrow(path).c_str(),
+                   sized ? (std::to_string(s >> 20) + " MB, above the 256 MB the mod reads").c_str() : "of no known size");
+        g_refused_size = s;
+        CloseHandle(f);
+        out.clear();
+        return false;
+    }
     out.resize((size_t)sz.QuadPart);
     DWORD rd = 0;
     bool ok = sz.QuadPart < (256 << 20) && ReadFile(f, out.data(), (DWORD)out.size(), &rd, nullptr) && rd == out.size();
