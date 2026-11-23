@@ -64,6 +64,46 @@ on the host, `host_families` on a guest, BUG-1282); `tools/msg_manifest.py` lock
 Settings: `civ.own_money`, `all.shared_dna` gets a third value (item 2), `creature.revive`, `all.party_difficulty`,
 `cell.lineage_cells`; names and defaults per the owner's answers below.
 
+**Done (2026-11-23, commit 1178d95c on rel/0.7.17).** The minors above are bumped and locked already (they are open
+until the release: a WP that adds its MSG row or changes a wire file re-locks with `tools/msg_manifest.py lock --rebase
+<family> "<WP>: <what>; unreleased <family> 1.x of 0.7.17"`, no second bump); the ids are in `net/manifest.h`
+kReservedMsgs (a WP's row must use exactly that id, name and family; PROGRESS's family is WP-P1's choice; any other new
+type takes 79 or later); the kinds in `creations.h` (kKindHostProps, kKindCaptain, kKindLineageCell); the record names
+in `player_store.h` (kRecCivWallet, kRecHistory, kRecProgress); the settings keys are listed, not declared
+(docs/07-modes.md#modes-reserved-0717: a kDefs row shows in the lobby at once, and `settings::on()` would read a third
+`all.shared_dna` value as "shared"): each WP declares its row with its behaviour. The Actor scope interface is
+`mods/coop/actor_scope.h` (`actor::Scope`, `actor::current()`, `actor::reset()`; WP-H1 owns the hook and the scopes,
+WP-P1 / P2 read it). Docs: docs/04-netcode.md#netcode-reserved-0717.
+
+## Tickets of 0.7.17 (WP-0, 2026-11-23)
+
+Opened in WP-0 for every item without a ticket, so that parallel branches do not collide on numbers. Each WP closes its
+own (fixed with commits and twins, or with evidence why not); bugs found on the way get new tickets as usual.
+
+| Item | WP (branch) | Tickets |
+|---|---|---|
+| 1 Civ own money | WP-M1 (feat/w68-wallet) | BUG-1468 (feature, #205), BUG-1478 (CIV-5), BUG-1236, BUG-1461, BUG-1531 (#219's question: the guest's spaceship editor at Civ -> Space) |
+| 2 Own progress | WP-P1 / P2 (feat/w69-progress) | BUG-1469 (feature, #209) |
+| 3 Own stage history | WP-H1 (feat/w70-history) | BUG-1470 (feature, #207, #217), BUG-1471 (a guest's kills and social wins raise the host's trait progress) |
+| 4 Revive | WP-R1 (feat/w71-revive) | BUG-1472 (feature, #214) |
+| 5 Difficulty | WP-D1 (feat/w72-difficulty) | BUG-1473 (feature) |
+| 6 Shared enemies | WP-S1 (fix/w73-fleet), WP-A1 (feat/w83-advnpc) | BUG-1288 (Space), BUG-1474 (Adventures, feature) |
+| 7 Per-player captain | WP-K1 (feat/w74-captain) | BUG-1475 (#217 a own captain, feature), BUG-1279, BUG-1262, BUG-1237 |
+| 8 Share the played planet | WP-W1 (fix/w75-share) | BUG-1434, BUG-1436 |
+| 9 Cell small items | WP-L1 / L2 (feat/w81-cell) | BUG-1476 (#210 diet premades), BUG-1477 (#211 lineage cells) |
+| 10 Planned tickets | WP-F1, WP-C1, WP-T1 | as listed in item 10; BUG-1530 (npc_nest_backoff INCONCLUSIVE, WP-F1) |
+| 11 Audit, Civ | WP-V1 (fix/w78-civ) | BUG-1479 (CIV-10), BUG-1480 (CIV-11), BUG-1481 (CIV-15 a); CIV-5 is BUG-1478 (WP-M1) |
+| 11 Audit, Space | WP-X1 (fix/w77-space) | BUG-1482 (SPC-3), 1483 (SPC-4), 1484 (SPC-5), 1485 (SPC-6), 1486 (SPC-11), 1487 (SPC-13), 1488 (SPC-14), 1489 (SPC-15), 1490 (SPC-16), 1491 (SPC-17) |
+| 11 Audit, Tribe | WP-B1 (fix/w79-tribe) | BUG-1492 (TR-5), 1493 (TR-7), 1494 (TR-8), 1495 (TR-9), 1496 (TR-11) |
+| 11 Audit, Net and Core | WP-N1 (fix/w80-net) | BUG-1497 (NET-1), 1498 (NET-2), 1499 (NET-3), 1500 (NET-4), 1501 (NET-5), 1502 (NET-8), 1503 (CORE-4), 1504 (CORE-8), 1505 (CORE-13), 1506 (CORE-14) |
+| 11 Audit, Cell | WP-L1 (feat/w81-cell) | BUG-1507 (CELL-4), 1508 (CELL-6), 1509 (CELL-7), 1510 (CELL-8), 1511 (CELL-9), 1512 (CELL-11), 1513 (CELL-13), 1514 (CELL-14) |
+| 11 Audit, Creature / UI / FX | WP-C1 (fix/w82-creature), WP-N1 | BUG-1515 (CR-13), 1516 (UIFX-4), 1517 (UIFX-6) (WP-C1); BUG-1518 (UIFX-8), 1519 (UIFX-10) (WP-N1) |
+| 11 Audit, SporeKit | WP-N1 (fix/w80-net) | BUG-1520 (KIT-13), BUG-1521 (KIT-21) |
+| 12 Tribe save_end | WP-B1 (fix/w79-tribe) | BUG-1522 |
+| 12 Five Creature marks | WP-C1 (fix/w82-creature) | BUG-1523 (host's puppet hidden), 1524 (Cell portrait, no herbivore mouth), 1525 (100 % Cell progress, no legs DNA), 1526 (no partner HP, healing effect stays), 1527 (extinction count) |
+| 12 Tearing report | WP-N1 (fix/w80-net) | BUG-1528 (Report a problem opens Explorer in full screen), BUG-1529 (minimized stops logged as hitches); BUG-0779 gets a History line |
+| 12 Raw-path catch_prop jumps | WP-F1 (fix/w76-motion) | part of BUG-1235 |
+
 ## Item 1: Civ own money (PR #205)
 
 **Goal.** Each player has its own Civ money (owner's friend's request): its cities' income is its own, its purchases are
