@@ -2,6 +2,7 @@
 // docs/sync-architecture-plan.md, docs/re/creature.md#creature-world-objects).
 #include "lifecycle.h"
 #include "worldobj.h"
+#include "worldobj_orn.h"
 
 #include <windows.h>
 
@@ -19,6 +20,7 @@
 #include "game.h"
 #include "modes.h"
 #include "realign.h"
+#include "net/compat.h"
 #include "net/protocol.h"
 #include "sporekit_game.hpp"
 #include "tribe.h"
@@ -31,7 +33,7 @@ static const SkHost* H;
 static SkMod* M;
 static Ctx C;
 
-static uintptr_t a_FruitSetState, a_FloraGet, a_DropFruit, a_TreeVt, a_StrategyGet, a_ExecuteAction, a_OrnUsed, a_RewardFind, a_RewardHandlerVt, a_HerdSetExtinct, a_HerdSetExtinctFlag;
+static uintptr_t a_FruitSetState, a_FloraGet, a_DropFruit, a_TreeVt, a_StrategyGet, a_ExecuteAction, a_OrnUsed, a_OrnFadeOut, a_RewardFind, a_RewardHandlerVt, a_HerdSetExtinct, a_HerdSetExtinctFlag;
 
 // ---------------------------------------------------------------- the kinds' common shape
 // One object of a kind in this game: its pointer (valid in this frame only), the id the host's game
@@ -326,13 +328,35 @@ static uint8_t* orn_reward(void* o)
     uint8_t* r = thiscall<uint8_t*>(a_RewardFind, h, kOrnMsg, o);
     return r && !IsBadReadPtr(r, 0x2C) ? r : nullptr;
 }
+static_assert(kGone == wobj_orn::kGone, "wobj_orn::kGone mismatch");
+static bool is_guest();
+// BUG-1261 (ported from fix/agy-open-bugs 576df657, an outside agent; docs/re/creature.md#creature-ornament-fadeout):
+// after a real dig (the interact node's Exit 0xD868C0 -> cInteractiveOrnament_FadeOut(orn, 0.5f, true)) or a part
+// tier's TierBoneCleanup (0xD408E0) the game fades the bone out and destroys it 3.5 s later. The copy of a use only
+// ran NextModel, the reward's +0x24 and +0xA3 (no fade), and a bone the host's game no longer had (kGone) was left:
+// the guest kept bones the host did not have (unclickable after a dig nearby, clickable after a far dig or a tier
+// cleanup: "the guest digs a fossil where the host sees empty grass"). Now the state carries bit 1 (kFading, +0x238 & 7
+// == 2): a fade is copied once (never restarted), and a copy the host's list lacks inside its snapshot's inner radius
+// fades too (bound at once, unbound after kOwnGrace snapshots) when the host's list can be trusted
+// (wobj_orn::gone_trusted: a host of creature 1.3, kGoneSettleS after the host was away or the world changed). A guest
+// reports a fade only to such a host. `coop.wobj use <orn>` without `fade` stays a use without a fade (the older tests).
+// `coop.fix wobj.ornament_fade off`: the reward, +0xA3 and the next model only, kGone ignored (0.7.16.1)
+static bool g_orn_fade_fix = true;
+COOP_FIX("wobj.ornament_fade", "BUG-1261", g_orn_fade_fix,
+         "creature: dug-up or removed bones and fossils fade out and disappear on the other player's game too");
+static uint32_t g_orn_fades = 0, g_orn_destroys = 0, g_orn_gone_held = 0;
+static bool g_orn_host_new = false;          // guest: the host sends and reads fades (creature 1.3)
+static double g_orn_unsettled_at = -1000;    // guest: the host away, the world changed, not in the stage (last seen)
+static double g_orn_now = 0;                 // guest: this tick's time (the kind's callbacks have none)
+static bool orn_gone_ok() { return wobj_orn::gone_trusted(g_orn_fade_fix, g_orn_host_new, g_orn_now, g_orn_unsettled_at); }
+
 static bool orn_take(void* o) { return orn_reward(o) != nullptr; }
 static uint32_t orn_state(void* o)
 {
     uint8_t* r = orn_reward(o);
-    return r && field<uint8_t>(r, 0x24) ? 1u : 0u;
+    uint32_t flags = IsBadReadPtr(o, 0x260) ? 0u : field<uint32_t>(o, 0x238);
+    return wobj_orn::encode_state(r && field<uint8_t>(r, 0x24) != 0, flags, g_orn_fade_fix);
 }
-static bool orn_used(uint32_t s) { return s != kGone && (s & 1); }
 static void orn_collect(Items& out) { collect_noun(kOrnNoun, out, orn_state, orn_take); }
 // BUG-1251: the game's own dig (the interact node 0xD869B0) shows the ornament's next model first
 // (cInteractiveOrnament_NextModel 0xC40360: +0x248 + 1 of the 12-byte model list +0x24C..+0x250, set on the model,
@@ -354,10 +378,53 @@ static void orn_use(void* o) // used up without the reward, as 0xD46BE0 leaves t
     field<uint8_t>(r, 0x24) = 1;
     field<uint8_t>(o, 0xA3) = 0;
 }
-static bool orn_behind(uint32_t local, uint32_t host) { return orn_used(host) && !orn_used(local); }
-static void orn_apply(const Item& l, uint32_t) { orn_use(l.p); }
-static bool orn_acted(uint32_t was, uint32_t now, uint32_t host) { return !orn_used(was) && orn_used(now) && !orn_used(host); }
-static void orn_act(const Item& o, uint32_t) { orn_use(o.p); }
+static void orn_fade(void* o) // BUG-1261: fade out and destroy (0.5 s delay + 3.0 s fade -> DestroyInstance)
+{
+    if (!g_orn_fade_fix || !game::listed(o, kOrnNoun) || IsBadReadPtr(o, 0x260))
+        return;
+    uint32_t flags = field<uint32_t>(o, 0x238);
+    if (wobj_orn::flags_fading_to_destroy(flags))
+        return; // fading already: never restart the 500 ms timer or the alpha
+    // cInteractiveOrnament::Update 0xC40A50 skips the fade when +0xA9 == 0 (hidden) or +0x238 & 1: destroyed at once
+    if (!a_OrnFadeOut || !field<uint8_t>(o, 0xA9) || (flags & 1u)) {
+        game::destroy_instance(o);
+        g_orn_destroys++;
+        return;
+    }
+    thiscall<void>(a_OrnFadeOut, o, 0.5f, true);
+    g_orn_fades++;
+}
+static void orn_apply_state(const Item& l, uint32_t remote)
+{
+    wobj_orn::Plan p = wobj_orn::apply_plan(l.st, remote, g_orn_fade_fix);
+    if (p.use)
+        orn_use(l.p);
+    if (p.fade)
+        orn_fade(l.p);
+}
+// guest: kGone only when the host's list is trusted (review finding 6); a host gets kGone from a guest's act only for a
+// copy that faded on the guest (acted)
+static bool orn_gone_held(uint32_t host)
+{
+    if (host != kGone || !is_guest() || orn_gone_ok())
+        return false;
+    g_orn_gone_held++;
+    return true;
+}
+static bool orn_behind(uint32_t local, uint32_t host)
+{
+    return !orn_gone_held(host) && wobj_orn::behind(local, host, g_orn_fade_fix);
+}
+static void orn_apply(const Item& l, uint32_t host)
+{
+    if (!orn_gone_held(host))
+        orn_apply_state(l, host);
+}
+static bool orn_acted(uint32_t was, uint32_t now, uint32_t host) // guest: fades only to a host that reads them
+{
+    return wobj_orn::acted(was, now, host, g_orn_fade_fix && (g_orn_host_new || !is_guest()));
+}
+static void orn_act(const Item& o, uint32_t guest_now) { orn_apply_state(o, guest_now); }
 
 // ---------------------------------------------------------------- kind: herd (a nest's species extinct, BUG-0460)
 // cHerd (noun 0x1BE418E, game::kHerdNoun): +0x34 its home (the save's: the same on every game), +0x84 the avatar's
@@ -1237,7 +1304,7 @@ static Kind g_kinds[] = {
      .gone_acted = true, .drop_own = true, .make = fruit_make, .place = fruit_place, .relocate = 25.f, .place_eps = 1.0f},
     {"tree", nullptr, kStCreature | kStTribe, 0.5f, 70.f, 48, tree_collect, tree_behind, tree_apply, tree_acted, tree_act, false, false},
     {"herd", nullptr, kStCreature, 1.0f, 3000.f, 48, herd_collect, herd_behind, herd_apply, herd_acted, herd_act, false, false},
-    {"interactive_ornament", nullptr, kStCreature, 1.5f, 90.f, 40, orn_collect, orn_behind, orn_apply, orn_acted, orn_act, false, false},
+    {"interactive_ornament", nullptr, kStCreature, 1.5f, 90.f, 40, orn_collect, orn_behind, orn_apply, orn_acted, orn_act, true, true},
     // the bind radius 30 m: 15 of 19 citizens were within 15 m of a partner without the fix (out/detector/20261103-final.md)
     {.name = "citizen", .stages = kStCiv, .tol = 30.f, .range = 200.f, .max = 56, .collect = citizen_collect,
      .behind = citizen_behind, .apply = citizen_apply, .acted = citizen_acted, .act = citizen_act, .gone_acted = false,
@@ -1377,6 +1444,8 @@ static void host_tick(double now)
         g_last_tx[k] = now;
         // BUG-1227: a guest before 0.7.15 gets every `every` s (one fast tick of n)
         bool slow_due = !fast || g_slow_tick[k]++ % std::max(1, (int)std::lround((K.every > 0 ? K.every : kSnapInterval) / K.fast_every)) == 0;
+        if (g_orn_fade_fix && K.collect == orn_collect && !reward_handler())
+            continue; // BUG-1261: no ornament list without the reward handler (it would be empty: every copy kGone)
         Items all;
         K.collect(all);
         for (auto& p : C.sess->players()) {
@@ -1722,6 +1791,7 @@ static void drive_frame(double now, uint8_t sb, bool away)
     }
 }
 
+static uint32_t g_orn_epoch = 0; // BUG-1261: the world epoch the trust was last reset for
 static void guest_tick(double now)
 {
     if (g_epoch != game::world_epoch()) {
@@ -1729,6 +1799,17 @@ static void guest_tick(double now)
         g_epoch = game::world_epoch();
     }
     drive_frame(now, stage_bit(), C.host_away && C.host_away());
+    { // BUG-1261: when the host's ornament list can be trusted
+        g_orn_now = now;
+        if ((C.host_away && C.host_away()) || !(stage_bit() & kStCreature) || g_orn_epoch != g_epoch) {
+            g_orn_unsettled_at = now;
+            g_orn_epoch = g_epoch;
+        }
+        bool has = false;
+        std::vector<net::FamilyRev> f;
+        g_orn_host_new = C.sess && C.sess->host_families(has, f) &&
+                         net::compat::has_minor(f, has, (uint8_t)net::Family::creature, 1, wobj_orn::kFadeMinor);
+    }
     if (now - g_last_guest < kGuestInterval)
         return;
     g_last_guest = now;
@@ -1907,8 +1988,10 @@ std::string status()
                  t.tx, t.rx, t.bound, t.applied, t.dropped, t.missing, t.made, t.req_tx, t.req_rx, t.acted, t.placed, t.relocated, t.reclassed);
         s += b;
     }
-    snprintf(b, sizeof b, "fruit made drops=%u fail=%u; bundles made=%u carried=%u removed=%u left_alone=%u; city decorations sets=%u removed=%u\n",
-             g_fruit_made_drops, g_fruit_made_fail, g_bundles_made, g_bundles_carried, g_bundles_removed, g_bundles_left_alone, g_corn_sets, g_corn_removed);
+    snprintf(b, sizeof b, "fruit made drops=%u fail=%u; bundles made=%u carried=%u removed=%u left_alone=%u; city decorations sets=%u removed=%u; "
+             "ornaments faded=%u destroyed=%u gone_held=%u host_new=%d\n",
+             g_fruit_made_drops, g_fruit_made_fail, g_bundles_made, g_bundles_carried, g_bundles_removed, g_bundles_left_alone, g_corn_sets, g_corn_removed,
+             g_orn_fades, g_orn_destroys, g_orn_gone_held, (int)g_orn_host_new);
     s += b;
     snprintf(b, sizeof b, "citizens walks=%u puts=%u far=%u relocs=%u glides=%u runs=%u run_ends=%u holds=%u hold_places=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks,
              g_cit_puts, g_cit_far, g_cit_relocs, g_cit_glides, g_cit_run_plays, g_cit_run_ends, g_cit_holds, g_cit_hold_places, g_space_cit_puts, g_veh_drives);
@@ -1997,9 +2080,10 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
             uint8_t* o = (uint8_t*)it.p;
             int idx = field<int>(o, 0x248), n = (int)((field<uintptr_t>(o, 0x250) - field<uintptr_t>(o, 0x24C)) / 12);
             uint8_t* rw = orn_reward(o);
-            H->out_printf(out, "orn %p id=%u pos=(%.2f %.2f %.2f) dist=%.1f sort=%d model=%d/%d a3=%d a4=%d reward=%p used=%d key=%08X\n",
+            H->out_printf(out, "orn %p id=%u pos=(%.2f %.2f %.2f) dist=%.1f sort=%d model=%d/%d a3=%d a4=%d reward=%p used=%d key=%08X fade=%X/%d/%d\n",
                           it.p, it.id, it.pos.x, it.pos.y, it.pos.z, d, field<int>(o, 0x110), idx, n, field<uint8_t>(o, 0xA3),
-                          field<uint8_t>(o, 0xA4), (void*)rw, rw ? (int)field<uint8_t>(rw, 0x24) : -1, field<uint32_t>(o, 0xC4));
+                          field<uint8_t>(o, 0xA4), (void*)rw, rw ? (int)field<uint8_t>(rw, 0x24) : -1, field<uint32_t>(o, 0xC4),
+                          field<uint32_t>(o, 0x238), field<int>(o, 0x240), field<int>(o, 0x244)); // (BUG-1261: +0x238 flags, delay, fade ms)
         }
         return 0;
     }
@@ -2160,7 +2244,17 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
                       b && !IsBadReadPtr(b, 0x138) ? field<void*>(b, 0x128) : nullptr);
         return b ? 0 : 1;
     }
-    if (!strcmp(a, "use") && argc > 2) { // use <ornament>: the avatar uses it the game's way (OrnamentUsed + 0xD3353638)
+    if (!strcmp(a, "ornkill") && argc > 2) { // tests (BUG-1261): ornkill <ornament>: DestroyInstance, as TierBoneCleanup's off-screen path 0xD409E3
+        void* o = (void*)strtoul(argv[2], nullptr, 16);
+        if (IsBadReadPtr(o, 0x260) || !game::listed(o, kOrnNoun)) {
+            H->out_printf(out, "no such ornament\n");
+            return 1;
+        }
+        game::destroy_instance(o);
+        H->out_printf(out, "destroyed\n");
+        return 0;
+    }
+    if (!strcmp(a, "use") && argc > 2) { // use <ornament> [fade]: the avatar uses it the game's way (OrnamentUsed + 0xD3353638; BUG-1261: `fade` also the interact node Exit's FadeOut)
         void* o = (void*)strtoul(argv[2], nullptr, 16);
         if (!av || IsBadReadPtr(o, 0x260) || game::noun_id(o) != kOrnNoun || !a_StrategyGet || !a_ExecuteAction || !a_OrnUsed) {
             H->out_printf(out, "no avatar or no such ornament\n");
@@ -2172,6 +2266,8 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
         uint32_t msg[3] = {(uint32_t)(uintptr_t)av, (uint32_t)(uintptr_t)o, 0};
         if (st)
             thiscall<void>(a_ExecuteAction, st, kOrnMsg, (void*)msg);
+        if (argc > 3 && !strcmp(argv[3], "fade") && a_OrnFadeOut)
+            thiscall<void>(a_OrnFadeOut, o, 0.5f, true); // BUG-1261: as the interact node's Exit 0xD86921
         H->out_printf(out, "used (next model %d) state=%X reward=%p\n", r & 0xFF, orn_state(o), (void*)orn_reward(o)); // (a bool in al)
         return 0;
     }
@@ -2298,6 +2394,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     a_StrategyGet = H->sym("App::cCreatureModeStrategy::Get");
     a_ExecuteAction = H->sym("App::cCreatureModeStrategy::ExecuteAction");
     a_OrnUsed = H->sym("SporeCoop::cInteractiveOrnament_NextModel");
+    a_OrnFadeOut = H->sym("SporeCoop::cInteractiveOrnament_FadeOut"); // BUG-1261
     a_RewardFind = H->sym("SporeCoop::CreatureReward_Find");
     a_RewardHandlerVt = H->sym("SporeCoop::CreatureStageRewardHandler_vftable");
     a_HerdSetExtinct = H->sym("SporeCoop::cHerd_SetExtinct");
@@ -2322,7 +2419,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     if (!a_FruitSetState || !a_DropFruit || !a_OrnUsed)
         H->log(M, SK_WARN, "wobj: symbols missing, world objects stay per game");
     H->command_add(M, "coop.wobj",
-                   "coop.wobj [list <kind> [r] [x y z] | loose <kind> <n> <m> | use <ornament> | eat <fruit> | drop <tree> <slot>] - the host's world objects (fruit, trees, ornaments) on every game (BUG-0472, BUG-0459)",
+                   "coop.wobj [list <kind> [r] [x y z] | loose <kind> <n> <m> | use <ornament> [fade] | ornkill <ornament> | eat <fruit> | drop <tree> <slot>] - the host's world objects (fruit, trees, ornaments) on every game (BUG-0472, BUG-0459)",
                    c_wobj, nullptr, SK_CMD_OUTSIDE_FRAME);
 }
 

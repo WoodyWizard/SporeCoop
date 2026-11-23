@@ -20,6 +20,7 @@
 #include "net/snapshot_rx.h"
 #include "share_logic.h"
 #include "world_id.h"
+#include "worldobj_orn.h"
 
 static int g_fail = 0;
 #define CHECK(c)                                                  \
@@ -800,8 +801,101 @@ static void share_one_planet()
     CHECK(other_planets({"Szaros.spo", "Afrincsia.spo", "Old.spo"}, "Szaros") == 2);
 }
 
+// BUG-1261: Creature interactive ornament fade-out and kGone sync rules (worldobj_orn.h)
+static void ornament_fade_rules()
+{
+    using namespace wobj_orn;
+    // Flag bit decoding (+0x238: bit 0 blocks Update, bit 1 fading, bit 2 hide instead of destroy)
+    CHECK(!flags_fading_to_destroy(0u));
+    CHECK(flags_fading_to_destroy(2u));
+    CHECK(!flags_fading_to_destroy(3u)); // bit 0 set: Update skips fade
+    CHECK(!flags_fading_to_destroy(6u)); // bit 2 set: hide mode, not destroy
+    CHECK(flags_fading_to_destroy(0x102u));
+
+    // State encoding (fix on vs off, wire-compatible with 0.7.15 bit 0)
+    CHECK(encode_state(false, 0u, true) == 0u);
+    CHECK(encode_state(true, 0u, true) == kUsed);
+    CHECK(encode_state(false, 2u, true) == kFading);
+    CHECK(encode_state(true, 2u, true) == (kUsed | kFading));
+    CHECK(encode_state(true, 2u, false) == kUsed);
+    CHECK(encode_state(false, 2u, false) == 0u);
+
+    // Non-fading use (coop.wobj use without fade, wobj_ornament / wobj_ornament_model tests): never fades
+    {
+        Plan p = apply_plan(0u, kUsed, true);
+        CHECK(p.use && !p.fade && behind(0u, kUsed, true));
+        CHECK(!behind(kUsed, kUsed, true));
+        CHECK(acted(0u, kUsed, 0u, true));
+        CHECK(!acted(kUsed, kUsed, 0u, true));
+    }
+
+    // Real host dig (kUsed | kFading): guest runs use + fade once, never restarts fade
+    {
+        Plan p = apply_plan(0u, kUsed | kFading, true);
+        CHECK(p.use && p.fade && behind(0u, kUsed | kFading, true));
+        Plan p2 = apply_plan(kUsed, kUsed | kFading, true);
+        CHECK(!p2.use && p2.fade && behind(kUsed, kUsed | kFading, true));
+        CHECK(!behind(kUsed | kFading, kUsed | kFading, true));
+        CHECK(!behind(kUsed | kFading, kGone, true));
+        CHECK(!behind(kFading, kGone, true));
+    }
+
+    // Host TierBoneCleanup on-screen (kFading without kUsed): guest marks unclickable + fades, no echo back to host
+    {
+        Plan p = apply_plan(0u, kFading, true);
+        CHECK(p.use && p.fade && behind(0u, kFading, true));
+        CHECK(!acted(0u, kUsed | kFading, kFading, true));
+    }
+
+    // Host kGone (far dig, TierBoneCleanup off-screen, or old 0.7.15 host): guest marks unclickable + fades once
+    {
+        Plan p0 = apply_plan(0u, kGone, true);
+        CHECK(p0.use && p0.fade && behind(0u, kGone, true));
+        Plan p1 = apply_plan(kUsed, kGone, true);
+        CHECK(!p1.use && p1.fade && behind(kUsed, kGone, true));
+        // Switch off (0.7.15 behavior): kGone and kFading are ignored
+        Plan off0 = apply_plan(0u, kGone, false);
+        CHECK(!off0.use && !off0.fade && !behind(0u, kGone, false));
+        Plan off1 = apply_plan(kUsed, kUsed | kFading, false);
+        CHECK(!off1.use && !off1.fade && !behind(kUsed, kUsed | kFading, false));
+    }
+
+    // Real guest dig -> host act (including mid-dig Update -> Exit split and gone_acted fallback)
+    {
+        CHECK(acted(0u, kUsed | kFading, 0u, true));
+        CHECK(acted(kUsed, kUsed | kFading, kUsed, true));
+        CHECK(acted(kUsed | kFading, kUsed | kFading, kUsed, true));
+        CHECK(!acted(kUsed | kFading, kUsed | kFading, kUsed | kFading, true));
+        CHECK(acted(kUsed | kFading, kGone, kUsed, true));
+        CHECK(!acted(0u, kGone, 0u, true));
+        CHECK(!acted(kUsed, kGone, kUsed, true));
+        CHECK(!acted(kUsed | kFading, kGone, kUsed, false));
+    }
+
+    // Invariant: behind(l, r, f) == (apply_plan(l, r, f).use || apply_plan(l, r, f).fade)
+    const bool fixes[] = {false, true};
+    const uint32_t locals[] = {0u, kUsed, kFading, kUsed | kFading};
+    const uint32_t remotes[] = {0u, kUsed, kFading, kUsed | kFading, kGone};
+    for (bool fix : fixes)
+        for (uint32_t l : locals)
+            for (uint32_t r : remotes) {
+                Plan p = apply_plan(l, r, fix);
+                CHECK(behind(l, r, fix) == (p.use || p.fade));
+            }
+    // the review's fixes (0.7.17): kGone only from a host of kFadeMinor, kGoneSettleS after it was away
+    CHECK(gone_trusted(true, true, 100.0, 80.0));
+    CHECK(!gone_trusted(true, true, 100.0, 95.0));
+    CHECK(!gone_trusted(true, false, 100.0, 0.0));
+    CHECK(!gone_trusted(false, true, 100.0, 0.0));
+    // a guest under an old host reports uses only (acted called with fade_fix && host_new == false)
+    CHECK(!acted(0u, kFading, 0u, false) && acted(0u, kUsed | kFading, 0u, false) && !acted(kUsed | kFading, kGone, kUsed, false));
+    printf("  ornament_fade_rules ok\n");
+}
+
+
 int main()
 {
+    ornament_fade_rules();
     arrival_wait();
     registry_bind();
     registry_liveness();

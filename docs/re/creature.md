@@ -5461,3 +5461,64 @@ were not re-checked by us yet (no game run by day): `~` until the night run of `
   where it fell each frame, so a fall should not start. The test row `creature_revive_paths` records it.
 * Negative: no new game function or field is used (game::health / set_health / stop / teleport / apply_damage / hit,
   SetEvolutionPoints and AddEvolutionPoints are known): no new symbol.
+
+
+## Interactive ornament fade-out after digging and tier bone cleanup (2026-11-23, fix/w82-creature; from fix/agy-open-bugs 2026-11-20)
+<a id="creature-ornament-fadeout"></a>
+
+BUG-1261, ported from the outside agent's fix/agy-open-bugs 576df657 (its static findings, re-checked by the 0.7.17 review; extends `#creature-world-objects` and `#creature-ornament-models`). Disassembly of GOG 2024 `SporeApp.exe`
+(`objdump`, 2026-11-20):
+
+* ✔ Interact BT node Update `0xD869B0` (state `1 -> 2`, `0xD86B6C..0xD86BB8`): calls `cInteractiveOrnament_NextModel`
+  `0xC40360`, clears `[orn+0xA3] = 0` (unclickable), writes node state `2`, posts reward message `0xD3353638`
+  (`{creature, ornament, 0}` -> `reward+0x10 = 0`, `reward+0x24 = 1`), and returns `1`. On the next tick, state `2`
+  returns `0` (`0xD86B31..0xD86B3A`), which runs Interact BT node Exit `0xD868C0`.
+* ✔ Interact BT node Exit `0xD868C0` (when node state == `2`, `0xD868DF..0xD86926`): calls `0xB531B0(spatial, 0)`,
+  clears `spatial+0x70` (`orn+0xA4 = 0`), casts `spatial` via `vt 0xB8(0x03A25119)` to `cInteractiveOrnament*`, and at
+  `0xD86921` calls `SporeCoop::cInteractiveOrnament_FadeOut` (`0x00C40990`, `thiscall void(orn, float delay_s, bool destroy) ret 8`)
+  with `(orn, 0.5f, true)`.
+* ✔ `SporeCoop::cInteractiveOrnament_FadeOut` (`0x00C40990`): clamps `delay_s` to `[0.0f, FLT_MAX]`, multiplies by
+  `1000.0f` (`0x148BA68`), and writes `delay_ms` to `[orn+0x240]`. If `delay_ms > 0`, sets `[orn+0x238] |= 2`; else
+  clears bit `1`. If `destroy != 0`, clears `[orn+0x238] &= ~4`; else sets bit `2` and shows model `[orn+0xD0]` via
+  `vt 0x16C(model, 1)`. Resets `[model+0x58]` alpha to `1.0f` (`0x1453740`). Calling it again while a fade is already
+  running resets `+0x240` and resets alpha to `1.0f`. Direct callers in `SporeApp.exe`: `0xD86921` (interact Exit,
+  `0.5f, 1`), `0xD409D7` (`TierBoneCleanup`, `0.5f, 1`), and `0xC926AA` (`destroy = 0`, hide mode).
+* ✔ `cInteractiveOrnament::Update` (`0x00C40A50`, `thiscall void(orn, uint32_t dt_ms) ret 4`), called every tick for
+  every `0x03A2511E` instance by `cCreatureGame::Update` at `0xD4598E`:
+  * If `[orn+0xA9] == 0` (initialized to `1` in `cSpatialObject` ctor `0xC898F1`), hides the model and returns without
+    updating fade.
+  * Returns immediately if `[orn+0x238] & 1` is set (set in `0xC40960`) or `[orn+0x238] & 2` is clear.
+  * Counts down `[orn+0x240]` (500 ms delay); when it reaches `<= 0`, sets `[orn+0x240] = 0` and `[orn+0x244] = 0xBB8`
+    (3000 ms fade duration).
+  * Counts down `[orn+0x244]`: if model `[orn+0xD0]` is non-null and `+0x244 > 0`, decays `[model+0x58]` alpha
+    exponentially (`0.1^(dt_ms * 0.001) * alpha + (1 - ...) * 0.01`, sets `[model+4] |= 2`); when `+0x244 <= 0` (or
+    immediately when `[orn+0xD0] == nullptr`), with bit `2` clear (`destroy = true`), calls
+    `cGameNounManager::DestroyInstance(orn)` (`0xB22560`) at `0xC40B1A` and zeroes `[orn+0x244]`. Total lifetime after a
+    real dig: **3.5 s**.
+* ✔ `TierBoneCleanup` (`0x00D408E0`): when a part tier completes, iterates all `cInteractiveOrnament` instances of sort
+  `2` (`+0x110 == 2`) whose `+0x28` matches the tier id (`0x57F31D0B`..`0x57F31D0E`). If on-screen (`spatial vt 0x48`
+  at `0xD409AC`), calls `NextModel` (`0xC40360`), sets `[orn+0xA3] = 0`, and calls
+  `cInteractiveOrnament_FadeOut(orn, 0.5f, true)` at `0xD409D7` (without touching the reward); if off-screen, calls
+  `DestroyInstance(orn)` (`0xB22560`) directly at `0xD409E3`.
+* ✔ Why `BUG-1261` happened:
+  1. `worldobj.cpp` `orn_use` only called `NextModel`, marked the reward used, and cleared `+0xA3 = 0` without calling
+     `cInteractiveOrnament_FadeOut`: 3.5 s after a nearby host dig, the host's bone was destroyed while the guest's
+     copy stayed forever as an unclickable bone (`+0xA3 == 0`).
+  2. `"interactive_ornament"` ignored `host == kGone` (`orn_behind` returned false on `kGone`) and had `drop_own = false`:
+     any bone the host dug while the guest was beyond the 90 m snapshot radius (or before join) or destroyed via
+     `TierBoneCleanup` stayed alive and clickable on the guest, letting the guest dig a fossil over empty host grass.
+* Fix (`wobj.ornament_fade`, `mods/coop/worldobj_orn.h`, `mods/coop/worldobj.cpp`): `orn_state` carries bit 1
+  (`kFading = 2u`, when `(+0x238 & 7) == 2`) alongside bit 0 (`kUsed = 1u`, wire-compatible with 0.7.15). When the
+  remote peer is fading or `kGone` (bound immediately, unbound inside the snapshot's covered `inner = S.r - tol`
+  radius after `kOwnGrace` snapshots; bones outside `inner` are never dropped), the local copy is marked unclickable
+  and faded once via `cInteractiveOrnament_FadeOut(o, 0.5f, true)` (never restarting an active fade; fallback to
+  `game::destroy_instance` if `+0xA9 == 0` or `+0x238 & 1`). `coop.wobj use <orn>` without `fade` stays non-fading so
+  `wobj_ornament` and `wobj_ornament_model` (which rely on `ornlist` static buffers not being freed) remain unaffected;
+  `coop.wobj use <orn> fade` runs the full Update + Exit fade-out sequence for tests. ~ Not run in the lab yet (night
+  run: ornament_fade_dig / _gone / _settle and the twins).
+* Added in the port (the review's findings 6 and 7): a guest takes the host's kGone only from a host of creature 1.3
+  (`wobj_orn::kFadeMinor`; a 0.7.16.1 host may send an empty list before its reward handler exists, and its orn_act
+  marks any reported state used) and only `kGoneSettleS` (10 s) after the host was away, the world changed or the
+  guest was out of the stage (`gone_trusted`, counted `gone_held=` in `coop.wobj`); a guest reports fades only to such
+  a host. The host sends no ornament list while its reward handler is not there. `coop.wobj ornkill <orn>` (tests):
+  DestroyInstance as TierBoneCleanup's off-screen path.
