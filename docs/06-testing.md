@@ -10270,3 +10270,23 @@ split over 4 lanes). Each test reads the game's own state on the other machine:
 * `adventure_tutorial` check 6 (BUG-1262): the puppet's body (modelhash of its species here) is the partner's captain's
   body on the partner's game, within 30 s after the play. Twin `adventure_tutorial_partner_off`; when both games play a
   captain of the same body the twin cannot fail (printed).
+
+## Steadier lab tests of 0.7.17 WP-T1 (2026-11-23, fix/w84-tests)
+<a id="testing-wp-t1-0717"></a>
+
+Test-only changes (no mod code) for flakes of the 0.7.16 final checks; each names its ticket in the output.
+* INCONCLUSIVE instead of FAIL when the precondition did not happen: `tribe_held_item` (the host's chief in its staff
+  gesture for every sample, BUG-1467), `latency_step_ingame` (a player in its evolution editor, BUG-1358),
+  `space_planner_miss` (no planner opened after 4 clicks, BUG-1448).
+* Waits instead of one read: `nest_eggs_air` reads the laid eggs every 0.5 s up to 30 s (BUG-1466); the planner
+  clicks after the first go 28 px beside the city after a fresh hover (BUG-1448); the walk's way back to the partner
+  does not click the walker's own nest (BUG-1358, every user of coop_puppet_walk.walk).
+* Boundaries: the npc_frozen census notes a proxy missing in the outer 5 m of its 50 m circle (BUG-1534); the
+  nest_target_probe guest stands 0.3 m over its own ground at each spot, not in the air of its paused game (BUG-1410:
+  its game kept the grounded byte, the state went without PF_JUMPING).
+* Sequential check: `tribe_npc_dash` / `creature_npc_dash` record a second dash when the along-path median is within
+  0.010 s of its limit and judge both dashes' frames (BUG-1452; a clear first dash costs nothing more).
+* Split: `own_cell` judges the populate on any read of its 60 s; the open defect of the pool's trough has its own
+  test `own_cell_steady` (extended; FAILS until BUG-1408 is fixed, docs/known-issues.md#issue-cell-own-pool-trough).
+* `space_planet_runners` allows 5 % of the runner samples over 2.5 m (the fix-on arm 0-1.4 %, lab 20261123-111347) and
+  prints the share over 1-3 m for the fix-off arm's measurement (BUG-1454).
