@@ -10,7 +10,7 @@ role: host
 versions: 0.7.17
 fixed_in:
 branch: feat/w72-difficulty
-commits: 01d85cdd, b9fb8384
+commits: 01d85cdd, b9fb8384, 386a67ce
 tests: party_difficulty, party_difficulty_auto, party_difficulty_off
 signature:
 docs: docs/03-gameplay.md#gameplay-party-difficulty, docs/06-testing.md#testing-party-difficulty, docs/re/creature.md#creature-difficulty-tunings, docs/re/space.md#space-difficulty-keys
