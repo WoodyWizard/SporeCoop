@@ -10145,3 +10145,17 @@ by chance. Their tests open the window with a host knob that stands for the real
 * space_planet_citizens cannot show space.citizen_lead (it reads mostly standing citizens); `--case runners` (suite
   space_planet_runners) compares only running host citizens at the guest's moment (host, guest, host dumps by serial);
   its limits are provisional until both arms are measured (BUG-1454).
+
+## Motion tests of 0.7.17 WP-F1 (2026-11-23, fix/w76-motion)
+<a id="testing-w76-motion"></a>
+
+* `coop.npctrack walksp V` (tests, a twoinst KNOB): every NPC proxy as if its host NPC's last reported walk ran at V m/s
+  (px.walk_sp). `npc_walk_novel_stale` seeds 0.35 m/s after `novel 1` (BUG-1360's lab case at will); its twin
+  `npc_walk_novel_stale_gait_off` (npc.walk_gait off) fails the walk gait check every run, `npc_walk_novel_gait_off`
+  (the plain case) only when the proxies' first seconds left a slow walk speed (run it with --repeat 4).
+* `tribe_walk_player_lead_cap_off` (drive.lead_cap off, BUG-1235): the raw lead's catch-up frames of 0.86-0.93 m; the
+  case needs a late walk start of the player network, so the twin fails in most runs, not all (--repeat 3).
+* `npc_frozen_thaw_lead_gap_off` (drive.lead_gap off, BUG-1234 / BUG-1376) and `social_sing_bhv_off`
+  (creature.avatar_bhv_anims off, BUG-1244): the FAIL halves of their tickets.
+* npc_nest_backoff (BUG-1530): its preconditions (NPCs at a nest, the roar backs them off, one inside the host's mound,
+  on the guest's screen) end the test INCONCLUSIVE, not FAIL; only the drawn-inside and the 4 m follow checks fail it.
