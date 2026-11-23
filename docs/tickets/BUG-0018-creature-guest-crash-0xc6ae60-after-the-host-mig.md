@@ -36,3 +36,4 @@ coop_migration.py FAIL 4/4 without the fix, OK 3/3 with it.
 - 2026-10-25: ticket written from the CHANGELOG, commits and reports (backfill).
 - 2026-10-28: switch: npc.cinedefer (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).
 - 2026-11-03: an older direct message (2026-10-25..11-01, version not given, no report): a friend crashed after the player completed the migration to a new nest. No crash file, so not confirmed as this signature (fixed in 0.7.2.4).
+- 2026-11-23: the same address in lab 20261122-194210 (migration_probe, guest, coop 0.7.15.5 build of 0.7.16) is not this path: the test's own console call of CreatureGame_NestHerdFor in GalaxyGameEntry (BUG-1442).

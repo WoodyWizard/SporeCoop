@@ -74,7 +74,13 @@ def migration(con):
 
 
 def new_nest(con):
-    """the herd of the nest the species moves to and the nest's position"""
+    """the herd of the nest the species moves to and the nest's position; (None, None) outside the Creature stage:
+    CreatureGame_NestHerdFor reads the creature game's herd and faults without one (BUG-1442: the probe's call in
+    GalaxyGameEntry, the guest reloading the host's world, crashed it at Herd_NestPosition, lab 20261122-194210; the
+    mod's own call is behind the same mode check, wsync.cpp home_nest). The mode is read right before the call; a
+    world closed in the frame between the two is not covered"""
+    if ((mode(con) or '').split() or [''])[-1] != 'Creature':
+        return None, None
     h = eax(con, 'SporeCoop::CreatureGame_NestHerdFor cdecl 1')
     p = h and eax(con, f'SporeCoop::Herd_NestPosition thiscall {h:#x}')
     return h, (vec3(con, p) if p else None)
