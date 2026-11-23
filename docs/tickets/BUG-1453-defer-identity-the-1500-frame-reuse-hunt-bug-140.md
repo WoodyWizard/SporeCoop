@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w65-tests
-commits:
+commits: 15a93727
 tests: tools/tests/coop_defer_identity.py (defer_identity)
 signature:
 docs:
