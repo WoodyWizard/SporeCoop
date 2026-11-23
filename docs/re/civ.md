@@ -2754,3 +2754,24 @@ BUG-1401. GOG 2024, logs of lab 20261121-003202 (civ_wild_sync, lane 2).
 * ✔ (logs) The census lists pool objects given out at unplaced points ((0 524.8 0)) as live creatures
   (#civ-wild-reused-frozen); a test that picks "the densest place of live creatures" can pick one of them alone.
   Tests pick herds by placed creatures (no coordinate exactly 0, not at the centre) seen in two censuses.
+
+## The Civ addresses of PRs #213 / #220, checked on GOG 2024 (2026-11-22, fix/w63-civ)
+<a id="civ-pr213-symbols"></a>
+
+First found by the Lineages fork (IltonBJSilva, PR #213 / #220, fork BUG-9054 / 9056 / 9294), checked by objdump of
+the GOG 2024 `SporeApp.exe` (dc04aee5); the lines are in data/symbols/overrides_dc04aee5.sym. Not used by our code yet
+(own nations are Rivals, 0.8).
+
+* ✔ `City_IsPlayerOwned` 0xBD8300: the city spatial's (city+0x120) vt 0x58 IsPlayerOwned: the byte city+0x21C
+  (`mov al,[ecx+0x21C]; ret`).
+* ✔ `Vehicle_IsPlayerOwned` 0xC9E820: the vehicle spatial's (vehicle+0x34) vt 0x58: false in the game mode
+  0x1654C10, else the vehicle's political id (vt 0x4C) == the player civilization's. No stack arguments.
+* ✔ `Civilization_AI` 0xBFBD30: one nation's AI step (void thiscall, ret at 0xBFC4B7); it picks the player branch by
+  comparing the nation POINTER with GetPlayerCivilization (0xB25F90, call at 0xBFBD68), not by +0x89.
+* ✔ `Civilization_AI_PlayerCiv_Ret` 0xBFBD6D: the return address of that call (`cmp esi,eax; jne 0xBFBE66`).
+* ✔ `CivMode_Progress` 0xCF8F80: the Civ HUD's progress fraction: the player civ's city count / the Civ tuning's
+  int +0xAC (global 0x167A60C), in ST0, 0 without a player civ. ECX is not read.
+* ✔ `CivHUD_Progress_Ret` 0xCEAB84: the return address of its call at 0xCEAB7F; the fraction goes to the widget
+  0xE04510 (ECX = HUD +0x64) at 0xCEAB8A.
+* ✔ `City_CenterPoint` 0xBD95D0: thiscall(city, Vector3* out) ret 4: the position of the city's walls object
+  (+0x324, 0xBEC2E0); the Civ "next city" HUD message sends the camera there (0xCF64E5, then SimCamera_GoToPoint).
