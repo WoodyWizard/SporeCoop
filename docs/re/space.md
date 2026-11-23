@@ -3591,3 +3591,17 @@ BUG-1404. Follows #space-planet-life. GOG 2024, the space fixture's home planet,
   3.4 m, at 0.25 s 1.4-1.7 m).
 * Change: `space.citizen_lead` sends the kind every 0.25 s to guests of 0.7.15 on (the fast tick of BUG-1227; older
   guests every 0.5 s) and the guest takes the velocity from snapshots over 0.15 s apart. No wire change.
+
+## The archetype setter, the archetype mission's end and the ship key setter (2026-11-22, fix/w63-space)
+<a id="space-archetype-ship-key"></a>
+
+From the review of PR #217 by IltonBJSilva (out/research/prs-213-220.md), each checked by objdump on GOG 2024 dc04aee5; not
+used by our code yet (ideas for the own archetype tools of #207 and the own ship of a partner). Symbols in
+data/symbols/overrides_dc04aee5.sym.
+* ✔ (objdump) `SpaceGame_SetArchetype` 0x1005C20: thiscall(cSimulatorSpaceGame*, bool from_cards, bool announce) `ret 8`;
+  writes the archetype index to cEmpire +0x58 (GetPlayerEmpire, 0x1005DB7) and gives the archetype's tools: twice per
+  world duplicates or removes tools.
+* ✔ (objdump) `MissionChangeArchetype_Complete` 0xC4DB40: thiscall(mission) no stack args, tail jmp at 0xC4DC20; the
+  new archetype id is mission +0x1F4; it calls SetArchetype(cSimulatorSpaceGame::Get(), false, true) at 0xC4DC14.
+* ✔ (objdump) `Empire_SetSpacecraftKey` 0xC358A0: thiscall(cEmpire*, const ResourceKey*) `ret 4`; writes +0xB8/+0xBC/+0xC0
+  only when the key differs, then refreshes the empire's ships (0xC372E0). Upgraded from the fork's "not checked by us".
