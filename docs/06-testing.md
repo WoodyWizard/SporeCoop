@@ -10247,3 +10247,16 @@ Each test has its twin (`<name>_off`, SPORE_FIX_OFF=<switch>, suite `twin`): the
   on, else the next snapshot binds the orphan again) and saves; `coop.tribe tribelists` (members / unlisted per tribe,
   orphans: player tribe members no mirror is bound to) must show unlisted=0 and no new orphan. Twin
   SPORE_FIX_OFF=tribe.save_took_listed (unsafe: the removal refused, the mirror put back as an orphan).
+
+## The party difficulty test (2026-11-23, feat/w72-difficulty)
+<a id="testing-party-difficulty"></a>
+
+BUG-1473. `coop_party_difficulty.py --value 150|125|200|auto --players 3`: three games (host and Bob from SPORE_LANE,
+Carol from SPORE_LANE_B, coop_multi.start_extra), Creature fixture. It measures at 100 % and at the value: one animal
+hit of 20 on each player (`coop.hp npchit <id> 20`, id 0 = the host's own creature since this branch) read as the drop
+of the game health on the player's own game and on the host's puppet; and one NPC mirrored on both guests hunted by all
+three in turn with a quarter of its health per hit, counted until the host's game has it dead. The joint hunt, the
+pack's healing and its rescue are forced off for the run (they change hits). Ratios, not absolute numbers: the game's
+energy absorbers in CreatureBase_TakeDamage take a share of a hit. Twin party_difficulty_off
+(SPORE_FIX_OFF=core.party_tuning) must FAIL. Lab: `SPORE_DETECTOR=20 python3 tools/lab.py run party_difficulty
+party_difficulty_auto party_difficulty_off --lanes 2 ... --retry 0 --no-build` (each test takes two lanes: A and B).

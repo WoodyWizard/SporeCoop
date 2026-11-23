@@ -26,6 +26,6 @@ float npc_hits_player(float damage);
 // host: either, by the sides (the stages that know both sides at one place)
 float hit(float damage, Side victim, Side attacker);
 
-std::string status(); // `coop.party`, the support report
+std::string status(); // `coop.party`
 
 } // namespace party

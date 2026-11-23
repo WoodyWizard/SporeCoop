@@ -203,3 +203,32 @@ Not covered (risks): damage paths past the damage filter during the window (drow
 stomp) end it with the game's own death (paths row of the test: a fall is held, deep water either held or the game's
 death that ends the window); a downed creature in a cinematic is not put back (BUG-1173's class); the debt of a guest is
 restored only for the same world (its record's world); the hunt credit of a downed player is not stopped.
+
+## Difficulty for 3-4 players (2026-11-23, feat/w72-difficulty)
+<a id="gameplay-party-difficulty"></a>
+
+WP-D1 of docs/plan-0.7.17.md (item 5), BUG-1473. With three or four players the NPCs fall too fast; the session setting
+`all.party_difficulty` (lobby: "Difficulty for 3-4 players", All stages) scales the fights. Values: 100 % (a solo game's
+balance), 125 %, 150 %, 200 %, auto (+25 % per player over two: 3 players 125 %, 4 players 150 %, 2 players 100 %; it
+follows the session's players as they join and leave). The default is 100 % until the owner answers question 5 of the
+plan (100 % or auto): `party::kDefaultChoice` in `mods/coop/party_difficulty_logic.h` is the one line to change.
+
+* At P %: a player's hit on an NPC deals damage x 100 / P (an NPC takes P / 100 times the hits to fall); an NPC's hit on
+  a player deals damage x P / 100. NPC on NPC, player on player (friendly fire, Rivals) and hits without an attacker (a
+  fall, the sea) are the game's own.
+* The host applies it (it simulates every NPC); a guest's hits on the host's NPCs arrive as MSG_DAMAGE_REQ and are
+  scaled there, the NPCs' hits on a guest go to it already scaled. A guest's game never scales (an older guest plays the
+  host's scaled hits, an older host none: the setting goes by name, MSG_SETTINGS, no wire change).
+* Where: Creature (and the wild animals of every stage): npc.cpp damage_filter and MSG_DAMAGE_REQ; Tribe: the citizens'
+  TakeDamage (tribe.cpp h_CitizenTD: the player tribe's members against other tribes, animals and epics); Civ: the
+  vehicles' TakeDamage by owner (civ_shots.cpp) and a player's vehicle's hit on a building (civ.cpp b_damage; an NPC's hit
+  on the players' buildings is the game's, the building's owner is not read there); Space: the UFOs on the host (the host's
+  ship and the guests' puppets against NPC ships, the guests' MSG_UFO_HIT). A place a guest leads (BUG-1288) is not
+  scaled. Cell: not scaled (its fights are cellsync's own paths).
+* Why not the game's difficulty: its per-mode lists hold no NPC health or damage key, the readers cache them at a mode's
+  start, and Space's keys are the economy ([RE](re/creature.md#creature-difficulty-tunings)). The game's own difficulty
+  (easy / normal / hard, cPlayer +0x1248) is untouched and still applies on top.
+* Switch `coop.fix core.party_tuning off`: every hit is the game's (0.7.16.1). `coop.party`: the percentage in force and
+  the hits it scaled (the setting itself is in the support report's settings diff).
+* Test: tools/tests/coop_party_difficulty.py (three games; suite party_difficulty, party_difficulty_auto, twin
+  party_difficulty_off), unit tests tests/party_tests.cpp.

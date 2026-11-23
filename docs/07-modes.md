@@ -260,6 +260,7 @@ to know them. A module reads a value with `settings::on(settings::kX)` / `settin
 | `all.name_tags` | All stages | on | live | - | coop.cpp on_overlay (puppets, tribe members, civ cities and vehicles) |
 | `all.friendly_fire` | All stages | off | session | - | npc.cpp damage_filter / MSG_DAMAGE (Creature only) |
 | `all.max_players` | All stages | 4 (2..4) | live | - | net/session.cpp HELLO (`Session::max_players`) |
+| `all.party_difficulty` | All stages | 100 % (100 % / 125 % / 150 % / 200 % / auto; provisional, `party::kDefaultChoice`, owner question 5 of docs/plan-0.7.17.md) | session | - | party_difficulty.cpp (BUG-1473): npc.cpp damage_filter / MSG_DAMAGE_REQ, tribe.cpp h_CitizenTD, civ_shots.cpp h_VTakeDamage, civ.cpp b_damage, squadron.cpp h_TakeDamage / apply_hit; [difficulty for 3-4 players](03-gameplay.md#gameplay-party-difficulty) |
 | `all.late_join` | All stages | on | live | - | net/session.cpp HELLO (`Session::join_closed`) |
 | `cell.knockout` | Cell | on | session | - | cellsync.cpp go_down |
 | `cell.respawn_small` | Cell | on | session | - | cellsync.cpp downed_tick |
@@ -380,7 +381,7 @@ Defaults are provisional: the owner's questions of the plan are open.
 | `civ.own_money` | Civilization | off / on (question 1) | session | WP-M1 (feat/w68-wallet): declared (row above, BUG-1468) | item 1 |
 | `all.shared_dna` (existing) | All stages | 0 own wallet (default, as 0.7.16), 1 shared, 2 own progress (new); the lobby row becomes "DNA and progress" with three names; the ini key stays. **Declared** (feat/w69-progress, BUG-1469): kDefs max 2, names `own wallet|shared|own progress` (console also `own_progress` or 2), default the one constant `settings::kSharedDnaDefault` | session | WP-P1 / P2 (feat/w69-progress) | item 2, question 2 |
 | `creature.revive` | Creature | on (provisional) / off (question 4; pack rescue stays the first line) | session | WP-R1 (feat/w71-revive): declared (row above, BUG-1472) | item 4 |
-| `all.party_difficulty` | All stages | 100 % (default), 125, 150, 200, auto (+25 % per player over two; question 5) | session | WP-D1 (feat/w72-difficulty) | item 5 |
+| `all.party_difficulty` | All stages | 100 % (default), 125, 150, 200, auto (+25 % per player over two; question 5) | session | WP-D1 (feat/w72-difficulty): declared (row above, BUG-1473; values 0..4, names 100 % / 125 % / 150 % / 200 % / auto) | item 5 |
 | `cell.lineage_cells` | Cell | off / on | session | WP-L2 (feat/w81-cell) | item 9 |
 
 The fix switches of the same items (`coop.fix`, twins) are the WPs' own and are named in the plan per item.
