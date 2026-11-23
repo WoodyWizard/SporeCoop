@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 #include "net/session.h"
 #include "player_store.h"
@@ -36,6 +37,10 @@ struct Feature {
     void (*save)(pstore::Store& s, int64_t now) = nullptr;
     // the host's word: what this feature keeps in memory under `from` is `to`'s now (`to` is a present player)
     void (*adopt)(const std::string& from, const std::string& to) = nullptr;
+    // NET-3 (BUG-1499): a save opened the world's store itself (the first save after the world got its name, a save
+    // within a second of a load): take the store opened now as this world's, as the next tick would, keeping what
+    // this game holds now (the save's records come from it right after). nullptr: nothing to do
+    void (*opened)() = nullptr;
 };
 bool add(Feature f); // static initializers of the feature files
 
@@ -50,6 +55,9 @@ uint32_t serial();            // +1 for every world store opened (0: none yet)
 std::string world_name();     // "<slot>/<planet>" of world(), "" none
 std::string key_of(uint8_t id); // the stable key of a session player ("host" for this host), "" unknown / not the host
 int64_t now_unix();
+// NET-4 (BUG-1500): the players a world record of `marker`'s feature names (their stable keys) keep their names in the
+// file (pstore::Store::mark_owners; the present players' session names). Called from the feature's save
+void mark_owners(pstore::Store& s, const char* marker, const std::vector<std::string>& keys, int64_t now);
 
 // the game's own saves (any stage, this machine): count and how long ago the last one was written (-1: none yet)
 uint32_t saves();

@@ -22,7 +22,12 @@ player whose members were all claimed by others got none until somebody joined o
 --shared: the same with the session setting all.shared_dna on (`coop.settings force`; the default is own DNA per
 player, 0.7.16).
 
-  SPORE_LANE=4 python3 tools/tests/coop_tribe_owners_reload.py [--back] [--shared]
+--fresh-store (NET-3 of the audit, BUG-1499): right before the save the host's store is closed (`coop.store hold`: as
+before the world had its name, or a save within a second of a load), so the save opens the world's store itself.
+PASS: the claims are in that save as usual (the owners after the load as before). SPORE_FIX_OFF=store.save_opened: the
+save writes no tribe.owners of this moment (the store's serial was new to the tribe code): FAIL.
+
+  SPORE_LANE=4 python3 tools/tests/coop_tribe_owners_reload.py [--back] [--shared] [--fresh-store]
 """
 import sys
 import time
@@ -103,7 +108,14 @@ def run(host, guest, ck, back):
     time.sleep(3)  # the claims follow every 2 s
 
     # 2. save (the store gets the claims), the galaxy menu, the same save again
+    if '--fresh-store' in sys.argv:  # BUG-1499: the save opens the store itself
+        print('  host:', host.call('coop.store hold')['out'].strip(), flush=True)
     out, refused, _ = save_taken(host, 30, 'host save')
+    if '--fresh-store' in sys.argv:
+        st = (host.call('coop.store')['out'] or '').strip().splitlines()
+        print('  host store after the save:', ' | '.join(st[:4]), flush=True)
+        ck(any('opened_by_save=' in ln and 'opened_by_save=0' not in ln for ln in st[:1]),
+           'the save opened the host\'s store itself (the case is reached)')
     print(f'  host save: {out[:120]}' + (f' (after {refused} refusals)' if refused else ''), flush=True)
     time.sleep(3)
     host.call('key enter')  # the game's "game saved" box

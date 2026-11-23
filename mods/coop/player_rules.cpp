@@ -62,6 +62,27 @@ static float g_stun_last;
 // BUG-0700 (class BUG-0419): a host NPC's stun (a charge's, anybody's) stayed in the host's game: the guests' proxies of
 // it showed no stun (the stimulus 0x1000 and its stars). On: the host sends it, each guest's game stuns its proxy with
 // the game's own CreatureStun. Off: not sent (0.7.10).
+// NET-5 (BUG-1501, BUG-0426 class): the roar relay, the carry relay and the flock relay took the raw puppet of a player
+// (puppet_of: no liveness) and called the game on it (is_dead, position, the stimulus, Hold / Release, the summon):
+// a puppet the game freed between two frames was used as it was (BUG-0795: effects.cpp moved to puppet_live for this).
+// On: those three take the live puppet (listed, its serial, this frame's world) or nothing. Off (`coop.fix
+// creature.rules_live_puppet off`): the raw puppet (0.7.16.1). Status line `live_puppet:` (refused = a raw puppet
+// set but not the live one)
+static bool g_live_puppet_fix = true;
+COOP_FIX_UNSAFE("creature.rules_live_puppet", "BUG-1501", g_live_puppet_fix,
+         "creature: the roar, carry and flock relays use a partner's creature only while it is the live puppet");
+static uint32_t g_live_refused; // relays that found no live puppet where the raw one was set
+static void* relay_puppet(uint8_t id)
+{
+    void* raw = C.puppet_of ? C.puppet_of(id) : nullptr;
+    if (!g_live_puppet_fix || !C.puppet_live)
+        return raw;
+    void* live = C.puppet_live(id);
+    if (raw && !live)
+        g_live_refused++;
+    return live;
+}
+
 static bool g_stun_proxy_fix = true;
 COOP_FIX("creature.stun_proxy", "BUG-0700", g_stun_proxy_fix, "creature: an NPC stunned in the host's game is stunned on the guests' screens too");
 static uint32_t g_stun_sent_proxy, g_stun_got_proxy;
@@ -451,7 +472,7 @@ static bool roar_one(void* o, uint32_t noun, void* u)
 
 static void roar_on_host(uint8_t from, float range, float secs)
 {
-    void* p = C.puppet_of ? C.puppet_of(from) : nullptr;
+    void* p = relay_puppet(from); // BUG-1501
     if (!p || !a_PostStim || !a_GoalStart || !a_StimClear || !a_GoalFind || !a_GoalEnd || !a_IsEpic ||
         !game::in_creature_stage() || game::is_dead(p))
         return;
@@ -772,7 +793,7 @@ static void carry_rx(uint8_t kind, uint8_t from, net::Reader& r)
         carry_send(kind, player, noun, kind == K_DROP ? nullptr : &p, from); // the other guests
     } else if (from != 0)
         return;
-    void* pup = C.puppet_of ? C.puppet_of(player) : nullptr;
+    void* pup = relay_puppet(player); // BUG-1501
     Carried& cr = g_carried[player];
     callguard::Hold in_relay(g_in_relay);
     if (kind == K_HOLD) {
@@ -1131,7 +1152,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (from == 0 || !is_host() || !drama::g_flock_relay || !game::in_creature_stage())
             return;
         g_flock_got++;
-        void* p = C.puppet_of ? C.puppet_of(from) : nullptr;
+        void* p = relay_puppet(from); // BUG-1501
         if (p && !game::is_dead(p))
             drama::summon_for(p);
     } else if (kind == K_ROAR) {
@@ -1197,6 +1218,8 @@ std::string status()
     snprintf(b, sizeof b, "player_rules: ufo fix=%d seen=%u skipped=%u\n", (int)g_ufo_fix, g_ufo_seen, g_ufo_skipped);
     out += b;
     snprintf(b, sizeof b, "player_rules: flock fix=%d sent=%u got=%u\n", (int)drama::g_flock_relay, g_flock_sent, g_flock_got);
+    out += b;
+    snprintf(b, sizeof b, "player_rules: live_puppet fix=%d refused=%u\n", (int)g_live_puppet_fix, g_live_refused);
     return out + b;
 }
 

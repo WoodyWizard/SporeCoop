@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <thread>
 #include <unordered_map>
 
@@ -490,7 +491,25 @@ std::string travel(uint32_t star)
         return "already there";
     return travel_to(star);
 }
-std::string travel_to_star(uint32_t star) { return in_space() ? travel_to(star) : "not in space"; }
+// BUG-1490 (audit SPC-16): two ways to jump went past the disabled check of jump() / travel(): travel_to_star (the
+// in-system step of the finale's "Fly to", which runs up to 30 s after its own check) and `jumpto` (the "Jump there"
+// button of a co-op contract's row, space_contracts.cpp jump_to): a disabled ship escaped its rescue window by a jump.
+// Now both refuse while the ship is disabled (`jumpto ... force` still jumps: tests). `coop.fix space.down_no_jump off`:
+// 0.7.16.1.
+static bool g_down_jump_fix = true;
+COOP_FIX("space.down_no_jump", "BUG-1490", g_down_jump_fix,
+         "space: a disabled ship can not jump away by a contract's Jump there button or the finale's Fly to");
+static uint32_t g_down_jumps_refused;
+std::string travel_to_star(uint32_t star)
+{
+    if (!in_space())
+        return "not in space";
+    if (g_down && g_down_jump_fix) {
+        g_down_jumps_refused++;
+        return "the ship is disabled";
+    }
+    return travel_to(star);
+}
 
 // BUG-0063: a click on a partner flying in the galaxy view teleports the ship next to it
 // (SpaceTeleportTo); it went past the disabled check and spent energy (TravelToStar; with none
@@ -995,6 +1014,16 @@ static void names_held(int ms)
 
 using SetState_t = void(SK_THISCALL*)(void*, int);
 static SetState_t o_SetState;
+// BUG-1487 (audit SPC-13): the "only raids on my own colonies" filter below compares the star's owner with my empire, and
+// a partner's own-star mirror colony (space_allies.cpp add_planet_own, BUG-0543: a colony of the partner in a star
+// system of mine) passes it. A raid on it (the helper raid space_allies starts while I am on that planet, or any raid
+// there) told everybody "<me>'s colony is raided / safe" for the partner's colony, reached the contracts' raid
+// listener, and with 3+ players gave a third player there +2000 on top of the owner's own bonus. Now such raids are
+// left to their owner. `coop.fix space.own_mirror_raids off`: 0.7.16.1.
+static bool g_own_mirror_raid_fix = true;
+COOP_FIX("space.own_mirror_raids", "BUG-1487", g_own_mirror_raid_fix,
+         "space: a raid on a partner's colony in my own star system gives no raid notice or bonus as if it were my colony");
+static uint32_t g_own_mirror_raids;
 static void SK_THISCALL h_SetState(void* m, int s)
 {
     int old = m ? F<int>(m, 0x84) : -1;
@@ -1009,6 +1038,10 @@ static void SK_THISCALL h_SetState(void* m, int s)
         void* star = star_record(place & 0xFFFFFFu);
         if (!emp || !star || F<uint32_t>(star, 0x54) != F<uint32_t>(emp, 0x84))
             return;
+        if (g_own_mirror_raid_fix && spaceext::allies_own_mirror(place & 0x3FFFFFFFu)) {
+            g_own_mirror_raids++; // BUG-1487: a partner's colony in my star system: its owner tells its own raid
+            return;
+        }
         if (g_raid_listener && (s == 3 || s == 5 || s == 6))
             g_raid_listener(m, place, s);
         if (s == 3) { // a raid starts on our colony
@@ -1197,8 +1230,18 @@ COOP_FIX("space.terra_apply", "BUG-0749", g_terra_apply_fix,
 static uintptr_t a_TerraSetActive;
 static uint32_t g_terra_enabled;
 
-static void apply_terra(uint32_t planet_place, const float d[3])
+// BUG-1489 (audit SPC-15): K_TERRA's deltas went into the game unchecked (wire/space_core.h leaves non-finite values to
+// the handler, and only apply_terra_rec checked them): a NaN from a modified peer passes `d != 0` and the terrain tick
+// integrates it into the active planet's record (atmosphere / temperature / water NaN, saved with the world). Now a
+// non-finite delta refuses the message and a finite one is clamped to +-1 (spacelogic::terra_delta). Honest games send
+// small deltas of their own tools: no change for them. `coop.fix space.terra_finite off`: 0.7.16.1.
+static bool g_terra_finite_fix = true;
+COOP_FIX("space.terra_finite", "BUG-1489", g_terra_finite_fix,
+         "space: a partner's terraforming change with a non-finite value is refused, a huge one clamped");
+static uint32_t g_terra_refused;
+static void apply_terra(uint32_t planet_place, const float d_in[3])
 {
+    const float* d = d_in;
     uint32_t mine = C.my_place ? C.my_place() : 0;
     if (mine != planet_place || !a_TerraMgr || !a_ActivePlanet)
         return;
@@ -1206,6 +1249,14 @@ static void apply_terra(uint32_t planet_place, const float d[3])
     void* p = cdecl_call<void*>(a_ActivePlanet);
     if (!tm || !p)
         return;
+    float dv[3] = {d[0], d[1], d[2]};
+    if (g_terra_finite_fix) // BUG-1489: a modified peer's NaN / inf / huge value never reaches the planet
+        for (int i = 0; i < 3; i++)
+            if (!spacelogic::terra_delta(d[i], dv[i])) {
+                g_terra_refused++;
+                return;
+            }
+    d = dv;
     {
         callguard::Hold applying(g_applying);
         for (int i = 0; i < 3; i++)
@@ -2192,14 +2243,16 @@ std::vector<syncdbg::Entry> nav_entries()
 
 std::string status()
 {
-    char b[800];
+    char b[960];
     snprintf(b, sizeof b,
              "space co-op: down=%d rescues=%u lost=%u raids=%u raids_told=%u raid_bonus=%u missions_sent=%u "
              "tools_got=%u terra_sent=%u terra_got=%u terra_enabled=%u terra_rec_sent=%u terra_rec_got=%u terra_rec_set=%u terra_rec_skipped=%u terra_pending=%u terra_pended=%u terra_pend_applied=%u terra_kept=%u terra_resent=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u stores_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
-             "partners_here=%u partners_down=%u bad_origin=%u disable_off=%u\n",
+             "partners_here=%u partners_down=%u bad_origin=%u disable_off=%u own_mirror_raids=%u terra_refused=%u "
+             "down_jumps_refused=%u\n",
              (int)g_down, g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
              g_terra_sent, g_terra_got, g_terra_enabled, g_terra_rec_sent, g_terra_rec_got, g_terra_rec_set, g_terra_rec_skipped, (unsigned)g_terra_pending.size(), g_terra_pended, g_terra_pend_applied, (unsigned)g_terra_kept.size(), g_terra_resent, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_stores_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
-             (unsigned)partners_here().size(), (unsigned)g_partner_down.size(), g_bad_origin, g_disable_off);
+             (unsigned)partners_here().size(), (unsigned)g_partner_down.size(), g_bad_origin, g_disable_off, g_own_mirror_raids,
+             g_terra_refused, g_down_jumps_refused);
     return b + spaceext::status_all();
 }
 
@@ -2631,6 +2684,11 @@ std::string debug(const std::vector<std::string>& a)
         g_jump_old = false;
         for (size_t i = 2; i < a.size(); i++)
             force |= a[i] == "force", g_jump_old |= a[i] == "old";
+        if (g_down && g_down_jump_fix && !force) { // BUG-1490: the contract row's "Jump there" comes here
+            g_jump_old = false;
+            g_down_jumps_refused++;
+            return "the ship is disabled";
+        }
         std::string e = travel_to((uint32_t)strtoul(a[1].c_str(), nullptr, 0), force);
         g_jump_old = false;
         return e.empty() ? "jumping" : e;
@@ -2839,6 +2897,18 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "planet b0=%.3f b4=%.3f b8=%.3f", F<float>(rec, 0xB0), F<float>(rec, 0xB4),
                  F<float>(rec, 0xB8));
         return b;
+    }
+    if (a[0] == "terrasend" && a.size() > 4) { // tests (BUG-1489): send a K_TERRA for <place hex> with <a> <w> <t> ("nan", "inf")
+        auto num = [](const std::string& t) {
+            return t == "nan" ? std::numeric_limits<float>::quiet_NaN()
+                   : t == "inf" ? std::numeric_limits<float>::infinity()
+                   : t == "-inf" ? -std::numeric_limits<float>::infinity()
+                                 : (float)atof(t.c_str());
+        };
+        net::Writer w;
+        wire::space_core::Terra{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), {num(a[2]), num(a[3]), num(a[4])}}.write(w);
+        send(K_TERRA, w);
+        return "sent";
     }
     if (a[0] == "terrarec" && a.size() > 4) { // tests (BUG-1042): send a K_TERRA_REC for <place hex> as if we terraformed it
         net::Writer w;

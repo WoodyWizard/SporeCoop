@@ -44,6 +44,15 @@ COOP_FIX("net.rejoin_month", "BUG-1150", g_month_fix,
          "net: the token of a clean leave is kept on disk for 30 days (not a day), so the host's store of the player's "
          "things finds the player the next week too");
 
+// NET-2 (BUG-1498, rejoin_kept.h SlotLine): the slot names the host and name its token was written for; a join to
+// another host or under another name does not send it (a join that failed at once, a crash then another host), so the
+// token a clean leave kept for this host wins again. `coop.fix net.rejoin_slot_pair off`: any join takes the slot's
+// token (0.7.16.1). tests: `coop.rejoin slot` prints whether the slot holds a token for the current pair
+static bool g_slot_pair_fix = true;
+COOP_FIX("net.rejoin_slot_pair", "BUG-1498", g_slot_pair_fix,
+         "net: the rejoin token a crash or a failed join left behind is sent only to the host and under the name it was "
+         "made for, so the token kept for this host comes back after a failed join");
+
 static uint64_t fresh()
 {
     LARGE_INTEGER q;
@@ -81,27 +90,27 @@ static void open_slot(int inst)
     }
 }
 
-static uint64_t read_slot()
+// the slot's token if a join of `pair` may send it (BUG-1498), 0 none
+static uint64_t read_slot(uint64_t pair)
 {
-    char b[32] = {};
+    char b[64] = {};
     DWORD n = 0;
     if (SetFilePointer(g_slot, 0, nullptr, FILE_BEGIN) == INVALID_SET_FILE_POINTER ||
         !ReadFile(g_slot, b, sizeof b - 1, &n, nullptr))
         return 0;
-    unsigned long long v = 0;
-    if (n < 16 || sscanf(b, "%16llx", &v) != 1)
+    SlotLine l;
+    if (!l.parse(std::string(b, n)) || !l.usable_for(pair, g_slot_pair_fix))
         return 0;
-    return v;
+    return l.token;
 }
 
-static bool write_slot(uint64_t v)
+static bool write_slot(uint64_t v, uint64_t pair = 0)
 {
-    char b[24];
-    int len = v ? snprintf(b, sizeof b, "%016llx\n", (unsigned long long)v) : 0;
+    std::string b = SlotLine::text(v, pair); // "" (v 0): the slot is emptied
     DWORD n = 0;
     if (SetFilePointer(g_slot, 0, nullptr, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
         return false;
-    if (len && (!WriteFile(g_slot, b, (DWORD)len, &n, nullptr) || n != (DWORD)len))
+    if (!b.empty() && (!WriteFile(g_slot, b.data(), (DWORD)b.size(), &n, nullptr) || n != (DWORD)b.size()))
         return false;
     SetEndOfFile(g_slot);
     FlushFileBuffers(g_slot);
@@ -174,7 +183,7 @@ static uint64_t kept_for(const std::string& host, const std::string& name)
     return 0;
 }
 
-static uint64_t join_token(int instance, uint64_t kept)
+static uint64_t join_token(int instance, uint64_t kept, uint64_t pair)
 {
     open_slot(instance);
     if (g_slot == INVALID_HANDLE_VALUE) {
@@ -184,10 +193,10 @@ static uint64_t join_token(int instance, uint64_t kept)
             g_mem = fresh();
         return g_mem;
     }
-    if (uint64_t t = read_slot())
-        return t; // a crash (or a join before) left it: the host may still hold our old entry
+    if (uint64_t t = read_slot(pair))
+        return t; // a crash (or a join before) to this host under this name left it: the host may still hold our entry
     uint64_t t = kept ? kept : fresh();
-    if (!write_slot(t)) {
+    if (!write_slot(t, pair)) {
         if (!g_mem)
             g_mem = t;
         return g_mem;
@@ -213,7 +222,7 @@ uint64_t token_for_join(int instance, const std::string& host, const std::string
     uint64_t kept = kept_for(host, name);
     if (!kept)
         kept = disk_find(host, name); // BUG-1135: the same game after a restart
-    g_cur = join_token(instance, kept);
+    g_cur = join_token(instance, kept, SlotLine::pair_of(host, name));
     g_cur_host = host;
     g_cur_name = name;
     return g_cur;

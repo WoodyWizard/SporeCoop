@@ -441,6 +441,22 @@ public:
     }
     bool erase_world(const std::string& feature) { return wrecs.erase(feature) != 0; }
 
+    // NET-4 (BUG-1500): the players a world record names (tribe.owners, civ.owners keep the owner's key in the world
+    // record only) get a one-byte marker record `marker` per player, so the file keeps their name (a player with no
+    // record is not written) and by_name / the join hint find them after a reload. `owners`: key -> session name
+    // ("" = the name the store has); a marker of a key not in `owners` goes. true: something changed
+    bool mark_owners(const std::string& marker, const std::map<std::string, std::string>& owners, int64_t now)
+    {
+        bool changed = false;
+        for (auto& k : keys_with(marker))
+            if (!owners.count(k))
+                changed |= erase(k, marker);
+        for (auto& [k, n] : owners)
+            if (k != "host" && key_ok(k))
+                changed |= put(k, n.empty() ? name_of(k) : n, marker, 1, {1}, now);
+        return changed;
+    }
+
     // ---- the name fallback, on the host's word ----
     // the stored players of this session name (a session suffix " 2" .. " 9" of a second player of the name is not part
     // of it), except `but` (the player's own key)

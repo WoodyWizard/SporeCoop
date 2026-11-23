@@ -1406,7 +1406,7 @@ std::string debug(const std::vector<std::string>& a)
         return o + "anims fix=1 sent=" + std::to_string(g_anim.anim_relay_sent) +
                " rx=" + std::to_string(g_anim.anim_relay_rx) + " played=" + std::to_string(g_anim.anim_relay_played) + " failed=" +
                std::to_string(g_anim.anim_relay_failed) + " snap_played=" + std::to_string(g_anim.anim_snap_played) + "\nair fix=" + std::to_string((int)g_mirror_air_fix) + " sent=" + std::to_string(g_anim.air_sent) +
-               " rx=" + std::to_string(g_anim.air_rx) + " placed=" + std::to_string(g_anim.air_placed) + " landed=" + std::to_string(g_anim.air_landed) + " culled_lifts=" + std::to_string(game::air_culled_lifts()) + " hunger_sets=" + std::to_string(g_hunger_sets) + "\nidle fix=" + std::to_string((int)g_mirror_idle_fix) +
+               " rx=" + std::to_string(g_anim.air_rx) + " placed=" + std::to_string(g_anim.air_placed) + " landed=" + std::to_string(g_anim.air_landed) + " released=" + std::to_string(g_air_released) + " culled_lifts=" + std::to_string(game::air_culled_lifts()) + " hunger_sets=" + std::to_string(g_hunger_sets) + "\nidle fix=" + std::to_string((int)g_mirror_idle_fix) +
                " sent=" + std::to_string(g_anim.idle_sent) + " refreshed=" + std::to_string(g_anim.idle_refreshed) + " played=" + std::to_string(g_anim.idle_played) +
                " stale_cut=" + std::to_string(g_anim.stale_cut) + "\nphase fix=" + std::to_string((int)g_mirror_phase_fix) +
                " sent=" + std::to_string(g_anim.phase_sent) + " rx=" + std::to_string(g_anim.phase_rx) + " set=" + std::to_string(g_anim.phase_set) + " unlooped=" + std::to_string(g_anim.phase_unlooped) +
@@ -1517,6 +1517,56 @@ std::string debug(const std::vector<std::string>& a)
             },
             &out);
         return (out.empty() ? "no markers\n" : out) + "markers_used=" + std::to_string(g_markers_used) + "\n";
+    }
+    if (a.size() >= 2 && a[0] == "savekill" && is_guest()) { // savekill on|off (tests, BUG-1522): the next save's end
+        took_debug_kill(a[1] == "on");                         // first removes a member mirror it took out (a host state)
+        return took_status();
+    }
+    if (!a.empty() && a[0] == "tribelists") { // tribelists (tests, BUG-1522): every tribe's member (+0x340) and selectable
+        // (+0x354) vector: entries, those the game's list no longer has (freed), and on a guest the player tribe's
+        // members no mirror is bound to (orphans)
+        std::string out;
+        void* pt = player_tribe();
+        int ti = 0;
+        for (void* t : all_tribes()) {
+            int n[2] = {0, 0}, unl[2] = {0, 0}, orphan = 0;
+            const uintptr_t offs[2] = {kMembersOff, 0x354};
+            for (int k = 0; k < 2; k++) {
+                void** b = F<void**>(t, offs[k]);
+                void** e = F<void**>(t, offs[k] + 4);
+                for (void** it = b; it && it < e && e - b < 1024; ++it) {
+                    void* c = *it ? (k == 0 ? *it : (uint8_t*)*it - 0xC0) : nullptr;
+                    n[k]++;
+                    if (!c || !game::listed(c, 0x18EB4B7u))
+                        unl[k]++;
+                    else if (k == 0 && t == pt && is_guest() && !g_guest.mirrors.bound(c))
+                        orphan++;
+                }
+            }
+            char b[200];
+            snprintf(b, sizeof b, "tribe %d%s members=%d unlisted=%d selectable=%d unlisted=%d orphans=%d\n", ti++,
+                     t == pt ? " (player)" : "", n[0], unl[0], n[1], unl[1], orphan);
+            out += b;
+        }
+        return out + took_status();
+    }
+    if (a.size() >= 5 && a[0] == "untree") { // untree <x y z> <r>: tests (BUG-1494), every tree within r m of the point is
+        // picked empty here (cTreeData +0x48, the fruit left, = 0; +0x4C, its slots, stays): the trees and their fields
+        net::Vec3 at{(float)atof(a[1].c_str()), (float)atof(a[2].c_str()), (float)atof(a[3].c_str())};
+        float r = (float)atof(a[4].c_str());
+        std::string out;
+        int n = 0;
+        for_each_tree([&](void* t, const net::Vec3& p) {
+            float d = net::dist(p, at);
+            if (d > r)
+                return;
+            char b[128];
+            snprintf(b, sizeof b, "tree %p d=%.1f 48=%08X 4c=%08X -> 0\n", t, d, F<uint32_t>(t, 0x48), F<uint32_t>(t, 0x4C));
+            out += b;
+            F<uint32_t>(t, 0x48) = 0;
+            n++;
+        });
+        return out + "emptied " + std::to_string(n) + " trees\n";
     }
     if (!a.empty() && a[0] == "trees") { // trees near the village with their raw fields (RE)
         net::Vec3 at;

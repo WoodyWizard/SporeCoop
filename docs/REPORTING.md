@@ -9,7 +9,8 @@ Thanks for helping! One file from each player is usually all we need.
   it tells you the file's name.
 * **Anything else** (players out of sync, something does not work): press **F9** in the game, then
   **Report a problem** (or press Esc: the game's pause menu has **Report a problem** too). It makes the same file
-  and opens the folder with it selected.
+  and opens the folder with it selected (not while the game is in full screen: Explorer would minimize it; the window
+  then names the folder, `SporebinEP1\mods\logs`, BUG-1528).
 * If both of you were playing, send the files of **both** players: the host's and the guest's.
   Each game's log says what that game saw; the two together show what went wrong between them.
 * **In a session, the host can collect everybody's report** (since 0.7.12): the host's **Report a problem** also
@@ -291,6 +292,10 @@ classes such as `192.168.x.x` or `100.64.x.x (VPN/CGNAT)`, a public address as `
   loading <file>`, `world: loading <file> from <slot>`.
 * `save: N objects of ours are kept out of it` (savestrip, every save).
 * `perf: hitch ... (..., loading)` lines show how long the load screens froze the game.
+* `perf: pause N ms (window minimized / unfocused: the game's own pause, not a freeze; ...)` (BUG-1529): the game window
+  was minimized or not in the foreground during the stop (an Alt+Tab, an overlay, Explorer over a full-screen game):
+  Spore pauses itself then. Such stops are counted per minute (`perf: pauses N this minute`) and left out of min fps and
+  the longest frame; the keepalive's `no frame for N s` line names `(window minimized M, foreground F)`.
 
 ### Settings
 <a id="reporting-support-settings"></a>

@@ -41,6 +41,12 @@ bool connected() { return C && C->sess && C->sess->connected(); }
 bool is_host() { return connected() && C->sess->role() == net::Role::Host; }
 uint8_t my_id() { return C && C->sess ? C->sess->my_id() : 0; }
 std::string name_of(uint8_t id) { return C && C->sess ? C->sess->name_of(id) : "?"; }
+bool peer_families(uint8_t id, bool& has, std::vector<net::FamilyRev>& out)
+{
+    has = false;
+    out.clear();
+    return C && C->sess && C->sess->peer_families(id, has, out);
+}
 static bool g_kept_token_fix = true;
 COOP_FIX("space.kept_token", "BUG-1107", g_kept_token_fix,
          "space: the host gives a player's kept colonies, hold, badges and budget back to the same game (its rejoin token), not to the name");

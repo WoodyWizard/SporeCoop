@@ -24,6 +24,8 @@ struct Ctx {
     std::function<bool()> playing;              // this game plays a world now (a stage with its own creature)
     std::function<std::string()> world_name;    // the save being played ("Name.spo")
     std::function<bool()> rivals;               // the Rivals mode is on (off_in_rivals settings read off)
+    // NET-8 (BUG-1502): the game is between two moments of a world (its editor, a load): the open world stays open
+    std::function<bool()> holds_world;
     std::function<void(const std::string&)> feed;
 };
 

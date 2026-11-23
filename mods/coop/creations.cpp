@@ -982,11 +982,17 @@ static uint32_t paint_substitute_of(uint32_t id)
 // (its base paint never checked or substituted). `coop.fix creations.paint_runs off`: the strict reader (0.7.12).
 static bool g_paint_runs_fix = true;
 COOP_FIX("creations.paint_runs", "BUG-0852", g_paint_runs_fix, "creations: the paints of a model whose paint bytes are run-packed are checked and substituted too");
+// CORE-8 (BUG-1504): a paint layer written byte by byte but followed by a run (`FE N`) that repeats its last byte was
+// rewritten in place, so the run repeated the substitute's top byte into the next layers. Not patchable now (the
+// creation is refused as for a paint inside a run). `coop.fix creations.paint_run_guard off`: 0.7.16.1
+static bool g_paint_run_guard_fix = true;
+COOP_FIX("creations.paint_run_guard", "BUG-1504", g_paint_run_guard_fix,
+         "creations: a paint followed by a byte run is not rewritten in place (the run would repeat the new byte)");
 unsigned g_paints_in_run; // unknown paints inside a run: not patched in place (the creation is refused instead)
 bool model_effects(const std::vector<uint8_t>& m, uint32_t eff[3], size_t at[3], size_t len[3], bool patch[3])
 {
     bool p3[3];
-    return model_paint::effects(m, eff, at, len, patch ? patch : p3, g_paint_runs_fix);
+    return model_paint::effects(m, eff, at, len, patch ? patch : p3, g_paint_runs_fix, g_paint_run_guard_fix);
 }
 
 bool is_cc_paint(uint32_t id) { return paint_substitute_of(id) != 0; }

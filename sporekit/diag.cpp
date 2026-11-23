@@ -599,6 +599,8 @@ void diag_prune_logs()
     prune(L"crash-*.dmp", kKeepCrashes);
     prune(L"report-*.txt", kKeepReports);
     prune(L"SporeCoop-report-*.zip", kKeepArchives);
+    if (fixed(g_fix_reportzip))
+        prune(L"SporeCoop-report-*.zip.part", 0); // BUG-1521: a write the end of the game cut off
     if (removed)
         logf(&g_kit_mod, SK_INFO, "logs: %d old crash / report files removed (kept the newest %u crashes, %u reports, %u archives)",
              removed, (unsigned)kKeepCrashes, (unsigned)kKeepReports, (unsigned)kKeepArchives);
@@ -622,6 +624,16 @@ const char* diag_last_problem() { return g_last_problem.c_str(); }
 std::string diag_write_bundle(const char* reason) { return diag_write_bundle_with(reason, ""); }
 
 // existing: a report already written (a crash report): it is the archive's report
+// KIT-21 (BUG-1521): the archive is named by the second (SporeCoop-report-<stamp>.zip), and a crash builds it twice
+// (before and after the minidump): when both builds fell into the same second the second one was written over the first
+// in place (zip_write: CREATE_ALWAYS, the file deleted on a write error), so a failed or cut second write (the 15 s
+// filter wait ending) lost the archive last-problem.txt names. On: the second archive of a second gets its own name
+// (-2, -3, ...) and every archive is written to <name>.part and renamed when complete. `kit.fix reportzip 0`: 0.7.16.1.
+// tests: crash.test zipfail2 (a crash whose second archive takes the first one's second and fails while writing)
+static std::atomic<int> g_test_zipfail2{0};
+static int g_test_zip_builds = 0;
+static std::string g_test_zip_stamp;
+
 std::string diag_write_bundle_with(const char* reason, const std::string& existing)
 {
     std::string report = existing.empty() ? diag_write_report(reason, nullptr) : existing;
@@ -642,6 +654,15 @@ std::string diag_write_bundle_with(const char* reason, const std::string& existi
         z.push_back({name, std::move(d)});
     };
     std::string stamp_now = stamp();
+    bool fail_this = false; // tests (BUG-1521): the second archive of a crash.test zipfail2 crash
+    if (g_test_zipfail2.load()) {
+        if (g_test_zip_builds++ == 0)
+            g_test_zip_stamp = stamp_now;
+        else {
+            stamp_now = g_test_zip_stamp; // the same second as the first one
+            fail_this = true;
+        }
+    }
     std::string readme =
         "SporeCoop problem report " + stamp_now + "\n"
         "Please attach this .zip to an issue: https://github.com/WoodyWizard/SporeCoop/issues\n"
@@ -701,9 +722,27 @@ std::string diag_write_bundle_with(const char* reason, const std::string& existi
             s += "  " + n + "\n";
         z.push_back({"LEFT_OUT.txt", std::vector<uint8_t>(s.begin(), s.end())});
     }
-    std::wstring zip = dir + L"\\SporeCoop-report-" + widen(stamp_now) +
-                       (instance_id() > 1 ? L"-i" + std::to_wstring(instance_id()) : L"") + L".zip";
-    if (!zip_write(zip, z)) {
+    std::wstring base = dir + L"\\SporeCoop-report-" + widen(stamp_now) +
+                        (instance_id() > 1 ? L"-i" + std::to_wstring(instance_id()) : L"");
+    std::wstring zip = base + L".zip";
+    const bool part = fixed(g_fix_reportzip);
+    for (int n = 2; part && n < 100 && GetFileAttributesW(zip.c_str()) != INVALID_FILE_ATTRIBUTES; n++)
+        zip = base + L"-" + std::to_wstring(n) + L".zip"; // BUG-1521: never over an archive of the same second
+    std::wstring target = part ? zip + L".part" : zip;
+    bool written;
+    if (fail_this) { // as zip_write on a write error: the file made (CREATE_ALWAYS), then deleted
+        HANDLE f = CreateFileW(target.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+        if (f != INVALID_HANDLE_VALUE)
+            CloseHandle(f);
+        DeleteFileW(target.c_str());
+        written = false;
+    } else
+        written = zip_write(target, z);
+    if (written && part && !MoveFileExW(target.c_str(), zip.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        DeleteFileW(target.c_str());
+        written = false;
+    }
+    if (!written) {
         logf(&g_kit_mod, SK_ERROR, "report archive: cannot write %s", narrow(zip).c_str());
         return report;
     }
@@ -1140,6 +1179,10 @@ void diag_crash_test(const char* where_)
     }
     if (where_ && !strcmp(where_, "oom"))
         g_test_oom = 1;
+    if (where_ && !strcmp(where_, "zipfail2")) { // BUG-1521: a thread crash, its second archive fails
+        g_test_zip_builds = 0;
+        g_test_zipfail2 = 1;
+    }
     if (where_ && !strcmp(where_, "faultthread")) { // no crash: a repaired fault on a worker thread
         if (HANDLE t = CreateThread(nullptr, 0, repaired_fault_thread, nullptr, 0, nullptr)) {
             WaitForSingleObject(t, 5000);

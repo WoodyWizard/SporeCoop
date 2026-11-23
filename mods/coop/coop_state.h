@@ -274,6 +274,8 @@ extern std::string g_name;
 extern std::thread* g_keepalive;
 extern uint32_t g_cine_hidden;
 extern uint32_t g_dna_owed_world;
+extern uint32_t g_dna_spend_owed_world, g_spend_owed_dropped; // BUG-1506
+extern bool g_spend_owed_world_fix;
 extern uint32_t g_host_away_count;
 extern uint32_t g_host_save;
 extern uint32_t g_host_save_heard;
