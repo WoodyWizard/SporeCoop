@@ -90,10 +90,10 @@ static bool self_reads()
     return mine && net::compat::has_minor(C.sess->families, true, (uint8_t)net::Family::civ, mine->rev, civwallet::kMinor);
 }
 
-bool guest_own_money()
-{
-    return guest() && !civwallet::guest_takes_shared(g_row_fix, civwallet::guest_runs(setting(), host_reads() && self_reads()));
-}
+// guest: the wallet runs (asks, applies the host's K_SET / K_ADD, reports)
+static bool guest_runs() { return guest() && civwallet::guest_runs(setting(), host_reads() && self_reads()); }
+
+bool guest_own_money() { return guest() && !civwallet::guest_takes_shared(g_row_fix, guest_runs()); }
 
 static bool in_civ_world() { return game::mode_id() == modes::kCiv && civ::player_civ(); }
 static double money_of(void* civ) { return civ ? (double)skg::thiscall<float>(civ::a_GetMoney, civ) : 0; }
@@ -388,7 +388,7 @@ void on_message(uint8_t from, net::Reader& r)
         }
         return;
     }
-    if (from != 0 || (kind != K_SET && kind != K_ADD) || !guest_own_money())
+    if (from != 0 || (kind != K_SET && kind != K_ADD) || !guest_runs())
         return;
     uint32_t seq = r.u32();
     double v = r.f64();
@@ -469,7 +469,7 @@ void tick(double now)
             }
         return;
     }
-    if (!guest_own_money())
+    if (!guest_runs())
         return;
     uint32_t epoch = game::stage_epoch(modes::kCiv);
     if (epoch != g_asked_epoch || own_world::elsewhere()) { // another Civ world: its wallet is asked for again
