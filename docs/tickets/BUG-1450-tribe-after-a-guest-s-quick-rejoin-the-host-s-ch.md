@@ -1,16 +1,16 @@
 ---
 id: BUG-1450
 title: Tribe: after a guest's quick rejoin the host's chief (the game's leader with the staff) became the guest's member (claims refresh before the resplit, balance picks the chief)
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-23
 source: lab
 role: 
 versions: 0.7.16, 0.7.16.1
-fixed_in:
+fixed_in: unreleased
 branch: fix/w67-chief
-commits:
+commits: fd47f96c, b2cd3f49, 7f840a0a, d14d7ff7
 tests: tribe_owners_rejoin, tribe_owners_rejoin_back (coop_tribe_owners_rejoin.py); twins tribe_owners_rejoin_off, tribe_owners_rejoin_back_off; tribe_held_item (coop_tribe_looks.py: "the host's chief #N is still the host's member"); tests/tribe_tests.cpp balance_leader
 signature:
 docs: docs/re/tribe.md#tribe-balance-leader
@@ -50,7 +50,18 @@ the 0.7.16 code) and tribe_owners_rejoin_back_off (SPORE_FIX_OFF=tribe.balance_l
 turns (no claims) could give the leader to a guest if it were not first in member order (not seen).
 
 ## Verification
-VERIFICATION_PLACEHOLDER
+fix/w67-chief, lanes 2 and 3, `SPORE_DETECTOR=20 python3 tools/lab.py run ... --retry 0`.
+* PASS: out/lab/20261123-095717 tribe_owners_rejoin x3 (the hook fired in the join tick, at_join=0/1; the guest's
+  2 of 3 members its own again, #1 the host's on both games). out/lab/20261123-095115 tribe_owners_rejoin_back x3 (the
+  guest's share is #3, not the leader #1), tribe_owners_rejoin x3 (an earlier form without the gift), tribe_held_item
+  x3: "the host's chief #1 is still the host's member" passed in all 3 at the start and after the rejoin (run 1 failed
+  only its start grip checks while the host's chief held its staff gesture the whole window: BUG-1467, a test issue).
+  out/lab/20261123-100123: tribe_owners_session, tribe_owners_reload, tribe_owners_reload_back PASS.
+* FAIL (twins): out/lab/20261123-095717 tribe_owners_rejoin_off x3 (SPORE_FIX_OFF=tribe.claims_order: `changed:
+  ['#3 1->0']`, the guest's claim lost in the join tick) and tribe_owners_rejoin_back_off x3
+  (SPORE_FIX_OFF=tribe.balance_leader: `the host's chief #1 is still the host's member ... (owner 1)` on both games,
+  the BUG-1450 symptom).
+* make test: passed (tests/tribe_tests.cpp balance_leader).
 
 ## History
 - 2026-11-23: opened (fix/w65-night triage); for 0.7.16.1.
