@@ -10,6 +10,7 @@
 #include "modes.h"
 #include "net/shared_ledger.h"
 #include "space_ext.h"
+#include "space_rivalry.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
 #include "wire/shared_res.h"
@@ -435,6 +436,8 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
             continue;
         if (own_budget(r))
             return; // a total or a change sent before the switch to rivals mode: not shared any more
+        if (r.mode == modes::kSpace && type == net::MSG_RES && s.role() == net::Role::Client && rivalry::merge_pending())
+            return; // BUG-9299: our own budget merges first (space_rivalry.cpp); the host sends its total again within 2 s
         double cur;
         const double t = H ? H->time_seconds() : 0;
         if (!get_now(r, cur, t)) {
