@@ -2775,3 +2775,22 @@ the GOG 2024 `SporeApp.exe` (dc04aee5); the lines are in data/symbols/overrides_
   0xE04510 (ECX = HUD +0x64) at 0xCEAB8A.
 * ✔ `City_CenterPoint` 0xBD95D0: thiscall(city, Vector3* out) ret 4: the position of the city's walls object
   (+0x324, 0xBEC2E0); the Civ "next city" HUD message sends the camera there (0xCF64E5, then SimCamera_GoToPoint).
+
+## The host sends a guest the citizens around its pointer; an unplaced pointer is the host's capital (2026-11-23, fix/w67-citizens)
+<a id="civ-citizens-pointer"></a>
+
+BUG-1457. GOG 2024, lab 20261122-194210 (civ_own_species, civ_own_species_hostmode: key frames, the frame manifests'
+guest positions) and lab 20261123-095006 (`coop.wobj` on the guest), no new disassembly.
+* ✔ (runtime) A Tribe / Civ player's position is its pointer: the planet point under the last WM_MOUSEMOVE over its
+  game window (modes.cpp `mouse_on_planet`, BUG-0713), (0 0 0) until the first one. The lab's games get no mouse move
+  now and then: the guest's Civ position was (0 0 0) in every key frame of some tests and placed in others of the same
+  run (frames/*/manifest.jsonl `games.guest.pos`; not tied to a lane).
+* ✔ (runtime) worldobj `citizen` (#civ-roads-citizens) centres the host's snapshot for a guest on that position, on
+  the host's capital (`civ::center`) when it is (0 0 0), 200 m, the 56 nearest. Both cameras at a city 430 m from the
+  capital: the snapshots were empty (`kind citizen binds=0 snap_n=0 rx=226`), the guest's 19 citizens of that city
+  walked on their own (8-14 of the host's 19 without a guest citizen within 15 m for 20 s, the detector's
+  `unmatched:citizen` 12-14 of 19). Not a change of 0.7.16: the captured city's species change (BUG-1273) only made the
+  key frames look at it.
+* Fix (`coop.fix civ.pointer_view`): in Civ, before the first mouse move, the pointer is the point under the centre of
+  the game window (where its camera looks): `binds=19 snap_n=19`, 0 of 19 unpaired. Tests: `coop.npc marker unplace`
+  forgets the mouse move and puts the pointer at (0 0 0).
