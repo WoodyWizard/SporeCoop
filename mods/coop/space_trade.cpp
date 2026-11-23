@@ -125,6 +125,15 @@ static bool g_wait_restore_fix = true;
 COOP_FIX("space.trade_wait_restore", "BUG-1034", g_wait_restore_fix,
          "space: a gift or a sale reaching a rejoined guest before its own cargo hold is back waits for it");
 static spacekept::HeldQueue g_waiting; // the whole payloads (C5: space_kept.h)
+// BUG-9300 (audit SPC-8): BUG-1034 held only this file's gifts and sales. Other grants into the hold in that window
+// (a partner's gift spice K_GIFT, a mission's reward tools K_MISSION, a contract's reward tool, Steve's gift of the
+// finale) went into the host's copy and apply_inv took them out again: lost, the Staff of Life for good (its flag
+// stays set). Now they ask spaceext::hold_grants() and wait (owed, queued) until the restore is done.
+// `coop.fix space.grant_wait_restore off`: given at once (0.7.16).
+static bool g_grant_wait_fix = true;
+COOP_FIX("space.grant_wait_restore", "BUG-9300", g_grant_wait_fix,
+         "space: gift spice, mission and contract reward tools and Steve's gift reaching a rejoined guest wait for its own cargo hold");
+static uint32_t g_grant_waits; // tests: frames a grant was told to wait
 static uint32_t g_offer_waits;
 static bool inv_restore_pending();
 static bool g_restore_hold; // tests (BUG-1034): the guest's restore waits (no own record, K_INV_KEPT not taken)
@@ -1900,13 +1909,13 @@ static std::string status()
              "trade: gifts_sent=%u gifts_got=%u charges_sent=%u charges_got=%u charges_back=%u sales=%u sold=%u "
              "bought=%u earned=%lld paid=%lld offers_sent=%u offers_got=%u refunds=%u pending=%u offers=%u owed=%u "
              "owed_paid=%u owed_dropped=%u owed_kept=%u world=%u delivered=%u kept_at_end=%u sales_owed=%u/%u/%u/%u "
-             "waiting=%u waited=%u offer_waits=%u restore_pending=%d\n",
+             "waiting=%u waited=%u offer_waits=%u restore_pending=%d grant_waits=%u\n",
              g_gifts_sent, g_gifts_got, g_charges_sent, g_charges_got, g_charges_back, g_sales, g_sold, g_bought,
              (long long)g_earned, (long long)g_paid, g_offers_sent, g_offers_got, g_refunds, (unsigned)g_out.size(),
              (unsigned)g_offers.size(), (unsigned)g_owed.size(), g_owed_paid, g_owed_dropped, g_owed_kept, spaceext::world_epoch(),
              (unsigned)std::count_if(g_out.begin(), g_out.end(), [](const Out& o) { return o.delivered; }), g_kept_at_end,
              (unsigned)g_owed_sales.size(), g_sales_owed, g_sales_owed_paid, g_sales_owed_dropped, (unsigned)g_waiting.size(),
-             g_waiting.held(), g_offer_waits, (int)inv_restore_pending());
+             g_waiting.held(), g_offer_waits, (int)inv_restore_pending(), g_grant_waits);
     return b;
 }
 
@@ -2113,3 +2122,14 @@ static bool reg = spaceext::add({.name = "trade",
                                  .debug = debug});
 
 } // namespace spacetrade
+
+namespace spaceext {
+// BUG-9300: see space_ext.h
+bool hold_grants()
+{
+    if (!spacetrade::g_grant_wait_fix || !spacetrade::inv_restore_pending())
+        return false;
+    spacetrade::g_grant_waits++;
+    return true;
+}
+} // namespace spaceext

@@ -320,3 +320,14 @@ The whole UI as one picture, the world layers (2026-11-14 .. 2026-11-16):
   pointer's real screen place (centred, about 20 px under it), not at a remapped mouse place.
 * ~ (fork) The creature editor at 125 %: the part category tabs (top left) came out smaller than at 100 % (not looked
   into). ? Not looked at: the bars over Tribe members, Civ units and vehicles, Cell's health ring.
+
+## The simulator camera's getter and its travel to a point (2026-11-22, fix/w63-space)
+<a id="graphics-sim-camera-goto"></a>
+
+From the review of PR #220 by IltonBJSilva (out/research/prs-213-220.md), checked by objdump on GOG 2024 dc04aee5; not used by
+our code yet (an idea for "show my city / my vehicle" or a Rivals camera). Symbols in data/symbols/overrides_dc04aee5.sym.
+* ✔ (objdump) `SimCamera_Get` 0xB3D380: cdecl, `mov eax,[0x167EACC]; ret` (0 without a simulator camera; GOG 2016's
+  [0x167FAAC] of docs/re/tribe.md).
+* ✔ (objdump) `SimCamera_GoToPoint` 0xB145E0: thiscall(camera, const Vector3* point, bool, bool) `ret 0xC`, returns at
+  once while byte camera +0x390 is set; the Civ "next city" message calls it at 0xCF64F2 with City_CenterPoint 0xBD95D0
+  and (1, 1). SimCamera_LookAt's second argument is a quaternion, not a distance (docs/re/tribe.md, fork notes).

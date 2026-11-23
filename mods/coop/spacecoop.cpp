@@ -1621,6 +1621,14 @@ struct GiftHeld {
     int n;
 };
 static std::vector<GiftHeld> g_gifts_held;
+// BUG-9300: gifts that reached us while our own hold was still to come (spaceext::hold_grants), handled after the
+// restore in the same Space world (another world: the gift went with the old one, as a received gift does)
+struct GiftWait {
+    GiftHeld g;
+    uint32_t epoch;
+};
+static std::vector<GiftWait> g_gifts_wait;
+static uint32_t g_gift_waited, g_gift_wait_dropped;
 static uint32_t g_gift_back_paid, g_gift_back_owed, g_gift_back_dropped, g_gift_back_stray;
 
 static bool add_spice(const Key& key, int n)
@@ -1778,7 +1786,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         for (auto& k3 : msg.tools) {
             Key k;
             memcpy(k.v, k3.v, sizeof k.v);
-            if ((!inv || !in_space()) && spaceext::owe_tool_key(k.v, name(origin) + "'s mission")) { // BUG-0694
+            // BUG-0694; BUG-9300: also while our own hold is still to come (its restore would take the tool out)
+            if ((!inv || !in_space() || spaceext::hold_grants()) && spaceext::owe_tool_key(k.v, name(origin) + "'s mission")) {
                 owed++;
                 continue;
             }
@@ -1845,6 +1854,12 @@ static void on_gift(uint8_t kind, uint8_t origin, const Key& k, int n)
         g_gifts_held.push_back({origin, k, n});
         return;
     }
+    if (kind == K_GIFT && spaceext::hold_grants() && g_gifts_wait.size() < 64) { // BUG-9300: not into the replaced hold
+        g_gifts_wait.push_back({{origin, k, n}, spaceext::world_epoch()});
+        g_gift_waited++;
+        H->log(M, SK_INFO, "space: %d spice from %s waits for the own hold's restore (BUG-9300)", n, name(origin).c_str());
+        return;
+    }
     if (kind == K_GIFT_BACK && g_gift_refund_fix) {
         auto same = [&](const GiftOut& g) { return g.to == origin && g.n == n && !memcmp(g.key.v, k.v, sizeof k.v); };
         auto it = std::find_if(g_gifts_out.begin(), g_gifts_out.end(), same);
@@ -1860,7 +1875,7 @@ static void on_gift(uint8_t kind, uint8_t origin, const Key& k, int n)
         g_gifts_out.erase(it); // before anything is paid: once
         // BUG-0225: another Space world in memory now (a load came between): gift_owed_tick decides
         bool other_world = spaceext::owed_id() && g.epoch != spaceext::world_epoch();
-        if (other_world || !add_spice(k, n)) {
+        if (other_world || spaceext::hold_grants() || !add_spice(k, n)) { // BUG-9300: not into the replaced hold
             g_gifts_owed.push_back({k, n, g.epoch, g.tag});
             g_gift_back_owed++;
             if (C.notice)
@@ -1895,7 +1910,18 @@ static void on_gift(uint8_t kind, uint8_t origin, const Key& k, int n)
 // BUG-0226: owed spice, back in Space (also after the session ended)
 static void gift_owed_tick()
 {
-    if (g_gifts_owed.empty() || !in_space() || !inventory())
+    if (!g_gifts_wait.empty() && in_space() && inventory() && !spaceext::hold_grants()) { // BUG-9300: the restore is done
+        auto wait = std::move(g_gifts_wait);
+        g_gifts_wait.clear();
+        for (auto& w : wait)
+            if (w.epoch == spaceext::world_epoch())
+                on_gift(K_GIFT, w.g.origin, w.g.key, w.g.n);
+            else {
+                g_gift_wait_dropped++;
+                H->log(M, SK_INFO, "space: %d spice that waited for the restore dropped: another Space world", w.g.n);
+            }
+    }
+    if (g_gifts_owed.empty() || !in_space() || !inventory() || spaceext::hold_grants()) // BUG-9300
         return;
     auto owed = std::move(g_gifts_owed);
     g_gifts_owed.clear();
@@ -2544,9 +2570,11 @@ std::string debug(const std::vector<std::string>& a)
         return b;
     }
     if (a[0] == "gift") {
-        snprintf(b, sizeof b, "gifts out=%u owed=%u back_paid=%u back_owed=%u back_dropped=%u stray=%u held=%u pruned=%u",
+        snprintf(b, sizeof b, "gifts out=%u owed=%u back_paid=%u back_owed=%u back_dropped=%u stray=%u held=%u pruned=%u"
+                 " wait=%u waited=%u wait_dropped=%u",
                  (unsigned)g_gifts_out.size(), (unsigned)g_gifts_owed.size(), g_gift_back_paid, g_gift_back_owed,
-                 g_gift_back_dropped, g_gift_back_stray, (unsigned)g_gifts_held.size(), g_gift_pruned);
+                 g_gift_back_dropped, g_gift_back_stray, (unsigned)g_gifts_held.size(), g_gift_pruned,
+                 (unsigned)g_gifts_wait.size(), g_gift_waited, g_gift_wait_dropped);
         return b;
     }
     if (a[0] == "downstate") { // tests (BUG-0228/0229)
@@ -2713,6 +2741,30 @@ std::string debug(const std::vector<std::string>& a)
         void* rec = F<void*>(p, 0x13C);
         snprintf(b, sizeof b, "planet b0=%.3f b4=%.3f b8=%.3f", F<float>(rec, 0xB0), F<float>(rec, 0xB4),
                  F<float>(rec, 0xB8));
+        return b;
+    }
+    if (a[0] == "missiontool" && a.size() > 1) { // tests (BUG-9300): K_MISSION with this tool as its reward (0xhash)
+        void* inv = inventory();
+        Key tk{};
+        int n = inv ? vcall<int>(inv, 0x5C / 4) : 0;
+        for (int i = 0; i < n && i < 256 && !tk.v[0]; i++) { // the key's type / group from a tool we have
+            uint8_t* it = vcall<uint8_t*>(inv, 0x60 / 4, i);
+            const uint32_t* k = it && F<int>(it, 0x14) == 2 ? vcall<const uint32_t*>(it, 0x18 / 4) : nullptr;
+            if (k)
+                memcpy(tk.v, k, 12);
+        }
+        if (!tk.v[0] || !connected())
+            return "no tool to copy the key from, or not connected";
+        tk.v[0] = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+        wire::space_core::Mission msg;
+        wire::Key3 k3;
+        memcpy(k3.v, tk.v, sizeof k3.v);
+        msg.tools.push_back(k3);
+        net::Writer w;
+        msg.write(w);
+        send(K_MISSION, w);
+        g_missions_sent++;
+        snprintf(b, sizeof b, "mission sent: tool %08X %08X %08X", tk.v[0], tk.v[1], tk.v[2]);
         return b;
     }
     if (a[0] == "tools" || (a[0] == "tool" && a.size() > 2 && a[1] == "add")) {
