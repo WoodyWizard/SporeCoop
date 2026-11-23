@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace civlogic {
@@ -102,6 +103,24 @@ inline bool planner_kept(bool city_listed, bool in_buildings, bool same_noun)
 {
     return city_listed && in_buildings && same_noun;
 }
+// BUG-9303 (audit CIV-6): the claim a city of the player civilization gets at the host's refresh. has_old/old: its claim
+// now; old_absent: that claim's player is not here; owner_key: the key of its owner in the owner table ("" none, not a
+// player); owner_shared: the shared capital; alone: the host plays alone (fix on): its own deal claims nothing.
+// Returns "" for no claim.
+inline std::string city_claim(bool has_old, const std::string& old, bool old_absent, bool owner_shared,
+                              const std::string& owner_key, bool alone)
+{
+    if (has_old && old != "shared" && old_absent)
+        return old; // an absent player's claim stays
+    if (alone)
+        return has_old ? old : std::string(); // the claim it has stays, the solo deal gives none
+    if (owner_shared)
+        return "shared";
+    return owner_key;
+}
+// BUG-9303 (CIV-6 B): `coop.store adopt` gives the adopted player its claimed cities of the player civ at once, never the
+// capital (dealt by host_assign_cities)
+inline bool adopt_takes_city(bool listed, bool capital) { return listed && !capital; }
 // the waiting removals, once a frame: one the game removed first (not in its list, dead) is dropped, a held one waits
 inline bool pump_waits(bool listed, bool dead, bool held) { return listed && !dead && held; }
 inline bool pump_kills(bool listed, bool dead) { return listed && !dead; }

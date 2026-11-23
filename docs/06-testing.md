@@ -10047,3 +10047,19 @@ over the gap itself, not wait for the game to make one.
   1026-1295 frames after the destroy, 4 merged backward, 1 freed and missed.
 * space_planet_citizens: its misses after BUG-1210 are bound copies of runners 2.7-4.3 m off; `space.citizen_lead`
   (BUG-1404) sends the kind every 0.25 s. The test's 3 m / 5 % limits are unchanged.
+
+## Civ audit fixes of 0.7.16.1: save took, planner miss, solo deal (2026-11-22, fix/w63-civ)
+<a id="testing-civ-audit-w63"></a>
+
+* `civ_save_took` (coop_civ_save_took.py, civ_npc, warm, ~3 min, BUG-9301 / CIV-1): `coop.civ savekill on` (guest) makes
+  the next save's end remove one taken mirror first, as a host snapshot of that frame would; `coop.civ civlists` now
+  prints `unlisted=` (civ list entries the game's vehicle list no longer has, pointers only). Twin `civ_save_took_off`
+  (SPORE_FIX_OFF=civ.save_took_listed, unsafe: the removed vehicle goes back): unlisted >= 1 or a fault.
+* `civ_planner_miss` (coop_civ_planner_build.py --miss, civ_npc, warm, ~4 min, BUG-9302 / CIV-7): the house tile dropped
+  on a taken plot; precondition `planner_out: adds=` of `coop.civ tables` went up (the planner's AddBuilding ran), else
+  INCONCLUSIVE. Twin `civ_planner_miss_off` (SPORE_FIX_OFF=civ.planner_closed). A kept building now reaches the host at
+  the planner's close, not at the drop (civ_planner_build waits 25 s for it).
+* `civ_solo_deal` (coop_civ_solo_deal.py, civ_npc, ~6 min, BUG-9303 / CIV-6): the guest leaves, the host alone buys two
+  NPC cities, `coop.civ claims forget <city>` (host, tests) drops one city's claim and capture / gift marks (a Civ save
+  played without co-op), the guest joins again. Twin `civ_solo_deal_off` (SPORE_FIX_OFF=civ.solo_claims).
+  `coop.civ tables` line `solo_claims: fix= unclaimed= adopt_fix= adopt_owned=`.

@@ -114,7 +114,7 @@ std::string debug(const std::vector<std::string>& a)
                           std::to_string(g_rx.cut) + " abandoned=" + std::to_string(g_rx.abandoned) + " bad=" +
                           std::to_string(g_rx.bad) +
                           "\n"; // C1 (BUG-1140)
-        return std::string(b) + k + sp + cl + c + reg + took_status() + planner_out_status();
+        return std::string(b) + k + sp + cl + c + reg + took_status() + planner_out_status() + solo_status();
     }
     if (!a.empty() && a[0] == "fakeveh") { // tests (BUG-0469): fakeveh <hex design instance|off> [<hex type> <hex group>]
         // every mirror vehicle is built with that design key (the guest's own civ design otherwise)
@@ -728,6 +728,11 @@ std::string debug(const std::vector<std::string>& a)
         g_chunk_budget = std::clamp<size_t>((size_t)atoi(a[1].c_str()), 200, net::kMaxPacket - 48);
         g_n.max_chunk = 0;
         return "chunk budget " + std::to_string(g_chunk_budget);
+    }
+    if (a.size() >= 3 && a[0] == "claims" && a[1] == "forget" && is_host()) { // claims forget <city> (tests, BUG-9303)
+        size_t ci = (size_t)atoi(a[2].c_str());
+        void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        return city ? claims_forget(city) : "no such city\n";
     }
     if (a.size() >= 2 && a[0] == "savekill" && is_guest()) { // savekill on|off (tests, BUG-9301): the next save's end
         took_debug_kill(a[1] == "on");                         // first removes a mirror it took out (as a host snapshot)
