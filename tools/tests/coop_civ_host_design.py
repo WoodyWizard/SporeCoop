@@ -16,8 +16,14 @@ PASS: the guest's mirror of that vehicle is built from a model whose record is t
 record the guest's game answers for the mirror's own model key, vehicle +0xC4, hashed the same as A on
 the host), for the new vehicle and for a vehicle of the loaded world the guest binds.
 --nofix (`coop.fix creations.host_designs off`): must FAIL (the mirror shows B, the guest's own creation).
+--kept (BUG-1481, audit CIV-15 a): the loaded vehicle the guest binds after its rejoin waits for the host's design
+answer on the first cycle; that cycle's sweep of the guest's own vehicles removed it, and a new mirror was made on a
+later cycle (the vehicle vanished and came again). The guest takes no vehicle states until its game has loaded the
+world (`coop.civ vehhold 1` before the rejoin, 0 after), so the vehicles of the loaded save are read first: PASS when
+the guest's mirror of the host's vehicle is the same game object (address and the game's object serial) as the
+loaded vehicle there. SPORE_FIX_OFF=civ.wait_design_kept must FAIL (another object).
 
-  SPORE_LANE=4 python3 tools/tests/coop_civ_host_design.py [--nofix]
+  SPORE_LANE=4 python3 tools/tests/coop_civ_host_design.py [--nofix] [--kept]
 """
 import argparse
 import os
@@ -77,6 +83,18 @@ def vehicles(con):
     return out
 
 
+def objects(con):
+    """{vehicle address: (pol, purpose, loco, model, game object serial, pos)} of this game's vehicles"""
+    out = {}
+    for ln in con.call('coop.civ')['out'].splitlines():
+        m = re.match(r'\s+veh #\d+ (?:0x)?([0-9A-Fa-f]+) pol=(\w+) .*purpose=(\d+) loco=(\d+).*? '
+                     r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\).* model=(\w+) serial=(\d+)', ln)
+        if m:
+            out[int(m.group(1), 16)] = (m.group(2), int(m.group(3)), int(m.group(4)), int(m.group(8), 16),
+                                        int(m.group(9)), tuple(float(m.group(k)) for k in (5, 6, 7)))
+    return out
+
+
 def model_hash(con, inst):
     m = re.search(r'model \w+ (\w+)', con.call(f'coop.creations modelhash {inst:08X}')['out'])
     return m.group(1) if m else '?'
@@ -85,6 +103,7 @@ def model_hash(con, inst):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--nofix', action='store_true')
+    ap.add_argument('--kept', action='store_true', help='BUG-1481: the loaded vehicle is bound, not removed and made again')
     a = ap.parse_args()
     MODELS[:] = two_vehicle_models()
     ha, hb = f'{fnv(MODELS[0]):08X}', f'{fnv(MODELS[1]):08X}'
@@ -134,6 +153,8 @@ def main():
     if new is not None:
         # a vehicle of the loaded world: the guest joins again, its game loads the host's world (with that
         # vehicle and the design key in the save) and binds the loaded vehicle as the mirror
+        if a.kept:  # BUG-1481: the loaded world's vehicles are read before the first state cycle binds them
+            print('  guest:', guest.call('coop.civ vehhold 1')['out'].strip(), flush=True)
         guest.call('coop.leave')
         time.sleep(3)
         guest.call(lane.JOIN)
@@ -141,6 +162,14 @@ def main():
         while time.time() - t1 < 40 and not any(m in guest.call('game.mode')['out'] for m in ('GalaxyGameEntry', 'Load')):
             time.sleep(0.3)
         ck(twoinst.wait_guest_in(host, guest, 180), 'the guest is back in the host\'s world')
+        loaded = {}
+        if a.kept:
+            time.sleep(3)
+            loaded = {k: o for k, o in objects(guest).items() if o[0] == PLAYER_POL and o[3] == X}
+            print(f'  guest: the loaded vehicles of design {X:08X}: '
+                  f'{ {hex(k): (o[4], o[5]) for k, o in loaded.items()} }', flush=True)
+            ck(loaded, f'the guest\'s game loaded a vehicle of the design {X:08X} with the host\'s world')
+            print('  guest:', guest.call('coop.civ vehhold 0')['out'].strip(), flush=True)
         hv2, gv2, gh2 = {}, {}, '?'
         t0 = time.time()
         while time.time() - t0 < 40:
@@ -156,6 +185,20 @@ def main():
               guest.call('coop.creations designs')['out'].strip(), flush=True)
         ck(gh2 == ha, f'after a world load the guest\'s mirror of that vehicle shows the host\'s design ({gh2}, host {ha}, '
                       f'the guest\'s own {hb})')
+        if a.kept:  # BUG-1481: the mirror is the loaded object, not one made after a removal
+            gid = next((i for i in hv2 if hv2[i][0] == PLAYER_POL and hv2[i][3] == X and i in gv2), None)
+            addr = None
+            for ln in guest.call('coop.civ')['out'].splitlines():
+                m = re.match(rf'\s+veh #{gid} (?:0x)?([0-9A-Fa-f]+) ', ln) if gid is not None else None
+                if m:
+                    addr = int(m.group(1), 16)
+            now = objects(guest).get(addr) if addr else None
+            was = loaded.get(addr)
+            print(f'  guest mirror #{gid}: {addr and hex(addr)} serial {now and now[4]}; loaded there: '
+                  f'{was and was[4]}', flush=True)
+            ck(now and was and now[4] == was[4],
+               f'the guest\'s mirror is the vehicle its game loaded (address {addr and hex(addr)}, serial '
+               f'{now and now[4]} = loaded {was and was[4]}), not one made after a removal')
         twoinst.keyframe('after_rejoin', 'after the guest\'s rejoin: both in Civ play (no loading screen), the vehicles '
                                          'with the host\'s designs')
     ck.faults(host=host, guest=guest)

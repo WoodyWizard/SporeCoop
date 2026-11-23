@@ -21,15 +21,21 @@ city gets the guest's house then (SPORE_FIX_OFF=civ.space_build_hold must FAIL).
 --miss (BUG-0902): the buyer drops the house tile on a taken plot: the planner adds the building and takes it away
 again (nothing paid, the buyer's city keeps its houses); the other game must not get a house either
 (SPORE_FIX_OFF=civ.space_planner_closed must FAIL: the guest's send went at AddBuilding).
+--menu (BUG-1480, audit CIV-11): the host's game is outside Space (it saved and went to the galaxy menu, `coop.menu`)
+while the guest buys the house, and loads the same save again after it (`coop.load`), lands on the home planet: the
+guest's CMD_SPACE_BUILD came to a host outside Space and Civ; the host's city has the house then (as --away).
+SPORE_FIX_OFF=civ.space_build_route must FAIL: the command went into the Civ command hold, which runs only in Civ.
 
-  SPORE_LANE=6 python3 tools/tests/coop_space_planner_build.py [--buyer guest|host] [--away]
+  SPORE_LANE=6 python3 tools/tests/coop_space_planner_build.py [--buyer guest|host] [--away | --menu]
 """
 import argparse
 import re
 import time
 
 from harness import shared_money as money
+import fixtures
 import lane
+from harness import wait_until
 from play_space import Player
 from twoinst import Checks, shot, start
 
@@ -180,7 +186,11 @@ def main():
     ap.add_argument('--away', action='store_true', help='the other ship leaves the planet before the purchase and '
                     'lands again after it (BUG-0766)')
     ap.add_argument('--miss', action='store_true', help='the buyer drops the house on a taken plot (BUG-0902)')
+    ap.add_argument('--menu', action='store_true', help='the host is in the galaxy menu while the guest buys, loads the '
+                    'same save again after it (BUG-1480)')
     a = ap.parse_args()
+    if a.menu and a.buyer != 'guest':
+        ap.error('--menu: the guest buys')
     host, guest = start('space_empire')
     ck = Checks()
     stats = {}
@@ -217,6 +227,10 @@ def main():
     if a.away:  # BUG-0766: the other ship is off the planet while the house is bought
         ck(po.take_off(), f'the {ow}\'s ship leaves the planet ({po.ctx()}, at {po.place()})')
         time.sleep(3)
+    if a.menu:  # BUG-1480: the host's game outside Space (and outside Civ) while the house is bought
+        print('  host menu:', host.call('coop.menu')['out'].strip(), flush=True)
+        ck(wait_until(lambda: 'GalaxyGameEntry' in host.call('game.mode')['out'], 90, 1), 'the host is in the galaxy menu')
+        time.sleep(2)
     adds0 = planner_adds(buyer)
     paid = planner_buy(ck, buyer, bi, bw, a.miss)
     nb1, hb1, _ = houses(buyer, bi)
@@ -239,11 +253,21 @@ def main():
         ck.faults(host=host, guest=guest)
         return ck.result()
     ck(hb1 == hb0 + 1, f'the {bw}\'s game has the new house ({hb0} -> {hb1} houses)')
-    if a.away:
+    if a.menu:
         time.sleep(3)
-        print(f'  {ow} away: {other.call("coop.civ")["out"].splitlines()[-1] if other.call("coop.civ")["out"] else ""}',
+        print(f'  host in the menu: {civ_line(host)}', flush=True)
+        host.call('wait.frames 240 90000')
+        print('  host load:', host.call(f'coop.load {" ".join(fixtures.planet_of("space_empire").split("/"))}')['out'].strip(),
               flush=True)
-        po.land_retry(HOME)
+        ck(wait_until(lambda: 'Space' in host.call('game.mode')['out'], 180, 2), 'the host is in Space again')
+        time.sleep(5)
+    if a.away or a.menu:
+        if a.away:
+            time.sleep(3)
+            print(f'  {ow} away: {other.call("coop.civ")["out"].splitlines()[-1] if other.call("coop.civ")["out"] else ""}',
+                  flush=True)
+        if po.ctx() != 'planet' or po.place() != pb.place():
+            po.land_retry(HOME)
         ck(po.ctx() == 'planet' and po.place() == pb.place(), f'the {ow} lands on the home planet again ({po.place()})')
         time.sleep(3)
         op = city_positions(other)
@@ -269,6 +293,9 @@ def main():
     else:  # the drag did not end on the plot (the planner took the building away again): nobody may get it
         ck(not got and ho1 == ho0, f'the {ow}\'s game got no house the {bw}\'s planner did not keep ({ho0} -> {ho1})')
     time.sleep(3)
+    if a.menu:  # (the host's money is its save's again after the load: the shared money is not this test's check)
+        ck.faults(host=host, guest=guest)
+        return ck.result()
     mh1, mg2 = money(host), money(guest)
     mb0 = mg0 if a.buyer == 'guest' else mh0
     ck(mh0 is not None and mh1 is not None and paid and abs((mb0 - (mg2 if a.buyer == 'guest' else mh1)) - paid) < 1

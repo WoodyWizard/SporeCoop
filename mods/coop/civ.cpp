@@ -1368,6 +1368,16 @@ std::deque<SpecialtyAsk> g_spec_queue; // guest: questions of the host not shown
 int g_spec_open = -1;                  // guest: the city index whose box is up (-1: none)
 static int g_spec_open_type = 0;
 static void* g_spec_answer_data;              // guest: the answer message taken (every city's listener gets it)
+// BUG-1479 (audit CIV-10): the first city listener closes the question (g_spec_open = -1), so the guard against the
+// same answer at the next listeners sat inside `g_spec_open >= 0` and never ran: every other city's listener passed the
+// answer to the game's, which acts for the player civ's last captured city (+0x44C; on a guest the loaded save's):
+// SetSpecialty with that city's stale capture type and a second Resume of the box's pause. Now the answer taken is
+// dropped at every later listener of the same dispatch (the data is cleared at the next civ::tick, so a later box of
+// the game's own with a reused data pointer is the game's). Off (`coop.fix civ.specialty_once off`): 0.7.16.1.
+static bool g_fix_specialty_once = true;
+COOP_FIX("civ.specialty_once", "BUG-1479", g_fix_specialty_once,
+         "civ: a guest's specialty answer is taken once; the other cities' listeners do not apply it to another city");
+void* g_spec_took_at;                         // guest, tests: the city whose listener took the last answer
 // BUG-1175: the box's own pause (Pause 0x4BF38A7 in cCity_ShowSpecialtyBox) stopped the guest's game time while the
 // question was up: the cities the host's game founded meanwhile (the next site after a purchase or a capture) waited
 // for the game time (their appearance is a timed callback, docs/re/civ.md 9.3), and so did every vehicle of their
@@ -1392,6 +1402,7 @@ LIFECYCLE_STATE("civ.specialty_questions", lifecycle::kSession | lifecycle::kWor
                     g_spec_queue.clear();
                     g_spec_open = -1;
                     g_spec_answer_data = nullptr;
+                    g_spec_took_at = nullptr;
                     g_spec_released = 0;
                 },
                 []() -> size_t { return g_spec_queue.size() + (g_spec_open >= 0); });
@@ -1463,10 +1474,15 @@ static void spec_show_next()
 
 static uint32_t SK_THISCALL h_CityListener(void* self, uint32_t msg, void* data)
 {
-    if (msg == kSpecialtyAnswerMsg && g_spec_open >= 0 && is_guest() && data && !IsBadReadPtr(data, 12)) {
-        if (data == g_spec_answer_data)
-            return 0; // the same answer reaching the next city's listener: taken already
+    civlogic::SpecAnswer act = msg == kSpecialtyAnswerMsg && is_guest() && data
+                                   ? civlogic::spec_answer(g_fix_specialty_once, g_spec_open >= 0,
+                                                           data == g_spec_answer_data)
+                                   : civlogic::SpecAnswer::Pass;
+    if (act == civlogic::SpecAnswer::Drop)
+        return 0; // the same answer reaching the next city's listener: taken already (BUG-1479: also once closed)
+    if (act == civlogic::SpecAnswer::Take && !IsBadReadPtr(data, 12)) {
         g_spec_answer_data = data;
+        g_spec_took_at = (uint8_t*)self - 0x20C; // (the listener is the city's +0x20C)
         uint32_t button = *(uint32_t*)((uint8_t*)data + 8);
         bool take = button == kSpecialtyTake;
         uint8_t ci = (uint8_t)g_spec_open;
@@ -2140,6 +2156,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 void tick(double now)
 {
     veh_hunt_tick();
+    if (g_fix_specialty_once) // BUG-1479: the answer's dispatch is over (every city's listener had it)
+        g_spec_answer_data = nullptr;
     if (g_ok && C.sess && C.sess->connected())
         space_tick(now); // BUG-0766 / BUG-0884
     if (!active())
@@ -2389,9 +2407,20 @@ static void space_tick(double now)
     }
 }
 
+// BUG-1480 (audit CIV-11): a guest's CMD_SPACE_BUILD went the Space way only while the host's game was in Space; in an
+// editor (the captain's outfitter) or a load it fell into the Civ command hold, which runs only in Civ: the building the
+// guest paid for never came to the host's colony, and host_space_build's own hold (BUG-0766) was never reached. Now it
+// is routed by the command in any mode outside Civ (host_space_build keeps it until this game is on that planet); its
+// first byte is also the superweapon request of a Civ guest, so outside Space it is told by its size (civ_logic.h).
+// Off (`coop.fix civ.space_build_route off`): 0.7.16.1.
+static bool g_fix_space_build_route = true;
+COOP_FIX("civ.space_build_route", "BUG-1480", g_fix_space_build_route,
+         "civ: a guest's colony building that reaches the host in an editor or a load is kept until the host is on that planet");
+
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
-    if (!active() && type == net::MSG_CIV_CMD && g_ok && is_host() && game::mode_id() == modes::kSpace && r.left()) {
+    if (!active() && type == net::MSG_CIV_CMD && g_ok && is_host() &&
+        civlogic::space_build_routed(g_fix_space_build_route, game::mode_id() == modes::kSpace, r.left()) && r.left()) {
         net::Reader peek = r;
         if (peek.u8() == CMD_SPACE_BUILD) {
             host_space_build(from, r); // BUG-0751
@@ -2784,10 +2813,10 @@ std::string list()
               oz = otype >= 0 ? *(float*)(ob + 12) : 0;
         snprintf(b, sizeof b,
                  "  veh #%u %p pol=%08X owner=%d purpose=%d loco=%d sel=%u hp=%.0f pos=(%.1f %.1f %.1f) order=%d "
-                 "opos=(%.1f %.1f %.1f) scale=%.2f model=%08X\n",
+                 "opos=(%.1f %.1f %.1f) scale=%.2f model=%08X serial=%u\n",
                  id, v, pol_of(v), o == 0xFF ? -1 : (int)o, F<int>(v, kVPurpose), F<int>(v, kVLoco),
                  F<uint8_t>(v, kVSelected), F<float>(v, kVHp), p.x, p.y, p.z, otype, ox, oy, oz, game::object_scale(v),
-                 F<uint32_t>(v, kVModelKey));
+                 F<uint32_t>(v, kVModelKey), (unsigned)game::object_serial(v)); // (serial: the game's object, BUG-1481)
         out += b;
         GvRef gx = id && !(C.sess && C.sess->role() == net::Role::Host) ? gv_find(id) : GvRef{};
         if (gx) { // BUG-0186: the guest's view of the mirror (on the same line)

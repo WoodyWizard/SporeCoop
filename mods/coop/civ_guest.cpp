@@ -717,6 +717,16 @@ std::string host_buildings_list()
     return out + b;
 }
 
+// BUG-1481 (audit CIV-15 a): a local vehicle a mirror of this cycle chose but did not bind yet (BUG-0647: the host's
+// answer for its design first) was removed by the same complete cycle's sweep of this game's own vehicles, and a new
+// mirror made on a later cycle: with one chunk per cycle (the usual case) the "later cycle" never came for the first
+// vehicle of a design. The candidates of the cycle are spared by the sweep (only compared, never read). Off
+// (`coop.fix civ.wait_design_kept off`): 0.7.16.1.
+static bool g_fix_wait_design_kept = true;
+COOP_FIX("civ.wait_design_kept", "BUG-1481", g_fix_wait_design_kept,
+         "civ: a guest's vehicle waiting for the host's design answer is bound later, not removed and made again");
+static std::unordered_set<void*> g_wait_design; // guest: this cycle's candidates waiting for the design answer
+
 void guest_state(net::Reader& r)
 {
     uint16_t cycle = r.u16();
@@ -799,8 +809,12 @@ void guest_state(net::Reader& r)
                 v = lv;
             }
         }
-        if (v && !bound_design(v))
+        if (v && !bound_design(v)) {
+            if (g_wait_design.size() < 256)
+                g_wait_design.insert(v); // BUG-1481: not one of this game's own for the sweep below
+            g_n.wait_design++;
             continue; // BUG-0647: the host's answer for its model first (bound on a later cycle)
+        }
         bool made = !v;
         if (!v) {
             void* civ = thiscall<void*>(a_CivByPol, nm(), m.pol);
@@ -841,10 +855,16 @@ void guest_state(net::Reader& r)
             }
         });
     // the guest's own vehicles that the host does not have (its local civ AI, the start vehicle)
+    std::unordered_set<void*> waits;
+    waits.swap(g_wait_design); // (a new cycle names its own)
     for (void* lv : all_vehicles())
         if (!gv_bound(lv)) {
             if (kill_waiting(lv))
                 continue;
+            if (civlogic::sweep_spares(g_fix_wait_design_kept, waits.count(lv) != 0)) {
+                g_n.wait_design_spared++;
+                continue;
+            }
             if (hold_removal(lv)) {
                 kill_wait(lv, game::object_serial(lv));
                 g_n.planner_kills_held++;
