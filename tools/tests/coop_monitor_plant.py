@@ -57,11 +57,21 @@ def main():
     for con, cmd in ((host, 'coop.fix creature.partner_hp off'), (guest, 'coop.puppet hold on')):
         print(f'  {cmd}: {con.call(cmd)["out"].strip()[:120]}', flush=True)
     mx = max_hp(guest) or 10.0
-    nl = re.findall(r'#(\d+) .*spawned', guest.call('coop.npc list')['out'])
+    # BUG-1439: the guest makes its proxies 1 s after its avatar or world changed (npc.cpp, g_settle_s, BUG-0842): right
+    # after a warm reset's reload its list can still have none spawned (lab 20261122-194210: read 0.9 s after its
+    # Loading -> Creature, the plant skipped without a word). Wait for a spawned proxy; never leave the plant out silently
+    nl, t_px = [], time.time()
+    while not nl and time.time() - t_px < 20:
+        nl = re.findall(r'#(\d+) .*spawned', guest.call('coop.npc list')['out'])
+        if not nl:
+            time.sleep(0.5)
+    ck(nl, f'the guest has a spawned NPC proxy for the proxies plant ({len(nl)} after {time.time() - t_px:.1f} s)')
     if nl:
         p = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', guest.call('coop.avatar')['out'])
         x, y, z = (float(v) for v in p.groups()) if p else (0, 0, 0)
-        print('  pwalk:', guest.call(f'coop.npc pwalk {nl[0]} {x + 25:.1f} {y:.1f} {z:.1f} 4 60 1')['out'].strip(), flush=True)
+        pw = guest.call(f'coop.npc pwalk {nl[0]} {x + 25:.1f} {y:.1f} {z:.1f} 4 60 1')['out'].strip()
+        print('  pwalk:', pw, flush=True)
+        ck('walks to' in pw, 'the proxies problem is planted (coop.npc pwalk)')
     host.call('key w down')
     time.sleep(6)
     host.call('key w up')

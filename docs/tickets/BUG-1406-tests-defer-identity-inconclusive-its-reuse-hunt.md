@@ -57,3 +57,4 @@ Open, waiting for the lab run:
 
 ## History
 - 2026-11-21: opened; the hunt changed on fix/w62-flake-tcs (xf40B4KM, 1500 frames), waiting for the lab run.
+- 2026-11-23: CORRECTION (BUG-1453): the late frees at 1026-1295 frames were the cinematic's end (5-8 frames after its Enter), not a time effect; the hunt is 300 frames with up to 60 rounds now.

@@ -52,3 +52,4 @@ Open, waiting for the lab run:
 
 ## History
 - 2026-11-21: opened; fixed on fix/w62-flake-tcs (space.citizen_lead), waiting for the lab run.
+- 2026-11-23: BUG-1454: the twin passed 4 of 4 (20261122-192851): space_planet_citizens cannot show this switch (2 of 9 runs fail at 0.5 s snapshots, the "about half" was before BUG-1210); the claim moves to the new space_planet_runners (limits to be measured).

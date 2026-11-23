@@ -98,10 +98,17 @@ def main():
 
 def run(host, guest, ck):
     fam = family(host)
-    pup = puppet_ptr(host)
-    prox = proxies(guest)
-    cand = sorted((n[3], i, n[1]) for i, n in npcs(host).items()
-                  if i in prox and not n[4] and n[2] > 0 and n[1] != fam and n[3] > 45)
+    # BUG-1444: the guest spawns its mirrors ~0.7 s after it enters the host's world (lab 20261122-194210: 0 at s 9.4,
+    # 21 at s 10.0; a warm settle of 0.3 s ended between): wait for them; the check below is unchanged
+    t0 = time.time()
+    while True:
+        pup = puppet_ptr(host)
+        prox = proxies(guest)
+        cand = sorted((n[3], i, n[1]) for i, n in npcs(host).items()
+                      if i in prox and not n[4] and n[2] > 0 and n[1] != fam and n[3] > 45)
+        if (cand and pup) or time.time() - t0 > 20:
+            break
+        time.sleep(0.5)
     ck(bool(cand) and pup, f'an NPC of another species far from the host, mirrored on the guest ({len(cand)}), '
                            f'the host shows the guest\'s puppet ({pup:08X})')
     if not cand or not pup:

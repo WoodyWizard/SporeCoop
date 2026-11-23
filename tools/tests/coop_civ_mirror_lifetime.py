@@ -71,6 +71,16 @@ def main():
             guest.call('coop.civ vehhold 0')
             time.sleep(4)
             continue
+        # BUG-1446: the game makes the vehicle near, not at, the asked point; within 25 m a mirror binds a local vehicle of
+        # its civilization and kind (civ_guest.cpp, `best = 25.f`) by design, not through the freed block (lab
+        # 20261122-194210: 24.4 m, 20261117-154911: 20.2 m): not this test's case, another round
+        dh = math.dist(h['pos'], h['want'])
+        if dh < 30:
+            print(f'  the new vehicle stands {dh:.1f} m from the host\'s vehicle (inside the bind radius): another round',
+                  flush=True)
+            guest.call('coop.civ vehhold 0')
+            time.sleep(4)
+            continue
         reused += 1
         made = h['pos']
         print(f'  a new vehicle of the guest\'s civilization at the freed block of mirror #{h["id"]}: {h["line"]}', flush=True)

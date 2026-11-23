@@ -389,6 +389,12 @@ def main():
                  f"kin: the host's screen shows a kin of the host's cell {hkey} (the host's look) beside the host; the guest's screen "
                  f"a kin of the guest's cell {gkey} (the guest's look) beside the guest")
 
+    # BUG-1441: the host's own place, taken before the AI sampling: a knockout in it (BUG-1407's class) respawns the host next to
+    # the guest, and a way back measured from there leads to the guest's place (lab 20261122-194210: knocked out at
+    # s 147.9, "respawned small next to Bob" at s 157.9; the host went "back" to (73 1), 8 m from the guest, and no kin of
+    # the host were near either game)
+    home = next((p['pos'] for p in kin(host, 0)[0].values() if p['me']), None)
+
     # 2. the AI of the guest's kin
     ai_check(ck, host, gid, hkey, gkey)
 
@@ -402,7 +408,7 @@ def main():
         for con in (host, guest):
             con.call('coop.pool invulnfor 900')
         hp0, gp0 = kin(host, 0)[0], kin(host, 0)[0][gid]
-        h_at = next(p['pos'] for p in hp0.values() if p['me'])
+        h_at = home or next(p['pos'] for p in hp0.values() if p['me'])
         off = (h_at[0] - gp0['pos'][0], h_at[1] - gp0['pos'][1])
         host.call(f'coop.pool tp {unit * 0.3:.2f} 0')
         time.sleep(6)
@@ -418,18 +424,44 @@ def main():
     ck(near.get(gkey, 0) >= 1, f"both players at the guest's place: the guest's kin are still there ({near})")
     keyframe('at_guest_place', f"Cell, both players at the guest's place: both screens show wild kin of the guest's cell {gkey} "
              "(the guest's look) around the two players" + ' ' + screens(host, guest, unit))
-    host.call(f'coop.pool tp {off[0]:.2f} {off[1]:.2f}')
-    time.sleep(3)
+    for attempt in range(2):  # back to the host's place: up, and away from the guest (a knockout puts it next to it)
+        wait_up(host, 20)
+        host.call('coop.pool invulnfor 900')
+        g_at = kin(host, 0)[0][gid]['pos']
+        to = (h_at[0] - g_at[0], h_at[1] - g_at[1])
+        if math.hypot(*to) <= 2 * r:  # its place was near the guest's (20261122-194210: 42 m): a place of its own instead
+            print(f"  the host's place is {math.hypot(*to):.0f} m from the guest: it goes {dist:.0f} m away instead", flush=True)
+            to = (-dist, 0.0)
+        host.call(f'coop.pool tp {to[0]:.2f} {to[1]:.2f}')
+        time.sleep(3)
+        d_back = players_apart(host, gid)
+        if d_back > r and wait_up(host, 0):
+            break
+        print(f"  the host is not back at its place ({d_back:.1f} m from the guest; {ko_diag(host)}): again", flush=True)
+    ck(d_back > r, f"the host is back at its own place, away from the guest ({d_back:.1f} m, more than {r:.1f})")
     # the host's place before the guest comes: the kin made since the players first parted (older ones may be from the
-    # start, where both played together)
-    before = {c['key']: c['model'] for c in kin(host, r)[1] if c['near'] == 0 and c['key'] not in old}
+    # start, where both played together). The area the host left was culled; it is populated again within seconds, so
+    # sampled every 3 s for up to 45 s until the host's pool has a kin there (as place_check: one sample can hold none)
+    before, t0 = {}, time.time()
+    while True:
+        before.update({c['key']: c['model'] for c in kin(host, r)[1] if c['near'] == 0 and c['key'] not in old})
+        if before or time.time() - t0 >= 45:
+            break
+        time.sleep(3)
     guest.call(f'coop.pool tp {unit * 0.3:.2f} 0')
     time.sleep(8)
-    gp, gc, _ = kin(guest, r)
-    gnear = counts(gc, (0, gid), r)
     # the kin made there while the host was alone are the host's, and the guest draws them so; kin made since the guest
-    # came may be either's (owner decision 2026-11-18: a mix where the players are together)
-    kept = {c['key']: c['model'] for c in gc if c['key'] in before}
+    # came may be either's (owner decision 2026-11-18: a mix where the players are together). Sampled until the guest's
+    # game has a kin of the host's cell near the players, for up to 45 s; every sample counts for the checks
+    gnear, kept, t0 = {}, {}, time.time()
+    while True:
+        gp, gc, _ = kin(guest, r)
+        for k, n in counts(gc, (0, gid), r).items():
+            gnear[k] = max(gnear.get(k, 0), n)
+        kept.update({c['key']: c['model'] for c in gc if c['key'] in before})
+        if gnear.get(hkey, 0) >= 1 or time.time() - t0 >= 45:
+            break
+        time.sleep(3)
     print(f"  both at the host's place: the guest's mirrors near it {gnear}; of the kin there before the guest came "
           f"(host's pool {sorted(set(before.values()))}) the guest draws {len(kept)} as {sorted(set(kept.values()))}", flush=True)
     ck(gnear.get(hkey, 0) >= 1 and set(before.values()) <= {hkey} and set(kept.values()) <= {hkey},
