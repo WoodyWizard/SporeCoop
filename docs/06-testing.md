@@ -10270,3 +10270,17 @@ split over 4 lanes). Each test reads the game's own state on the other machine:
 * `adventure_tutorial` check 6 (BUG-1262): the puppet's body (modelhash of its species here) is the partner's captain's
   body on the partner's game, within 30 s after the play. Twin `adventure_tutorial_partner_off`; when both games play a
   captain of the same body the twin cannot fail (printed).
+
+## Test knobs of feat/w81-cell (2026-11-23, feat/w81-cell)
+<a id="testing-w81-cell"></a>
+
+* `coop.creations hideown <kind> on|off`: this game's My Creations of a kind read as empty (an empty test profile;
+  BUG-1476's premades show for a guest's cell).
+* `coop.pool spend fake <n>`: as if the own cell editor had just spent n DNA (measured at the next tick, BUG-1507).
+* `coop.pool tilestat`: a second line `tilestat shadows= starved= shadow_counted= shadow_empty=` (BUG-1510).
+* `coop.pool` line `cell_audit`: the switches and counters of BUG-1507..1514.
+* `coop.lineage [share <0-100>] [consent on|off]`: the old cells' pool, offers and swaps (BUG-1477); `coop.pool kin 0`
+  line `kin lineage swapped= kept= natives= live= models=` (the live wild old cells of this game, mirrors included).
+* Tests: cell_diet_premade, cell_elsewhere_spend, cell_ko_partner_clouds, cell_flush_all_lists_off (the twin of
+  cell_flush_handover), cell_shadow_empty (4 games), cell_breaking_kill, cell_partner_scale, cell_own_cloud,
+  cell_plant_shrink, lineage_cells (+ _ui), each with its `_off` twin in suite.py.
