@@ -1751,3 +1751,8 @@ planet? Can you create a mockup?"
   server: connected", the row shows the galaxy's name), the window closes to the galaxy menu with the server's planets
   as stars; a star, Spore's planet panel, Play, the Choose A Stage screen. Seen on the way: the planet list message
   runs off the right edge (BUG-9339, open); the galaxy row says "0 planets, 0 players online" for a moment after Join.
+* Built (8M A, BUG-9340, switch `galaxy.planet_panel`): as in the mockup, with Spore's own stage icons (the screen's
+  buttons' drawables) and the stage under the pointer lit with its players' names; "Saved on the galaxy server" for the
+  mockup's save time (the planet list has none). With the Social Menu open it stands under it. ✔ In game (TITAN, QA 9 by
+  real clicks, QA 8 hosting Abber's Creature era as a friend): images/planet_panel.png, images/planet_panel_empty.png;
+  switch off: images/planet_panel_off.png. Esc, Back and a stage press close it with the screen.

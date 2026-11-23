@@ -43,3 +43,5 @@ TITAN QA 7 (DuoQAClythHost, Clyth.spo) entering Abber (Tribe) with QA 8 hosting 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: found and fixed (crash only when a Tribe game shows a Civ era's objects).
+- 2026-11-22: CORRECTION: the same crash seen in the Creature stage (BUG-9341): the fix's Creature exception is not safe
+  in every case.

@@ -1847,6 +1847,10 @@ BUG-0996. GOG 2024 (dc04aee5), from the decompiler (tools/ghidra/q.sh --build 20
   Tribe game, a little larger with the model's level of detail there).
 * ✔ (runtime) To move a creature (the avatar) out of a box for good: game::place (teleport vt 0x44 without the teleport
   mark); SetPosition (vt 0x38) alone is undone by its locomotion in the next frame.
+* CORRECTION (2026-11-22, feat/lineages-alpha): the Creature stage is not always safe either: a Creature host whose creature
+  was dead (its death cinematic, input lock) crashed with the same signature 6 s after a bake ask of a Civ era's vehicle
+  (BUG-9341, crash-20261122-194216-i8). Not known yet: whether the death cinematic matters.
+
 ## The ban list of test creations (2026-11-21, fix/l47-ship-purge)
 <a id="creations-ban-list"></a>
 
