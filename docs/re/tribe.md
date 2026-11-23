@@ -4875,3 +4875,15 @@ lead's, BUG-0651). A 32 ms frame then draws 0.52 m of placing + 0.43 m of the ga
 0.86 m). How to read it in a track: the jumping frames have rv (aim speed) and gv (the game's walk speed) at 13-14 m/s,
 err 0.75-2 m just before, and a step of (2 x gv + 3) x dt. tribe.smooth_bound bounds the placing by the body's own speed
 (lead_sp / late_rate) there too. ? The stop-and-go half of BUG-1235 (uneven 12-14 %) is another cause, not found.
+
+## A late walk start under smooth_bound (2026-11-23, fix/w65-night)
+<a id="tribe-smooth-catch"></a>
+
+~ (lab track, inferred from the numbers, BUG-1451) tribe.smooth_bound (BUG-1235) holds a member mirror's smoothed walk
+start to the host body's speed NOW (lead_sp / late_rate). A copy that started its walk 0.5 s late (a latency spike of
+the player network) stood 3.1-3.6 m behind its aim while the host slowed to 1.6-5 m/s; the placing was then held to
+(2 x lead_sp + 3 - the walk's speed) x dt and the copy crept at 4-6 m/s, 1.16 s over 2 m (body_trail_tribe_player
+20261122-194210, out/lane3/track/body_trail_tribe_20261123-000348.json t1, 10.37-11.79 s). Before 0.7.16 that path had
+no bound and closed at (sp + 3) x dt: 0.65-0.99 s. tribe.smooth_catch (tribe_logic::mirror_lead_speed): the bound is at
+least lag / 0.5 s, capped at 9 m/s (the bound BUG-1235 gives the lab's member: frames at most (2 x 9 + 3) x dt = 0.67 m
+at 32 ms); BUG-1235's own case (1-2 m behind) keeps the body's speed. Unit test tests/tribe_tests.cpp smooth_bound.

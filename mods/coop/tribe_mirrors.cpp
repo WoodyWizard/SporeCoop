@@ -462,6 +462,11 @@ static void mirror_step(GEntry& e, const net::Vec3& pos, const net::Quat& rot, c
 static bool g_smooth_bound_fix = true;
 COOP_FIX("tribe.smooth_bound", "BUG-1235", g_smooth_bound_fix,
          "tribe: a guest's copy of a member that starts to walk over a laggy network does not jump about 1 m in one frame");
+// BUG-1451: with smooth_bound, a copy that started its walk late and stands far behind its aim catches up at a speed that
+// grows with the lag (tribe_logic::mirror_lead_speed), not only at the host body's current speed
+static bool g_smooth_catch_fix = true;
+COOP_FIX("tribe.smooth_catch", "BUG-1451", g_smooth_catch_fix,
+         "tribe: a guest's copy of a member that starts to walk late over a laggy network catches up with it within a second");
 
 static void mirror_drive(GEntry& e, double now)
 {
@@ -494,8 +499,10 @@ static void mirror_drive(GEntry& e, double now)
         // (and always: a mirror held by its game and moved by keep_lost's marked teleports, BUG-0386, caught up in 0.91 m
         // frames at 12.8 m/s, tribe_walk_player 20261107-111106 #2)
         // BUG-1235 (tribe.smooth_bound): the smoothed target's walk start too (tribe_logic::mirror_lead_speed)
+        // BUG-1451 (tribe.smooth_catch): and at least a catch-up speed that grows with the lag behind the aim
         o.lead_speed = tribe_logic::mirror_lead_speed(net::g_lead_keep_fix, g_smooth_bound_fix, g.lead_sp, sp,
-                                                      g.buf.late_catching(), g.buf.late_rate());
+                                                      g.buf.late_catching(), g.buf.late_rate(), g_smooth_catch_fix,
+                                                      net::dist(game::position(c), g.aim));
         o.keep_lost = g_mirror_keep_fix; // BUG-0386
         drive::walk_place(c, g.aim, rot, vel, g.ds, now, o);
         // tests (BUG-0386): the game's walk and a placing without the teleport mark are undone, the mirror crawls 0.04 m

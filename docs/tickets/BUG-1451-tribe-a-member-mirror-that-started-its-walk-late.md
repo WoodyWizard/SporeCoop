@@ -9,11 +9,11 @@ source: lab
 role: 
 versions: 0.7.16
 fixed_in:
-branch: 
+branch: fix/w65-night
 commits:
 tests: tools/tests/coop_body_trail.py (body_trail_tribe_player)
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-smooth-catch
 related: BUG-1235, BUG-0650, BUG-0651, BUG-0674
 ---
 
@@ -33,14 +33,26 @@ body's current speed (tribe_logic.h mirror_lead_speed `std::max(lead_sp / rate, 
 likely by the 0.7.16 cap.
 
 ## Fix
-None yet (triage only). Idea: the cap also allows closing the error (max of the lead's speed and error / catch time).
-Decision for the release: the orchestrator / owner (a possible 0.7.16 regression of BUG-1235's fix).
+2026-11-23 (fix/w65-night), `coop.fix tribe.smooth_catch` (on, BUG-1451): tribe_logic::mirror_lead_speed: with
+smooth_bound the bound of the smoothed path is max(lead_sp / late_rate, min(lag / kLagCatchTime 0.5 s, kLagCatchMax
+9 m/s)), the lag = the mirror's distance to its aim (tribe_mirrors.cpp mirror_drive). What BUG-1235 fixed stays: its
+case (13.4-13.7 m/s lead, 1-2 m behind) keeps the body's 9 m/s, and no lag makes a frame draw more than (2 x 9 + 3)
+x dt = 0.67 m at 32 ms (the test's jump limit 0.86 m). The lab's case: 3.3 m behind, host at 2 m/s: the bound 6.6 m/s
+instead of 2, the placing closes (sp + 3) x dt again as before 0.7.16. Off: the body's speed only (fbdd2510). Unit test
+tests/tribe_tests.cpp smooth_bound (the BUG-1235 case unchanged, any lag under the jump limit, the lab's lag case
+closes; the new case FAILs with `--nofix`). No CHANGELOG line: fbdd2510 is unreleased.
 
 ## Verification
-Open. `SPORE_DETECTOR=20 python3 tools/lab.py run body_trail_tribe_player --lane N --retry 0 --no-build` (usually
+Open, waiting for the lab run. PASS expected: `SPORE_DETECTOR=20 python3 tools/lab.py run body_trail_tribe_player
+--repeat 4 --lane N --retry 0 --no-build` (4 of 4, longest member stretch under 1.0 s) and the BUG-1235 test
+`SPORE_DETECTOR=20 python3 tools/lab.py run tribe_walk_player --repeat 4 --lane M --retry 0 --no-build` (no jump over
+0.86 m). No suite twin: the case is the network's timing (a late walk start, about 1 run in 3); with
+`SPORE_LAB_FIXOFF="body_trail_tribe_player=tribe.smooth_catch"` stretches over 1.0 s are expected only in some runs.
+Before (triage): `SPORE_DETECTOR=20 python3 tools/lab.py run body_trail_tribe_player --lane N --retry 0 --no-build` (usually
 passes, network timing); comparison `SPORE_LAB_FIXOFF="body_trail_tribe_player=tribe.smooth_bound" ...` should show
 shorter member stretches (not deterministic); the test's deterministic FAIL twin is drive.lead off (3.55 s, lab
 20261106-014253).
 
 ## History
 - 2026-11-23: opened (fix/w65-night triage).
+- 2026-11-23: fix/w65-night: tribe.smooth_catch, the bound grows with the lag (capped at BUG-1235's 9 m/s).

@@ -195,13 +195,27 @@ inline SpeciesAct species_act(uint32_t line, uint32_t cur, uint32_t slot, uint32
 //   on top: 0.95 m frames at 30 fps (tribe_walk_player 20261121-003202 member 3 at 23.55 s, 20261119-214823 member 7
 //   at 28.49 s, 20261117-154911 member 2: placing 0.52 m + walk 0.43 m; the test's limit 3 x 9 m/s x 32 ms = 0.86 m).
 //   Off: no bound in the smoothed path (0.7.16 rc).
+// * BUG-1451 (`coop.fix tribe.smooth_catch`, with smooth_bound): the bound follows the host body's speed NOW, so a copy
+//   that started its walk late (a latency spike of the player network) and stands `lag` m behind its aim while the host
+//   slows down was held to (2 x 1.6-5 + 3) m/s and crept 3.1-3.6 m behind for over 1 s (body_trail_tribe_player
+//   20261122-194210 t1: 1.16 s over 2 m, limit 1.0). The bound is at least a catch-up speed that grows with the lag
+//   (lag / kLagCatchTime), capped at kLagCatchMax: a frame then draws at most (2 x 9 + 3) m/s x dt, the bound BUG-1235
+//   itself gives the lab's 9 m/s member, and its case (1-2 m behind: 2-4 m/s) keeps the body's own speed.
+//   Off: the body's speed only (fbdd2510).
+constexpr float kLagCatchTime = 0.5f; // s: the lag is closed in about this (on top of the walk)
+constexpr float kLagCatchMax = 9.f;   // m/s: what BUG-1235's bound allows the lab's member (frames 0.67 m at 32 ms)
 inline float mirror_lead_speed(bool keep_fix, bool smooth_bound_fix, float lead_sp, float sp, bool late_catching,
-                               float late_rate)
+                               float late_rate, bool catch_fix = false, float lag = 0.f)
 {
     const float rate = late_rate > 1.f ? late_rate : 1.f;
     if (lead_sp < 0)
         return keep_fix && late_catching ? std::max(sp / rate, 0.5f) : 0.f;
-    return smooth_bound_fix ? std::max(lead_sp / rate, 0.5f) : 0.f;
+    if (!smooth_bound_fix)
+        return 0.f;
+    float v = std::max(lead_sp / rate, 0.5f);
+    if (catch_fix && lag > 0.f)
+        v = std::max(v, std::min(lag / kLagCatchTime, kLagCatchMax));
+    return v;
 }
 
 } // namespace tribe_logic
