@@ -157,6 +157,26 @@ struct OwedSale {
 };
 static std::vector<OwedSale> g_owed_sales;
 static uint32_t g_sales_owed, g_sales_owed_paid, g_sales_owed_dropped;
+// BUG-1485 (audit SPC-6): the payment of a sale (K_SELL_ACK) or of a Rivals offer (K_OFFER_ACK, up to 2 minutes after it
+// went) went into the game at once (AddMoney on GetPlayerEmpire): lost while the seller was loading (no cEmpire), or
+// put into another Space world (a load, a Space save of its own) since the spice was taken. Refunds of the same offer
+// were owed already (refund(), BUG-0058 / BUG-0225). Now the payment is owed too unless the seller is in Space in the
+// world the spice came from (spacelogic::sale_pays_now), and paid by the owed-sales path of BUG-0832 (by the world tag).
+// `coop.fix trade.sale_pay_world off`: paid at once (0.7.16.1).
+static bool g_sale_pay_world_fix = true;
+COOP_FIX("trade.sale_pay_world", "BUG-1485", g_sale_pay_world_fix,
+         "space: a sale's or an offer's payment reaching a seller outside Space or in another Space world waits for the world it came from");
+static uint32_t g_pay_owed;
+// BUG-1491 (audit SPC-17): a receiver with a full offer list (kMaxOffers) dropped a new offer without an answer, and a
+// Withdraw of an offer it did not hold got none either: the seller's spice stayed held until the partner left or the
+// session ended. Now the receiver declines both (K_OFFER_ACK got 0), and the seller takes back an offer that no answer
+// came for within the receiver's own offer life plus a margin (a 0.7.16.1 receiver). `coop.fix trade.offer_answer off`:
+// 0.7.16.1.
+static bool g_offer_answer_fix = true;
+COOP_FIX("trade.offer_answer", "BUG-1491", g_offer_answer_fix,
+         "space rivals: an offer the partner can not hold is declined, and one never answered comes back");
+static uint32_t g_offers_declined_full, g_cancel_unknown, g_offers_unanswered;
+static size_t g_offer_limit = kMaxOffers; // tests (BUG-1491): `coop.space trade offerlimit <n>`
 static uint32_t g_kept_at_end;
 static uint32_t g_owed_paid, g_owed_dropped;
 static uint32_t g_owed_kept;        // BUG-0225: owed items kept for another game (as last decided)
@@ -771,6 +791,33 @@ static void answer_offer(uint32_t id, bool accept, int from = -1)
     }
 }
 
+// BUG-1485: a payment for `got` of `o` while the seller is not in Space in the world the spice came from: owed (paid by
+// pay_owed_sales in that world). true: owed, not paid now
+static bool owe_payment(const Out& o, int got)
+{
+    if (!g_sale_pay_world_fix || spacelogic::sale_pays_now(here(), spaceext::owed_id(), o.tag.epoch, spaceext::world_epoch()))
+        return false;
+    g_owed_sales.push_back({got * o.price, got, o.name, o.tag});
+    g_sales_owed++;
+    g_pay_owed++;
+    H->log(M, SK_INFO, "trade: the payment for %d x %s (world %u, now %u, here %d) is owed", got, o.name.c_str(), o.tag.epoch,
+           spaceext::world_epoch(), (int)here());
+    return true;
+}
+
+// BUG-1491: a decline of offer `id` of player `to` (a full list, or a Withdraw of an offer we do not hold)
+static void decline_offer(uint8_t to, uint32_t id)
+{
+    tw::OfferAck m;
+    m.to = to;
+    m.id = id;
+    m.got = 0;
+    m.reason = 0;
+    net::Writer w;
+    m.write(w);
+    spaceext::send(K_OFFER_ACK, w);
+}
+
 // ---------------- messages ----------------
 static Out* pending(uint32_t id, uint8_t kind, uint8_t to)
 {
@@ -957,7 +1004,8 @@ static void handle(uint8_t kind, uint8_t origin, net::Reader& r)
         Out copy = *o;
         drop(id);
         got = std::clamp(got, 0, copy.n);
-        if (got > 0) {
+        if (got > 0 && owe_payment(copy, got)) { // BUG-1485
+        } else if (got > 0) {
             int total = got * copy.price;
             add_money(total); // the export bonus: shared money carries it to everybody
             g_sales++;
@@ -988,8 +1036,13 @@ static void handle(uint8_t kind, uint8_t origin, net::Reader& r)
         for (auto& of : g_offers)
             if (of.id == id && of.from == origin)
                 return; // this offer again
-        if (g_offers.size() >= kMaxOffers)
-            return; // the page shows a few; an answer frees a place
+        if (g_offers.size() >= (g_offer_answer_fix ? g_offer_limit : kMaxOffers)) { // the page shows a few; an answer frees a place
+            if (g_offer_answer_fix) { // BUG-1491: the seller's spice comes back
+                g_offers_declined_full++;
+                decline_offer(origin, id);
+            }
+            return;
+        }
         g_offers.push_back({id, origin, k, n, price, planet, nm, H->time_seconds()});
         g_offers_got++;
         spaceext::notice(from + spaceext::tr(" offers ", " предлагает ") + std::to_string(n) + " " + nm + spaceext::tr(" for $", " за $") +
@@ -1009,7 +1062,8 @@ static void handle(uint8_t kind, uint8_t origin, net::Reader& r)
         Out copy = *o;
         drop(id);
         got = std::clamp(got, 0, copy.n);
-        if (got > 0) {
+        if (got > 0 && owe_payment(copy, got)) { // BUG-1485
+        } else if (got > 0) {
             int total = got * copy.price;
             add_money(total); // rivals: the partner paid this from its own budget
             g_sales++;
@@ -1026,8 +1080,16 @@ static void handle(uint8_t kind, uint8_t origin, net::Reader& r)
     }
     case K_OFFER_CANCEL: {
         tw::OfferCancel m;
-        if (m.read(r))
+        if (!m.read(r))
+            break;
+        bool held = std::any_of(g_offers.begin(), g_offers.end(),
+                                [&](const Offer& o) { return o.id == m.id && o.from == origin; });
+        if (held)
             answer_offer(m.id, false, origin);
+        else if (g_offer_answer_fix) { // BUG-1491: an offer we never held (or answered already: the seller ignores this)
+            g_cancel_unknown++;
+            decline_offer(origin, m.id);
+        }
         break;
     }
     case K_INV:
@@ -1719,6 +1781,13 @@ static void tick(double now)
         }
     // a partner who left before answering: what was on its way comes back
     for (size_t i = 0; i < g_out.size();) {
+        if (g_offer_answer_fix && g_out[i].kind == K_OFFER && spacelogic::offer_unanswered(g_out[i].t, now, kOfferLife)) {
+            Out o = g_out[i]; // BUG-1491: the partner never took it (its own list declines an offer after kOfferLife)
+            g_out.erase(g_out.begin() + i);
+            g_offers_unanswered++;
+            refund(o, o.n, spaceext::name_of(o.to) + spaceext::tr(" did not answer", " не ответил(а)"));
+            continue;
+        }
         if (partner_here(g_out[i].to)) {
             i++;
             continue;
@@ -1754,7 +1823,8 @@ static void on_session_end()
             g_kept_at_end++;
             H->log(M, SK_INFO, "trade: %d x %s reached %s before the session ended: not given back", o.n, o.name.c_str(),
                    spaceext::name_of(o.to).c_str());
-            if (o.kind == K_SELL && here()) { // the sale went through: the export bonus as with the answer
+            bool other_world = g_sale_pay_world_fix && spaceext::owed_id() && o.tag.epoch != spaceext::world_epoch(); // BUG-1485
+            if (o.kind == K_SELL && here() && !other_world) { // the sale went through: the export bonus as with the answer
                 int total = o.n * o.price;
                 add_money(total);
                 g_sales++;
@@ -1904,18 +1974,20 @@ static std::vector<spaceext::Row> rows()
 
 static std::string status()
 {
-    char b[720];
+    char b[900];
     snprintf(b, sizeof b,
              "trade: gifts_sent=%u gifts_got=%u charges_sent=%u charges_got=%u charges_back=%u sales=%u sold=%u "
              "bought=%u earned=%lld paid=%lld offers_sent=%u offers_got=%u refunds=%u pending=%u offers=%u owed=%u "
              "owed_paid=%u owed_dropped=%u owed_kept=%u world=%u delivered=%u kept_at_end=%u sales_owed=%u/%u/%u/%u "
-             "waiting=%u waited=%u offer_waits=%u restore_pending=%d grant_waits=%u\n",
+             "waiting=%u waited=%u offer_waits=%u restore_pending=%d grant_waits=%u pay_owed=%u declined_full=%u "
+             "cancel_unknown=%u unanswered=%u offer_limit=%u\n",
              g_gifts_sent, g_gifts_got, g_charges_sent, g_charges_got, g_charges_back, g_sales, g_sold, g_bought,
              (long long)g_earned, (long long)g_paid, g_offers_sent, g_offers_got, g_refunds, (unsigned)g_out.size(),
              (unsigned)g_offers.size(), (unsigned)g_owed.size(), g_owed_paid, g_owed_dropped, g_owed_kept, spaceext::world_epoch(),
              (unsigned)std::count_if(g_out.begin(), g_out.end(), [](const Out& o) { return o.delivered; }), g_kept_at_end,
              (unsigned)g_owed_sales.size(), g_sales_owed, g_sales_owed_paid, g_sales_owed_dropped, (unsigned)g_waiting.size(),
-             g_waiting.held(), g_offer_waits, (int)inv_restore_pending(), g_grant_waits);
+             g_waiting.held(), g_offer_waits, (int)inv_restore_pending(), g_grant_waits, g_pay_owed, g_offers_declined_full,
+             g_cancel_unknown, g_offers_unanswered, (unsigned)g_offer_limit);
     return b;
 }
 
@@ -2074,6 +2146,11 @@ static std::string debug(const std::vector<std::string>& a)
     }
     if (a[0] == "money") {
         snprintf(b, sizeof b, "money %d\n", money());
+        return b;
+    }
+    if (a[0] == "offerlimit" && a.size() > 1) { // tests (BUG-1491): the partners' offers this game holds at most
+        g_offer_limit = (size_t)std::clamp(atoi(a[1].c_str()), 0, (int)kMaxOffers);
+        snprintf(b, sizeof b, "offer limit %u\n", (unsigned)g_offer_limit);
         return b;
     }
     return "usage: coop.space trade [tools | all | give <inst> <n> [to] | ammo <inst> <n> | spices | spice <i> <n> | "
