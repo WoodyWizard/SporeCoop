@@ -3656,3 +3656,16 @@ Found for BUG-9337 (decision 8L A), Ghidra on the Steam 3010a413 dump (GOG 2024 
   Back id from inside a stage press closes the screen cleanly (seen in game).
 * The screen writes into the entry (above): a mod that opens it for an entry of its own rebuilds the menu's entries
   afterwards (GGE_RebuildPlanets through cStarManager::ReadStarsFromSaveDB).
+
+## The player's ship model key and Space saves on a planet (2026-11-23, feat/lineages-alpha)
+<a id="space-ship-model-key"></a>
+
+* ✔ (runtime, TITAN) The player's ship (cSimulatorPlayerUFO::Get +0x40, a cGameDataUFO) holds its design's key at
+  +0x780..+0x788 (where SpawnUFO stores a model key, docs/symbols SpawnUFO): a UFO spawned with that key in a Civ game
+  of the same planet drew the player's own ship design (BUG-9349).
+* ✔ A Space game at a planet (context 0) refuses a save (world.cpp: "space stage saves only in a solar system or the
+  galaxy", Spore's own rule); after `coop.space takeoff` (LeavePlanet, the zoom out's step) the save and the galaxy
+  upload worked (BUG-9348).
+* ~ The first Space tutorial step ("Click on ... to communicate with planet") kept the ship from flying to a clicked
+  point at the home planet, and the mouse wheel zoom stopped at the orbit (2026-11-23, 10 FPS).
+

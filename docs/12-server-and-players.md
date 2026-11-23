@@ -1810,3 +1810,14 @@ as new to a player who reached Space in their own Spore.
 Social Menu, 2026-11-23 (BUG-9347, switch `ui.menu_beside_social`): a player's right-click menu from the Social Menu
 opens beside the panel (it opened over or under it). Pictures of the Social Menu for sharing: images/social_share/.
 
+## Space ships over a planet's other eras (2026-11-23, feat/lineages-alpha)
+<a id="server-space-ships"></a>
+
+BUG-9349, switch `galaxy.space_ships`. The "Space ships over any planet: as UFOs" idea of #server-space, for a planet's
+own Space era: while a Space player's ship is at the planet, the planet's Creature, Tribe and Civ games show it as a
+UFO with that player's ship design, where the ship is (the same VISIT stream as era visitors, the design through the
+creation store). It goes when the ship leaves the planet. Look-only, kept out of saves.
+* ✔ In game (TITAN): Abber's Space ship over Abber's Civ city (images/bug9349_ship_in_civ.png); switch off: no ship
+  (images/bug9349_off_on.png). Not run: the ship moving, Creature or Tribe games, a name tag, the MSI.
+* BUG-9348: the Space era is stored once the ship is in the solar system (Spore saves Space only there); seen.
+
