@@ -9363,3 +9363,18 @@ BUG-9326 (docs/re/tribe.md#tribe-partner-pens). Follows #testing-tribe-final-qa 
 * Not rebuilt yet: Abber's Creature era (the BUG-9341 setup), Cellfour (Cell), Jiff Peanutbutter (Tribe).
 * Rule: no recursive delete of a path built from a variable in a shell string; make a new uniquely named folder for a run.
 
+
+## Test profiles and galaxy copies for Space starts and ships (2026-11-23, feat/lineages-alpha)
+<a id="testing-space-start-profiles"></a>
+
+* DuoQASpaceStart: a copy of DuoQAJiffSpace (every stage reached) with its galaxy identity files renamed
+  (identity.bin, galaxy_key.bin -> *.from-copy) so the server sees a new player (a copy with the original's identity is
+  refused: "identity is in use with another key"). DuoQABansJiff: a copy of DuoQAJiffFresh (65 received creations) for
+  ban tests. Both keep the QA copy's -NoShare- name.
+* out/galaxy/worlds_space2: the test galaxy with Abber's Space era stored (BUG-9346 / BUG-9348). Entering
+  "Abber|Space" loads the ship at the planet; "Abber|Civ" in a second game shows it (BUG-9349).
+* `coop.gmenu forget <planet>` works only after connecting (the memory is per galaxy). The spaceship editor needs at
+  least 3 parts and a name. At 10 FPS the first Space tutorial keeps the ship at home; `coop.space takeoff` leaves the
+  planet (then a galaxy save works). The scratchpad flow script of 2026-11-23 drove the whole start with real clicks
+  at 1024x768 (globe 590,490; domination OK 683,311; Advance hint OK 683,343; Advance 985,750; History OK 683,471 and
+  check 1000,745; editor check 1000,745; lift-off check 993,736; captain dice 707,399 and OK 728,472).
