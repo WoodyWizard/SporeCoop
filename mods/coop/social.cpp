@@ -15,7 +15,9 @@
 
 #include "game.h"
 #include "player_life.h"
+#include "net/compat.h"
 #include "net/validate.h"
+#include "social_logic.h"
 #include "npc.h"
 #include "sporekit_game.hpp"
 
@@ -37,7 +39,9 @@ static constexpr uint32_t kSocialStimulus = 0x10000; // the avatar engages an NP
 static constexpr float kActRange = 12.f;             // m between the guest and the NPC for an action
 static constexpr double kEngageTime = 60.0;          // an engagement without actions ends after this
 
-enum Kind : uint8_t { K_ACT = 0, K_PROGRESS = 1, K_RESULT = 2, K_GOAL = 3, K_ENGAGE = 4, K_PROMPT = 5 };
+// K_SOLO (BUG-1527, creature 1.3): {u8 n, n x {u8 event, u32 key[3], u16 count}} a guest's own species events of an away
+// time; an older host ignores the kind (it is never sent to one)
+enum Kind : uint8_t { K_ACT = 0, K_PROGRESS = 1, K_RESULT = 2, K_GOAL = 3, K_ENGAGE = 4, K_PROMPT = 5, K_SOLO = 6 };
 
 // BUG-0525: the NPC's prompts of a guest's social game (docs/re/creature.md#creature-social-prompts). The native
 // session (SocialPropose 0xDA4360, its tick 0xDA4950) has the NPC perform the abilities of a prompt list (npc
@@ -108,6 +112,21 @@ static bool g_world_fix = true;
 COOP_FIX("social.world_gate", "BUG-0420", g_world_fix, "creature: a guest in another world keeps its own species relations");
 static uint32_t g_table_forgot = 0;
 static double g_table_rx_at = 0; // BUG-0699 diagnostics: when the host's last table came
+
+// BUG-1527: a guest's own species events while the host is away (social_logic.h). `coop.fix social.solo_table off`:
+// the host's last table written over them every 0.5 s, nothing sent (0.7.16.1)
+static bool g_solo_fix = true;
+COOP_FIX("social.solo_table", "BUG-1527", g_solo_fix, "creature: a guest's kills and impressions while the host is away count on its card and reach the host's game when it is back");
+static social_logic::SoloEvents g_solo;      // guest: kept while the host is away
+static double g_solo_sent_at = -1;           // guest: when it sent them (the host's next table is taken after it)
+static uint32_t g_solo_kept = 0, g_solo_sent = 0, g_solo_old_host = 0; // guest
+static uint32_t g_solo_applied = 0, g_solo_refused = 0;                 // host
+static bool host_away() { return C.host_away && C.host_away(); }
+static void send_solo(double now);
+static bool enforce_ok(double now)
+{
+    return social_logic::enforce_now(g_solo_fix, is_guest() && host_away(), now, g_solo_sent_at, g_table_rx_at);
+}
 
 // BUG-0699: the host looked at its species table once a second: a kill, an impression or an alliance reached the
 // guests 1-1.5 s later (the detector's species_relation / species_killed rows, found again 1.5 s after its first look).
@@ -308,6 +327,9 @@ static void SK_THISCALL h_RelEvent(void* mgr, int event, void* key, void* creatu
     int32_t r0 = rec ? (int32_t)rec[0] : -99;
     uint32_t i0 = rec ? rec[2] : 0, k0 = rec ? rec[3] : 0;
     o_RelEvent(mgr, event, key, creature);
+    // BUG-1527: the guest's own game's event while the host is away (a mirror's was dropped above)
+    if (key && social_logic::keep_own(g_solo_fix, is_guest(), host_away(), false) && g_solo.add((const uint32_t*)key, event))
+        g_solo_kept++;
     rec = (a_RelRecord && key && mgr) ? thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, key) : nullptr;
     if (rec && ((int32_t)rec[0] != r0 || rec[2] != i0 || rec[3] != k0))
         H->log(M, SK_INFO, "social: relationship event %d species %08X by %p (npc %d%s): relation %d -> %d, impressed %u -> %u, "
@@ -681,7 +703,7 @@ static void meter_tick()
         if (!g_meter_retry_fix)
             g_meter_npc = g_engaged; // (0.7.13: marked before the task opened it)
     } else if (g_engaged < 0 && g_meter_npc >= 0 && g_meter_tasks.empty()) {
-        if (g_meter_hold_fix && g_meter_won_at >= 0 && now - g_meter_won_at < kWinHold)
+        if (!social_logic::meter_close_due(g_meter_hold_fix, g_meter_won_at, now, kWinHold))
             return; // (BUG-1515: the finish plays)
         meter_task(3, g_meter_npc);
     }
@@ -1185,11 +1207,73 @@ void tick(double now)
                     g_table_forgot++;
                 g_have_table = false;
                 g_host_table.clear();
-            } else {
+            } else if (enforce_ok(now)) { // BUG-1527: not while the host is away, nor right after a send
                 enforce_table();
                 herds_follow_table();
             }
         }
+        if (!g_solo.empty() && !host_away() && game::in_creature_stage()) // BUG-1527: the host is back
+            send_solo(now);
+    }
+}
+
+// BUG-1527: the guest's own events of an away time go to a host that reads them (creature 1.3); an older host never
+// gets them (its table wins, as in 0.7.16.1)
+static void send_solo(double now)
+{
+    bool has = false;
+    std::vector<net::FamilyRev> f;
+    if (!C.sess || !C.sess->host_families(has, f) ||
+        !net::compat::has_minor(f, has, (uint8_t)net::Family::creature, 1, social_logic::kSoloMinor)) {
+        g_solo_old_host++;
+        g_solo.clear();
+        return;
+    }
+    net::Writer w;
+    w.u8(K_SOLO);
+    w.u16(0); // (the common header's id: none)
+    w.u8((uint8_t)g_solo.v.size());
+    for (auto& e : g_solo.v) {
+        creations::Key hk = creations::host_species({e.key[0], e.key[1], e.key[2]}); // a host creation's key here -> its own
+        w.u8(e.event);
+        w.u32(hk.instance); w.u32(hk.type); w.u32(hk.group);
+        w.u16(e.count);
+    }
+    C.sess->send_reliable_to(0, net::MSG_SOCIAL, w);
+    H->log(M, SK_INFO, "social: %zu own species event(s) of the host's away time sent to the host (BUG-1527)", g_solo.v.size());
+    g_solo.clear();
+    g_solo_sent++;
+    g_solo_sent_at = now;
+}
+
+// host: a guest's own events replayed through the game's ApplyEvent (the extinction, the alliance, the cards follow)
+static void host_solo(uint8_t from, net::Reader& r)
+{
+    uint8_t n = r.u8();
+    std::vector<social_logic::SoloEvent> v;
+    for (int i = 0; i < n && i < (int)social_logic::kSoloMax && r.ok(); i++) {
+        social_logic::SoloEvent e{};
+        e.event = r.u8();
+        e.key[0] = r.u32(); e.key[1] = r.u32(); e.key[2] = r.u32();
+        e.count = r.u16();
+        v.push_back(e);
+    }
+    void* mgr = rel_mgr();
+    if (!r.ok() || n > social_logic::kSoloMax || !mgr || !a_RelEvent || !game::in_creature_stage()) {
+        g_solo_refused++;
+        return;
+    }
+    for (auto& e : v) {
+        if (!social_logic::entry_ok(e)) {
+            g_solo_refused++;
+            continue;
+        }
+        ResourceKey k{e.key[0], e.key[1], e.key[2]};
+        for (uint16_t i = 0; i < e.count; i++)
+            thiscall<void>(a_RelEvent, mgr, (int)e.event, &k, (void*)nullptr);
+        g_solo_applied += e.count;
+        H->log(M, SK_INFO, "social: player %u's own event %u x%u on species %08X while this host was away (BUG-1527)", from,
+               e.event, e.count, e.key[0]);
     }
 }
 
@@ -1220,7 +1304,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         g_have_table = true;
         g_table_rx++;
         g_table_rx_at = H->time_seconds();
-        if (game::in_creature_stage() && game::avatar()) {
+        if (game::in_creature_stage() && game::avatar() && enforce_ok(H->time_seconds())) {
             enforce_table();
             herds_follow_table();
             if (news) // the cards read the table only when told (also when ours had it already)
@@ -1236,6 +1320,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         uint32_t ability_type = r.u32();
         if (r.ok())
             host_act(from, id, ability_type);
+        return;
+    }
+    if (kind == K_SOLO && is_host() && from != 0) { // BUG-1527
+        host_solo(from, r);
         return;
     }
     if (kind == K_ENGAGE && is_host()) {
@@ -1328,6 +1416,8 @@ void on_session_end()
         meter_task(3, g_meter_npc);
     g_engaged = -1;
     g_meter_npc = -1;
+    g_solo.clear(); // BUG-1527
+    g_solo_sent_at = -1;
     g_goal_paid.clear();
     g_goal_owed.clear();
     g_games.clear();
@@ -1359,6 +1449,20 @@ std::string status()
                  g_prompt_npc, g_prompt_anim, H->time_seconds() - g_prompt_at, g_table_forgot, g_prompt_type, g_prompt_kind,
                  g_kind_acts[0], g_kind_acts[1], g_kind_acts[2], g_kind_acts[3], g_kind_acts[4]);
     return b;
+}
+
+std::string solo_dump()
+{
+    char b[300];
+    snprintf(b, sizeof b, "solo: fix=%d host_away=%d kept=%u entries=%zu dropped=%u sent=%u old_host=%u applied=%u refused=%u\n",
+             (int)g_solo_fix, (int)host_away(), g_solo_kept, g_solo.v.size(), g_solo.dropped, g_solo_sent, g_solo_old_host,
+             g_solo_applied, g_solo_refused);
+    std::string s = b;
+    for (auto& e : g_solo.v) {
+        snprintf(b, sizeof b, "solo event %u species %08X x%u\n", e.event, e.key[0], e.count);
+        s += b;
+    }
+    return s;
 }
 
 std::string species_dump()

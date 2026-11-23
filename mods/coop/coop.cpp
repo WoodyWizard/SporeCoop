@@ -2836,6 +2836,7 @@ static void init_player_modules()
     sc.blocked = [] { return g_menu_up.load() || coop_ui::is_open() || g_text_up.load(); };
     sc.pace = dna_pace_gain; // BUG-0510
     sc.elsewhere = [] { return guest_elsewhere(); }; // BUG-0420
+    sc.host_away = [] { return g_host_away; };        // BUG-1527
     social::init(H, M, sc);
     game::set_damage_filter(npc::damage_filter);
 }

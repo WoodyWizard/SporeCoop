@@ -933,6 +933,10 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
         SAY("text_up=%d menu_up=%d", (int)g_text_up.load(), (int)g_menu_up.load());
         return 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "solo")) { // tests (BUG-1527)
+        SAY("%s", social::solo_dump().c_str());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "species")) {
         SAY("%s", social::species_dump().c_str());
         return 0;
