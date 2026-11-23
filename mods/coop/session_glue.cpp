@@ -705,6 +705,7 @@ static void core_state_end()
     g_pace_heard = 1; // BUG-0510
     g_pace_carry.reset();
     g_dna_spend_owed = 0; // BUG-0466
+    g_dna_spend_owed_world = 0; // BUG-1506
     if (g_own_editor_flags_fix && !(game::mode_id() == modes::kEdit || game::mode_id() == modes::kEditor)) {
         g_own_editor = false; // BUG-0811: (in an editor its result still comes, and charges, as in a game of one)
         g_own_editor_charge_due = false;
@@ -1028,8 +1029,11 @@ void setup_callbacks()
                     float dd = std::max(d, -game::dna()); // the total never goes below 0
                     dna_host_gain({dna_ledger::Cause::Earned, from, dd}, game::dna());
                     game::dna_add_raw(dd);
-                } else
+                } else {
+                    if (g_dna_spend_owed >= 0)
+                        g_dna_spend_owed_world = g_stage_world; // BUG-1506: taken off only in this world
                     g_dna_spend_owed += d; // in an editor or a load: taken off when our creature is back
+                }
             } else if (r.ok() && d > 0 && d < 10000 && add == dna_route::Add::Owe && g_dna_owed < 100000) {
                 trace::line("dna", "from %u +%.0f kept as owed (no own creature now)", from, d);
                 if (g_dna_owed <= 0)
