@@ -57,3 +57,5 @@ no-fail-run: a feature, Windows QA by hand; the runs above are the switch off an
 - 2026-11-23: a name tag over the ship; the ship flies at most 60 m over the ground in the other eras.
 - 2026-11-23: cross-PC run (two games on the MSI, TITAN's server): the ship and its tag seen in a Civ game, the
   shown name without -NoShare- seen (images/bug9349_msi_tag.png); gone after the takeoff.
+- 2026-11-23: a Tribe game on Clyth showed Clyth's Space ship (live 1, its design 7D041B1C, the tag at its place:
+  images/bug9349_tribe_tag.png; the ship itself behind a volcano from that camera).

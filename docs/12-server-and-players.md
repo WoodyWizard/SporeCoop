@@ -1653,6 +1653,11 @@ Decisions 7H A and 7I A (docs/ROADMAP.md), the owner's menu point of 7H.
 * BUG-9296 (found on the way): a Tribe game showing a Civ era's objects crashed in the model bake (asked in the frame;
   asked outside it, the bake's end crashed in Editors::cEditor::HandleMessage). Bakes are now asked only in the Creature
   stage, outside the frame, once per model. ✔ No crash in 30+ minutes of Tribe hosting.
+* ✔ Tribe members (2026-11-23, the MSI: a Tribe game on Clyth, Clyth's Civ era hosted by the other MSI game after its
+  Tribe -> Civ start): one member walked to the centre of the Civ rover (box 5.2 x 6.6 m): switch off 0.7 m from the
+  centre (inside), on held 2.5-3.4 m from it at the box's edge (pushed every frame, the walk pulling back 0.9 m a frame
+  at 10 fps). The City Hall stands on the Tribe's own hut, which stopped the member ~9 m away by itself (off and on):
+  no result for buildings there. BUG-9353 (not a bug): a building's box is its default 1 m until its model loads.
 
 ## A button for players in other stages (2026-11-22, feat/lineages-alpha)
 <a id="server-eras-button"></a>
@@ -1770,6 +1775,11 @@ era is Tribe offers its Civ stage as new to a player who reached Civ in their ow
 * Like the Creature start, it skips the planet's own progress (the five victories): 5R A's rule is the player's own Spore.
 * ✔ In game (TITAN, Clyth): images/bug9343_civ_new.png, images/bug9343_history.png, images/bug9343_civ.png; switch off:
   images/bug9343_off.png. Not run: a party of several, the MSI. Civ -> Space is not offered (the next step).
+* ✔ The MSI (2026-11-23, TITAN's server): Clyth (Tribe) -> "Civilization: New here: start it", History, the City Hall
+  and vehicle editors, "Your party arrived: Clyth (Civ), you host it"; stored (3862 KB).
+* ✔ Two starts in one session (2026-11-23, the MSI): Clyth Tribe -> Civ, then Civ -> Space; the second crossing
+  arrived only with BUG-9354's fix (3535a616). Spore's Civ tutorial cards pause the game, and the start's stage end
+  waits for them (click them away).
 * How the Tribe end works: docs/re/tribe.md#tribe-advance-button.
 
 ## The galaxy server's creation ban list (8D A, 2026-11-23, feat/lineages-alpha)
@@ -1833,6 +1843,25 @@ creation store). It goes when the ship leaves the planet. Look-only, kept out of
   design a ship first ("Loading your Civilization victory so you can design your spacecraft"): the designed
   guest path, not a bug. BUG-9350 (open): Spore's Choose A Stage ring can stay on screen into the planet.
 * BUG-9350 fixed (ee08d149, switch `galaxy.stage_screen_close`): the ring is closed before a load from the menu.
+* ✔ The ship moving (2026-11-23, the MSI): after Spore's comm screen ("I already know how to command my ship") the
+  Space game flew over Abber with W held; Abber's Civ game's UFO followed (sent and drawn positions within 1-6 m, e.g.
+  (-103 -112 507) -> (-329 -363 200) -> (-289 -321 -305)).
+* ✔ A Tribe game (2026-11-23, the MSI): Clyth's Space ship over Clyth's Tribe era, "space ships: live 1" with the
+  player's own ship design, its tag where the ship is (images/bug9349_tribe_tag.png; a volcano hid the ship itself
+  from that camera). Still not run: a Creature game (no test planet has Creature and Space eras).
+* BUG-9351 fixed (efc895d5, switch `galaxy.space_ships_home`): the ship is sent only while it is at its own planet; a
+  landing on another planet of the system (Lacionator) showed it over Abber before (seen off), not after (on).
 * The ship flies at most 60 m over the ground in the other eras (its player's zoom altitude, 775 m from the centre at
   Abber, put it out of a Civ camera's view) and wears a name tag with "Space era" (images/bug9349_tag.png).
+
+## The planet and player lists in pages (S10, 2026-11-23, feat/lineages-alpha)
+<a id="server-list-pages"></a>
+
+docs/13-alpha-review-2026-11-18.md S10: the planet list stopped at 40 planets, the player list at one datagram (about 33
+players). LIST and WHO carry the first entry of the page asked; PLANETS and PLAYERS end with the list's total and the
+page's first; the game asks for the next page until the list is whole (net/galaxy.h). Older games read the first page;
+an older server sends one page. Server option `--list-page <n>` (tests: n entries a page).
+* ✔ The MSI's two games on TITAN's server with `--list-page 1`: `coop.galaxy status` "planets=4 (lists of several pages
+  2)" on one and 3 on the other (each page asked in turn); `coop.party online` listed both players on both.
+* no-fail-run: a feature (no switch: an older server is the old behaviour).
 

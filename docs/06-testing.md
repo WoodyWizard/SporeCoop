@@ -9395,3 +9395,22 @@ BUG-9326 (docs/re/tribe.md#tribe-partner-pens). Follows #testing-tribe-final-qa 
   position, so turn until it is inside the window.
 * SSH to the MSI dropped several times ("Connection reset", once a timeout) while Tailscale pinged fine (direct, 3 ms);
   a retry worked each time. Existing tunnels on 47850 / 47851 kept working.
+
+## Space and stage-start flows on the MSI by hand (2026-11-23, feat/lineages-alpha)
+<a id="testing-msi-stage-flows"></a>
+
+* Space's first tutorial step holds the ship; the comm button (1024x768: 287,605) opens "Congratulations Cadet":
+  "I already know how to command my ship" (512,444), "Yes, I know what I'm doing" (512,444), "Yes. What's next?" and
+  "I accept." (512,411), "Bye." (512,411), the Captain badge's check (993,736), then a Collections window with hints
+  (checks, then its X 851,109). The mission "Fly to planet Lacionator" follows; zoom out (wheel -10) to the system.
+* Flying on a planet: hold W/A/S/D (`key 0x57 down`, then `up`); a click flies there only with no tool selected; Esc
+  with no tool opens the pause menu (Resume at 460,260). In the system a click on a planet makes it the active one;
+  the wheel (+10) lands. A gas giant (Eurgo here) never lands (`coop.space landcheck`: can_land 0).
+* `coop.space land` waits for the ship to arrive and the game's own check (BUG-9352).
+* Stage starts: at 10 fps the launch and Civ cinematics outlast fixed waits; drive the editors only once `coop.status`
+  says `editor` (a drag before that is lost). Civ's tutorial cards ("Look for a nearby spice geyser", "Goals") pause
+  the game and hold the start's stage end until clicked away (993,736; 683,326).
+* A Civ world from a Tribe start can have no rival nation: Spore then gives "Global domination is yours!" itself.
+* Tribe members against a prop: select one member only (`coop.tribe select_own 0 1`; two walk in formation and stop
+  apart), walk it to the prop's centre (`coop.tribe walk x y z`, the prop from `coop.visit status`).
+
