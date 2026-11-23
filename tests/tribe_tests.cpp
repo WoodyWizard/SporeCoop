@@ -257,6 +257,21 @@ static void smooth_bound()
     }
 }
 
+// BUG-1460: the make-way hook leaves out only a citizen without a tribe; a dead mirror stands still only when it was a
+// host body taken out of its tribe. With `--nofix` (the switches off) neither acts: the first checks fail
+static void body_rules()
+{
+    printf("tribe-less walkers: make-way skip and still bodies (BUG-1460)\n");
+    const bool fix = !g_nofix;
+    int t = 0;
+    CHECK(makeway_skip(fix, true, nullptr)); // the fault's case (FAILS with --nofix)
+    CHECK(!makeway_skip(fix, true, &t));             // a citizen in its tribe: the game's own step
+    CHECK(!makeway_skip(fix, false, nullptr));       // an animal (its herd path, no tribe read)
+    CHECK(!makeway_skip(false, true, nullptr));      // the switch off: the game's function always
+    CHECK(body_still(fix, true, true)); // (FAILS with --nofix)
+    CHECK(!body_still(fix, false, true) && !body_still(fix, true, false));
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && !strcmp(argv[1], "--nofix");
@@ -269,6 +284,7 @@ int main(int argc, char** argv)
     anim_type();
     end_editors();
     smooth_bound();
+    body_rules();
     if (g_fail) {
         printf("tribe_tests: %d FAILED\n", g_fail);
         return 1;

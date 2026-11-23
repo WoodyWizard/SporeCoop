@@ -218,4 +218,12 @@ inline float mirror_lead_speed(bool keep_fix, bool smooth_bound_fix, float lead_
     return v;
 }
 
+// BUG-1460: a walking citizen whose tribe pointer (+0x1014) is null makes the game's make-way step
+// (Creature_AskGroupToMakeWay 0xC28530) read that null tribe (0x00C8F6D3). `coop.fix tribe.makeway_null`: such a call
+// asks nobody (the hook returns false without calling the game); everything else calls the game's function
+inline bool makeway_skip(bool fix, bool citizen, const void* tribe) { return fix && citizen && !tribe; }
+// BUG-1460 (`coop.fix tribe.body_still`): a dead member's mirror that was taken out of its tribe is not walked any more
+// (its walk ended once, put where the host's body lies); off: driven on by mirror_step as a living mirror
+inline bool body_still(bool fix, bool host_body, bool detached) { return fix && host_body && detached; }
+
 } // namespace tribe_logic
