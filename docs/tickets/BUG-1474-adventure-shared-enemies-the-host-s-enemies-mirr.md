@@ -10,7 +10,7 @@ role:
 versions: 0.7.17
 fixed_in:
 branch: feat/w83-advnpc
-commits:
+commits: c6d51d00
 tests:
 signature:
 docs: docs/re/adventure.md#adventure-npc-proxies
