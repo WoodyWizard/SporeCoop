@@ -6348,3 +6348,22 @@ and live on the MSI (host instance 2, guest instance 1, Creature -> Tribe from V
   told apart from eating and fruit gathering; ? when the egg node's vt 0x2C check cancels it.
 * ✔ (live) The guest's copy of its village's pen herd lists no members (the host's lists the pet); the pet itself is
   shown at the host's place on the guest.
+
+## The advance button and the end of Tribe (2026-11-22, feat/lineages-alpha)
+<a id="tribe-advance-button"></a>
+
+Found for BUG-9343 (Ghidra on the Steam dump, seen in game):
+* ✔ The HUD's advance button (control 0x6454B47) is handled in TribeHutUI_HandleMessage (0xCDBEA0, the case at 0xCDC3E7,
+  a button click message: +8 0x287259F6, +0xC the control id): it goes on only when cPlayer +0x10F0 / +0x10F4 >= 1 (the
+  goal bar full). A click message sent to the handler from the mod (with the handler's own object, any earlier call's
+  `this`) does what a player's click does.
+* ✔ In game the click opens History with "Congratulations! Your Tribe reigns supreme! When you are ready to get
+  civilized, click the Advance Button!"; History's check plays the stage end ("Your tribe now dominates this continent");
+  TribeGame_Messages (0xCD1D60) on 0x44F1189 (a cinematic ended) for TRG2CVG_PreEditor opens the City Hall editor
+  (0x99E92F05, at least 3 parts and a name to save), for TRG2CVG_ShowCityHall the vehicle editor; then "You are about
+  to enter Civilization" and Civ.
+* The string TRG2CVG_PreEditor has one reference only (that comparison): the cinematic is started by another name or
+  from data, not found.
+* Note: the symbol files name 0xCDBEA0 twice (TribeGame_AdvanceProc, TribeHutUI_HandleMessage); Ghidra's decompile of
+  it fails at the entry (and esp,-10); read it with `asm`.
+

@@ -1756,3 +1756,19 @@ planet? Can you create a mockup?"
   mockup's save time (the planet list has none). With the Social Menu open it stands under it. ✔ In game (TITAN, QA 9 by
   real clicks, QA 8 hosting Abber's Creature era as a friend): images/planet_panel.png, images/planet_panel_empty.png;
   switch off: images/planet_panel_off.png. Esc, Back and a stage press close it with the screen.
+
+## Starting the Civ stage from a planet's Tribe era (5R A, 2026-11-22, feat/lineages-alpha)
+<a id="server-civ-start"></a>
+
+BUG-9343, switch `galaxy.civ_start`. The next step after #server-stage-start (Creature -> Tribe): a planet whose latest
+era is Tribe offers its Civ stage as new to a player who reached Civ in their own Spore (Spore's Choose A Stage globe,
+"New here: start it" in the planet details panel).
+* The press makes the player a start crossing from the Tribe era's stored world (the server needed no change). Hosted, the
+  game fills the Tribe goal bar and presses Spore's advance button itself; from there the player goes through Spore's own
+  end of Tribe: History ("Congratulations! Your Tribe reigns supreme!") and its check, the cinematic, the City Hall
+  editor, the first vehicle's editor, Civ. The crossing arrives as the planet's Civ era and is stored.
+* Like the Creature start, it skips the planet's own progress (the five victories): 5R A's rule is the player's own Spore.
+* ✔ In game (TITAN, Clyth): images/bug9343_civ_new.png, images/bug9343_history.png, images/bug9343_civ.png; switch off:
+  images/bug9343_off.png. Not run: a party of several, the MSI. Civ -> Space is not offered (the next step).
+* How the Tribe end works: docs/re/tribe.md#tribe-advance-button.
+
