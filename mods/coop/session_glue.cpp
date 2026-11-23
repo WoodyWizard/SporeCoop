@@ -81,12 +81,14 @@ static int host_avatar_age()
     void* av = game::mode_id() == modes::kCreature ? game::avatar() : nullptr;
     return av && skg::readable((uint8_t*)av + 0xB34, 4) ? *(int*)((uint8_t*)av + 0xB34) : -1;
 }
-static const std::string* peer_version(uint8_t id)
+// NET-1 (BUG-1497): returned a pointer into the vector players() returns by value (freed when it returned); the
+// answer is a bool now. No switch: the old side reads freed heap (undefined behaviour, not observable in a test)
+static bool peer_has_version(uint8_t id)
 {
-    for (auto& p : g_sess.players())
+    for (const auto& p : g_sess.players())
         if (p.id == id)
-            return &p.version;
-    return nullptr;
+            return !p.version.empty();
+    return false;
 }
 // host: may guest r take the host's evolution in place (same world, the host's stage or an editor)?
 static bool evolve_inplace_ok(uint8_t id, const Remote& r, uint32_t stage)
@@ -96,8 +98,7 @@ static bool evolve_inplace_ok(uint8_t id, const Remote& r, uint32_t stage)
     uint32_t world = ad ? modes::current_place(ad) : 0;
     if (r.echo || r.buf.empty() || !ad || ad->own_worlds)
         return false;
-    const std::string* v = peer_version(id);
-    if (!v || v->empty())
+    if (!peer_has_version(id))
         return false; // an older SporeCoop: it does not follow the host's species in place
     const auto& ls = r.buf.latest();
     bool editor = ls.mode == modes::kEdit || ls.mode == modes::kEditor;
