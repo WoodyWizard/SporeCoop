@@ -366,6 +366,9 @@ anchor so other docs can link to it:
   eaten body may leave is not looked at (docs/re/creature.md#creature-ornament-models).
 * Next steps: a save with fossils that change their model; eat a body to the bone in one game and list `coop.wobj orns`
   in both.
+* 2026-11-23 (fix/w82-creature): a likely cause from the game's code (a dig fades and destroys the bone 3.5 s later; a
+  part tier's cleanup destroys bones; the guest's copy stayed in both cases): fixed behind `wobj.ornament_fade`
+  (docs/re/creature.md#creature-ornament-fadeout), waiting for the night run of `ornament_fade_*`.
 * Ticket: BUG-1261 (split from BUG-1251)
 
 

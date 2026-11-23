@@ -10,7 +10,7 @@ role:
 versions: 0.7.16.1 and earlier
 fixed_in:
 branch: fix/w82-creature
-commits: e44b4ff0
+commits: e44b4ff0, 9a4c9bc3
 tests: tools/tests/coop_creature_social_meter.py (creature_social_meter, twin creature_social_meter_hold_off)
 signature:
 docs: docs/re/creature.md#creature-meter-hold

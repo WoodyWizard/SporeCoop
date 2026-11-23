@@ -10,7 +10,7 @@ role:
 versions: 0.7.16.1 and earlier
 fixed_in:
 branch: fix/w82-creature
-commits: e44b4ff0
+commits: e44b4ff0, 9a4c9bc3
 tests: tools/tests/coop_effects_party.py --oneshot (effects_party_oneshot, twin effects_party_oneshot_off; 3 players)
 signature:
 docs: docs/re/creature.md#creature-meter-hold

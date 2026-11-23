@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.16.1 and earlier
 fixed_in:
 branch: fix/w82-creature
-commits: e44b4ff0
+commits: e44b4ff0, 9a4c9bc3
 tests: tools/tests/coop_mirror_fx_keys.py --burst (mirror_fx_burst, twin mirror_fx_burst_off)
 signature:
 docs: docs/re/creature.md#creature-meter-hold
