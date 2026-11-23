@@ -2775,3 +2775,66 @@ the GOG 2024 `SporeApp.exe` (dc04aee5); the lines are in data/symbols/overrides_
   0xE04510 (ECX = HUD +0x64) at 0xCEAB8A.
 * ✔ `City_CenterPoint` 0xBD95D0: thiscall(city, Vector3* out) ret 4: the position of the city's walls object
   (+0x324, 0xBEC2E0); the Civ "next city" HUD message sends the camera there (0xCF64E5, then SimCamera_GoToPoint).
+
+## Every player's own money, the NPC budgets and Civ -> Space money (2026-11-23, feat/w68-wallet)
+<a id="civ-own-money"></a>
+
+BUG-1468 (the session setting `civ.own_money`, idea and rules of PR #205 by IltonBJSilva), BUG-1236, BUG-1461,
+BUG-1478. GOG 2024 (`dc04aee5`), objdump of SporebinEP1/SporeApp.exe; no lab run yet (the night run decides the ✔ of
+the runtime claims). Code: mods/coop/civ_wallet.cpp, the rules in mods/coop/civ_wallet_logic.h (tests/civ_tests.cpp
+`wallets`).
+
+* ✔ (objdump, 2026-11-23) The three passive income return addresses of #civ-income-addmoney are real direct calls of
+  AddMoney 0xBEFED0 (0xBF7361, 0xBE1A21, 0xBE1C22). civ.cpp h_AddMoney measures the gain on +0x98 (the difficulty and
+  the 999999 cap of AddMoney in it) and is the one classifier of BUG-1236 (no cause notice) and of the own money's
+  split (`civ_wallet::host_income`).
+* The rules (civ_wallet_logic.h): the host's wallet is its game's money; each guest's wallet is its game's money, the
+  host keeps a copy (Ledger: the guest's report + the host's unconfirmed operations). The passive income is split by
+  the player cities each player owns (civ.cpp `g_city_owner`), a shared capital in equal parts between the host and the
+  guests with a wallet, a city of a player without one stays with the host. ~ A rule of ours: the game does not tell
+  AddMoney which city a tick came from (0xBF70E0 sums every city and derrick). The trade between the players' cities
+  (civ_host.cpp trade_tick, ours) goes half to each end. Every other gain (a sale, a refund of the game, a gift or a
+  tribute of a nation, a hut's loot) is the host's.
+* A guest's purchase the host's game makes runs inside `civ_wallet::PayAs`: +0x98 is the guest's wallet for the call,
+  so the game's own checks and spends use it, the difference is charged (K_ADD -) and the host's money is put back:
+  the vehicle (host_buy: SlotsLeft, VehicleCost, GetMoney, SpendMoney), the city purchase (cCity_Buy 0xBE99A0:
+  GetMoney, SpendMoney, Capture) and the superweapon (FireSuperweapon 0xBF8BB0 takes its cost from +0x98 itself,
+  inline at 0xBF8DB4..0xBF8E08). A building is paid in the guest's own planner (its own game's money is its wallet);
+  the host's refund of one it could not build goes into that wallet.
+* ✔ (objdump) **The Civ money is not carried into Space.** Every new empire, the player's too, gets
+  `cEmpire_SetMoney` 0xC31BC0 (thiscall(cEmpire*, int) ret 4, +0xD0 = clamp(x, 0, 99 999 999)) of the Space config's
+  int property 0x0195C003 (0x102FCC0 on the config 0x15B7648; 100000 in the data, prop group 0x02AE0C7E instance
+  0xD0CD1D4B) in GetEmpireForStar 0xBB14D0 at 0xBB1617, the one place that creates an empire (CreateEmpire 0xBAF240 +
+  cEmpire_Init 0xC35B00). ~ likely complete: none of the 25 cEmpire::AddMoney 0xC31B60 and 4 SetMoney callers reads a
+  civilization's +0x98 or GetMoney 0xBEF820 (whose 12 callers are all Civ and UI code); inline writes of +0xD0 in
+  constructors were not each checked. So with own money at Civ -> Space the wallets end (the host's kept records are
+  erased in Space, `coop.wallet` ended=1) and nothing is owed: everybody's Civ money ends as in a solo game; shared Space
+  plays the game's 100000 as today, and the Rivals split (space_rivalry.cpp, total / players) stays equal: a "share of
+  the wallets" has no Space money to come from. CORRECTION (2026-11-23, feat/w68-wallet): docs/re/space.md 7.7's
+  "SetMoney(int) 0xC31BA0" and "AddMoney(int) 0xC31B40" are the GOG 2016 addresses; GOG 2024 has 0xC31BC0 and 0xC31B60
+  (0xC31BA0 is inside AddMoney's tail there).
+* ✔ (objdump) The other AddMoney callers of the setup: 0xB99F67 in the planet's civ setup 0xB999F0 (when civ +0x8A is
+  0: AddMoney(civ, +0x98 * 4.0f, false), the money x5; ? the flag +0x8A), 0xBE88AE in the cCity init 0xBE87D0 (ret
+  0x28: SpendMoney(owner civ, all its money) at 0xBE889D then AddMoney(owner, a float argument): a set), 0xFF69FE in
+  PlanetCiv_FromRecord 0xFF6900 (ret 8, from cSimPlanetHighLOD_Load 0xFF96B0: AddMoney(civ, record +0x1C), the saved
+  money of every civ at a planet load).
+* ✔ (objdump) **An NPC nation's money and budgets.** `CivAI_WealthToBudgets` 0xBF7370 (fastcall civ, plain ret 0xBF74CA;
+  from Civilization_AI 0xBFBD30 at 0xBFBF72, every AI update) moves all of a positive +0x98 into the domestic +0x4AC
+  (0.6 or 0.8 of it, 1.0 by the flags +0x94 / +0x8A) and expansion +0x4B0 budgets, +0x98 = 0, then caps both budgets
+  (the rest is lost). The AI's purchases pay from the budgets after the spawn and without looking at its result:
+  SpendMoney 0xBEF860 at 0xBF9F62 after SpawnVehicle 0xBF9F53 (0xBF9960); +0x4B0 -= cost after 0xBFA746 (0xBF9FB0),
+  after 0xBFB0B1 in a loop while the budget covers the price (0xBFA7A0: a null spawn drains the budget), after 0xBFB692
+  (0xBFB160); +0x4AC -= cost after CreateBuilding 0xBE5BCE and the turrets 0xBE59B8 / 0xBE5CFF (growth 0xBE5890); only
+  0xBDEA1C (0xBDE5F0) pays on a spawn that worked. So a guest's blocked AI spawns (BUG-0188) still spend its copy of the
+  budgets, and the wsync row civ_money (+0x98 only, the player civilization excluded: wsync.cpp npc_civs) is moved
+  into the budgets within a second on a guest whose host stands (BUG-1461, `civ.npc_money_hold`: the guest skips
+  WealthToBudgets for NPC nations while host_busy::host_stands()). CORRECTION (2026-11-23, feat/w68-wallet) of the
+  plan's item 1: the civ_money row never writes the player civilization's money (npc_civs skips it); the guest's own
+  money is shared.cpp's MSG_RES id 2, which a guest with a wallet does not take (`civ.wallet_row`).
+* BUG-1478 (CIV-5, `civ.local_play_gate`): the guest hooks h_AddMoney, h_CreateBuilding (growth), h_SpawnNextCity,
+  h_SpawnVehicle (AI), h_Capture, h_CityBuy and h_FireSW hold only while the guest plays the host's Civ world
+  (civlogic::guest_holds: not `own_world::elsewhere()`); the host drops CMD_SUPER / CMD_BUYCITY / CMD_CAPTURE of a guest
+  `peer_elsewhere`. The host being away (its menu) still holds them (BUG-0151, BUG-0878 design).
+* Not covered: a guest's sale of its own building in its planner (? its game's AddMoney refund is dropped on a guest by h_AddMoney
+  as before; not checked in the lab, unchanged by this); the diplomacy gifts and tributes of the nations stay the
+  host's.

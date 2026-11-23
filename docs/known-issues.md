@@ -298,7 +298,8 @@ anchor so other docs can link to it:
   700 such lines.
 * Known: old (since 0.7.10, BUG-0696); mods/coop/shared.cpp leaves changes under kCauseMin = 25 unsaid, but the
   income ticks are 40-380.
-* Next steps: the next release.
+* Next steps: fixed on feat/w68-wallet (0.7.17, `civ.income_cause`: the three passive AddMoney callers are noted and
+  taken out of the host's cause); open until the night run of civ_income_cause / civ_income_cause_off (BUG-1236).
 * Ticket: BUG-1236
 
 ## Creature: the partner's creature sings along with the host and keeps the rings (2026-11-18, owner: players' video)

@@ -856,3 +856,22 @@ WP-0 of docs/plan-0.7.17.md. Parallel branches collided on message ids before (B
   1.x of 0.7.17"` (feat/w54-shims did the same for creations 1.1 in 0.7.16). Two WPs of one family both re-lock;
   the merge takes either lock line and runs the rebase once more on the merged tree.
 * Settings and store: docs/07-modes.md#modes-reserved-0717, docs/01-architecture.md#arch-player-store.
+
+## MSG_CIV_WALLET: every player's own Civ money (2026-11-23, feat/w68-wallet)
+<a id="netcode-civ-wallet"></a>
+
+WP-M1 of docs/plan-0.7.17.md, BUG-1468 (PR #205 by IltonBJSilva, ported on our code). Id 74, civ family 1.2 (the
+WP-0 bump; re-locked `--rebase civ`, unreleased). Reliable, both directions, class HostWorld (a guest elsewhere drops
+it at dispatch). civ_wallet.h has the payloads: u8 kind, then 1 K_ASK (guest, nothing), 2 K_SET (host: u32 seq, f64
+the wallet), 3 K_ADD (host: u32 seq, f64 a credit + or a charge -), 4 K_REPORT (guest: u32 last seq applied, f64 its
+game's money, every 2 s).
+
+* Only with the session setting `civ.own_money` on and only between a host and a guest of civ 1.2 or newer: the host
+  asks `peer_families(id)` (civwallet::kMinor = 2), a guest `host_families()`; each also checks its own announced civ
+  minor, so `coop.manifest plant civ 1 1` makes a game play as a 0.7.16.1 peer in the lab (civ_own_money_old). A
+  0.7.16.1 guest gets no K_SET, plays the host's shared money (shared.cpp MSG_RES / MSG_RES_ADD id 2) as before and its
+  cities' income stays with the host; a guest with a wallet neither takes the shared Civ money total nor sends its
+  changes (`own_budget`, switch `civ.wallet_row`). The host keeps broadcasting MSG_RES for any older guest.
+* The host gives a wallet only to a guest in its Civ world (`own_world::peer_elsewhere` false); a guest asks every 5 s
+  while it plays the host's Civ world without one; a load of another Civ world (stage epoch) asks again; a guest
+  elsewhere stops reporting and ignores K_SET / K_ADD.

@@ -80,9 +80,19 @@ static bool host_reads()
     return mine && net::compat::has_minor(fam, has, (uint8_t)net::Family::civ, mine->rev, civwallet::kMinor);
 }
 
+// this game's own announced civ minor (HELLO / WELCOME): `coop.manifest plant civ 1 1` makes it play as a 0.7.16.1 peer
+// (the lab's old-peer case without an old build); a real older mod has none of this code
+static bool self_reads()
+{
+    if (!C.sess)
+        return false;
+    const net::FamilyInfo* mine = net::family_info((uint8_t)net::Family::civ);
+    return mine && net::compat::has_minor(C.sess->families, true, (uint8_t)net::Family::civ, mine->rev, civwallet::kMinor);
+}
+
 bool guest_own_money()
 {
-    return guest() && !civwallet::guest_takes_shared(g_row_fix, civwallet::guest_runs(setting(), host_reads()));
+    return guest() && !civwallet::guest_takes_shared(g_row_fix, civwallet::guest_runs(setting(), host_reads() && self_reads()));
 }
 
 static bool in_civ_world() { return game::mode_id() == modes::kCiv && civ::player_civ(); }
@@ -321,7 +331,7 @@ static void host_ask(uint8_t from)
         g_n.asks_early++; // the guest asks again every few seconds until the host plays its Civ world
         return;
     }
-    if (!civwallet::host_gives(setting(), peer_reads(from), own_world::peer_elsewhere(from))) {
+    if (!civwallet::host_gives(setting(), peer_reads(from) && self_reads(), own_world::peer_elsewhere(from))) {
         g_n.asks_refused++;
         return;
     }
