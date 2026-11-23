@@ -71,6 +71,8 @@ inline host_world::MsgClass msg_class(uint8_t type)
         return host_world::MsgClass::Unknown;
     case net::MSG_SPECIES_LINE: // (added after 0.7.15.2, WP-0 BUG-1270: a type 0.7.15.2 did not know)
         return host_world::MsgClass::Unknown;
+    case net::MSG_PROGRESS: // (added in 0.7.17, WP-P1/P2 BUG-1469: a type 0.7.16.1 did not know)
+        return host_world::MsgClass::Unknown;
     }
     return host_world::MsgClass::Unknown;
 }

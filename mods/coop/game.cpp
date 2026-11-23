@@ -2660,6 +2660,40 @@ float evolution_bar()
     return p && skg::readable((uint8_t*)p + 0x10F0, 8) ? *(float*)((uint8_t*)p + 0x10F0) : NAN;
 }
 
+// BUG-1469 (own progress): a guest's own bar back after a load of the host's save when it must go down (a rise goes
+// through dna_add_raw, the game's AddEvolutionPoints, so the brain upgrades see it)
+bool set_evolution_bar(float v)
+{
+    void* nm = noun_manager();
+    void* p = nm && skg::readable((uint8_t*)nm + 0x74, 4) ? *(void**)((uint8_t*)nm + 0x74) : nullptr; // cPlayer
+    if (!p || !skg::readable((uint8_t*)p + 0x10F0, 8) || !std::isfinite(v))
+        return false;
+    *(float*)((uint8_t*)p + 0x10F0) = v;
+    return true;
+}
+
+// BUG-1469: the avatar's brain level (creature vt 0xD8 = cCreatureAnimal_Level 0xC02A60: [SporeCoop::g_BrainLevel] for
+// the avatar); -1 without an avatar in Creature
+int brain_level()
+{
+    void* av = in_creature_stage() ? avatar() : nullptr;
+    if (!av || !skg::readable(av, 4))
+        return -1;
+    return skg::vcall<int>(av, 0xD8 / 4);
+}
+
+// BUG-1469: a guest's own lower brain level back after a load of the host's save (the save holds the host's level).
+// Only the global (the setter 0xC02AB0, avatar vt 0xDC, writes nothing else): the avatar's size and health follow at
+// its next brain upgrade (PR #209's runtime note, docs/re/creature.md#creature-own-progress)
+bool set_brain_level(int level)
+{
+    uintptr_t a = H->sym("SporeCoop::g_BrainLevel");
+    if (!a || level < 0 || level > 5 || !in_creature_stage() || !skg::readable((void*)a, 4))
+        return false;
+    *(int*)a = level;
+    return true;
+}
+
 void set_dna_listener(DnaListener fn) { g_dna_listener = fn; }
 
 // BUG-0433: TimeOfDay_Unavailable (= Simulator::GetCurrentContext, [[SpacePlayerData]+0x10]) reads the

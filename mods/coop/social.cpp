@@ -1,4 +1,5 @@
 #include "social.h"
+#include "own_progress.h"
 #include "lifecycle.h"
 #include "mouse.h"
 #include "fixes.h"
@@ -364,6 +365,8 @@ bool goal_dna(float delta)
 {
     if (!g_goal || !C.sess || !C.sess->connected())
         return false;
+    if (own_progress::active())
+        return false; // BUG-1469 (own progress): every game pays its own card into its own DNA
     ResourceKey k = field<ResourceKey>(g_goal, 0x80); // the card's species (init 0xC30300)
     int outcome = goal_outcome(k);
     if (C.sess->role() == net::Role::Host) {
@@ -867,8 +870,10 @@ static void apply_success(uint8_t player, uint16_t id)
         dna = thiscall<float>(a_DnaWorth, c, 1);
         if (dna > 0 && dna < 10000 && C.pace)
             dna = C.pace(dna); // BUG-0510: the party's pace (a guest's friend, as the host's own are in on_dna)
-        if (dna > 0 && dna < 10000)
+        if (dna > 0 && dna < 10000 && !own_progress::active())
             game::dna_add_raw(dna); // the host's pool, shared with everybody (MSG_DNA)
+        // BUG-1469 (own progress, PR #209's social-win credit): the friend is that guest's: its DNA goes with the
+        // result below, into its own game (the host's game pays nothing)
     }
     game::set_impressed(c, true);
     if (a_PlayReaction)
@@ -1268,8 +1273,11 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 thiscall<int>(a_PlayReaction, px, anim, 1, -1);
         } else if (px && anim && a_PlayReaction && !game::is_dead(px)) // BUG-0525: a failed game's animation
             thiscall<int>(a_PlayReaction, px, anim, 1, -1);
+        const bool own = own_progress::active(); // BUG-1469: the friend's DNA is ours alone
+        if (mine && ok && own)
+            own_progress::take_gain(dna, "friend");
         if (mine && C.feed)
-            C.feed(ok ? "Impressed! +" + std::to_string((int)(dna + 0.5f)) + " DNA for the pack"
+            C.feed(ok ? "Impressed! +" + std::to_string((int)(dna + 0.5f)) + (own ? " DNA" : " DNA for the pack")
                       : "It does not want to socialize now");
         if (mine && ok && id == g_meter_npc)
             meter_task(2, id);

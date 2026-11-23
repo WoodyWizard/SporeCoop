@@ -14,6 +14,7 @@
 #include "coop_state.h"
 #include "store.h"
 #include "species_line.h"
+#include "own_progress.h"
 #include "designs.h"
 #include "net/compat.h"
 #include "net/manifest.h"
@@ -961,6 +962,10 @@ void setup_callbacks()
                 tail = dna_own::Tail::read(r);
             } else
                 dna_pace_heard(1);
+            if (own_progress::active()) { // BUG-1469: our DNA and bar are our own (a host total is the host's)
+                g_own_totals_ignored++;
+                return;
+            }
             if (r.ok() && g_solo_await > 0) { // BUG-0829
                 bool paid = false;
                 for (auto& p : parts)
@@ -1013,6 +1018,10 @@ void setup_callbacks()
         }
         case net::Route::DnaAdd: {
             float d = r.f32();
+            if (own_progress::active()) { // BUG-1469: a guest's DNA is its own (a stray forward is not the party's)
+                g_own_totals_ignored++;
+                return;
+            }
             auto add = dna_route::host_add(game::avatar() != nullptr, g_away_dna_fix);
             if (r.ok() && d > 0 && d < 10000 && add == dna_route::Add::Pay) {
                 dna_host_gain({dna_ledger::Cause::Earned, from, d}, game::dna());
@@ -1222,6 +1231,10 @@ void setup_callbacks()
         }
         case net::Route::SpeciesLine: { // WP-0 (BUG-1270): the species line
             species::on_message(type, from, r);
+            return;
+        }
+        case net::Route::Progress: { // WP-P1 / P2 of 0.7.17 (BUG-1469): own progress
+            own_progress::on_message(from, r);
             return;
         }
         case net::Route::Tribe: {

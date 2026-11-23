@@ -17,7 +17,7 @@ enum class MsgRecv : uint8_t { Both, Host, Client };
 enum class Route : uint8_t {
     None, World, Diag, Anim, Settings, Colors, Report, HostWorld, Effect, Dna, DnaAdd, WorldTime, Vote, Notice, Role,
     Ready, Lobby, Shared, PingMark, Space, Squadron, Civ, Creation, Cell, Tribe, Npc, Social, Nest, Fields, Wsync, Parts,
-    Wobj, PlayerRule, MirrorFx, HostBusy, SpeciesLine,
+    Wobj, PlayerRule, MirrorFx, HostBusy, SpeciesLine, Progress,
 };
 // the world-state class (host_world::MsgClass has the same values and meaning, BUG-0420)
 enum class MsgCls : uint8_t { Session, HostWorld, Module, Unknown };

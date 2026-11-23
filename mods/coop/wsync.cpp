@@ -16,6 +16,7 @@
 #include "designs.h"
 #include "fixes.h"
 #include "own_world.h"
+#include "own_progress.h"
 #include "game.h"
 #include "modes.h"
 #include "net/protocol.h"
@@ -506,7 +507,7 @@ static bool r_spent(Table& out)
 static int s_spent(const Table& want, bool apply)
 {
     int v;
-    if (want.empty() || !cellsync::spent_dna(v))
+    if (want.empty() || !cellsync::spent_dna(v) || own_progress::active()) // BUG-1469: our own editors' count
         return 0;
     int w = cellsync::spent_guest_want((int)want[0].v[0]); // BUG-1249: plus our own editor's spend not in it yet
     if (v == w)

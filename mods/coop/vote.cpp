@@ -6,6 +6,7 @@
 // session callbacks.
 #include "tribe_editors.h"
 #include "coop_state.h"
+#include "own_progress.h"
 #include "arrival_rule.h"
 #include "designs.h"
 #include "civ_editors.h"
@@ -890,6 +891,11 @@ bool SK_CDECL h_Submit(void* req)
             notice(g_name + " evolves now (the others may evolve too)", -1);
         } else if (g_sess.role() == net::Role::Host) {
             if (!g_vote.active) {
+                if (stage_end && own_progress::hold_stage_end(false, false)) { // BUG-1469: every player's own bar first
+                    LOG("evolution: the end of the Creature stage waits until every player's own bar is full (BUG-1469)");
+                    g_evo_flag_refused = true; // BUG-0920: the game sets its "editor pending" flag after this call
+                    return false;
+                }
                 if (stage_end) { // BUG-1085: a stage start keeps the vote
                     g_stage_end_votes++;
                     LOG("evolution: the end of the Creature stage waits for the vote (BUG-1085)");
@@ -908,6 +914,9 @@ bool SK_CDECL h_Submit(void* req)
             if (g_vote.active) {
                 LOG("evolution: this guest's stage-end request is its I'm ready (BUG-1085)");
                 set_ready(true);
+            } else if (own_progress::active()) { // BUG-1469: told who still fills a bar
+                LOG("evolution: this guest's stage-end request waits for every player's bar and the host's vote (BUG-1469)");
+                own_progress::tell_wait(false);
             } else {
                 LOG("evolution: this guest's stage-end request is not taken: the host moves everybody on (BUG-1085)");
                 feed("the host moves everybody on to the Tribe stage (after a vote)");
@@ -1043,8 +1052,62 @@ static bool switch_hold(bool at_end, void* from)
     return true;
 }
 
+// WP-P1 of 0.7.17 (BUG-1469, own progress): nobody moves on to Creature alone. The host's click on History's check is
+// kept until every player's own bar is full (then own_progress_resume runs it again by itself; a second click within
+// 10 s goes on without the others: the vote decides); a guest's click in the host's world is never its own switch (in
+// the vote it is its I'm ready: switch_hold). The gate sits before the game's end sequence (cell.end_click: History
+// closes, the host plays on in its drawn pool) or, with cell.end_click off, at the switch after the sequence's white
+// picture (PR #209's BUG-9266). True: held here.
+static unsigned g_own_end_held; // tests (coop.vote)
+static bool own_end_hold(bool at_end)
+{
+    if (g_switch_go || g_end_go || game::mode_id() != modes::kCell || !g_sess.connected() || !own_progress::active())
+        return false;
+    if (at_end != (own_progress::end_click_fix() && o_CellStageEnd != nullptr))
+        return false;
+    if (g_sess.role() == net::Role::Client) {
+        if (host_world_now() != host_world::HostWorld::Same || g_vote.active)
+            return false; // its own world: its own switch; the vote: its I'm ready (switch_hold)
+        g_own_end_held++;
+        g_switch_guest_held++;
+        LOG("the Creature stage: this guest's click waits for every player's bar and the host's vote (BUG-1469%s)",
+            at_end ? ", before the end sequence" : "");
+        own_progress::tell_wait(true);
+        return true;
+    }
+    if (g_vote.active)
+        return false; // (switch_hold tells the host to wait for the vote)
+    if (!own_progress::hold_stage_end(true, at_end))
+        return false;
+    g_own_end_held++;
+    LOG("the Creature stage waits until every player's own bar is full (BUG-1469%s)",
+        at_end ? ": History's check kept before the end sequence" : ": the switch held after the end sequence");
+    return true;
+}
+unsigned own_end_held_count() { return g_own_end_held; }
+
+// BUG-1469: the host's kept click runs once every player's own bar is full (outside the frame, as a vote's action)
+static bool g_own_resume_at_end;
+void own_progress_resume(bool at_end)
+{
+    g_own_resume_at_end = at_end;
+    H->run_outside_frame(
+        [](void*) {
+            if (game::mode_id() != modes::kCell || g_sess.role() != net::Role::Host)
+                return;
+            LOG("every player's own bar is full: the kept click on History's check goes on (BUG-1469)");
+            if (g_own_resume_at_end && o_CellStageEnd && game::avatar())
+                h_CellStageEnd();
+            else
+                h_CellToCreature();
+        },
+        nullptr);
+}
+
 void SK_CDECL h_CellToCreature()
 {
+    if (!g_switch_go && own_end_hold(false))
+        return;
     if (g_switch_go || !switch_hold(false, __builtin_return_address(0))) {
         g_switch_go = false;
         o_CellToCreature();
@@ -1054,6 +1117,8 @@ void SK_CDECL h_CellToCreature()
 // BUG-1269: History's check (the end sequence); see above
 void SK_CDECL h_CellStageEnd()
 {
+    if (own_end_hold(true))
+        return;
     if (!g_switch_world_fix || g_end_go || g_switch_go || !switch_hold(true, __builtin_return_address(0))) {
         g_end_go = false;
         o_CellStageEnd();

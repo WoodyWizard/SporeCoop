@@ -102,6 +102,7 @@
 #include "trace.h"
 #include "view_centres.h"
 #include "coop_state.h"
+#include "own_progress.h"
 
 const SkHost* H;
 SkMod* M;
@@ -1080,7 +1081,7 @@ static void frame_world_ticks(double now)
 // on_frame, phase: host: the DNA total (on a change, every 2 s) and the time of day (every 1 s)
 static void frame_send_totals(double now)
 {
-    if (g_sess.role() == net::Role::Host && game::avatar()) {
+    if (g_sess.role() == net::Role::Host && game::avatar() && !own_progress::active()) { // BUG-1469: own bars, no total
         own_dna_credit_now(); // BUG-1341: this frame's party gain is in every own wallet before the totals go out
         float total = game::dna();
         // WP-D (BUG-1291): sent per guest: a guest with an own wallet gets its own budget (dna_own.h), the others the
@@ -1178,6 +1179,7 @@ static void frame_stage_ticks(double now)
     host_away_tick(now);
     host_busy_tick(now); // C3 (BUG-1142): the host tells its pause; a guest's game waits for it
     guest_mating_tick(now); // BUG-1305: a guest's mating whose mate is a host copy ends in its editor
+    own_progress::tick(now); // WP-P1 / P2 of 0.7.17 (BUG-1469): own progress (all.shared_dna 2)
     dna_spend_tick(now); // BUG-0466
     dna_notices_tick(now);
     tribe::tick(now);
@@ -2338,19 +2340,19 @@ void support_init()
     p.stage_end = [] { return tribe::stage_end(); };
     p.since_share = [](uint8_t peer) { return world::since_share(peer); };
     p.dna = [](float& v) {
-        if (!game::avatar() || g_mode != modes::kCreature)
+        if (!game::avatar() || g_mode != modes::kCreature || own_progress::active()) // BUG-1469: own on purpose
             return false;
         v = game::dna();
         return true;
     };
     p.dna_own = [](uint8_t id, float& v) { return g_mode == modes::kCreature && dna_own_expect(id, v); }; // BUG-1310
     p.bar = [](float& v) { // BUG-1310: the party's evolution bar (compared where a guest has its own DNA)
-        if (!game::avatar() || g_mode != modes::kCreature)
+        if (!game::avatar() || g_mode != modes::kCreature || own_progress::active()) // BUG-1469: each bar its own
             return false;
         v = game::evolution_bar();
         return std::isfinite(v);
     };
-    p.cell_food = [](int& v) { return g_mode == modes::kCell && cellsync::food_total(v); };
+    p.cell_food = [](int& v) { return g_mode == modes::kCell && !own_progress::active() && cellsync::food_total(v); }; // BUG-1469
     p.cell_sent = [](uint8_t id) { return g_mode == modes::kCell ? cellsync::sent_cap(id) : (size_t)0; };
     p.cell_scale = [] { return g_mode == modes::kCell ? cellsync::scale_now() : 0.f; };
     p.over_ground = [](const net::Vec3& v) { // BUG-1216: the planet stages only
@@ -2470,6 +2472,16 @@ static void init_world_share()
         creations::world_species_out(peer, files);
     });
     shared::init(H, M);
+    {
+        own_progress::Ctx oc; // WP-P1 / P2 of 0.7.17 (BUG-1469)
+        oc.sess = &g_sess;
+        oc.feed = [](const std::string& t) { feed(t); };
+        oc.host_creature_mode = [] { return host_creature_mode(); };
+        oc.vote_active = [] { return g_vote.active; };
+        oc.resume_end = [](bool at_end) { own_progress_resume(at_end); };
+        oc.world = [] { return g_stage_world ? g_stage_world : g_world; };
+        own_progress::init(H, M, oc);
+    }
     shared::set_feed([](const std::string& t) { feed(t); }); // BUG-0696
     world::set_auto_load(H->config_int(M, "coop", "auto_load_world", 1) != 0);
     game::set_anim_listener(on_anim);

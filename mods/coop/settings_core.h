@@ -8,6 +8,7 @@
 // the host's table (MSG_SETTINGS) and with its own values only while no host sent one (an older host).
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -27,7 +28,7 @@ enum Id : int {
     kPartnerArrows,  // all stages: an arrow to every partner off screen (F2 draws it); off in Rivals mode
     kPartnerMap,     // Creature, Tribe: the partners on the game's minimap as triangles in their colour (F2)
     kDnaPace,        // all stages: DNA / food at the single-player pace (BUG-0510, dna_pace.h)
-    kSharedDna,      // Cell, Creature: one DNA pool for the party (1) or every player's own DNA (0, WP-D, dna_own.h)
+    kSharedDna,      // Cell, Creature: 0 own wallet (WP-D, dna_own.h), 1 one pool, 2 own progress (BUG-1469, own_progress.h)
     kNpcTargets,     // Creature: the host's NPC animals treat partners like the host's creature (npc.cpp)
     kPackRescue,     // Creature: a deadly hit near a partner leaves 40 % health (teamplay.cpp)
     kPackHeal,       // Creature: partners heal each other nearby (teamplay.cpp tick)
@@ -60,6 +61,11 @@ enum Id : int {
     kCount
 };
 
+// all.shared_dna (WP-D of 0.7.16, WP-P1 / P2 of 0.7.17, BUG-1469): 0 own wallet, 1 shared, 2 own progress
+// (own_progress_logic.h Mode; read with get(), never on()). The default of a new world: owner question 2 of
+// docs/plan-0.7.17.md is open (own wallet, as 0.7.16, proposed): this one constant
+constexpr int kSharedDnaDefault = 0;
+
 struct Def {
     const char* key;     // the console / wire / file name ("cell.regen"); never renamed (stored worlds keep it)
     const char* group;   // "All stages", "Cell", "Creature", ...
@@ -86,9 +92,9 @@ inline const Def kDefs[kCount] = {
     {"all.dna_pace", "All stages", "Progress at the single-player pace",
      "on: every gain of DNA / food counts 1/N for N players (a solo game's pace; with own DNA every player then gets a solo game's DNA); off: every gain counts whole (with own DNA every player gets every gain whole)",
      1, 0, 1, Scope::Session, "dna_pace", false},
-    {"all.shared_dna", "All stages", "Shared DNA",
-     "on: one DNA pool for the party (Cell, Creature): every player's editor spends from it; off: every player has its own DNA, every gain counts for everybody, a player's editor spends only its own (always off in Rivals mode)",
-     0, 0, 1, Scope::Session, nullptr, true},
+    {"all.shared_dna", "All stages", "DNA and progress",
+     "own wallet: every gain counts for everybody, a player's editor spends only its own DNA; shared: one DNA pool for the party, every player's editor spends from it; own progress: in Cell and Creature every player earns its own DNA and fills its own evolution bar, the stage moves on when every bar is full and the vote agrees (always own wallet in Rivals mode)",
+     kSharedDnaDefault, 0, 2, Scope::Session, nullptr, true, "own wallet|shared|own progress"},
     {"creature.npcs_target_partners", "Creature", "NPC animals treat partners like the host",
      "on: the host's animals notice, chase and attack every player's creature; off: only the host's own",
      1, 0, 1, Scope::Session, "npcs_target_partners", false},
@@ -218,9 +224,12 @@ inline bool parse_value(int id, const std::string& s, int& out)
     } else if (s == "default") {
         out = kDefs[id].def;
     } else if (kDefs[id].names && [&] {
-                   for (int i = kDefs[id].min; i <= kDefs[id].max; i++)
-                       if (value_name(id, i) == s)
+                   for (int i = kDefs[id].min; i <= kDefs[id].max; i++) {
+                       std::string n = value_name(id, i), u = n;
+                       std::replace(u.begin(), u.end(), ' ', '_'); // a console word: "own_progress"
+                       if (n == s || u == s)
                            return out = i, true;
+                   }
                    return false;
                }()) {
     } else {
