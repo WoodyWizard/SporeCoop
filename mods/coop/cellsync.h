@@ -84,5 +84,6 @@ bool own_spent_rows(std::vector<std::pair<int, int>>& out);   // host: that row 
 // 0: not paced (whole rounds, kSendCap) or cell.slow_link off (the sync-check then assumes 900)
 size_t sent_cap(int id);
 float scale_now(); // BUG-0606: the own game's world scale G+0x514C in Cell (sync-check), 0 outside Cell or when not sane
+extern unsigned g_partner_scaled; // tests (BUG-1512, coop.cpp partners()): partner poses converted to our world scale
 
 } // namespace cellsync

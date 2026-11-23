@@ -3,6 +3,7 @@
 // collision pairs); moved out of cellsync.cpp (C8 of 0.7.15, BUG-1183).
 #include "cellsync_internal.h"
 #include "own_progress.h"
+#include "net/compat.h"
 
 namespace cellsync {
 
@@ -18,8 +19,8 @@ void send_act(uint32_t hidx, uint8_t kind, uint8_t arg, int food, bool plant)
     uint32_t meal = g_meals.sent(food);
     w.u32(meal); // the meal number the host echoes in its total (BUG-0051)
     C.sess->send_reliable_to(0, net::MSG_CELL_EAT, w);
-    static const char* kinds[] = {"gone", "kill", "break"};
-    trace::ev("eat", kind == ACT_GONE ? "sent gone" : "sent kill", "sent %s c%u food=%d %s meal=%u", kinds[kind % 3], hidx,
+    static const char* kinds[] = {"gone", "kill", "break", "shrink"};
+    trace::ev("eat", kind == ACT_GONE ? "sent gone" : kind == ACT_SHRINK ? "sent shrink" : "sent kill", "sent %s c%u food=%d %s meal=%u", kinds[kind % 4], hidx,
               food, plant ? "plant" : "meat", meal);
 }
 
@@ -143,7 +144,17 @@ void puppet_poison(float dt)
 // before. Friendly fire on or Rivals: as 0.7.12. `coop.fix cell.partner_poison off`: as 0.7.12.
 bool g_fix_partner_poison = true;
 COOP_FIX("cell.partner_poison", "BUG-0958", g_fix_partner_poison, "cell: with friendly fire off a partner's poison clouds do not hurt a player's cell");
-std::unordered_set<uint32_t> g_partner_clouds; // host: cells its game made as clouds of a partner's puppet
+std::unordered_map<uint32_t, uint8_t> g_partner_clouds; // host: cells its game made as clouds of a partner's puppet -> its id
+// BUG-1513 (CELL-13 of the external audit of 0.7.15.5): the host makes a guest's clouds (puppet_poison, +0x110) and
+// mirrors them to every guest, the owner too, as "a player's product" (flag 4); the owner's DamageCell spared its cell
+// from such a mirror only while players do not hurt each other, so with friendly fire on (or Rivals) a guest's OWN
+// clouds (their mirrors: its local cloud is culled at once) hurt and knocked out its own cell. On: the host notes each
+// cloud's player and marks the clouds of the guest it sends to (state flag 8, an older guest ignores the bit); the guest
+// never takes damage from its own. Off (`coop.fix cell.own_cloud off`): 0.7.16.1.
+bool g_fix_own_cloud = true;
+COOP_FIX("cell.own_cloud", "BUG-1513", g_fix_own_cloud,
+         "cell: a player's own poison clouds never hurt its own cell (with friendly fire on they did, on a guest)");
+unsigned g_own_cloud_refused; // tests (BUG-1513): own clouds' hits refused on this guest
 char g_own_hit_last[160] = "-";                // tests: the last hit our cell took (attacker kind, origin, type)
 uint32_t g_own_hits_n;                         // tests (BUG-1243): DamageCell calls on our own cell by another cell
 bool players_hurt_each_other()
@@ -177,6 +188,19 @@ static bool ko_puppet(uint8_t* c)
     return false;
 }
 bool g_test_no_own_cloud = false; // tests (BUG-0892): our own avatar makes no cloud (a partner's puppet does)
+// BUG-1508 (CELL-6 of the external audit of 0.7.15.5): puppet_poison lends a partner's puppet the avatar index for its
+// poison step, so inside that step avatar() is the puppet: the knocked-out check `g_downed && maker == avatar()` refused
+// every live partner's cloud for the 10 s of the HOST's knockout (counted as ko_clouds_blocked), and clouds_made counted
+// the partners' clouds as ours. On: a puppet maker is never "our avatar" there (a knocked-out partner's puppet stays
+// refused by ko_puppet). Off (`coop.fix cell.ko_partner_clouds off`): 0.7.16.1.
+static bool g_fix_ko_partner_clouds = true;
+COOP_FIX("cell.ko_partner_clouds", "BUG-1508", g_fix_ko_partner_clouds,
+         "cell: the partners' poison clouds go on while the host's own cell is knocked out (they were all refused)");
+unsigned g_partner_clouds_while_down; // tests: partners' clouds made in the host's game while the host was knocked out
+static bool our_avatar_cloud(uint8_t* maker)
+{
+    return maker && maker == avatar() && !(g_fix_ko_partner_clouds && modes::cell_is_puppet(maker));
+}
 void SK_CDECL h_Cloud(uint8_t* maker, int size, void* at)
 {
     if (g_test_no_own_cloud && in_cell() && maker && maker == avatar() && !modes::cell_is_puppet(maker)) {
@@ -184,7 +208,7 @@ void SK_CDECL h_Cloud(uint8_t* maker, int size, void* at)
         g_n.own_clouds_held++;
         return;
     }
-    if (g_fix_ko_no_poison && in_cell() && maker && ((g_downed && maker == avatar()) || ko_puppet(maker))) {
+    if (g_fix_ko_no_poison && in_cell() && maker && ((g_downed && our_avatar_cloud(maker)) || ko_puppet(maker))) {
         // BUG-0799: a knocked-out cell makes no cloud: our own, and a knocked-out partner's puppet (puppet_poison, and
         // the game's own poison step, which also runs for a puppet drawn here with a poison part: lab 20261112-063438)
         g_n.ko_clouds_blocked++;
@@ -200,18 +224,24 @@ void SK_CDECL h_Cloud(uint8_t* maker, int size, void* at)
     if (partner) {
         if (g_partner_clouds.size() > 1024) // (stale entries: their slots hold other cells now)
             for (auto it = g_partner_clouds.begin(); it != g_partner_clouds.end();) {
-                uint8_t* c = modes::cell_at(*it);
+                uint8_t* c = modes::cell_at(it->first);
                 it = c && F<uint8_t>(c, 0x110) ? std::next(it) : g_partner_clouds.erase(it);
             }
+        uint8_t owner = 0; // BUG-1513: whose puppet made it
+        for (int id = 1; id < 8 && !owner; id++)
+            if (puppet_cell(id) == maker)
+                owner = (uint8_t)id;
         for_each_cell([&](uint8_t* c, uint32_t idx) {
             if (!before.count(idx) && c != maker)
-                g_partner_clouds.insert(idx);
+                g_partner_clouds[idx] = owner;
         });
     }
     if (in_cell() && maker && modes::cell_is_puppet(maker)) {
         g_n.puppet_clouds++; // host (BUG-0716): a partner's cloud (puppet_poison, or the game's own poison step)
+        if (g_downed)
+            g_partner_clouds_while_down++; // BUG-1508
     }
-    if (in_cell() && maker && maker == avatar()) {
+    if (in_cell() && our_avatar_cloud(maker)) {
         g_n.clouds_made++;
         g_n.cloud_last = (G() ? F<uint32_t>(G(), 0x1C + 0xC) : 0) - live0; // cells added by it
     }
@@ -342,6 +372,7 @@ bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const float* dir,
         auto am = is_guest() ? g_host_of.find(F<uint32_t>(attacker, 0)) : g_host_of.end();
         auto mm = am != g_host_of.end() ? g_mirrors.find(am->second) : g_mirrors.end();
         bool mirror_product = mm != g_mirrors.end() && mm->second.product;
+        bool mirror_own = mm != g_mirrors.end() && mm->second.own_product; // BUG-1513
         bool partner_cloud = is_host() && g_partner_clouds.count(F<uint32_t>(attacker, 0)) && F<uint8_t>(attacker, 0x110);
         const char* k = kind_of(attacker);
         g_own_hits_n++;
@@ -349,6 +380,10 @@ bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const float* dir,
                  am != g_host_of.end() ? "mirror" : modes::cell_is_puppet(attacker) ? "puppet" : "local",
                  mirror_product || partner_cloud ? " partner_product" : F<uint8_t>(attacker, 0x110) ? " own_product" : "",
                  F<int>(victim, kHp));
+        if (mirror_own && !strcmp(k, "poison") && g_fix_own_cloud) {
+            g_own_cloud_refused++; // BUG-1513: our own cloud (the host's mirror of it) never hurts our cell
+            return false;
+        }
         if ((mirror_product || partner_cloud) && !strcmp(k, "poison")) {
             if (g_fix_partner_poison && !players_hurt_each_other()) {
                 g_n.partner_poison_refused++;
@@ -707,6 +742,38 @@ void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
 // events still ran: food floating into it was eaten (event 0x12, EatFood 0xE7DF40 -> OnEat ->
 // AvatarEat -> AddFoodPoints), so the cell came back from its respawn bigger than "small again".
 // A knocked-out cell eats nothing: the food stays where it is for whoever comes.
+// BUG-1514 (CELL-14 of the external audit of 0.7.15.5): EatFood shrinks the plant one level in place (TargetSize times
+// TileSizes[L - 1] / TileSizes[L], +0x358 = L - 1, 0xE7DFDB) unless the level below is out of the view's range (then it
+// destroys it, which a guest sends as ACT_GONE). A guest's bite on a plant mirror shrank only its own mirror and sent
+// nothing but the points: the host's plant stayed whole (the partners ate the same food again) and the guest's mirror
+// kept its lower level. On: the guest sends ACT_SHRINK with the new level (to a host of cell 1.2 or newer) and its
+// points with it; the host shrinks its plant the game's way. Off (`coop.fix cell.plant_shrink off`): 0.7.16.1.
+bool g_fix_plant_shrink = true;
+COOP_FIX("cell.plant_shrink", "BUG-1514", g_fix_plant_shrink,
+         "cell: a plant a guest bites shrinks in the host's game too (it stayed whole there: the same food eaten twice)");
+unsigned g_shrinks_sent, g_shrinks_old_host, g_shrinks_applied, g_shrinks_refused; // tests (BUG-1514)
+static bool host_reads_shrink()
+{
+    bool has = false;
+    std::vector<net::FamilyRev> f;
+    return C.sess && C.sess->host_families(has, f) &&
+           net::compat::has_minor(f, has, (uint8_t)net::Family::cell, 1, kCellMinorShrink);
+}
+bool shrink_plant(uint8_t* c, int new_level)
+{
+    const float* sizes = a_TileSizes ? (const float*)a_TileSizes : nullptr;
+    const int l = c ? F<int>(c, kLevel) : -1;
+    if (!sizes || !c || new_level != l - 1 || new_level < 0 || l > 16 || !(sizes[l] > 0.f)) {
+        g_shrinks_refused++;
+        return false;
+    }
+    F<float>(c, kTargetSize) *= sizes[new_level] / sizes[l];
+    F<int>(c, kLevel) = new_level;
+    if (F<float>(c, 0x1F0) > 0.f)
+        F<float>(c, 0x1F0) = 0.f;
+    g_shrinks_applied++;
+    return true;
+}
 EatFood_t o_EatFood;
 void SK_CDECL h_EatFood(uint32_t eater, uint32_t food, void* ref, float dt)
 {
@@ -714,7 +781,29 @@ void SK_CDECL h_EatFood(uint32_t eater, uint32_t food, void* ref, float dt)
         g_n.ko_eats_blocked++;
         return;
     }
+    // BUG-1514: our bite on a plant mirror (a host's plant)
+    uint32_t hidx = 0;
+    int level = 0;
+    if (g_fix_plant_shrink && is_guest() && in_cell() && eater == avatar_idx())
+        if (auto it = g_host_of.find(food); it != g_host_of.end())
+            if (uint8_t* c = modes::cell_at(food)) {
+                hidx = it->second;
+                level = F<int>(c, kLevel);
+            }
     o_EatFood(eater, food, ref, dt);
+    if (!hidx)
+        return;
+    uint8_t* c = modes::cell_at(food);
+    auto it = g_host_of.find(food);
+    if (!c || it == g_host_of.end() || it->second != hidx || F<int>(c, kLevel) != level - 1)
+        return; // eaten whole (DestroyCell: ACT_GONE went), or not shrunk
+    if (!host_reads_shrink()) {
+        g_shrinks_old_host++; // (an older host would take the act for a kill: its plant stays whole, as before)
+        return;
+    }
+    send_act(hidx, ACT_SHRINK, (uint8_t)(level - 1), g_pend_food, g_pend_plant);
+    g_pend_food = 0;
+    g_shrinks_sent++;
 }
 
 // BUG-0746: Simulator::Cell::ExecuteInteraction 0xE7E7F0, cdecl void(interaction*, float dt): +0 eater idx (A),
@@ -1111,6 +1200,26 @@ void SK_CDECL h_Pair(uint8_t* a, uint8_t* b, float dt)
     o_Pair(a, b, dt);
     if (mine)
         own_probe("collision", a == av ? b : a);
+}
+
+// ---- the Cell audit fixes of 0.7.17 (BUG-1507..1514): their switches and counters, one line of `coop.pool` ----
+unsigned g_partner_scaled;
+extern unsigned g_breaking_refused, g_shadow_counted, g_elsewhere_spend_held, g_elsewhere_spend_refused, g_owed_dropped,
+    g_mate_elsewhere_refused, g_mate_elsewhere_held;
+extern bool g_fix_breaking_dying, g_fix_shadow_empty;
+std::string audit_status()
+{
+    char b[520];
+    snprintf(b, sizeof b,
+             "cell_audit: elsewhere_spend=%d held=%u refused=%u owed_dropped=%u mate_held=%u mate_refused=%u "
+             "ko_partner_clouds=%d partner_clouds_down=%u breaking=%d breaking_refused=%u shadow_empty=%d shadow_counted=%u "
+             "partner_scaled=%u own_cloud=%d own_cloud_refused=%u plant_shrink=%d shrinks_sent=%u shrinks_old_host=%u "
+             "shrinks_applied=%u shrinks_refused=%u\n",
+             (int)g_fix_elsewhere_spend, g_elsewhere_spend_held, g_elsewhere_spend_refused, g_owed_dropped, g_mate_elsewhere_held,
+             g_mate_elsewhere_refused, (int)g_fix_ko_partner_clouds, g_partner_clouds_while_down, (int)g_fix_breaking_dying,
+             g_breaking_refused, (int)g_fix_shadow_empty, g_shadow_counted, g_partner_scaled, (int)g_fix_own_cloud,
+             g_own_cloud_refused, (int)g_fix_plant_shrink, g_shrinks_sent, g_shrinks_old_host, g_shrinks_applied, g_shrinks_refused);
+    return b;
 }
 
 } // namespace cellsync

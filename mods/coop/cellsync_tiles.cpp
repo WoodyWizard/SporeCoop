@@ -107,6 +107,16 @@ int g_test_view_edge; // tests (BUG-0999): the host's view box at the 1e7 edge f
 static bool g_fix_flush_handover = true;
 COOP_FIX("cell.flush_handover", "BUG-1000", g_fix_flush_handover, "cell: a flush of the partner tile lists hands deleted tiles only to the host's list, and the between-frames tile check runs after the rebuild cleanup");
 static bool g_flushing;                                   // tiles_delete runs inside the flush of every partner list
+// BUG-1509 (CELL-7 of the external audit of 0.7.15.5, an incomplete fix of BUG-1000): only pop_tiles' flush set
+// g_flushing. The world scale step's flush (h_WorldScale, a level change) and partner_tiles_reset(true) deleted every
+// partner list without it, so hand_over populated a shadow in the NEXT partner list with a direct PopTile (past
+// h_PopTile's checks), and the same loop deleted it at once: BUG-1000's cascade (cells made for nothing, 3-4 players).
+// On: every flush of all partner lists marks them flushing. Off (`coop.fix cell.flush_all_lists off`): 0.7.16.1.
+static bool g_fix_flush_all_lists = true;
+COOP_FIX("cell.flush_all_lists", "BUG-1509", g_fix_flush_all_lists,
+         "cell: the level change's flush of the partner tile lists hands no tile to a list it deletes next (cells made for nothing)");
+static void flush_lists_begin();
+static void flush_lists_end();
 static std::unordered_set<TileList*> g_flush_lists;       // the partner lists that flush (this pass)
 
 PopTiles_t o_PopTiles;
@@ -143,16 +153,33 @@ static TileList* host_tiles() { return G() ? (TileList*)(G() + 0x4128) : nullptr
 
 // every list but `except` that holds the tile already
 // (a tile of ours left empty for the cell budget, BUG-0295, does not count: it has no cells)
+// BUG-1510 (CELL-8 of the external audit of 0.7.15.5): a plain shadow (a tile another list held populated, tiles_shared /
+// tiles_bg) has no cells either, but only starved ones were left out: hand_over over the budget marks one shadow of a
+// key starved and leaves the others, then feed_starved found another list's plain shadow, took the tile for populated
+// and dropped the mark: nobody held it populated (no food there until the lists changed; 3-4 players, >= 1100 cells).
+// On: no shadow counts as populated, and the starved mark names the partner whose list holds it (feed_starved's
+// screen check between the caps found no view for player 0xFF). Off (`coop.fix cell.shadow_empty off`): 0.7.16.1.
+bool g_fix_shadow_empty = true;
+COOP_FIX("cell.shadow_empty", "BUG-1510", g_fix_shadow_empty,
+         "cell: a shared tile whose cells went is populated again by another player's list (it could stay empty, no food)");
+unsigned g_shadow_counted; // tests (BUG-1510): a shadow taken for a populated tile (switch off), or left out (on)
 static bool tile_elsewhere(int32_t key, TileList* except)
 {
     auto has = [&](TileList* l) {
         if (!l || l == except || !cell_logic::tile_list_has(l->begin, l->end, key))
             return false;
-        if (g_starved.empty())
+        if (g_starved.empty() && (!g_fix_shadow_empty || g_shadow_tiles.empty()))
             return true;
-        for (int32_t* e = l->begin; e < l->end; e += 2)
-            if (e[0] == key && !g_starved.count((uint32_t)e[1]))
-                return true;
+        for (int32_t* e = l->begin; e < l->end; e += 2) {
+            if (e[0] != key || g_starved.count((uint32_t)e[1]))
+                continue;
+            if (g_shadow_tiles.count((uint32_t)e[1])) {
+                g_shadow_counted++;
+                if (g_fix_shadow_empty)
+                    continue;
+            }
+            return true;
+        }
         return false;
     };
     if (has(host_tiles()))
@@ -340,16 +367,16 @@ static void hand_over(int32_t key, TileList* from)
         return;
     uint8_t* data = F<uint8_t*>(g, 0x38);
     uint32_t size = F<uint32_t>(g, 0x38 + 0x14);
-    auto try_list = [&](TileList* l) {
+    auto try_list = [&](TileList* l, int player) {
         if (!l || l == from)
             return false;
         for (int32_t* e = l->begin; e < l->end; e += 2)
             if (e[0] == key && g_shadow_tiles.count((uint32_t)e[1]) && tile_alive((uint32_t)e[1])) {
                 uint32_t* t = (uint32_t*)(data + (size_t)((uint32_t)e[1] & 0xFFFF) * size);
                 if (l != host_tiles() && over_budget()) { // BUG-0295: a partner's area waits for room
-                    if (g_flushing && g_flush_lists.count(l))
+                    if (g_flush_lists.count(l)) // (BUG-1509: also a flush without g_flushing, counted for its twin)
                         g_n.handed_flushed++; // BUG-1000: waits in a list this pass deletes
-                    g_starved.emplace((uint32_t)e[1], (uint8_t)0xFF);
+                    g_starved.emplace((uint32_t)e[1], (uint8_t)(g_fix_shadow_empty ? player : 0xFF)); // BUG-1510
                     return true;
                 }
                 g_shadow_tiles.erase((uint32_t)e[1]);
@@ -365,13 +392,13 @@ static void hand_over(int32_t key, TileList* from)
             }
         return false;
     };
-    if (try_list(host_tiles()))
+    if (try_list(host_tiles(), 0))
         return;
     if (g_flushing && g_fix_flush_handover) // BUG-1000: every partner list goes in this pass
         return;
     for (auto& [id, pt] : g_ptiles)
-        if (try_list(pt.list)) {
-            if (g_flushing && g_flush_lists.count(pt.list))
+        if (try_list(pt.list, id)) {
+            if (g_flush_lists.count(pt.list)) // (BUG-1509: g_flush_lists is empty outside a flush)
                 g_n.handed_flushed++;
             return;
         }
@@ -549,13 +576,16 @@ void SK_CDECL h_WorldScale(float dt)
     own_probe("step start");
     stack_tick();
     auto flush = [] {
-        if (!g_ptiles.empty() && in_cell() && scale_moving())
+        if (!g_ptiles.empty() && in_cell() && scale_moving()) {
+            flush_lists_begin(); // BUG-1509
             for (auto& [id, pt] : g_ptiles)
                 if (pt.list && pt.list->begin != pt.list->end) {
                     g_n.tiles_flush++;
                     g_n.tiles_scale_flush++;
                     tiles_delete(pt.list, [](const int32_t*) { return false; });
                 }
+            flush_lists_end();
+        }
     };
     if (!g_fix_scale_food_flush)
         flush();
@@ -566,13 +596,33 @@ void SK_CDECL h_WorldScale(float dt)
     o_WorldScale(dt);
 }
 
+// BUG-1509: every partner list is deleted by the loop that follows (hand_over gives a tile to the host's list only)
+// (the lists are noted with the switch off too: hand_over counts a hand-over into one of them, the twin's measure)
+static void flush_lists_begin()
+{
+    g_flush_lists.clear();
+    for (auto& [id, pt] : g_ptiles)
+        if (pt.list && pt.list->begin != pt.list->end)
+            g_flush_lists.insert(pt.list);
+    g_flushing = g_fix_flush_all_lists;
+}
+static void flush_lists_end()
+{
+    g_flushing = false;
+    g_flush_lists.clear();
+}
+
 void partner_tiles_reset(bool drain)
 {
+    if (drain && in_cell())
+        flush_lists_begin(); // BUG-1509
     for (auto& [id, pt] : g_ptiles) {
         if (drain && in_cell())
             tiles_drain(0, pt);
         tiles_free(pt);
     }
+    if (drain && in_cell())
+        flush_lists_end();
     g_ptiles.clear();
     g_shadow_tiles.clear();
     g_starved.clear();
