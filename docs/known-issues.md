@@ -271,7 +271,10 @@ anchor so other docs can link to it:
 * Known: not a 0.7.15 regression (v0.7.14.1 the same rate on the same lanes); the proxy is not dropped (BUG-0611's
   case), it drifts. Runs after a warm reset pass.
 * Not checked: which side moves (the host's NPC jumping on after the thaw or the guest's proxy lagging).
-* Next steps: the next release.
+* Known (2026-11-23, fix/w76-motion): the guest's proxy lagged: the same cause as BUG-1376, fixed by `drive.lead_gap`
+  in 0.7.16 (5 passing runs since); the twin npc_frozen_thaw_lead_gap_off waits for the lab. A read of an NPC at the
+  50 m edge of the test's census is BUG-1534 (test only).
+* Next steps: the night run of the twin.
 * Ticket: BUG-1234
 
 ## Tribe: at 30 fps over a real network a guest sees a tribe member jump once or walk unevenly (2026-11-18, test tribe_walk_player)
