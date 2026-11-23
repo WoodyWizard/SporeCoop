@@ -71,6 +71,8 @@ static bool g_short_list = true;
 COOP_FIX("galaxy.short_planet_list", "BUG-9339", g_short_list, "galaxy: the planet list on the screen is one short line (the whole list in the log)");
 static bool g_list_asked; // coop.galaxy list asked: its answer is the whole list
 static uint32_t g_planets_ver;
+static std::vector<PlanetRow> g_list_pages; // S10: the pages of the list being received
+static unsigned g_list_paged;
 static double g_next_list;
 
 // Decision 5Q A: the planet's world on the galaxy server. A host with a stored world downloads it (FETCH), loads it
@@ -324,6 +326,24 @@ static void on_control(net::Reader& r)
         }
         if (!r.ok())
             return;
+        if (r.left() >= 4) { // S10: one page of the list; the next is asked until it is whole (an older server: one)
+            const uint16_t total = r.u16(), first = r.u16();
+            if (first == 0)
+                g_list_pages.clear();
+            if (first != g_list_pages.size())
+                return; // (a page of an older request)
+            g_list_pages.insert(g_list_pages.end(), v.begin(), v.end());
+            if (g_list_pages.size() < total && !v.empty()) {
+                net::Writer w = control(LIST);
+                w.u16((uint16_t)g_list_pages.size());
+                send_control(w);
+                return;
+            }
+            if (first)
+                g_list_paged++;
+            v = std::move(g_list_pages);
+            g_list_pages.clear();
+        }
         bool same = v.size() == g_planets.size();
         for (size_t i = 0; same && i < v.size(); i++)
             same = v[i].name == g_planets[i].name && v[i].players == g_planets[i].players && v[i].host == g_planets[i].host &&
@@ -1316,10 +1336,14 @@ bool whisper(uint64_t to, const std::string& text)
     send_control(w);
     return true;
 }
-void ask_players()
+void ask_players(uint16_t from)
 {
-    if (welcomed())
-        send_control(control(WHO));
+    if (!welcomed())
+        return;
+    net::Writer w = control(WHO);
+    if (from)
+        w.u16(from); // S10: the next page
+    send_control(w);
 }
 void upload_soon(double secs)
 {
@@ -1410,11 +1434,11 @@ std::string status()
 {
     char b[1200];
     snprintf(b, sizeof b,
-             "galaxy: %s server=%s galaxy='%s' slot=%u planet='%s' role=%s host_slot=%u relay=%d planets=%zu "
-             "relay rx=%llu (%llu KB) tx=%llu (%llu KB) queue=%zu dropped=%llu",
+             "galaxy: %s server=%s galaxy='%s' slot=%u planet='%s' role=%s host_slot=%u relay=%d planets=%zu (lists of "
+             "several pages %u) relay rx=%llu (%llu KB) tx=%llu (%llu KB) queue=%zu dropped=%llu",
              g_welcomed ? "connected" : g_sock.is_open() ? "connecting" : "off", g_server.masked().c_str(), g_galaxy.c_str(),
              g_slot, g_planet.c_str(), g_role == kHostRole ? "host" : g_role == kGuestRole ? "guest" : "-", g_host_slot,
-             (int)g_relay_on, g_planets.size(), (unsigned long long)g_rx, (unsigned long long)(g_rx_bytes >> 10),
+             (int)g_relay_on, g_planets.size(), g_list_paged, (unsigned long long)g_rx, (unsigned long long)(g_rx_bytes >> 10),
              (unsigned long long)g_tx, (unsigned long long)(g_tx_bytes >> 10), g_queue.size(),
              (unsigned long long)g_queue_dropped);
     std::string s = b;

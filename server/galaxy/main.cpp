@@ -624,7 +624,8 @@ static bool read_world(const Stored& st, std::vector<uint8_t>& out)
 static void party_player_in(Client& c); // 6K (below)
 static void party_player_out(const Client& c);
 static void on_party(Client& c, Reader& r);
-static void send_players(const Client& c);
+static void send_players(const Client& c, uint16_t from = 0);
+static size_t g_list_page = 40; // S10: the most planets / players in one page (`--list-page`, tests: small pages)
 static Client* by_identity(uint64_t id);
 static void party_note(const Client& to, uint8_t kind, parties::Result r, const std::string& other);
 
@@ -854,7 +855,7 @@ static void on_control(const Endpoint& from, Reader& r)
         return;
     }
     if (type == WHO) {
-        send_players(*c);
+        send_players(*c, r.left() >= 2 ? r.u16() : 0); // S10: a page (an older player asks for the first only)
         return;
     }
     if (type == WHISPER) { // 6L A: passed on to the player of that identity
@@ -903,10 +904,19 @@ static void on_control(const Endpoint& from, Reader& r)
         for (auto& [name, st] : g_stored)
             if (!g_planets.count(name))
                 names.push_back(name);
+        // S10: a page of at most 40 planets (and one datagram); the player asks for the next from the trailer
+        const uint16_t from = r.left() >= 2 ? r.u16() : 0;
+        const size_t first = from < names.size() ? from : names.size();
+        size_t n = 0, bytes = 1 + 4;
+        for (; first + n < names.size() && n < g_list_page; n++) {
+            const size_t b = 1 + names[first + n].size() + 2 + 2 + 4 + 1 + 12;
+            if (bytes + b > 1150)
+                break;
+            bytes += b;
+        }
         Writer w = control(PLANETS);
-        const size_t n = names.size() < 40 ? names.size() : 40;
         w.u8((uint8_t)n);
-        for (size_t i = 0; i < n; i++) {
+        for (size_t i = first; i < first + n; i++) {
             auto it = g_planets.find(names[i]);
             auto st = g_stored.find(names[i]);
             w.str8(names[i]);
@@ -917,6 +927,8 @@ static void on_control(const Endpoint& from, Reader& r)
             for (int k = 0; k < 3; k++)
                 w.u32(st == g_stored.end() ? 0 : st->second.species[k]);
         }
+        w.u16((uint16_t)names.size()); // S10: older players stop reading before these
+        w.u16((uint16_t)first);
         send(*c, w);
     } else if (type == MOVEON) {
         move_on(*c);
@@ -1474,21 +1486,23 @@ static void on_party(Client& c, Reader& r)
     party_note(c, kind, res, oname);
 }
 
-static void send_players(const Client& c)
+static void send_players(const Client& c, uint16_t from)
 {
     Writer w = control(PLAYERS);
     std::vector<const Client*> v;
-    for (auto& [s, o] : g_clients)
+    for (auto& [s, o] : g_clients) // (by slot: the pages of one list follow the same order)
         v.push_back(&o);
-    size_t n = 0, bytes = 3;
-    for (; n < v.size(); n++) { // (one datagram: as many as fit)
-        const size_t b = 2 + 8 + 1 + v[n]->name.size() + 1 + v[n]->planet.size() + 2;
+    const size_t first = from < v.size() ? from : v.size();
+    size_t n = 0, bytes = 3 + 4;
+    for (; first + n < v.size() && n < g_list_page; n++) { // (one datagram: as many as fit; S10: the rest next)
+        const Client* o = v[first + n];
+        const size_t b = 2 + 8 + 1 + o->name.size() + 1 + o->planet.size() + 2;
         if (bytes + b > 1150)
             break;
         bytes += b;
     }
     w.u16((uint16_t)n);
-    for (size_t i = 0; i < n; i++) {
+    for (size_t i = first; i < first + n; i++) {
         const auto* q = g_parties.find(v[i]->slot);
         w.u16(v[i]->slot);
         w.u64(v[i]->identity);
@@ -1496,6 +1510,8 @@ static void send_players(const Client& c)
         w.str8(v[i]->planet);
         w.u16(q ? q->id : 0);
     }
+    w.u16((uint16_t)v.size()); // S10: older players stop reading before these
+    w.u16((uint16_t)first);
     send(c, w);
 }
 
@@ -1592,6 +1608,8 @@ int main(int argc, char** argv)
             g_max_worlds = (size_t)std::max(1, atoi(argv[++i]));
         else if (!strcmp(argv[i], "--no-bans")) // 8D A: no creation ban list
             g_bans_on = false;
+        else if (!strcmp(argv[i], "--list-page") && i + 1 < argc) // S10 (tests): small pages of the lists
+            g_list_page = (size_t)std::min(40, std::max(1, atoi(argv[++i])));
         else if (!strcmp(argv[i], "--no-visitors")) // BUG-9287: no visitors across eras
             g_visitors = false;
         else if (!strcmp(argv[i], "--visit-radius") && i + 1 < argc) // BUG-9288: 0 = every player of the other worlds
@@ -1606,7 +1624,7 @@ int main(int argc, char** argv)
             printf("usage: galaxy_server [--local] [--worlds <dir>] [--warm-handover] [--planet-players <n>]\n"
                    "                     [--max-players <n>] [--max-per-address <n>] [--max-worlds <n>] [--max-world-mb <n>]\n"
                    "                     [--refresh-minutes <n>] [--rotate-hours <n>] [--no-visitors] [--visit-radius <m>]\n"
-                   "                     [--no-bans] [port] [galaxy name]\n");
+                   "                     [--no-bans] [--list-page <n>] [port] [galaxy name]\n");
             return 0;
         }
         else if (!strcmp(argv[i], "--planet-players") && i + 1 < argc) { // 6E B: the players a planet takes

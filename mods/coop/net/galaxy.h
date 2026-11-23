@@ -129,9 +129,10 @@ enum Type : uint8_t {
                   //   u32 the nest refresh: seconds after which an extinct species comes back, 0 off (step 4 part 4,
                   //   BUG-9285; older servers send none: off), u32 the nest rotation: seconds after which a player's nest
                   //   whose species has had no player on the planet gets a new species, 0 off (7F, BUG-9286)
-    LIST = 3,     // player -> server
+    LIST = 3,     // player -> server; S10: + u16 the first planet of the page (older players send none: 0)
     PLANETS = 4,  // server -> player: u8 n, n x {str8 planet, u16 players, u16 host slot (0 none), u32 stored world bytes,
-                  //   u8 tech level, u32 x3 its creature's species key} (the last two: the galaxy menu, 5X B)
+                  //   u8 tech level, u32 x3 its creature's species key} (the last two: the galaxy menu, 5X B);
+                  //   S10: + u16 the planets in all, u16 this page's first (an older server: none, one page)
     ENTER = 5,    // player -> server: str8 planet (made when it does not exist yet)
     ROLE = 6,     // server -> player: str8 planet, u8 role (kHostRole / kGuestRole), u16 the host's slot,
                   //   u32 the planet's stored world (bytes, 0 none: a host then FETCHes it, loads it and hosts it),
@@ -168,8 +169,9 @@ enum Type : uint8_t {
                     //   identity, str8 name, str8 planet, u32 stage} (the longest standing first), u16 who invites it
                     //   (0 none), u64 its identity, str8 its name
     PARTYNOTE = 21, // server -> player: u8 the request's kind, u8 parties::Result, str8 the other player's name
-    WHO = 22,       // player -> server: the players online
-    PLAYERS = 23,   // server -> player: u16 n, n x {u16 slot, u64 identity, str8 name, str8 planet, u16 party id}
+    WHO = 22,       // player -> server: the players online; S10: + u16 the first player of the page (older: 0)
+    PLAYERS = 23,   // server -> player: u16 n, n x {u16 slot, u64 identity, str8 name, str8 planet, u16 party id};
+                    //   S10: + u16 the players in all, u16 this page's first (an older server: none, one page)
     // 6L A (the Social Menu): a whisper to any player of the galaxy. player -> server: u64 the receiver's identity,
     // str16 text; server -> receiver: u64 the sender's identity, str8 its name, str16 text
     WHISPER = 24,

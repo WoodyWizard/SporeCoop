@@ -31,6 +31,7 @@ struct Ctx {
     std::function<uint16_t()> galaxy_slot;             // this game's slot there
     std::function<bool(uint8_t kind, uint64_t other, uint8_t flag, uint32_t stage)> galaxy_send;
     std::function<void()> galaxy_who;                  // ask for the players online
+    std::function<void(uint16_t)> galaxy_who_from;     // S10: the next page of that list
     std::function<uint64_t(uint8_t id)> identity_of;   // a session player's identity (0 unknown; the own game's too)
 };
 

@@ -76,7 +76,7 @@ uint32_t refresh_seconds();                  // BUG-9285: an extinct species com
 uint32_t rotate_seconds();                   // BUG-9286: a player's nest left this long gets a new species (0 off)
 uint16_t my_slot();
 bool party_send(uint8_t kind, uint64_t other_identity, uint8_t flag, uint32_t stage);
-void ask_players();                          // WHO: the server answers PLAYERS (to C.party_in)
+void ask_players(uint16_t from = 0);         // WHO: the server answers PLAYERS (to C.party_in); S10: from a page
 bool whisper(uint64_t to_identity, const std::string& text); // 6L A: through the galaxy server (WHISPER)
 // BUG-9287 (step 4 part 5): other modules' messages with the galaxy server (net/galaxy.h VISIT, CRTPUT, ...):
 // send_message sends a control message of that type with this body (false: not connected); on_message handles the

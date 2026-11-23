@@ -495,8 +495,26 @@ void on_galaxy(uint8_t type, net::Reader& r)
             o.party = r.u16();
             v.push_back(std::move(o));
         }
-        if (r.ok())
-            g_online = std::move(v);
+        if (!r.ok())
+            return;
+        if (r.left() >= 4) { // S10: one page; the next is asked until the list is whole (an older server: one page)
+            static std::vector<Online> pages;
+            const uint16_t total = r.u16(), first = r.u16();
+            if (first == 0)
+                pages.clear();
+            if (first != pages.size())
+                return; // (a page of an older request)
+            for (auto& o : v)
+                pages.push_back(std::move(o));
+            if (pages.size() < total && n) {
+                if (C.galaxy_who_from)
+                    C.galaxy_who_from((uint16_t)pages.size());
+                return;
+            }
+            v = std::move(pages);
+            pages.clear();
+        }
+        g_online = std::move(v);
         if (C.changed)
             C.changed();
     }

@@ -13153,6 +13153,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
             return galaxy::party_send(kind, other, flag, stage);
         };
         pc.galaxy_who = [] { galaxy::ask_players(); };
+        pc.galaxy_who_from = [](uint16_t from) { galaxy::ask_players(from); };
         pc.identity_of = [](uint8_t id) -> uint64_t {
             return id == g_sess.my_id() || !g_sess.connected() ? identity::own() : identity::known(id);
         };
