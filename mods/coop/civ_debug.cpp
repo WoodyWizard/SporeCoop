@@ -103,8 +103,9 @@ std::string debug(const std::vector<std::string>& a)
                  (unsigned)g_kept_cities.size(), (unsigned)kn, g_n.kept_saved, g_n.kept_restored, g_kept_key.c_str());
         char sp[200]; // BUG-0982
         snprintf(sp, sizeof sp, "specialty: fix=%d asked=%u shown=%u answered=%u applied=%u rejected=%u queued=%u open=%d "
-                 "unpaused=%u\n", (int)g_fix_specialty_buyer, g_n.spec_asked, g_n.spec_shown, g_n.spec_answered,
-                 g_n.spec_applied, g_n.spec_rejected, (unsigned)g_spec_queue.size(), g_spec_open, g_n.spec_unpaused);
+                 "unpaused=%u took_at=%p\n", (int)g_fix_specialty_buyer, g_n.spec_asked, g_n.spec_shown, g_n.spec_answered,
+                 g_n.spec_applied, g_n.spec_rejected, (unsigned)g_spec_queue.size(), g_spec_open, g_n.spec_unpaused,
+                 g_spec_took_at);
         char cl[240]; // E1 (BUG-1153)
         snprintf(cl, sizeof cl, "claims: fix=%d serial=%u cities=%u vehicles=%u matched=%d/%d from_disk=%u/%u held=%u back=%u\n",
                  (int)g_store_fix, g_claims_serial, (unsigned)g_city_claim.size(), (unsigned)g_veh_claim.size(),

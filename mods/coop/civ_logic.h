@@ -135,4 +135,34 @@ inline int citizen_line_owner(uint8_t owner, bool own_mode, int max_players)
         return -1;
     return owner;
 }
+
+// ---------------- audit 0.7.15.5, WP-V1 of 0.7.17 ----------------
+
+// BUG-1479 (audit CIV-10): the guest's answer to the host's specialty question reaches every city's listener with one
+// data pointer. The first listener takes it (Take) and closes the question; the same data at the next listeners is
+// dropped (Drop) whether the question is still open or not. Anything else is the game's (Pass). fix off (0.7.16.1):
+// the repeat was dropped only while the question was open, so the next listeners passed it to the game's listener,
+// which applied the stale capture type of the player civ's last captured city and resumed the box's pause again.
+enum class SpecAnswer { Take, Drop, Pass };
+inline SpecAnswer spec_answer(bool fix, bool open, bool same_data)
+{
+    if (same_data && (open || fix))
+        return SpecAnswer::Drop;
+    return open ? SpecAnswer::Take : SpecAnswer::Pass;
+}
+// BUG-1480 (audit CIV-11): a guest's CMD_SPACE_BUILD on a host outside Civ goes to the Space planner path (built now,
+// or kept until this game is on that planet) by the command; fix off (0.7.16.1): only while the host's game is in
+// Space, else into the Civ command hold, which runs only in Civ (the paid building never came). The command's first
+// byte 5 is also a Civ guest's superweapon request (u8 5, u32 type, 3 x f32: 17 bytes), which must stay in the Civ hold
+// while the host is in a Civ editor: outside Space the space build is told by its size (u8 5, u32 place, u32 noun,
+// 6 x f32: 33 bytes).
+constexpr size_t kSpaceBuildBytes = 1 + 4 + 4 + 6 * 4, kSuperRequestBytes = 1 + 4 + 3 * 4;
+inline bool space_build_routed(bool fix, bool in_space, size_t bytes)
+{
+    return in_space || (fix && bytes == kSpaceBuildBytes);
+}
+// BUG-1481 (audit CIV-15 a): a local vehicle a host mirror waits to bind until the host's design answer comes (BUG-0647)
+// is not one of this game's own extras: the sweep of a complete cycle spares it. fix off (0.7.16.1): removed, and a
+// new mirror made on a later cycle
+inline bool sweep_spares(bool fix, bool waits_design) { return fix && waits_design; }
 } // namespace civlogic
