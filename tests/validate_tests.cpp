@@ -34,6 +34,8 @@
 #include "realign_rule.h"
 #include "model_paint.h"
 #include "actor_scope.h"
+#include "history_logic.h"
+#include "wire/history.h"
 #include "../../sporekit/task_drop.h"
 
 using namespace net;
@@ -1120,6 +1122,151 @@ static void test_actor_scope()
     CHECK(actor::reset() && actor::current() == actor::kNone);
 }
 
+// WP-H1 of 0.7.17 (BUG-1470, BUG-1471): every player's own stage history (history_logic.h, wire/history.h)
+static void test_history()
+{
+    printf("own stage history: seed, credit, the host's cards decide the done stages, store and wire codecs\n");
+    using namespace history;
+    const uint32_t kCarn = 0xCFB01B93, kHerb = 0xA8EC6F99, kAggr = 0x17E5EF84, kSoc = 0xFD159D91, kTribeAggr = 0x0CAC124D,
+                   kTribeSoc = 0x60A78928, kCivMil = 0x0A35D0F5, kWarrior = 0xD9C806E4, kShaman = 0xCF6C2AB4;
+    CHECK(valid_card(kCell, kCarn) && !valid_card(kCreature, kCarn) && !valid_card(kCell, 0) && card_ok(kCell, 0));
+    CHECK(valid_card(kSpace, 0xA5656E84) && !valid_card(5, kCarn) && !valid_card(-1, kCarn));
+    CHECK(archetype_index(kWarrior) == 9 && archetype_index(0xF966D429) == 18 && archetype_index(kCarn) == -1);
+    // first sight: a copy of the host's (bad values dropped)
+    const uint32_t host0[kStages] = {kCarn, 0, 0, 0, 0x12345678};
+    Record r = seed(host0, 3.f, NAN);
+    CHECK(r.cards[kCell] == kCarn && r.cards[kSpace] == 0 && r.social == 3.f && r.combat == 0 && r.cell_own == 0);
+    // credit: a kill (combat), a social win; nonsense refused
+    CHECK(credit(r, false, 7.f) && r.combat == 7.f && credit(r, true, 2.f) && r.social == 5.f);
+    CHECK(!credit(r, false, NAN) && !credit(r, false, 0) && !credit(r, false, 2e6f) && r.combat == 7.f);
+    r.combat = kMaxProgress;
+    CHECK(!credit(r, false, 1.f) && r.combat == kMaxProgress);
+    r.combat = 7.f;
+    // the host's world in Creature, Cell done: nothing to decide
+    int asked = 0;
+    auto none = [&](int, const Record&) -> uint32_t { asked++; return 0; };
+    CHECK(update(r, host0, none) == 0 && asked == 0 && r.cards[kCell] == kCarn);
+    // the host's Creature end: the guest's own card by the rule (asked once), kept afterwards
+    uint32_t host1[kStages] = {kCarn, kSoc, 0, 0, 0};
+    auto rule = [&](int stage, const Record&) -> uint32_t { asked++; return stage == kCreature ? kAggr : 0; };
+    CHECK(update(r, host1, rule) == (1u << kCreature) && asked == 1 && r.cards[kCreature] == kAggr);
+    CHECK(update(r, host1, rule) == 0 && asked == 1);
+    // a candidate that is no card of the stage: the host's card
+    Record q = seed(host0, 0, 0);
+    auto bad = [&](int, const Record&) -> uint32_t { return kCarn; };
+    CHECK(update(q, host1, bad) == (1u << kCreature) && q.cards[kCreature] == kSoc);
+    // Tribe and Civ: always the host's (one tribe, one nation), even over a card of the record
+    uint32_t host2[kStages] = {kCarn, kSoc, kTribeAggr, kCivMil, 0};
+    r.cards[kTribe] = kTribeSoc;
+    CHECK(update(r, host2, none) == (1u << kTribe | 1u << kCiv) && r.cards[kTribe] == kTribeAggr &&
+          r.cards[kCiv] == kCivMil && r.cards[kCreature] == kAggr);
+    // Space: decided from the record's four cards (already updated in the same pass)
+    uint32_t host3[kStages] = {kCarn, kSoc, kTribeAggr, kCivMil, kShaman};
+    Record s = seed(host1, 0, 0);
+    s.cards[kCreature] = 0;
+    uint32_t seen_creature = 0;
+    auto space = [&](int stage, const Record& x) -> uint32_t {
+        if (stage == kCreature)
+            return kAggr;
+        if (stage == kSpace) {
+            seen_creature = x.cards[kCreature];
+            return kWarrior;
+        }
+        return 0;
+    };
+    CHECK(update(s, host3, space) == (1u << kCreature | 1u << kTribe | 1u << kCiv | 1u << kSpace) &&
+          seen_creature == kAggr && s.cards[kSpace] == kWarrior);
+    // a reload of an earlier save (the host has no Space, no Creature card): nobody has them
+    uint32_t host4[kStages] = {kCarn, 0, 0, 0, 0};
+    CHECK(update(s, host4, space) == (1u << kCreature | 1u << kTribe | 1u << kCiv | 1u << kSpace) &&
+          s.cards[kCreature] == 0 && s.cards[kSpace] == 0 && s.cards[kCell] == kCarn);
+    // a game started after Cell has no cards at all (#218's note): the guest's history is empty too
+    uint32_t empty[kStages] = {};
+    Record e = r;
+    update(e, empty, none);
+    for (uint32_t c : e.cards)
+        CHECK(c == 0);
+    // the Cell card: the guest's own report, else the host's
+    Record c1 = seed(empty, 0, 0);
+    c1.cell_own = kHerb;
+    auto cell = [&](int stage, const Record& x) -> uint32_t { return stage == kCell ? x.cell_own : 0; };
+    CHECK(update(c1, host0, cell) == 1u && c1.cards[kCell] == kHerb);
+    Record c2 = seed(empty, 0, 0);
+    CHECK(update(c2, host0, cell) == 1u && c2.cards[kCell] == kCarn);
+    // guest: what to write, the archetype gate
+    uint32_t mine[kStages] = {kCarn, kSoc, 0, 0, 0};
+    CHECK(card_diff(mine, r) == (1u << kCreature | 1u << kTribe | 1u << kCiv));
+    CHECK(!progress_differs(r.social + 0.005f, r.combat, r) && progress_differs(r.social, r.combat + 1, r) &&
+          progress_differs(NAN, r.combat, r));
+    CHECK(archetype_due(kWarrior, kWarrior, 12, 0) && !archetype_due(kWarrior, kShaman, 12, 0) &&
+          !archetype_due(kWarrior, kWarrior, 9, 0) && !archetype_due(kWarrior, kWarrior, 12, kWarrior) &&
+          archetype_due(kWarrior, kWarrior, 12, kShaman) && !archetype_due(0, 0, 12, 0));
+    // who plays it: the switch and creature.mode own; a peer of session 1.3
+    CHECK(active(true, false) && !active(false, false) && !active(true, true));
+    CHECK(peer_reads(true, true, 1, 3, 1) && peer_reads(true, true, 1, 4, 1) && !peer_reads(true, true, 1, 2, 1) &&
+          !peer_reads(false, true, 1, 3, 1) && !peer_reads(true, false, 1, 3, 1) && !peer_reads(true, true, 2, 3, 1));
+    CHECK(net::family_info((uint8_t)net::Family::session)->minor >= kSessionMinor);
+    // the store record v1: round trip, a cut or damaged one is none
+    r.cell_own = kHerb;
+    auto d = encode(r);
+    Record back;
+    CHECK(d.size() == 32 && decode(d, back) && back == r);
+    auto cut = d;
+    cut.pop_back();
+    CHECK(!decode(cut, back));
+    auto bad_card = d;
+    bad_card[0] ^= 1;
+    CHECK(!decode(bad_card, back));
+    // the book: the store's records replace ours, ours it lacks stay in the same world only, another world starts empty
+    pstore::Store st;
+    st.reset("game1/a.spo");
+    st.put("s:0000000000000001", "Bob", kStoreFeature, kStoreVersion, encode(r), 10);
+    st.put("s:0000000000000002", "Eve", kStoreFeature, 9, encode(r), 10); // a version we do not know
+    Book b;
+    b.recs["s:0000000000000003"] = q;
+    CHECK(b.load(st, "game1/a.spo") == 1 && b.recs.size() == 1 && b.recs.count("s:0000000000000001"));
+    b.recs["s:0000000000000003"] = q;
+    b.recs["s:0000000000000001"] = c1;
+    CHECK(b.load(st, "game1/a.spo") == 1 && b.recs.size() == 2 && b.recs["s:0000000000000001"] == r &&
+          b.recs["s:0000000000000003"] == q);
+    pstore::Store other;
+    other.reset("game2/b.spo");
+    CHECK(b.load(other, "game2/b.spo") == 0 && b.recs.empty());
+    b.recs["s:0000000000000001"] = r;
+    CHECK(b.adopt("s:0000000000000001", "s:0000000000000004") && b.recs.count("s:0000000000000004") &&
+          !b.recs.count("s:0000000000000001") && !b.adopt("s:0000000000000009", "s:0000000000000004"));
+    // the wire: K_RECORD and K_CELL round trip, a cut or not finite record refused
+    wire::history::Record m;
+    m.flags = wire::history::kFlagOwn;
+    for (int i = 0; i < kStages; i++)
+        m.cards[i] = r.cards[i];
+    m.social = 5;
+    m.combat = 7;
+    net::Writer w;
+    m.write(w);
+    CHECK(w.size() == 29);
+    {
+        net::Reader rd(w.data.data(), w.size());
+        wire::history::Record m2;
+        CHECK(m2.read(rd) && m2.flags == 1 && m2.cards[kCreature] == kAggr && m2.social == 5 && m2.combat == 7);
+        net::Reader cutr(w.data.data(), w.size() - 1);
+        CHECK(!m2.read(cutr));
+    }
+    m.social = INFINITY;
+    net::Writer w2;
+    m.write(w2);
+    {
+        net::Reader rd(w2.data.data(), w2.size());
+        wire::history::Record m2;
+        CHECK(!m2.read(rd));
+    }
+    net::Writer w3;
+    wire::history::Cell{kHerb}.write(w3);
+    net::Reader rd3(w3.data.data(), w3.size());
+    wire::history::Cell c3;
+    CHECK(w3.size() == 4 && c3.read(rd3) && c3.card == kHerb);
+}
+
 static void test_manifest()
 {
     printf("message manifest: every type once, the 0.7.14 tables, the direction gate (BUG-1136)\n");
@@ -1130,7 +1277,8 @@ static void test_manifest()
         known += msg_info((uint8_t)t).known;
     // types added after 0.7.14 (a 0.7.14 peer ignores them, B6): MSG_HOST_BUSY 70 (BUG-1142), MSG_TRIBE_ANIM 71 (C7,
     // BUG-1160), MSG_CELL_MATE 72 (BUG-1246), MSG_SPECIES_LINE 73 (WP-0 of 0.7.16, BUG-1270)
-    const std::set<int> added_types = {70, 71, 72, 73};
+    // MSG_PLAYER_HISTORY 75 (WP-H1 of 0.7.17, BUG-1470)
+    const std::set<int> added_types = {70, 71, 72, 73, 75};
     CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0] + added_types.size()));
     CHECK(MSG_HOST_BUSY == 70 && msg_info(70).known && msg_dir(70) == MsgDir::Host &&
           host_world::msg_class(70) == host_world::MsgClass::Session && dispatch_route(70, false) == Route::HostBusy &&
@@ -1145,6 +1293,10 @@ static void test_manifest()
           msg_info(73).family == Family::creations && msg_dir(73) == MsgDir::Any &&
           host_world::msg_class(73) == host_world::MsgClass::Session && dispatch_route(73, true) == Route::SpeciesLine &&
           dispatch_route(73, false) == Route::SpeciesLine);
+    CHECK(MSG_PLAYER_HISTORY == 75 && std::string(msg_info(75).name) == "PLAYER_HISTORY" &&
+          msg_info(75).family == Family::session && msg_dir(75) == MsgDir::Any &&
+          host_world::msg_class(75) == host_world::MsgClass::Session && dispatch_route(75, true) == Route::History &&
+          dispatch_route(75, false) == Route::History);
     for (int t : added_types)
         for (auto& g : golden0714::kTypes)
             CHECK(g.id != t);
@@ -1372,6 +1524,7 @@ int main(int argc, char** argv)
     test_space_origin();
     test_space_dir();
     test_actor_scope();
+    test_history();
     test_manifest();
     test_compat();
     test_effect_xf();
