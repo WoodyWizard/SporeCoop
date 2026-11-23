@@ -19,6 +19,8 @@ bool share_with(uint8_t peer, std::string& err, bool save_first = false, uint32_
 // planet had no file after 3 saves. Called from tick(); not for shares dropped with their player
 void set_share_failed(void (*f)(uint8_t peer, uint32_t tag, bool planet_missing));
 bool share_now(uint8_t peer, std::string& err);
+// host (BUG-1434): the guest takes a share of the played planet alone (its world family 1.1 or newer, coop.cpp)
+void set_planet_only_probe(bool (*probe)(uint8_t peer));
 // host (BUG-0754): seconds since a world share to this guest was asked for (the save, the transfer and the guest's load
 // follow), a large number when none
 double since_share(uint8_t peer);

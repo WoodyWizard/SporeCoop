@@ -67,6 +67,7 @@
 #include "cocoon.h"
 #include "social.h"
 #include "world.h"
+#include "share_logic.h"
 #include "find.h"
 #include "net/discovery.h"
 #include "net/fixes.h"
@@ -2463,6 +2464,18 @@ static void init_world_share()
     world::init(H, M, feed);
     world::set_playing_probe([] { return g_local != nullptr; });
     world::set_place_probe([] { return g_world; });
+    world::set_planet_only_probe([](uint8_t peer) { // BUG-1434: the guest's world family 1.1 or newer
+        bool has = false;
+        std::vector<net::FamilyRev> v;
+        if (!g_sess.peer_families(peer, has, v))
+            return false;
+        const net::FamilyRev* t = nullptr;
+        for (auto& x : v)
+            if (x.family == (uint8_t)net::Family::world)
+                t = &x;
+        const net::FamilyInfo* mine = net::family_info((uint8_t)net::Family::world);
+        return share_logic::peer_takes_one(has, t != nullptr, t ? t->rev : 0, t ? t->minor : 0, mine ? mine->rev : 0);
+    });
     world::set_save_blocker(save_blocker);
     world::set_share_failed(share_failed); // BUG-0231
     // species of the host's own creations: sent ahead of its world (creations.h)

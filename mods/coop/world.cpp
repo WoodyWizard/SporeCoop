@@ -19,6 +19,7 @@
 #include "modes.h"
 #include "mouse.h"
 #include "coop_ui.h"
+#include "share_logic.h"
 #include "slotfs.h"
 #include "world_path.h"
 #include "net/fixes.h"
@@ -843,6 +844,13 @@ COOP_FIX("world.staged_move", "BUG-0848", slotfs::g_staged_move_fix, "world: the
 COOP_FIX("world.share_complete", "BUG-0847", slotfs::g_collect_fix, "world: a share whose save files cannot all be read completely fails and is tried again (off: the unreadable files are left out)");
 COOP_FIX("world.copy_own_save", "BUG-1434", slotfs::g_own_fix, "world: a co-op copy of another player's world that you saved in alone or as the host is your own: a later share never replaces, deletes or tidies it");
 COOP_FIX("world.tmp_cleanup", "BUG-0254", slotfs::g_cleanup_fix, "world: leftovers of interrupted world writes are tidied (under a mutex)");
+// BUG-1434 (0.7.17 WP-W1): a share sends the played planet's file and the galaxy's own files, not the slot's other
+// planets (share_logic.h); only to a guest with world 1.1 or newer (g_planet_only_probe, coop.cpp). Off: the whole slot.
+static bool g_share_planet_fix = true;
+COOP_FIX("world.share_planet", "BUG-1434", g_share_planet_fix, "world: a share sends only the played planet (and the galaxy's files), not the host's other planets: a guest's copy holds no old games of the host");
+static bool (*g_planet_only_probe)(uint8_t peer);
+void set_planet_only_probe(bool (*probe)(uint8_t peer)) { g_planet_only_probe = probe; }
+static unsigned g_planet_shares, g_planets_left_out; // tests (BUG-1434): shares of one planet, other planets left out
 static unsigned g_share_saves;         // saves posted for shares (tests)
 static unsigned g_collect_failures;    // tests (BUG-0847): shares refused because a save file could not be read
 // BUG-0284: the game's own reset for the galaxy menu (0xB32C30) clears the player's record
@@ -927,6 +935,21 @@ bool share_now(uint8_t peer, std::string& err)
     if (o.files.empty()) {
         err = "save folder is empty";
         return false;
+    }
+    // BUG-1434: the played planet only (a menu share: cur_planet empty, the slot as it is)
+    if (g_share_planet_fix && !cur_planet.empty()) {
+        bool one = g_planet_only_probe && g_planet_only_probe(peer);
+        size_t n = one ? share_logic::keep_played(o.files, cur_planet) : 0;
+        if (one) {
+            g_planet_shares++;
+            g_planets_left_out += (unsigned)n;
+        }
+        if (n)
+            H->log(M, SK_INFO, "world: sharing %s alone: %u other planet(s) of the slot left out (BUG-1434)", cur_planet.c_str(),
+                   (unsigned)n);
+        else if (!one)
+            H->log(M, SK_INFO, "world: player %u has an older mod (world below 1.%u): the whole slot goes (BUG-1434)", peer,
+                   (unsigned)share_logic::kMinor);
     }
     uint32_t crc = 0, total = 0;
     for (auto& f : o.files) {
@@ -2302,6 +2325,9 @@ std::string status()
              slotfs::g_move_retries); // tests (BUG-0847, BUG-0848)
     s += b;
     snprintf(b, sizeof b, "stale menu player cleared %u\n", g_menu_player_cleared); // tests (BUG-0284)
+    s += b;
+    snprintf(b, sizeof b, "shares of the played planet alone %u, other planets left out %u (share_planet=%d)\n", g_planet_shares,
+             g_planets_left_out, (int)g_share_planet_fix); // tests (BUG-1434)
     s += b;
     if (g_sw.m.coop) // BUG-1434: the slot the save database points to is a co-op copy
         s += "slot " + narrow(g_sw.slot) + ": a copy of " + g_sw.m.host + "'s world, made for " + g_sw.m.planet +

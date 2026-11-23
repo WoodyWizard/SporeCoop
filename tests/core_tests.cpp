@@ -4,6 +4,7 @@
 //   C2 world_id.h          the world identity (owner decision 2: an editor visit is no world change)
 //      lifecycle.h         the ordered observers: order, needs_game, re-entrancy, a hook that throws
 //   C3 busy_model.h        the host's busy state, the message, the guest's view, the stage rows, the held commands
+//      share_logic.h       BUG-1434 (0.7.17 WP-W1): a share sends the played planet's file and the galaxy's files only
 // Each case names the stage code it stands for (the variants of the audit, docs/audit-0.7.15/stages.md STG-1..4).
 #include <cstdio>
 #include <cstring>
@@ -17,6 +18,7 @@
 #include "lifecycle.h"
 #include "mirror_registry.h"
 #include "net/snapshot_rx.h"
+#include "share_logic.h"
 #include "world_id.h"
 
 static int g_fail = 0;
@@ -763,6 +765,41 @@ static void arrival_wait()
     printf("  arrival_wait ok\n");
 }
 
+// ---------------------------------------------------------------- BUG-1434: the files of a share of one planet
+struct ShareFile {
+    std::string rel;
+};
+static void share_one_planet()
+{
+    using namespace share_logic;
+    CHECK(is_planet("Szaros.spo") && is_planet("old.SPO") && !is_planet("snapshot.spo") && !is_planet("Snapshot.SPO"));
+    CHECK(!is_planet("stars.db") && !is_planet("GGEUserData.dat") && !is_planet("sub/x.spo") && !is_planet(".spo"));
+    CHECK(left_out("Afrincsia.spo", "Szaros.spo") && !left_out("szaros.SPO", "Szaros.spo"));
+    CHECK(!left_out("snapshot.spo", "Szaros.spo") && !left_out("lastSave.pld", "Szaros.spo"));
+    // the report's slot: the played planet, two old ones and the galaxy's files
+    std::vector<ShareFile> f = {{"stars.db"}, {"Afrincsia.spo"}, {"planetRecords.pkp"}, {"Szaros.spo"},
+                                {"GGEUserData.dat"}, {"snapshot.spo"}, {"Old.spo"}, {"lastSave.pld"}};
+    CHECK(keep_played(f, "Szaros.spo") == 2);
+    CHECK(f.size() == 6);
+    bool played = false, old = false;
+    for (auto& x : f) {
+        played |= x.rel == "Szaros.spo";
+        old |= x.rel == "Afrincsia.spo" || x.rel == "Old.spo";
+    }
+    CHECK(played && !old);
+    // the played planet not in the list (a menu share, a planet not saved yet): the slot goes as it is
+    std::vector<ShareFile> g = {{"stars.db"}, {"A.spo"}, {"B.spo"}};
+    CHECK(keep_played(g, "C.spo") == 0 && g.size() == 3);
+    CHECK(keep_played(g, "SaveGame") == 0 && keep_played(g, "") == 0 && g.size() == 3);
+    // only to a guest with the world family 1.1 or newer and the same rev (an older guest: the whole slot)
+    CHECK(peer_takes_one(true, true, 1, 1, 1) && peer_takes_one(true, true, 1, 2, 1));
+    CHECK(!peer_takes_one(true, true, 1, 0, 1) && !peer_takes_one(false, false, 0, 0, 1) && !peer_takes_one(true, false, 0, 0, 1));
+    CHECK(!peer_takes_one(true, true, 2, 1, 1));
+    // the copy notice: a copy of one planet has no old planets
+    CHECK(other_planets({"Szaros.spo", "stars.db", "snapshot.spo"}, "Szaros") == 0);
+    CHECK(other_planets({"Szaros.spo", "Afrincsia.spo", "Old.spo"}, "Szaros") == 2);
+}
+
 int main()
 {
     arrival_wait();
@@ -783,6 +820,7 @@ int main()
     busy_host_view();
     busy_rows();
     busy_pump();
+    share_one_planet();
     if (g_fail) {
         printf("core_tests: %d FAILED\n", g_fail);
         return 1;
