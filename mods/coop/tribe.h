@@ -40,6 +40,10 @@ int own_selected();
 // give the selected own members to another player (the host applies it); returns how many
 int give_selected(uint8_t to);
 void tick(double now);                               // every frame
+// BUG-9343 (5R A): a start crossing from a Tribe era: the game's own end of the Tribe stage, asked: the goal bar full, then
+// the HUD's advance button pressed through its own handler (as a player's click). false: not possible now
+bool stage_end_request();
+std::string stage_end_status();
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
 void on_world_change();

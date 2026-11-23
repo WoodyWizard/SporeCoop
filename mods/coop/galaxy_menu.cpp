@@ -147,18 +147,30 @@ bool stage_reached(uint8_t era)
 }
 // BUG-9336: the era a new Tribe stage of this planet starts from (its stored Creature era), "" none (it has a Tribe era,
 // no stored Creature world, or the switch is off)
-static std::string start_from(const Row& row)
+// the stage a player new to the planet may start there (BUG-9336, BUG-9343): the one after the planet's latest era, from
+// that era's stored world. Creature -> Tribe; Tribe -> Civ (BUG-9343, switch galaxy.civ_start). era 0: none
+struct NewStage {
+    std::string from;
+    uint8_t era = 0;
+};
+static bool g_civ_start = true;
+COOP_FIX("galaxy.civ_start", "BUG-9343", g_civ_start, "galaxy menu: a planet whose latest stage is Tribe offers its Civ stage (new)");
+static NewStage new_stage(const Row& row)
 {
+    NewStage n;
     if (!galaxy::stage_start_on())
-        return "";
+        return n;
+    uint8_t top = 0;
+    std::string top_key;
     for (auto& e : row.eras)
-        if (net::galaxy::era_of(e) == net::galaxy::kEraTribe)
-            return "";
-    const std::string from = net::galaxy::era_key(row.shown.name, net::galaxy::kEraCreature);
+        if (net::galaxy::era_of(e) > top && !net::galaxy::is_crossing(e))
+            top = net::galaxy::era_of(e), top_key = e;
+    if (top != net::galaxy::kEraCreature && !(g_civ_start && top == net::galaxy::kEraTribe))
+        return n;
     for (auto& p : galaxy::planets_known())
-        if (p.name == from && p.stored)
-            return from;
-    return "";
+        if (p.name == top_key && p.stored)
+            n.from = top_key, n.era = (uint8_t)(top + 1);
+    return n;
 }
 static void on_stage_pick(int code)
 {
@@ -218,9 +230,10 @@ static void open_choice(const Row& row)
         g_pick_from.push_back("");
         g_last_choice += std::string(g_last_choice.empty() ? "" : ", ") + net::galaxy::era_name(era) + (open ? "" : " (grey)");
     }
-    const std::string from = start_from(row); // BUG-9336
-    if (!from.empty() && items.size() < 6) {
-        const uint8_t era = net::galaxy::kEraTribe;
+    const NewStage ns = new_stage(row); // BUG-9336, BUG-9343
+    const std::string& from = ns.from;
+    if (ns.era && items.size() < 6) {
+        const uint8_t era = ns.era;
         const bool open = stage_reached(era);
         items.push_back({std::string(net::galaxy::era_name(era)) + "  (new)", (int)g_pick_eras.size(),
                          open ? coop_ui::kMenuBlue : coop_ui::kMenuGrey});
@@ -283,9 +296,10 @@ static bool open_native(const Row& row, uint8_t* entry, bool switch_now)
         g_last_choice += std::string(g_last_choice.empty() ? "" : ", ") + net::galaxy::era_name(era) +
                          (stage_reached(era) ? "" : " (grey)");
     }
-    const std::string from = start_from(row); // BUG-9336: the new Tribe stage
-    if (!from.empty() && g_native_codes[net::galaxy::kEraTribe] < 0) {
-        const uint8_t era = net::galaxy::kEraTribe;
+    const NewStage ns = new_stage(row); // BUG-9336: the new Tribe stage; BUG-9343: the new Civ stage
+    const std::string& from = ns.from;
+    if (ns.era && g_native_codes[ns.era] < 0) {
+        const uint8_t era = ns.era;
         g_native_codes[era] = (int)g_pick_eras.size();
         g_pick_eras.push_back(net::galaxy::era_key(row.shown.name, era));
         g_pick_from.push_back(from);
@@ -439,7 +453,7 @@ static void __fastcall h_Panels(void* set, void* edx)
 static bool wants_choice(const Row& row)
 {
     return g_choice && !has_remembered(row) &&
-           (row.eras.size() > 1 || (!start_from(row).empty() && stage_reached(net::galaxy::kEraTribe)));
+           (row.eras.size() > 1 || (new_stage(row).era && stage_reached(new_stage(row).era)));
 }
 
 static const Row* row_of(const std::vector<Row>& rs, const std::string& planet)

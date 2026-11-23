@@ -13090,6 +13090,17 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
             return true;
         };
         gx.start_stage = []() -> bool { // BUG-9336: a start crossing: the game's own Creature stage end, once it can
+            if (game::mode_id() == modes::kTribe) { // BUG-9343: from a Tribe era: the Tribe stage's own end
+                if (world::cinematic_playing() || game_busy() || mode_switch_pending())
+                    return false;
+                H->run_outside_frame([](void*) {
+                    const bool r = tribe::stage_end_request();
+                    LOG("galaxy: the start crossing asks the Tribe stage's end (BUG-9343) -> %d", (int)r);
+                    feed(r ? "A new Civilization stage: your tribe advances, then build its City Hall and first vehicle."
+                           : "The Civilization stage could not be started here: leave the planet and try again.");
+                }, nullptr);
+                return true;
+            }
             void* av = game::avatar();
             if (game::mode_id() != modes::kCreature || !av || game::health(av) <= 0 || world::cinematic_playing() ||
                 game_busy() || mode_switch_pending() || creations::first_creature_pending() ||

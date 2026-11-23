@@ -20,6 +20,7 @@
 
 #include "civ.h"
 #include "coop_ui.h"
+#include "sui.h"
 #include "creations.h"
 #include "founders.h"
 #include "identity.h"
@@ -3052,8 +3053,10 @@ static bool guest_birth_click()
 // TribeHutUI_HandleMessage (CDBEA0): the hut menu's buttons; 0x0625CD52 Add Baby buys a baby for the player tribe
 using HutUI_t = bool(SK_THISCALL*)(void*, void*, void*);
 static HutUI_t o_HutUI;
+static void* g_hut_self; // BUG-9343: the HUD's handler object (its advance button is pressed through it)
 static bool SK_THISCALL h_HutUI(void* self, void* window, void* msg)
 {
+    g_hut_self = self;
     if (msg && !IsBadReadPtr(msg, 0x10) && F<uint32_t>(msg, 8) == 0x287259F6 && F<uint32_t>(msg, 0xC) == 0x0625CD52 &&
         active() && is_guest() && !local_play() && village_orders()) {
         // (merge 0.7.14: only with a village of its own; in the shared tribe the game's own purchase goes on to
@@ -12039,8 +12042,86 @@ static void village_stamps_tick(double now)
     seen.swap(next);
 }
 
+// BUG-0576: the goal bar full (cPlayer +0x10F0 = +0x10F4), then the message 0x5CC2589 the stage's listener 0xCD81F0
+// takes after a goal: with the bar full it shows the HUD's advance button (window 0x6454B47), whose click
+// (TribeHutUI_HandleMessage, bar / need >= 1) plays the stage card and TRG2CVG_PreEditor, then the City Hall editor
+// (docs/re/tribe.md#tribe-civ-transition)
+static bool fill_goal_bar(float& done_out, float& need_out)
+{
+    uintptr_t nmg = H->sym("Simulator::cGameNounManager::Get"), get = H->sym("App::IMessageManager::Get");
+    void* nm = nmg ? skg::cdecl_call<void*>(nmg) : nullptr;
+    void* p = nm && skg::readable((uint8_t*)nm + 0x74, 4) ? F<void*>(nm, 0x74) : nullptr;
+    void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (game::mode_id() != modes::kTribe || !p || !skg::readable((uint8_t*)p + 0x10F0, 8) || !mm)
+        return false;
+    float& done = *(float*)((uint8_t*)p + 0x10F0);
+    float need = F<float>(p, 0x10F4);
+    if (need < 1)
+        need = 1, *(float*)((uint8_t*)p + 0x10F4) = need;
+    done = need;
+    skg::vcall<void>(mm, 0x18 / 4, 0x5CC2589u, (void*)nullptr, (void*)nullptr, 0); // MessagePost
+    done_out = done, need_out = need;
+    return true;
+}
+
+// BUG-9343 (5R A, a Civ start from a Tribe era, as BUG-9336's Creature start): the start crossing's game ends its Tribe
+// stage the game's own way: the bar full (fill_goal_bar), then its advance button pressed through the HUD's handler
+// with a button click message (msg +8 0x287259F6, +0xC the control id), as a player's click: the stage card, the
+// cinematic, the City Hall and vehicle editors, Civ. The press waits for the button to show (the message takes a
+// frame) and for the handler object (any message through the HUD's handler), 30 s at most
+static double g_adv_press_at, g_adv_until;
+static unsigned g_adv_asked, g_adv_pressed, g_adv_missed;
+static std::string g_adv_last;
+constexpr uint32_t kAdvanceButton = 0x06454B47u;
+bool stage_end_request()
+{
+    float done = 0, need = 0;
+    if (!o_HutUI || !fill_goal_bar(done, need))
+        return false;
+    const double now = H->time_seconds();
+    g_adv_press_at = now + 1.0;
+    g_adv_until = now + 30.0;
+    g_adv_asked++;
+    g_adv_last = "bar full, the advance button to press";
+    H->log(M, SK_INFO, "tribe: the start crossing asks the Tribe stage's end: goal %.0f / %.0f (BUG-9343)", done, need);
+    return true;
+}
+static void advance_press_tick(double now)
+{
+    if (g_adv_press_at <= 0 || now < g_adv_press_at)
+        return;
+    if (now > g_adv_until || game::mode_id() != modes::kTribe) {
+        g_adv_press_at = 0;
+        g_adv_missed++;
+        g_adv_last = "the advance button was not pressed (not shown, or no HUD handler)";
+        H->log(M, SK_WARN, "tribe: %s (BUG-9343)", g_adv_last.c_str());
+        notify::show("Press the advance button (bottom right) to start the Civilization stage.", "info");
+        return;
+    }
+    g_adv_press_at = now + 0.5; // (again until it can)
+    H->run_outside_frame([](void*) {
+        if (g_adv_press_at <= 0) return;
+        sui::Win b = sui::find(sui::main_window(), kAdvanceButton);
+        if (!b || !sui::visible(b) || !g_hut_self || !o_HutUI) return;
+        sui::Msg m{b, 0, (int)sui::kMsgComponentActivated, kAdvanceButton, 0, 0, 0};
+        g_adv_press_at = 0;
+        g_adv_pressed++;
+        g_adv_last = "the advance button pressed";
+        H->log(M, SK_INFO, "tribe: the start crossing pressed the Tribe stage's advance button (BUG-9343)");
+        o_HutUI(g_hut_self, b, &m);
+    }, nullptr);
+}
+std::string stage_end_status()
+{
+    char b[200];
+    snprintf(b, sizeof b, "tribe stage end (BUG-9343): asked %u, pressed %u, missed %u, hud handler %s, last: %s", g_adv_asked,
+             g_adv_pressed, g_adv_missed, g_hut_self ? "seen" : "not seen", g_adv_last.empty() ? "-" : g_adv_last.c_str());
+    return b;
+}
+
 void tick(double now)
 {
+    advance_press_tick(now); // BUG-9343
     persp_update(); // BUG-9153 (also puts the host's village back when the session or the stage ends)
     tribe_hunt_tick();
     if (is_guest() || g_go_paused)
@@ -12842,22 +12923,12 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "ring=%d drawn=%u order=%p", (int)ring_shown(c), g_rings_drawn, g_ring.target);
         return c ? std::string(b) : std::string("no such member");
     }
-    if (!a.empty() && a[0] == "advance") {
-        // tests (BUG-0576): the goal bar full (cPlayer +0x10F0 = +0x10F4), then the message 0x5CC2589 the stage's
-        // listener 0xCD81F0 takes after a goal: with the bar full it shows the HUD's advance button (window 0x6454B47);
-        // the test clicks it as a player (TRG2CVG_PreEditor, then the City Hall editor, docs/re/tribe.md#tribe-civ-transition)
-        uintptr_t nmg = H->sym("Simulator::cGameNounManager::Get"), get = H->sym("App::IMessageManager::Get");
-        void* nm = nmg ? skg::cdecl_call<void*>(nmg) : nullptr;
-        void* p = nm && skg::readable((uint8_t*)nm + 0x74, 4) ? F<void*>(nm, 0x74) : nullptr;
-        void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
-        if (game::mode_id() != modes::kTribe || !p || !skg::readable((uint8_t*)p + 0x10F0, 8) || !mm)
+    if (!a.empty() && a[0] == "stage_end") // tests (BUG-9343): the start crossing's Tribe stage end
+        return stage_end_status();
+    if (!a.empty() && a[0] == "advance") { // tests (BUG-0576): the goal bar full, the advance button shown
+        float done = 0, need = 0;
+        if (!fill_goal_bar(done, need))
             return "not possible here";
-        float& done = *(float*)((uint8_t*)p + 0x10F0);
-        float need = F<float>(p, 0x10F4);
-        if (need < 1)
-            need = 1, *(float*)((uint8_t*)p + 0x10F4) = need;
-        done = need;
-        skg::vcall<void>(mm, 0x18 / 4, 0x5CC2589u, (void*)nullptr, (void*)nullptr, 0); // MessagePost
         char b[96];
         snprintf(b, sizeof b, "goal %.0f / %.0f, goal message posted", done, need);
         return b;
