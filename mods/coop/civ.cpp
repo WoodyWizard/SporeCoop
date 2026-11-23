@@ -1,5 +1,6 @@
 #include "civ.h"
 #include "civ_internal.h"
+#include "party_difficulty.h"
 #include "civ_wallet.h"
 #include "own_world.h"
 #include "host_busy.h"
@@ -1541,7 +1542,7 @@ void host_specialty_answer(uint8_t from, net::Reader& r)
            take ? "the new one" : "kept");
 }
 
-static uint8_t player_of_combatant(void* att)
+uint8_t player_of_combatant(void* att)
 {
     if (!att || IsBadReadPtr(att, 4))
         return 0xFF;
@@ -1568,6 +1569,10 @@ static int b_damage(BTakeDamage_t orig, void* self, float dmg, uint32_t pol, int
         dmg *= 1.25f;
         g_n.military_hits++;
     }
+    // WP-D1 (BUG-1473): all.party_difficulty: a player's vehicle hits a building (the players share one nation: an NPC's).
+    // An NPC's hit on the players' buildings keeps the game's damage (the building's owner is not read here)
+    if (p < net::kMaxPlayers)
+        dmg = party::player_hits_npc(dmg);
     uint8_t prev = g_hit_by;
     size_t mark = game::swap_open(game::swap_undo_u8, &g_hit_by, prev, "capture attribution"); // BUG-0110
     g_hit_by = p;

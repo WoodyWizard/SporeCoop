@@ -434,6 +434,7 @@ void host_command(uint8_t from, net::Reader& r);
 int host_index_of_city(void* c);
 bool is_guest();
 bool is_host();
+uint8_t player_of_combatant(void* att); // the player whose vehicle a combatant is, 0xFF none (civ.cpp)
 void kill_local(void* v);
 bool local_play();
 bool guest_holds();                // BUG-1478 (CIV-5): a guest in the host's Civ world (civlogic::guest_holds)

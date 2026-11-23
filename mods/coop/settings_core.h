@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "net/buffer.h"
+#include "party_difficulty_logic.h"
 
 namespace settings {
 
@@ -38,6 +39,7 @@ enum Id : int {
     kNameTags,       // all stages: the name tag over every partner (coop.cpp on_overlay)
     kFriendlyFire,   // Creature: players can hurt each other (npc.cpp damage_filter; Space keeps its rivals mode)
     kPlayerLimit,     // the players a session takes (2..4, the host counted; net/session.cpp admit)
+    kPartyDifficulty, // all stages: the hits between players and NPCs scaled on the host (party_difficulty.h, BUG-1473)
     kLateJoin,       // a player may join a session whose host plays its world already
     kCellKnockout,   // Cell: a lethal hit next to a partner knocks out (revive within 10 s) instead of killing
     kCellRespawn,    // Cell: nobody revived the knocked-out cell in 10 s: it respawns next to the partner, small
@@ -85,6 +87,10 @@ struct Def {
     const char* names = nullptr; // a choice of named values: "name0|name1|..." (value_text, the lobby), else on / off
 };
 
+// all.party_difficulty's default (WP-D1, BUG-1473): party::kDefaultChoice (party_difficulty_logic.h), 100 % until the
+// owner answers question 5 of docs/plan-0.7.17.md (100 % or auto); the one place to flip it is there
+constexpr int kPartyDifficultyDefault = party::kDefaultChoice;
+
 // civ.own_money's default (BUG-1468): provisional until the owner answers question 1 of docs/plan-0.7.17.md; the one
 // place to flip it (tests/validate_tests.cpp reads it from here)
 constexpr int kCivOwnMoneyDefault = 0;
@@ -129,6 +135,9 @@ inline const Def kDefs[kCount] = {
     {"all.max_players", "All stages", "Players who can join",
      "how many players the session takes, the host counted (2 to 4); a player over it is told the session is full",
      4, 2, 4, Scope::Live, nullptr, false},
+    {"all.party_difficulty", "All stages", "Difficulty for 3-4 players",
+     "how hard the NPCs fight: at 150 % an NPC takes 1.5 times the hits to fall and its hits on players deal 1.5 times the damage; auto: +25 % per player over two (3 players 125 %, 4 players 150 %); 100 %: as in a solo game",
+     kPartyDifficultyDefault, 0, 4, Scope::Session, nullptr, false, party::kChoiceNames},
     {"all.late_join", "All stages", "Joining after the start",
      "on: a player can join while the host plays its world; off: only in the galaxy menu (a player who lost the connection may come back)",
      1, 0, 1, Scope::Live, nullptr, false},
