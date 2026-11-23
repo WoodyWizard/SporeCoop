@@ -1521,6 +1521,8 @@ BUG-0189, lane 3 (GOG 2024), `civ_npc`, runtime of docs/re/civ.md#civ-planner-pa
   taken at the drop (shared money 3000 -> 1400 on the guest at once), the building is snapped into a plot of
   the planner's choice (here slot 3, not the plot under the cursor), and it shows in the city's building list
   (`coop.civ buildings`, cCity +0x340) only after the planner is closed with the green check.
+  ~ superseded (2026-11-23): the price goes at the mouse-down, that drop missed the offered plots and sold the house
+  back; the house after the planner was the host's copy. See [the sell-back](#civ-planner-sell-back) (BUG-1532).
 * ✔ A guest's placement goes to the host through the AddBuilding return address 0xD1419C (civ.cpp h_AddBuilding,
   CMD_BUILD): the host's game had the house at the same position 1 s after the planner closed, money equal on
   both games (`civ_planner_build`). With the send off (`coop.fix civ.planner_send off`) the guest's house is
@@ -2794,3 +2796,40 @@ guest positions) and lab 20261123-095006 (`coop.wobj` on the guest), no new disa
 * Fix (`coop.fix civ.pointer_view`): in Civ, before the first mouse move, the pointer is the point under the centre of
   the game window (where its camera looks): `binds=19 snap_n=19`, 0 of 19 unpaired. Tests: `coop.npc marker unplace`
   forgets the mouse move and puts the pointer at (0 0 0).
+
+## The planner's drag, drop and sell-back; a guest's sell refund (2026-11-23, fix/w67-planner)
+<a id="civ-planner-sell-back"></a>
+
+BUG-1532 (follow-up of BUG-1417). GOG 2024, Ghidra (out/ghidra-2024) and lab lane 2 (`civ_planner_build` with
+temporary logging: lab 20261123-101722, 20261123-101916, 20261123-102328, 20261123-102512, 20261123-102713).
+* ✔ (runtime) A palette tile's mouse-down makes the building: cCommunityEditor HandleMessage 0xD130D0 (message
+  0xB2E18705, type 0xFCAFD26) CreateInstance, `cCity::AddBuilding` (return 0xD1419C, so it is in the city list +0x340
+  at once), spatial +0x6E = 1, the hand +0xC0 = the spatial; the price is taken right there through the planner's money
+  object (+0x68, vt 0x18 = 0xD07CE0 `CommunityEditor_Money`(int, int delta): delta > 0 AddMoney(civ, delta, 0), < 0
+  SpendMoney): the shared money fell 1600 in the same frame as AddBuilding, not at the drop.
+  CORRECTION (2026-11-23, fix/w67-planner): #civ-planner-palette-runtime says "the price is taken at the drop" and
+  "the building is snapped into a plot of the planner's choice (here slot 3, not the plot under the cursor)"; ~
+  superseded: the test's drop missed every offered plot and the guest's own house was sold back (below); the house the
+  guest saw after the planner was the host's copy, built from the CMD_BUILD sent at AddBuilding (0.7.16) and brought
+  over by the reconcile.
+* ✔ (Ghidra) The input handler 0xD12910 (`CommunityEditor_Input`): message 0x71D4DFC4 = the drag move 0xD10840
+  (`CommunityEditor_DragMove`), 0x71D4DFC5 = the drop 0xD10F90 (`CommunityEditor_Drop`). The drag move sets the hand's
+  +0x6E = 1 ("Sell For $N" under the cursor), asks the slot finder 0xD0B750 (`CommunityEditor_FindSlot`, layout +0xF4,
+  the surface point under the cursor) for a plot within the snap distance, and on one sets +0x6E = 0 and the hover
+  slot +0xFC (-1: none; +0x100 the previous one); a taken plot's occupant is moved out (+0xC8).
+* ✔ (Ghidra, runtime) The slot finder offers a plot only when the city's building links open it: 0xBDA150
+  (`City_SlotOpen`, thiscall(city, slot) ret 4) is true when a building of the city with +0x289 set lists the slot in
+  its link table (vt 0x6C, +0x274 + 14 * i). In civ_npc the City Hall alone opens 3 of the 11 free plots (slots 2, 3, 7:
+  the glowing points of the planner, `coop.civ slots` says "free" for all 11). A plot with a building that cannot move
+  (0xC3F6A0) is not offered either.
+* ✔ (runtime) The drop with +0x6E = 1 sells the hand object: 0xD09D70 (`CommunityEditor_Sell`) -> cCity::DestroyBuilding
+  (DestroyInstance posts 0x1A0219E kind 4; the Civ strategy's listener 0xCFD500 -> 0xCF89C0 takes the building out of
+  its city through 0xBE3630, then DestroyBuilding's own RemoveBuilding finds nothing), then the refund
+  `CommunityEditor_Money(0, price)` (0xD0AC10 with sell = 1: the full 1600 for a house) -> cCivilization::AddMoney with
+  the return address 0xD07D0D (`CommunityEditor_Money_AddRet`), the hand +0xC0 still the sold spatial.
+* ✔ (runtime) On a guest that refund was dropped by the Civ income block (`h_AddMoney`, guest_income_blocked:
+  `income_blocked=1`): the sold-back palette building cost its price. 0.7.16 hid it: the host built the house from the
+  CMD_BUILD sent at AddBuilding. With BUG-1417 (`civ.planner_closed`) nothing goes to the host for a building taken away
+  again, so the price was lost (BUG-1532). Since BUG-1532 a guest's sell refund of a building its planner added and has
+  not sent is let through (the shared money's next guest delta brings it to the host); a sold building of the city
+  (one the host has) stays blocked.

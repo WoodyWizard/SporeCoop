@@ -61,6 +61,9 @@ extern Ctx C;
 extern bool g_ok;
 
 // ---- layout (docs/re/civ.md) ----
+// the city planner (docs/re/civ.md#civ-planner-sell-back, BUG-1532): the object in the hand, the plot under it (-1:
+// none), the hand's "Sell For" flag (dropped so, the planner sells it back)
+constexpr uintptr_t kEdHand = 0xC0, kEdHover = 0xFC, kSpSell = 0x6E;
 constexpr uintptr_t kVSpatial = 0x34, kVPos = 0x38, kVRot = 0x44, kVSelected = 0xA0, kVHp = 0x540, kVLoco = 0xB1C,
                     kVPurpose = 0xB20, kVDead = 0xBCD, kPol = 0x30,
                     kVOrders = 0xB68;
