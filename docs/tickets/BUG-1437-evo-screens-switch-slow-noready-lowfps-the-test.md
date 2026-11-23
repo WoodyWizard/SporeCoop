@@ -50,6 +50,10 @@ Precondition: when no stand gives a host animal 3-25 m away at all (where the fa
 `RESULT: INCONCLUSIVE` (docs/06-testing.md#testing-lab-verdicts); a stand that never came or a guest without copies
 of the host's near animals stays a FAIL (the mod can cause those). The checks themselves are unchanged.
 
+Checked offline: the HostStand state machine against a stub game (stand at 3 s, the guest's copy at 6 s): no
+Enter before the move, the move at the copy, Enter after the hold, the reads after the host went on, sync-force
+on/off around them.
+
 ## Verification
 Open, waiting for the lab run:
 - PASS expected: `SPORE_DETECTOR=20 python3 tools/lab.py run evo_screens_switch evo_screens_switch_slow

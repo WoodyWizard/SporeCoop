@@ -22,6 +22,8 @@ mate, the vote's I'm ready, History's check, the editors' parts and done), and t
                   BUG-1376 / BUG-1396: while the host's game stands under its evolution caption (~70 s) the test puts
                   one of the host's animals near it 12 m away on the host (`coop.npctrack put`, no state goes out
                   meanwhile); 8 s after the host's game goes on, no guest copy (that one included) stands over 5 m off.
+                  BUG-1437: the test confirms the host's caption only after that move (and 10 s more); no host animal
+                  3-25 m away in any stand is INCONCLUSIVE. BUG-1438: the move is marked LAB-MARK sync-force.
                   `SPORE_FIX_OFF=drive.lead_gap` must FAIL that check (the copy crosses the gap's line over a minute).
 
   --part cell-eggs  Cell fixture (BUG-1245): the host's mating call, the guest answers the vote late (--ready click:
@@ -54,7 +56,7 @@ from harness import field_dotall as field, mode, pool, waiter
 import screen_look as sl
 import lane
 from sporectl import Console
-from twoinst import Checks, keyframe, shot, start
+from twoinst import Checks, keyframe, lab_mark, shot, start
 from coop_sync import game_paused, sample as sync_sample
 
 HEART = (721, 1018)    # the mating-call button of the cell HUD
@@ -289,33 +291,103 @@ def npcs_apart(host, guest, near=40.0):
 
 
 NPC_MOVE = 12.0  # m: BUG-1396, what the host's game moved its family by under the caption in BUG-1376's runs
+STAND_HOLD = 10.0  # s the test keeps the host's caption up after its move (the gap of its states: kLateGap is 2 s)
+STAND_WAIT = 180.0  # s a caption stand is held for a move at most (the guest may still be in its own editor)
 
 
-def move_host_animal(host, guest, secs=30):
-    """BUG-1396: once the host's game stands (its caption), one of its animals within 25 m that the guest has a copy of
-    is put NPC_MOVE m farther from the host's avatar on the host (onto the ground, not held). Its key, or None"""
-    t0 = time.time()
-    while time.time() - t0 < secs and game_paused(host) is not True:
-        time.sleep(1)
-    if game_paused(host) is not True:
-        print('  BUG-1396: the host\'s game did not stand: no animal moved', flush=True)
-        return None
-    time.sleep(2)  # (its last states are out)
-    h, g = sync_sample(host), sync_sample(guest)
-    me = h.get('p0')
-    if not me:
-        return None
-    me = me[0]
-    d = lambda a, b: sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5  # noqa: E731
-    near = sorted((d(p, me), k, p) for k, (p, _) in h.items() if k.startswith('n') and k in g and 3 < d(p, me) < 25)
-    if not near:
-        print('  BUG-1396: no animal of the host within 25 m with a copy on the guest', flush=True)
-        return None
-    dist, k, p = near[0]
-    q = [pc + (pc - mc) / dist * NPC_MOVE for pc, mc in zip(p, me)]
-    out = host.call(f'coop.npctrack put {k[1:]} {q[0]:.2f} {q[1]:.2f} {q[2]:.2f} 0')['out'].strip()
-    print(f'  BUG-1396: while the host\'s game stands: {out} ({k}, {dist:.1f} m from the host)', flush=True)
-    return k if out.startswith('npc ') else None
+class HostStand:
+    """BUG-1396 / BUG-1437: once the host's game stands under its caption (game time paused, its cinematic playing),
+    one of its animals 3-25 m away that the guest has a copy of is put NPC_MOVE m farther from the host's avatar on the
+    host (onto the ground, not held; no NPC state goes out while the host's game stands). The test does not confirm the
+    host's caption before that move (hold() is True), and STAND_HOLD s after it; 8 s after the host's game goes on the
+    copies are compared (npcs_apart, 3 reads). tick() is called from every wait after both editors: the caption comes
+    while the guest is still in its own editor or after it (BUG-1437: the test's own Enter in good() had ended the stand
+    before the old move_host_animal looked for it, lab 20261122-194210 _slow, _noready, _lowfps). The move is a
+    difference the test makes on purpose: LAB-MARK sync-force from the move to the reads (BUG-1438)."""
+
+    def __init__(self, host, guest):
+        self.host, self.guest = host, guest
+        self.seen = None  # when the current caption stand was first seen
+        self.stands = 0  # caption stands seen
+        self.moved = self.t_move = None
+        self.why = set()  # why no animal was moved in a stand
+        self.rounds = None  # the 3 reads 8 s after the host's game went on after the move
+        self.ran = False
+        self.done = False
+
+    def standing(self):
+        return game_paused(self.host) is True and \
+            bool(re.search(r'cinematic ([0-9A-F]{8}) playing', self.host.call('coop.status')['out']))
+
+    def try_move(self):
+        h, g = sync_sample(self.host), sync_sample(self.guest)
+        me = h.get('p0')
+        if not me:
+            self.why.add('the host has no avatar in coop.sync')
+            return None
+        me = me[0]
+        d = lambda a, b: sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5  # noqa: E731
+        near = sorted((d(p, me), k, p) for k, (p, _) in h.items() if k.startswith('n') and 3 < d(p, me) < 25)
+        copied = [x for x in near if x[1] in g]
+        if not copied:
+            self.why.add('no animal of the host 3-25 m away' if not near else
+                         f'none of the host\'s {len(near)} animals 3-25 m away has a copy on the guest')
+            return None
+        dist, k, p = copied[0]
+        q = [pc + (pc - mc) / dist * NPC_MOVE for pc, mc in zip(p, me)]
+        lab_mark('sync-force', 'on')  # BUG-1438: the copy stands NPC_MOVE m off until the host's game goes on
+        out = self.host.call(f'coop.npctrack put {k[1:]} {q[0]:.2f} {q[1]:.2f} {q[2]:.2f} 0')['out'].strip()
+        print(f'  BUG-1396: while the host\'s game stands: {out} ({k}, {dist:.1f} m from the host)', flush=True)
+        if not out.startswith('npc '):
+            lab_mark('sync-force', 'off')
+            self.why.add(f'the put of {k} failed: {out[:80]}')
+            return None
+        return k
+
+    def compare(self):
+        time.sleep(8)
+        self.rounds = []
+        for _ in range(3):
+            self.rounds.append(dict(npcs_apart(self.host, self.guest)))
+            time.sleep(1)
+        lab_mark('sync-force', 'off')
+        self.done = True
+
+    def tick(self):
+        """one look at the host's game; True while the test must not confirm the host's caption"""
+        if self.done:
+            return False
+        now = time.time()
+        if self.moved is None:
+            if not self.standing():
+                self.seen = None
+                return False
+            if self.seen is None:
+                self.seen, self.stands = now, self.stands + 1
+            if now - self.seen < 2:  # (its last states are out)
+                return True
+            self.moved = self.try_move()
+            if self.moved:
+                self.t_move = now
+                return True
+            return now - self.seen < STAND_WAIT
+        if game_paused(self.host) is True:
+            return now - self.t_move < STAND_HOLD
+        self.ran = True  # the host's game went on after the move
+        self.compare()
+        return False
+
+    def sleep(self, secs):
+        t1 = time.time() + secs
+        while time.time() < t1:
+            self.tick()
+            time.sleep(max(0.0, min(1.0, t1 - time.time())))
+
+    def precondition(self):
+        """why the move did not happen when that was luck (where the host's family stood), else None"""
+        if self.moved or not self.stands or self.why != {'no animal of the host 3-25 m away'}:
+            return None
+        return f'the host\'s game stood under its caption ({self.stands} time(s)) with no animal 3-25 m from its avatar'
 
 
 def avatar_key(con):
@@ -823,7 +895,8 @@ def part_switch(host, guest, ck, ready, scr):
         if host_done and (guest_done or time.time() - host_ed > 150) and 'Creature' in mh and 'Creature' in mg:
             break
         time.sleep(1)
-    time.sleep(20)
+    stand = HostStand(host, guest)  # BUG-1437: from here on every wait looks for the host's caption stand
+    stand.sleep(20)
     # BUG-1258: what the guest is told while it makes its own creature (each player its own: no "new body for all")
     told = [l for l in log_since(guest, g_log0) if 'everybody gets the new body' in l]
     print(f'  the guest was told: {told[:2]}', flush=True)
@@ -846,6 +919,8 @@ def part_switch(host, guest, ck, ready, scr):
     def confirm_captions():
         """a player confirms the stage's caption ("It is the beginning of a new day...") with its check"""
         for con in (host, guest):
+            if con is host and stand.tick():
+                continue  # BUG-1437: the host's caption stays up until the test moved one of its animals
             if re.search(r'cinematic ([0-9A-F]{8}) playing', con.call('coop.status')['out']):
                 con.call('key enter')
 
@@ -862,7 +937,7 @@ def part_switch(host, guest, ck, ready, scr):
             s['guest_shows_host'] != s['guest']
         return s if own and host_draws and guest_draws else None
 
-    time.sleep(10)
+    stand.sleep(10)
     r = wait(good, 150, 3)
     print(f'  pre-editor {k0}; after: {r or ident()}')
     ck(r, 'each player plays its OWN new creature (two different species), the host draws the guest with the guest\'s')
@@ -874,9 +949,9 @@ def part_switch(host, guest, ck, ready, scr):
     # BUG-1396: the twin with drive.lead_gap off passed (lab 20261121-001418): the host's game stood 69 s as in BUG-1376,
     # but its game moved none of its animals near it meanwhile, so the first state after the gap had nothing to bring
     # in. The host's game put its family 10-15 m away in the runs that showed it (20261120-133703); the test now does the
-    # same with one animal while the host's game stands, so the late path is taken in every run.
-    moved = move_host_animal(host, guest)
-    time.sleep(max(0.0, t45 - time.time()))
+    # same with one animal while the host's game stands (HostStand, ticked by every wait), so the late path is taken in
+    # every run where the caption comes.
+    stand.sleep(max(0.0, t45 - time.time()))
     r2 = good()
     print(f'  45 s later: {r2 or ident()}')
     ck(r2, 'each player still plays its own creature 45 s later (no world share took it back)')
@@ -889,18 +964,35 @@ def part_switch(host, guest, ck, ready, scr):
         confirm_captions()
         return game_paused(host) is False
     ran = wait(host_runs, 60, 2)
-    time.sleep(8)
-    rounds = []
-    for _ in range(3):
-        rounds.append(dict(npcs_apart(host, guest)))
+    t_end = time.time() + 30
+    while stand.moved and not stand.done and time.time() < t_end:  # the host went on between two ticks
+        stand.tick()
         time.sleep(1)
+    if stand.moved and not stand.done:
+        lab_mark('sync-force', 'off')
+    moved = stand.moved if stand.done else None
+    rounds = stand.rounds
+    if not rounds:  # no move: the copies are compared 8 s after the host's game went on, as before
+        time.sleep(8)
+        rounds = []
+        for _ in range(3):
+            rounds.append(dict(npcs_apart(host, guest)))
+            time.sleep(1)
+    else:
+        ran = ran or stand.ran
+    if not stand.moved:
+        print(f'  BUG-1396: no animal moved: {stand.stands} caption stand(s) of the host seen; '
+              f'{"; ".join(sorted(stand.why)) or "the host did not stand"}', flush=True)
     off = sorted({k for r in rounds for k in r if all(r2.get(k, 0) > NPC_APART for r2 in rounds)})
     print(f'  the host\'s animals near it 8 s after its game went on (ran={ran}): {len(rounds[0])} compared, apart on the '
           f'guest: ' + (', '.join(f'{k} {rounds[-1][k]:.1f} m' for k in off) or 'none'), flush=True)
-    ck(moved and all(moved in r for r in rounds), f"the test moved one of the host's animals while its game stood "
-       f"({moved}) and compared its copy after ({[round(r.get(moved, -1), 1) for r in rounds] if moved else '-'} m)")
+    inc = stand.precondition()
+    if not inc:
+        ck(moved and all(moved in r for r in rounds), f"the test moved one of the host's animals while its game stood "
+           f"({moved}) and compared its copy after ({[round(r.get(moved, -1), 1) for r in rounds] if moved else '-'} m)")
     ck(ran and rounds[0] and not off, f"the guest's copies of the host's animals stand where the host's game has them "
                                       f"after its caption (none over {NPC_APART:.0f} m in 3 reads)")
+    return inc
 
 
 def main():
@@ -930,6 +1022,7 @@ def main():
         guest.call('coop.fix creations.own_editor_cancel off')
         guest.call('coop.editreq keep ' + ARG('--own-keep', '7'))
     scr = (Screens(host, 'host'), Screens(guest, 'guest', entry=True))  # BUG-1378: the guest's own load measured apart
+    inc = None  # why the test is INCONCLUSIVE (BUG-1437)
     for x in scr:
         x.start()
     try:
@@ -944,7 +1037,7 @@ def main():
         elif part == 'cell-eggs':
             part_cell_eggs(host, guest, ck, ready, scr)
         else:
-            part_switch(host, guest, ck, ready, scr)
+            inc = part_switch(host, guest, ck, ready, scr)
     finally:
         for x in scr:
             x.stop()
@@ -958,6 +1051,8 @@ def main():
             settings_lib.reset([host], ('all.shared_dna',))
             twoinst.forget_settings()
     ck.faults(host=host, guest=guest)
+    if inc:  # BUG-1437: the precondition of the BUG-1376 check did not happen (where the host's family stood)
+        return ck.inconclusive(inc)
     return ck.result()
 
 
