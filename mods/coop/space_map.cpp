@@ -29,6 +29,7 @@
 #include "cell_logic.h"
 #include "find.h"
 #include "fixes.h"
+#include "own_world.h"
 
 using skg::cdecl_call;
 using skg::thiscall;
@@ -596,6 +597,15 @@ static bool g_keep_fix = true;
 COOP_FIX("space.keep_colonies", "BUG-0195", g_keep_fix, "space: a guest's own colonies come back when it rejoins (the host keeps them)");
 // The host's list per player key (spaceext::kept_key, BUG-1107) is g_store (space_kept.h, C5).
 static uint32_t g_kept_sent, g_kept_done, g_restored, g_restore_failed;
+// BUG-1488 (audit SPC-14 c): the guest applied the host's kept list (K_KEPT: its own colonies of the co-op galaxy) in
+// the first Space frame of any world loaded since its join, checked only by the world epoch: a guest that joined from
+// the menu (or reloaded) and then played a Space save of its own (supported: BUG-0709, BUG-0816) made those planets its
+// colonies there (and with BUG-1151 took NPC stars), in its own save, which it then saved. Now the list waits while
+// own_world::space_other() and is applied in the host's world. `coop.fix space.kept_own_save off`: 0.7.16.1.
+static bool g_restore_own_fix = true;
+COOP_FIX("space.kept_own_save", "BUG-1488", g_restore_own_fix,
+         "space: the host's list of a guest's kept colonies is not applied in a Space save of the guest's own");
+static uint32_t g_restore_own_held; // frames the list waited in an own save
 // BUG-0810: a crash rejoin (the token of BUG-0235) drops the old entry and accepts the new one in the same message,
 // and the newcomer gets the lowest free id: the same one. kept_tick never saw the player missing, k.id stayed, and
 // the rejoined guest's first (empty) roster became its kept list. The session's leave (PLAYER_LEAVE, player_life)
@@ -778,6 +788,10 @@ static void kept_tick(double now)
     }
     if (!g_restore_on || !spaceext::in_space() || spaceext::world_epoch() == g_win.join)
         return;
+    if (g_restore_own_fix && own_world::space_other()) { // BUG-1488: not into a Space save of my own; kept for the host's
+        g_restore_own_held++;
+        return;
+    }
     std::vector<uint32_t> failed, wait;
     for (uint32_t p : g_restore) {
         std::string why = spaceext::colonize_own(p);
@@ -841,9 +855,9 @@ static std::string kept_status()
 {
     std::string s;
     char b[200];
-    snprintf(b, sizeof b, "kept: fix=%d players=%u sent=%u done=%u restored=%u failed=%u pending=%u left=%u\n", (int)g_keep_fix,
-             (unsigned)g_store.size(), g_kept_sent, g_kept_done, g_restored, g_restore_failed, (unsigned)g_restore.size(),
-             g_kept_left);
+    snprintf(b, sizeof b, "kept: fix=%d players=%u sent=%u done=%u restored=%u failed=%u pending=%u left=%u own_held=%u\n",
+             (int)g_keep_fix, (unsigned)g_store.size(), g_kept_sent, g_kept_done, g_restored, g_restore_failed,
+             (unsigned)g_restore.size(), g_kept_left, g_restore_own_held);
     s += b;
     s += "  disk: fix=" + std::to_string((int)g_disk_fix) + " " + g_disk.status() + " (restored " +
          std::to_string(g_store.restored()) + ")\n";
