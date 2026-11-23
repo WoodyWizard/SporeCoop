@@ -575,10 +575,20 @@ void on_message(uint8_t from, net::Reader& r)
     sync_on_message(from, r);
 }
 
+static std::vector<std::string> g_peer_names; // the names in g_c.peers (a name seen again: a rejoin)
+// UIFX-10 (BUG-1519): the names were cleared only by a guest's on_connected: a host's second session in the same game run
+// found a returning name in the old list, counted a rejoin and never listed the player ("players none; rejoins 1" in the
+// support summary). On: every session starts with no names. Off (`coop.fix diag.peer_names_reset off`): 0.7.16.1
+static bool g_peer_names_fix = true;
+COOP_FIX("diag.peer_names_reset", "BUG-1519", g_peer_names_fix,
+         "diag: the support summary of a second session lists its players (the first session's names are forgotten)");
+
 void on_session_start()
 {
     g_had_session = true;
     reset_counters();
+    if (g_peer_names_fix)
+        g_peer_names.clear(); // BUG-1519 (g_c.peers went with reset_counters)
     g_session_t0 = g_H->time_seconds();
     g_session_role = g_P.sess ? g_P.sess->role() : net::Role::None;
     g_net.clear();
@@ -588,8 +598,6 @@ void on_session_start()
     sync_session_start();
     settings_check(g_session_t0, true);
 }
-
-static std::vector<std::string> g_peer_names; // the names in g_c.peers (a name seen again: a rejoin)
 
 static std::string peer_text(const net::PlayerInfo& p)
 {
