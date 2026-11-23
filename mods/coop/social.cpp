@@ -121,6 +121,9 @@ static social_logic::SoloEvents g_solo;      // guest: kept while the host is aw
 static double g_solo_sent_at = -1;           // guest: when it sent them (the host's next table is taken after it)
 static uint32_t g_solo_kept = 0, g_solo_sent = 0, g_solo_old_host = 0; // guest
 static uint32_t g_solo_applied = 0, g_solo_refused = 0;                 // host
+// (the events of one world and session only)
+LIFECYCLE_STATE("social.solo", lifecycle::kSession | lifecycle::kWorld, &g_solo_fix, [] { g_solo.clear(); g_solo_sent_at = -1; },
+                []() -> size_t { return g_solo.v.size(); });
 static bool host_away() { return C.host_away && C.host_away(); }
 static void send_solo(double now);
 static bool enforce_ok(double now)
