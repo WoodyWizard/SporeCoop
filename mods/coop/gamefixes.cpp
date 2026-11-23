@@ -1959,7 +1959,7 @@ static int c_menuhover(void*, int argc, const char* const* argv, SkOut* out)
             if (nb && ne > nb && ne - nb < 64 && readable(nb, (size_t)(ne - nb) * 2))
                 for (const char16_t* c = nb; c < ne; c++)
                     name += *c < 0x80 ? (char)*c : '?';
-            snprintf(b, sizeof b, "planet %u name='%s' saved=%u shown=%u state=%u tech=%u\n", (unsigned)i, name.c_str(),
+            snprintf(b, sizeof b, "planet %u '%s': has a save %u, shown %u, save state %u, tech level %u\n", (unsigned)i, name.c_str(),
                      (unsigned)at<uint8_t>(e, 0xAC), (unsigned)at<uint8_t>(e, 0xAD), at<uint32_t>(e, 0x8C), at<uint32_t>(e, 0xA8));
             H->out_printf(out, "%s", b);
         }

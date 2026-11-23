@@ -53,7 +53,8 @@ def main():
     ck(not any(s.startswith('Creature') for s in seen), "the host's game never entered the Creature stage from the menu")
     st = [ln for ln in host.call('coop.cellswitch').get('out', '').splitlines()]
     print('  host:', st, flush=True)
-    ck(any('dropped 1' in ln or 'dropped so far 1' in ln for ln in st), "the mod did not take the game's switch")
+    ck(any('dropped 1' in ln or 'dropped so far 1' in ln for ln in st),  # counter: the path ran; the game's mode is checked above
+       "the mod did not take the game's switch")
     if 'GalaxyGameEntry' in final:
         keyframe('cell_quit_switch', "the host's galaxy menu after its quit from Cell: no Creature stage, no crash",
                  players={'host': host}, settle=0)

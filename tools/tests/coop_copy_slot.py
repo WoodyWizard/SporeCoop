@@ -214,7 +214,7 @@ def planets_case(host, guest, ck):
         menu = guest.call('coop.menuhover list')['out']
         print('  guest menu:', menu.strip().replace('\n', ' | ')[:600], flush=True)
         stem = played[:-4]
-        ck(re.search(r"name='" + re.escape(stem) + r"' saved=1", menu),
+        ck(re.search(r"planet \d+ '" + re.escape(stem) + r"': has a save 1", menu),
            f"the guest's galaxy menu lists {stem} with its save")
         keyframe('copy_planets_menu', f"the guest's galaxy menu (its copy {slot}): the planet {stem} with its save, "
                  "the host's older planets are not there", players={'guest': guest}, settle=0)
@@ -232,13 +232,17 @@ def planets_case(host, guest, ck):
         gui.click('share')
         guest.call('coop.uistate 0')
         ok = wait(lambda: world_of(guest).lower() == played.lower(), 120)
-        ck(ok and wait_mode(guest, 'Creature', 30),
-           f"the new host plays the session's world {played} again ({world_of(guest) or 'nothing'})")
+        ck(ok and wait_mode(guest, 'Creature', 30) and copy_slot(guest)[0] == slot,
+           f"the new host plays the session's world {played} again from its copy {slot} "
+           f"({world_of(guest) or 'nothing'}, {copy_slot(guest)})")
         print('  old host joins:', host.call(f'cheat coop join 127.0.0.1:{lane.PORT} Alice')['out'].strip()[:120],
               flush=True)
         wait(lambda: not host.call('coop.avatar')['ok'], 60)
-        ok = wait(lambda: world_of(host).lower() == played.lower(), 240)
-        ck(ok, f"the old host, now a guest, plays {played} too ({world_of(host) or 'nothing'})")
+        # (the old host's own game is the same planet: it must play it from a copy of Bob's world now)
+        ok = wait(lambda: "a copy of Bob's world" in host.call('coop.status')['out'] and
+                  world_of(host).lower() == played.lower(), 240)
+        ck(ok, f"the old host, now a guest, plays {played} from its copy of the new host's world "
+               f"({world_of(host) or 'nothing'}, {copy_slot(host)})")
         keyframe('copy_planets_swap', f"Creature after the role swap: the new host continued {stem}, the old host "
                  "joined it: both in that world")
         host.call('coop.leave')
