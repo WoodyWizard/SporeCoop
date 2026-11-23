@@ -39,8 +39,11 @@ Why not the other stages (initially):
    files are written into `Spore\Games-sporecoop-tmp` first and moved into place as a whole; a
    world that could not be written completely is neither kept nor loaded. A load of a received
    world waits while an editor is open and is dropped when the session ends.
-   The slot is a copy of the host's whole galaxy (every planet of the host's `GameN`, old games
-   too). A copy the player saved in while not a guest (alone, or hosting from it) gets an
+   Up to 0.7.16.1 the slot was a copy of the host's whole galaxy (every planet of the host's
+   `GameN`, old games too); since 0.7.17 a share sends the played planet's `.spo` and the galaxy's
+   own files only (a guest with world 1.1 or newer; `coop.fix world.share_planet`, BUG-1434). A host
+   in the galaxy menu gets **Continue <planet>** in the co-op window for the co-op copy it played
+   last (`coop.continue`, `coop.fix world.continue_coop`). A copy the player saved in while not a guest (alone, or hosting from it) gets an
    `own_save` line in its `sporecoop.txt` and is the player's own from then on: no later share
    reuses, replaces or tidies it (0.7.16.1, BUG-1434). A host whose save database points to such a
    copy of another player's world is told whose copy it is and which planet it was made for.

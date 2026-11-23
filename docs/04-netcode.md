@@ -858,6 +858,10 @@ WP-0 of docs/plan-0.7.17.md. Parallel branches collided on message ids before (B
   1.x of 0.7.17"` (feat/w54-shims did the same for creations 1.1 in 0.7.16). Two WPs of one family both re-lock;
   the merge takes either lock line and runs the rebase once more on the merged tree.
 * Settings and store: docs/07-modes.md#modes-reserved-0717, docs/01-architecture.md#arch-player-store.
+* WP-W1 (fix/w75-share, BUG-1434): world 1.1 changes no wire format: MSG_WORLD_OFFER and the chunks are as before, the
+  host leaves the slot's other planets' `.spo` files out of the file list for a guest whose world family is 1.1 or newer
+  (`share_logic::peer_takes_one`, `peer_families` on the host; `coop.fix world.share_planet`). A 0.7.16.1 guest (world
+  1.0) gets the whole slot as before. No lock change (the family has no wire file).
 
 ## MSG_CIV_WALLET: every player's own Civ money (2026-11-23, feat/w68-wallet)
 <a id="netcode-civ-wallet"></a>
