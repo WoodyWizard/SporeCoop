@@ -9,8 +9,8 @@ source: lab
 role: 
 versions: 
 fixed_in:
-branch: 
-commits:
+branch: fix/w84-tests
+commits: 15dd0538
 tests: tools/tests/coop_tribe_npc_dash.py (tribe_npc_dash)
 signature:
 docs:
@@ -33,12 +33,18 @@ between the fix's on (-0.041..+0.009) and off (-0.045..-0.074) bands; nothing to
 INCONCLUSIVE.
 
 ## Fix
-None (no defect found in the test). Rerun on a quiet machine.
+coop_tribe_npc_dash.py (tribe_npc_dash, creature_npc_dash): the along-path median is printed with the medians of
+four parts of its frames; when it lies within ALONG_AMBIG = 0.010 s of ALONG_MIN (-0.043 s), a second dash of the same
+two animals is recorded (coop.bodyrec on both games, the same `coop.npc dash`, 42 s) and the median over both dashes'
+frames is judged against the same limit. A clear median (above -0.033 or under -0.053 s) costs nothing more; the
+fix-off band (-0.045 .. -0.074) still fails on the pooled frames. Nothing loosened (the limit and the P90 check stay),
+no INCONCLUSIVE: the mod can make the copy late. Test only, no mod change.
 
 ## Verification
-Open: PASS `SPORE_DETECTOR=20 python3 tools/lab.py run tribe_npc_dash --lane N --retry 0 --no-build` on a quiet machine;
-FAIL `SPORE_LAB_FIXOFF="tribe_npc_dash=npc.place_now" SPORE_DETECTOR=20 python3 tools/lab.py run tribe_npc_dash --lane M
---retry 0 --no-build`.
+Open, pending night run: `SPORE_DETECTOR=20 python3 tools/lab.py run tribe_npc_dash --repeat 4 --lane N --retry 0 --no-build` PASS 4 of 4 (a "second dash" line when the first was
+close); twin `SPORE_LAB_FIXOFF="tribe_npc_dash=npc.place_now" SPORE_DETECTOR=20 python3 tools/lab.py run tribe_npc_dash --repeat 2 --lane M --retry 0
+--no-build` FAILS 2 of 2. FAIL before: 20261122-194210 (rel/0.7.16 5376d388, median -0.051 s on a 6-lane night).
 
 ## History
 - 2026-11-23: opened (fix/w65-night triage).
+- 2026-11-23: fix/w84-tests (WP-T1 of 0.7.17): a second dash when the median is near the limit, judged on both (15dd0538).

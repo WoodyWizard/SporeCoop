@@ -9,8 +9,8 @@ source: lab
 role: 
 versions: 0.7.16.1
 fixed_in:
-branch:
-commits:
+branch: fix/w84-tests
+commits: 77531ae2
 tests: tribe_held_item (coop_tribe_looks.py --part item)
 signature:
 docs:
@@ -31,11 +31,23 @@ without the host's hold in 20 s: a host chief that stays in its staff gesture lo
 judge. Not a mod bug as far as these rows show.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+coop_tribe_looks.py check_item() (tribe_held_item, part item):
+* the resting-grip wait skips every sample in which the host's chief itself has hold=1 (its staff gesture: the copy
+  mirrors that hold, tribe.mirror_hold, BUG-1449); the wait goes on up to 60 s (was 30 s) while no sample could be
+  judged. A host chief in its gesture for the whole wait is printed `(start: the host's chief #N held its staff gesture
+  (hold=1) in every sample ...; BUG-1467)` and the grip check is not made.
+* the "keeps the grip" loop waits up to 40 s (was 20 s) while it has fewer than 4 samples without the host's hold;
+  fewer than 4 then is "not judged" (was a FAIL); 4 stuck samples while the host does not hold still FAIL.
+* main(): when neither part (start, rejoin) judged the resting grip or the lasting grip, and no check failed, the run
+  is `RESULT: INCONCLUSIVE ... (BUG-1467)` (a check that failed still makes it FAIL).
+Test only, no mod change.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Open, pending night run: `SPORE_DETECTOR=20 python3 tools/lab.py run tribe_held_item --repeat 3 --lane N --retry 0 --no-build` PASS (or INCONCLUSIVE naming BUG-1467, never the start
+FAIL of a host-held staff); the twins still FAIL: `SPORE_LAB_FIXOFF="tribe_held_item=tribe.held_item" SPORE_DETECTOR=20 python3 tools/lab.py run tribe_held_item
+--lane M --retry 0 --no-build` and `SPORE_LAB_FIXOFF="tribe_held_item=tribe.item_scale" ...`. FAIL before: lab
+20261123-095115 tribe_held_item#1 (fix/w67-chief).
 
 ## History
 - 2026-11-23: opened (fix/w67-chief, seen while verifying BUG-1450; not fixed there).
+- 2026-11-23: fix/w84-tests (WP-T1 of 0.7.17): host-held samples skipped, nothing judged is INCONCLUSIVE (77531ae2). The ticket file came from fix/w67-chief (e47f50a5, rel/0.7.16.1) and was added to rel/0.7.17 by this branch as is.
