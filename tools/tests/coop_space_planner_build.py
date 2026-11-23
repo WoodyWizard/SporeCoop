@@ -44,6 +44,10 @@ HOME = '00460035'
 HOUSE = 'noun=018EB106'
 TILE_HOUSE = (123, 385)  # the planner palette's house tile (1440x1080), as in Civ
 DONE = (1412, 1054)  # the planner's green check
+# BUG-1448: the click points of the attempts around the city's screen point (px): a ship steady over the city got 4 clicks
+# on the same pixel and no planner (lab 20261122-194210); the next attempts try beside it, after a fresh hover
+CLICK_OFFS = ((0, 0), (0, 28), (0, -28), (28, 0))
+NOT_OPENED = 'not opened'  # planner_buy(miss=True): the planner never opened (the precondition of the miss case)
 
 
 def cities(con):
@@ -125,6 +129,10 @@ def planner_buy(ck, buyer, bi, who, miss=False):
             fly_over_city(buyer, 30)
             time.sleep(2)
         _, on, x, y, _ = min(cities(buyer))
+        x, y = x + CLICK_OFFS[attempt][0], y + CLICK_OFFS[attempt][1]
+        if attempt:  # (a fresh hover: the pointer off the city and back)
+            buyer.call(f'move {W // 2} {H - 200}')
+            time.sleep(0.5)
         buyer.call(f'move {int(x)} {int(y)}')
         time.sleep(0.8)
         buyer.call(f'click {int(x)} {int(y)}')
@@ -141,6 +149,11 @@ def planner_buy(ck, buyer, bi, who, miss=False):
               f'({pl.strip().splitlines()[0][:100] if pl.strip() else "-"}; {busy})', flush=True)
         shot(buyer, f'space_planner_try{attempt + 1}.png')
     shot(buyer, 'space_planner_open.png')
+    if miss and not opened:
+        # BUG-1448: the miss case is about a drop on a taken plot (BUG-0902); without the planner nothing of it can be
+        # judged (the click that opens it is space_planner_build's check, the same code)
+        print(f'  the {who}\'s planner did not open in {attempt + 1} clicks: the drop is not judged (BUG-1448)', flush=True)
+        return NOT_OPENED
     ck(opened, f'the {who} opened the city planner by a click on the city')
     free, busy = [], []
     for ln in buyer.call(f'coop.civ slots s{bi}')['out'].splitlines():
@@ -233,6 +246,10 @@ def main():
         time.sleep(2)
     adds0 = planner_adds(buyer)
     paid = planner_buy(ck, buyer, bi, bw, a.miss)
+    if paid == NOT_OPENED:
+        ck.faults(host=host, guest=guest)
+        return ck.inconclusive(f'the {bw}\'s click on its city opened no planner in {len(CLICK_OFFS)} tries (BUG-1448): '
+                               f'the drop on a taken plot was not made')
     nb1, hb1, _ = houses(buyer, bi)
     if a.miss:
         time.sleep(3)
