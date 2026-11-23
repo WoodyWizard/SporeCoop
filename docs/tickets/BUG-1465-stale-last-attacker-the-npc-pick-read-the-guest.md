@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w65-tests
-commits:
+commits: def13b5f
 tests: tools/tests/coop_stale_last_attacker.py (stale_last_attacker)
 signature:
 docs:

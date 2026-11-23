@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w65-tests
-commits:
+commits: def13b5f
 tests: tools/tests/coop_campaign.py (campaign_tribe_latecut)
 signature:
 docs:

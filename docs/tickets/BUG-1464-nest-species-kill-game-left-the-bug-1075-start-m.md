@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w65-tests
-commits:
+commits: def13b5f
 tests: tools/tests/coop_creature_desync.py kill_game (nest_species, late_species, every kill_game user)
 signature:
 docs:
