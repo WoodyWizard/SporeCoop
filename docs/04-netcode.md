@@ -926,3 +926,18 @@ place keeps MSG_UFO_STATE / MSG_UFO_HIT / MSG_UFO_DAMAGE of 0.7.16 byte for byte
   a guest or sending it anything; a guest asks `host_families` before it takes a role from the table. A 0.7.16.1 peer on
   either side: no table, no K_*, every guest away from the host plays its own NPC ships (as 0.7.16.1).
 * Off: `coop.fix fleet.leader off` (no table, nothing relayed). Rivals: no rows.
+
+## Space 1.3 changes of the audit items (2026-11-23, fix/w77-space)
+<a id="netcode-space-audit-0717"></a>
+
+WP-X1 of 0.7.17 (docs/re/space.md#space-audit-0717). No new id or kind; the space 1.3 lock is rebased once more.
+
+* MSG_SPACE rivalry K_SET 57: the `have` byte gets the value 3 (BUG-1482): the host gives a present guest a stored
+  budget by `coop.store adopt`; the guest takes it even when its budget is known, and the host holds the budget until
+  the guest's K_MONEY reports it (resent every 2 s). Old peers: sent only to guests whose HELLO lists space 1.3 or newer
+  (`wire::space_rivalry::reads_adopt`, `kAdoptMinor` 3, `spaceext::peer_families`); a 0.7.16.1 guest gets nothing new.
+* MSG_SPACE trade K_OFFER_ACK 75 is also sent for an offer the receiver can not hold (a full list) and for a Withdraw
+  of an offer it does not hold (got 0, reason 0, BUG-1491). A 0.7.16.1 seller reads it as the decline it already knows
+  (an ACK for an offer it no longer waits for is ignored).
+* MSG_SPACE spacecoop K_TERRA 4: the receiver refuses a message with a non-finite delta and clamps a finite one to +-1
+  (BUG-1489); the bytes are unchanged.
