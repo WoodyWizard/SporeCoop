@@ -37,6 +37,9 @@ game addresses.
   adopt. (BUG-1429)
 - Tribe: after the host loads its world again, a player whose members were all claimed by others still gets its share.
   (BUG-1430)
+- Civ: until a guest moved the mouse over its game, the citizens of the city it looked at walked elsewhere than on the
+  host's screen (the host took the guest to be at the host's capital); now the guest is where its camera looks.
+  (BUG-1457)
 - Civ: a guest's game no longer puts back a vehicle the host removed while the guest was saving (a rare crash after a
   save). (BUG-1416)
 - Civ: a building a guest drops on a taken plot in its city planner no longer appears for free in the host's game.
@@ -59,6 +62,8 @@ game addresses.
   tribe no longer makes the guest's game fault when its way is blocked. (BUG-1460)
 - Tribe: on a laggy connection a guest's copy of a tribe member that started to walk late catches up with the host's
   member again instead of trailing it by a few metres for a second. (BUG-1451)
+- Tribe: the host's chief (the tribe's leader with the staff) no longer becomes a guest's member when a guest rejoins
+  or joins with no members of its own. (BUG-1450)
 
 ## [0.7.16] - 2026-11-23
 

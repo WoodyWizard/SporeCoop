@@ -1,6 +1,7 @@
 // The host's shots copied on the guests (BUG-0477 and its class), the old Tribe-stage villages raided in Civ
 // (BUG-0539) and the damage of a mirror's weapon dropped; moved out of civ.cpp (C8 of 0.7.15, BUG-1164).
 #include "civ_internal.h"
+#include "party_difficulty.h"
 
 namespace civ {
 
@@ -734,6 +735,13 @@ int SK_THISCALL h_VTakeDamage(void* s, float d, uint32_t pol, int t, const void*
 {
     if (cosmetic_hit(a))
         return 0;
+    if (is_host() && active()) { // WP-D1 (BUG-1473): all.party_difficulty between the players' vehicles and the NPCs'
+        HvRef v = hv_find((uint8_t*)s - kVCombatant);
+        uint8_t ap = player_of_combatant(a);
+        party::Side vs = !v ? party::Side::Other : v.h->owner < net::kMaxPlayers ? party::Side::Player : party::Side::Npc;
+        party::Side as = ap < net::kMaxPlayers ? party::Side::Player : a ? party::Side::Npc : party::Side::Other;
+        d = party::hit(d, vs, as);
+    }
     return o_VTakeDamage(s, d, pol, t, dir, a);
 }
 

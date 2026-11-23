@@ -1,5 +1,6 @@
 #include "lifecycle.h"
 #include "squadron.h"
+#include "party_difficulty.h"
 #include "call_guard.h"
 #include "civ.h"
 
@@ -336,8 +337,24 @@ static void send_lead_damage(uint8_t victim, float dmg, int type, const float* d
 // ---------------- hooks ----------------
 using TakeDamage_t = int(SK_THISCALL*)(void*, float, uint32_t, int, const float*, void*);
 static TakeDamage_t o_TakeDamage;
+// WP-D1 (BUG-1473): all.party_difficulty on the host (party::hit is the game's damage on any other game): a hit between a
+// player's ship (the host's own, a guest's puppet) and an NPC ship. The partners' hits on the NPC ships come through
+// apply_hit (MSG_UFO_HIT), which calls the game directly; a guest leader's place (BUG-1288) keeps the game's damage
+static float party_hit(void* u, void* att, float dmg)
+{
+    if (!C.sess || !C.sess->connected() || !is_host())
+        return dmg;
+    void* me = player_ufo();
+    auto side = [&](void* x) {
+        return !x ? party::Side::Other : x == me || (C.puppet_owner && C.puppet_owner(x) > 0) ? party::Side::Player : party::Side::Npc;
+    };
+    return party::hit(dmg, side(u), side(att));
+}
+
 static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int type, const float* dir, void* attacker)
 {
+    if (in_space())
+        dmg = party_hit((uint8_t*)combat - kCombat, attacker ? (uint8_t*)attacker - kCombat : nullptr, dmg);
     if (in_space() && (uint8_t*)combat - kCombat == player_ufo()) // rescue: a lethal hit may only disable us
         dmg = spacecoop::filter_own_damage((uint8_t*)combat - kCombat, dmg, type);
     if (!in_space() || g_applying || !C.sess || !C.sess->connected())
@@ -1380,6 +1397,8 @@ static void apply_hit(uint8_t from, uint16_t id, float dmg, int t, float dir[3])
     if (war && friendly(it->second))
         g_war_hits_in++;
     dmg = net::sane_damage(dmg, 100000.f); // a guest's report: finite and not negative
+    if (is_host())
+        dmg = party::player_hits_npc(dmg); // WP-D1 (BUG-1473): a partner's hit on our NPC ship (all.party_difficulty)
     if (!net::finite3(dir))
         dir[0] = dir[1] = dir[2] = 0;
     void* puppet = hit_puppet(from);

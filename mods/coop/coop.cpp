@@ -109,6 +109,7 @@
 #include "coop_state.h"
 #include "own_progress.h"
 #include "revive.h"
+#include "party_difficulty.h"
 
 const SkHost* H;
 SkMod* M;
@@ -2926,6 +2927,7 @@ static void init_creature_hooks()
     rc.wallet = [](uint8_t id) { return dna_own_budget(id); };
     rc.charge_wallet = [](uint8_t id, float d) { dna_own_spend(id, d); };
     revive::init(H, M, std::move(rc));
+    party::init(H, M, &g_sess); // WP-D1 (BUG-1473): all.party_difficulty
     if (uintptr_t a = H->sym("Simulator::CreatureSelectionUI"))
         H->hook_create(M, (void*)a, (void*)h_SelectUI, (void**)&o_SelectUI);
     a_AbilityModeCore = H->sym("Simulator::cCreatureGameData::GetAbilityMode"); // BUG-0913

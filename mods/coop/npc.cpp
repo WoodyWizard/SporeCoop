@@ -1,4 +1,5 @@
 #include "npc.h"
+#include "party_difficulty.h"
 #include "lifecycle.h"
 #include "player_rules.h"
 #include "view_centres.h"
@@ -3441,6 +3442,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         // BUG-0805: the guest's puppet as the attacker only while it is a live creature here (TakeDamage relays it)
         void* attacker = g_handler_live_fix && C.puppet_live ? C.puppet_live(from) : C.puppet_of(from);
         float dmg = teamplay::on_player_hit(npc, from, net::sane_damage(q.damage, kMaxHit));
+        dmg = party::player_hits_npc(dmg); // WP-D1 (BUG-1473): all.party_difficulty, a guest's hit on our NPC
         // kill credit: the game pays DNA, goal progress and the kill popup only for a kill by the
         // player's own avatar (TakeDamage 0xC07A78: attacker spatial vt 0x58, docs/re/creature.md 2).
         // A guest's puppet is not it, so a guest's kill paid nothing. The pack shares its progress:
@@ -3554,14 +3556,18 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
     if (is_host()) {
         if (game::mode_id() == modes::kTribe)
             tribe::note_animal_hit(c, attacker);
+        // WP-D1 (BUG-1473): all.party_difficulty: an NPC's hit on a player, the host's hit on an NPC (party_difficulty.h)
+        bool npc_attacker = attacker && attacker != av && !game::is_puppet(attacker);
         if (c == av) {
+            if (npc_attacker)
+                damage = party::npc_hits_player(damage); // (before the pack rescue and the revive: they see the real hit)
             damage = teamplay::on_own_damage(av, damage);
             log_hit(0, attacker, damage, "");
             return true;
         }
         if (!game::is_puppet(c)) {
             if (attacker == av)
-                damage = teamplay::on_player_hit(c, 0, damage);
+                damage = party::player_hits_npc(teamplay::on_player_hit(c, 0, damage));
             return true;
         }
         // a guest's puppet was hit: forward real NPC hits to that guest
@@ -3589,7 +3595,7 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
             if (pvp || (attacker && attacker != av && !game::is_puppet(attacker))) {
                 net::Damage d;
                 d.player = p.id;
-                d.damage = damage;
+                d.damage = pvp ? damage : party::npc_hits_player(damage); // WP-D1 (BUG-1473): the guest takes it scaled
                 d.type = type;
                 HostNpc* it = hn_of(attacker);
                 d.attacker = it ? it->id : 0xFFFF;

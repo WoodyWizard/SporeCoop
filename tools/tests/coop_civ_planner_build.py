@@ -11,13 +11,16 @@ h_AddBuilding, CMD_BUILD), which builds it in its game (the guest already paid w
    docs/re/civ.md#civ-planner-palette-runtime); both games get the house design the NPC cities of the save use
    (`coop.civ bdesign <pol> house <key>`).
 2. The guest opens the city planner of its city with the city menu (real clicks, as play_civ.py), holds the
-   house tile and drags it onto a free plot (the plot's screen point, `coop.civ slots`), closes with the green check.
+   house tile and drags it over the free plots (their screen points, `coop.civ slots`) until the planner offers one
+   (`coop.civ planner` hand: a hover slot, no "Sell For"; only plots the city's buildings link to are offered, BUG-1532:
+   a drop elsewhere sells the house back), lets go there, closes with the green check.
 3. PASS: the host's game has a new house in that city at the plot (the game's own building list), the shared
    money fell by the same amount on both games (the house's price), the guest's building list is the host's.
 SPORE_FIX_OFF=civ.planner_send must FAIL (the guest's placement stays in the guest's game).
 
---miss (BUG-1417, audit CIV-7): the guest drops the house tile on a taken plot: the planner adds the building at the drop
-and takes it away again (no money taken). PASS: the guest's planner added it (`coop.civ tables` planner_out adds went
+--miss (BUG-1417, audit CIV-7): the guest drops the house tile on a taken plot: the planner adds the building at the
+tile's mouse-down (and takes its price) and sells it back at the drop (the refund passes the guest's income block for a
+building its planner added, BUG-1532). PASS: the guest's planner added it (`coop.civ tables` planner_out adds went
 up; else INCONCLUSIVE), the guest kept no new house, the host's city gets no new house within 20 s and the shared money
 is unchanged on both games. SPORE_FIX_OFF=civ.planner_closed must FAIL (the host builds the house unpaid, sent at
 AddBuilding).
@@ -76,6 +79,41 @@ def drag(con, sx, sy, tx, ty):
     time.sleep(2)
 
 
+def hand(con):
+    """the planner's hand now (BUG-1532): (hover slot, sell); sell=1: a drop sells it back (off the offered plots)"""
+    m = re.search(r'hand \S+ hover_slot=(-?\d+) sell=(-?\d+)', con.call('coop.civ planner')['out'])
+    return (int(m.group(1)), int(m.group(2))) if m else (None, None)
+
+
+def drag_offered(con, sx, sy, cands):
+    """hold the tile and move over the free plots until the planner offers one (its hand is on a plot, no "Sell For":
+    only plots the city's buildings link to are offered, BUG-1532); let go there. Returns the plot or None (let go on
+    the last one: sold back)"""
+    con.call(f'move {sx - 10} {sy - 10}')
+    time.sleep(0.5)
+    con.call(f'move {sx} {sy}')
+    time.sleep(1.0)
+    con.call(f'button {sx} {sy} down')
+    time.sleep(0.5)
+    x, y = sx, sy
+    for s in cands:
+        tx, ty = s['at']
+        for i in range(1, 31):
+            con.call(f'move {x + (tx - x) * i // 30} {y + (ty - y) * i // 30}')
+            time.sleep(0.05)
+        x, y = tx, ty
+        time.sleep(0.8)
+        hover, sell = hand(con)
+        print(f'  plot {s["k"]} at {s["at"]}: the planner\'s hand hover_slot={hover} sell={sell}', flush=True)
+        if hover is not None and hover >= 0 and sell == 0:
+            con.call(f'button {x} {y} up')
+            time.sleep(2)
+            return s
+    con.call(f'button {x} {y} up')
+    time.sleep(2)
+    return None
+
+
 def planner_adds(con):
     m = re.search(r'planner_out: fix=\d+ adds=(\d+)', con.call('coop.civ tables')['out'])
     return int(m.group(1)) if m else -1
@@ -126,10 +164,11 @@ def main():
         return miss(ck, host, guest, p, ci, b0h, b0g, m0h, m0g)
     free = [s for s in slots(guest, ci) if s['free'] and 400 < s['at'][0] < 1300 and 150 < s['at'][1] < 950]
     ck(free, f'a free plot on the guest\'s planner screen ({len(free)})')
-    s = free[0] if free else None
-    if s:
-        print(f'  guest drags the house tile onto plot {s["k"]} at {s["at"]}', flush=True)
-        drag(guest, TILE_HOUSE[0], TILE_HOUSE[1], s['at'][0], s['at'][1])
+    s = None
+    if free:
+        print(f'  guest drags the house tile over the free plots {[f["k"] for f in free]}', flush=True)
+        s = drag_offered(guest, TILE_HOUSE[0], TILE_HOUSE[1], free)
+        ck(s, f'the guest\'s planner offered a free plot for the house and the guest let go there ({s and s["k"]})')
     paid = None
     t0 = time.time()
     while s and time.time() - t0 < 6 and paid is None:

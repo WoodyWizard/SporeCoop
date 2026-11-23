@@ -1,5 +1,6 @@
 #include "civ.h"
 #include "civ_internal.h"
+#include "party_difficulty.h"
 #include "civ_wallet.h"
 #include "own_world.h"
 #include "host_busy.h"
@@ -784,10 +785,29 @@ struct PlannerOut {
     uint32_t noun;
     float price; // GetCost when the planner added it (BUG-0807)
     double t;
+    bool refunded; // BUG-1532: the planner sold it back and its refund went through
 };
 static std::vector<PlannerOut> g_planner_out;
 static std::unordered_map<void*, double> g_planner_sent_at; // city -> when its building went to the host
-uint32_t g_planner_adds, g_planner_queued, g_planner_sent, g_planner_dropped;
+uint32_t g_planner_adds, g_planner_queued, g_planner_sent, g_planner_dropped, g_planner_refunds;
+static uintptr_t a_PlannerMoneyAddRet; // SporeCoop::CommunityEditor_Money_AddRet (optional)
+// BUG-1532: the planner sells a dropped object back off the offered plots (CommunityEditor_Sell + a refund through
+// CommunityEditor_Money -> AddMoney); a guest's Civ income block dropped that refund, so a palette building taken away
+// again cost its price (0.7.16 hid it: the host built the house sent at AddBuilding). With civ.planner_closed the refund
+// of a building this planner added and has not sent goes through (the shared money brings it to the host); the sale of
+// a building the host has stays blocked. True for that AddMoney (and marks the building refunded).
+static bool planner_refund_ours(void* ret)
+{
+    if (!a_PlannerMoneyAddRet || (uintptr_t)ret != a_PlannerMoneyAddRet || !g_editor || !planner_city())
+        return false;
+    void* hand = F<void*>(g_editor, kEdHand);
+    for (PlannerOut& o : g_planner_out)
+        if (hand && (uint8_t*)o.b + kVSpatial == hand && !o.refunded) {
+            o.refunded = true;
+            return true;
+        }
+    return false;
+}
 static void send_build_cmd(void* city, uint32_t noun, const net::Vec3& pos, float price)
 {
     int ci = host_index_of_city(city);
@@ -834,8 +854,8 @@ static void planner_out_tick(double now)
             H->log(M, SK_INFO, "civ: planner: the building %08X the planner kept goes to the host (BUG-1417)", o.noun);
         } else {
             g_planner_dropped++;
-            H->log(M, SK_INFO, "civ: planner: a building %08X the planner added was taken away again: not sent (BUG-1417)",
-                   o.noun);
+            H->log(M, SK_INFO, "civ: planner: a building %08X the planner added was taken away again: not sent (BUG-1417)%s",
+                   o.noun, o.refunded ? "; sold back, its price came back (BUG-1532)" : "");
         }
         g_planner_out.erase(g_planner_out.begin() + i);
     }
@@ -847,9 +867,10 @@ void planner_out_clear()
 }
 std::string planner_out_status()
 {
-    char b[160];
-    snprintf(b, sizeof b, "planner_out: fix=%d adds=%u waiting=%u queued=%u sent=%u dropped=%u\n", (int)g_fix_planner_closed,
-             g_planner_adds, (unsigned)g_planner_out.size(), g_planner_queued, g_planner_sent, g_planner_dropped);
+    char b[180];
+    snprintf(b, sizeof b, "planner_out: fix=%d adds=%u waiting=%u queued=%u sent=%u dropped=%u refunds=%u\n",
+             (int)g_fix_planner_closed, g_planner_adds, (unsigned)g_planner_out.size(), g_planner_queued, g_planner_sent,
+             g_planner_dropped, g_planner_refunds);
     return b;
 }
 
@@ -884,9 +905,9 @@ static int SK_THISCALL h_AddBuilding(void* city, void* b, int x)
             if (host_index_of_city(city) >= 0 && g_planner_out.size() < 64) {
                 auto it = std::find_if(g_planner_out.begin(), g_planner_out.end(), [&](const PlannerOut& o) { return o.b == b; });
                 if (it != g_planner_out.end()) // the same block again (taken away, a new one there): the newest
-                    *it = {city, b, noun, price, H->time_seconds()};
+                    *it = {city, b, noun, price, H->time_seconds(), false};
                 else
-                    g_planner_out.push_back({city, b, noun, price, H->time_seconds()});
+                    g_planner_out.push_back({city, b, noun, price, H->time_seconds(), false});
                 g_planner_queued++;
             }
         } else
@@ -1114,8 +1135,14 @@ static void SK_THISCALL h_AddMoney(void* civ, float amount, int difficulty)
     // BUG-1478: a guest in another Civ world of its own keeps its own income
     bool in_civ = game::mode_id() == modes::kCiv, guest = is_guest(), holds = guest_holds();
     if (civlogic::guest_income_blocked(g_applying, guest, holds, guest && in_civ && civ == player_civ(), amount)) {
-        g_n.income_blocked++;
-        return;
+        if (!civlogic::planner_refund_passes(g_fix_planner_closed, ret == a_PlannerMoneyAddRet,
+                                             g_fix_planner_closed && planner_refund_ours((void*)ret))) {
+            g_n.income_blocked++;
+            return;
+        }
+        g_planner_refunds++; // BUG-1532: the sell-back of a building this guest's planner added and did not send
+        H->log(M, SK_INFO, "civ: planner: a building the planner added was sold back: its refund %.0f goes through (BUG-1532)",
+               amount);
     }
     bool passive = !g_applying && in_civ && is_host() && civ && is_passive_income_ret(ret) && civ == player_civ() &&
                    skg::readable(civ, kCivWealth + sizeof(float));
@@ -1541,7 +1568,7 @@ void host_specialty_answer(uint8_t from, net::Reader& r)
            take ? "the new one" : "kept");
 }
 
-static uint8_t player_of_combatant(void* att)
+uint8_t player_of_combatant(void* att)
 {
     if (!att || IsBadReadPtr(att, 4))
         return 0xFF;
@@ -1568,6 +1595,10 @@ static int b_damage(BTakeDamage_t orig, void* self, float dmg, uint32_t pol, int
         dmg *= 1.25f;
         g_n.military_hits++;
     }
+    // WP-D1 (BUG-1473): all.party_difficulty: a player's vehicle hits a building (the players share one nation: an NPC's).
+    // An NPC's hit on the players' buildings keeps the game's damage (the building's owner is not read here)
+    if (p < net::kMaxPlayers)
+        dmg = party::player_hits_npc(dmg);
     uint8_t prev = g_hit_by;
     size_t mark = game::swap_open(game::swap_undo_u8, &g_hit_by, prev, "capture attribution"); // BUG-0110
     g_hit_by = p;
@@ -2061,6 +2092,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         return false;
     H->hook_create(M, (void*)a_BTTick, (void*)h_BT, (void**)&o_BT);
     a_WriteCityData = H->sym("SporeCoop::City_WriteCityData"); // optional (BUG-0901, GOG 2024)
+    a_PlannerMoneyAddRet = H->sym("SporeCoop::CommunityEditor_Money_AddRet"); // optional (BUG-1532, GOG 2024)
     if (uintptr_t kg = H->sym("SporeCoop::Vehicle_KeepOnValidGround")) // optional (BUG-0186, GOG 2024)
         H->hook_create(M, (void*)kg, (void*)h_KeepGround, (void**)&o_KeepGround);
     H->hook_create(M, (void*)a_SetSelected, (void*)h_SetSelected, (void**)&o_SetSelected);

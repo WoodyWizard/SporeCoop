@@ -604,7 +604,8 @@ static void test_settings()
     for (int i = kNameTags; i < kCount; i++) // every row of step 3 but friendly fire and the creature mode is on by default
         CHECK(kDefs[i].def == (i == kFriendlyFire || i == kCreatureMode ? 0 : i == kCivOwnMoney ? kCivOwnMoneyDefault
                                : i == kLineageCells ? kLineageCellsDefault
-                               : i == kPlayerLimit ? 4 : i == kAutosave ? 2 : 1));
+                               : i == kPlayerLimit ? 4 : i == kPartyDifficulty ? kPartyDifficultyDefault
+                               : i == kAutosave ? 2 : 1));
     // BUG-1477: cell.lineage_cells, a session switch of the Cell group, off by default (the owner's decision of 2026-11-20)
     CHECK(std::string(kDefs[kLineageCells].key) == "cell.lineage_cells" && kDefs[kLineageCells].scope == Scope::Session &&
           std::string(kDefs[kLineageCells].group) == "Cell" && kDefs[kLineageCells].max == 1 && kLineageCellsDefault == 0);
@@ -615,6 +616,10 @@ static void test_settings()
     CHECK(std::string(kDefs[kRevive].key) == "creature.revive" && kDefs[kRevive].scope == Scope::Session &&
           std::string(kDefs[kRevive].group) == "Creature" && kDefs[kRevive].max == 1 && kDefs[kRevive].def == kReviveDefault &&
           kRevive == kPackRescue + 1 && !kDefs[kRevive].ini);
+    // WP-D1 (BUG-1473): all.party_difficulty, a session choice of the All stages group after all.max_players, 100 %
+    // by default until the owner answers question 5 (party::kDefaultChoice; tests/party_tests.cpp has the rules)
+    CHECK(std::string(kDefs[kPartyDifficulty].key) == "all.party_difficulty" && kDefs[kPartyDifficulty].scope == Scope::Session &&
+          kPartyDifficulty == kPlayerLimit + 1 && kDefs[kPartyDifficulty].max == 4 && kDefs[kPartyDifficulty].def == kPartyDifficultyDefault);
     // E2 (BUG-0864): the host's autosave: a choice of minutes, 10 by default, Live
     CHECK(kDefs[kAutosave].scope == Scope::Live && value_text(kAutosave, 2) == "10 min" && value_text(kAutosave, 0) == "off");
     CHECK(autosave_minutes(0) == 0 && autosave_minutes(2) == 10 && autosave_minutes(5) == 60 && autosave_minutes(9) == 10);

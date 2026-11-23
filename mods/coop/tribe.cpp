@@ -1,5 +1,6 @@
 #include "tribe.h"
 #include "tribe_internal.h"
+#include "party_difficulty.h"
 #include "tribe_logic.h"
 #include "call_guard.h"
 #include "lifecycle.h"
@@ -3673,6 +3674,14 @@ static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type
         }
         uint8_t ao = ah ? ah->data.owner : 0xFF;
         double now = H->time_seconds();
+        // WP-D1 (BUG-1473): all.party_difficulty: a hit between the players' tribe and an NPC (another tribe's member, an
+        // animal, an epic). The attacker is ours when it is a member of the player tribe (members are citizens: ah)
+        {
+            using party::Side;
+            Side vs = vt == pt && pt ? Side::Player : vt ? Side::Npc : Side::Other;
+            Side as = !ac ? Side::Other : ah && pt && F<void*>(ac, kOwnerTribeOff) == pt ? Side::Player : Side::Npc;
+            dmg = party::hit(dmg, vs, as);
+        }
         if (ao < 0xFE && vt && vt != pt) { // our member hits another tribe
             auto& hits = g_pincer[vt];
             hits[ao] = now;
@@ -4856,10 +4865,10 @@ std::string status()
                  (unsigned)g_host.members.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected, g_host.bodies_sent, g_village_captions_closed,
                  g_member_moves, g_member_moves_unowned, g_cmd_gone, g_guest_missions);
     if (C.sess && C.sess->role() == net::Role::Host) { // E1 (BUG-1154)
-        char c[200];
-        snprintf(c, sizeof c, "claims: fix=%d serial=%u members=%u matched=%d from_disk=%u held=%u moved=%u\n", (int)g_owners_fix,
-                 g_mclaims_serial, (unsigned)g_member_claim.size(), (int)g_members_matched, g_mclaims_read, g_mclaims_held,
-                 g_mclaims_moved);
+        char c[240];
+        snprintf(c, sizeof c, "claims: fix=%d serial=%u members=%u matched=%d from_disk=%u held=%u moved=%u at_join=%d/%u\n",
+                 (int)g_owners_fix, g_mclaims_serial, (unsigned)g_member_claim.size(), (int)g_members_matched, g_mclaims_read,
+                 g_mclaims_held, g_mclaims_moved, (int)g_claims_at_join, g_claims_join_forced);
         strncat(b, c, sizeof b - strlen(b) - 1);
     } else
         snprintf(b, sizeof b,

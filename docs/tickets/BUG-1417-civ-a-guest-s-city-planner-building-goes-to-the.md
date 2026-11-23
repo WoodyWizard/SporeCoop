@@ -51,3 +51,7 @@ Twin `civ_planner_miss_off` (SPORE_FIX_OFF=civ.planner_closed): the host builds 
 - 2026-11-22: fix on fix/w63-civ (switch civ.planner_closed, test civ_planner_miss and its twin); lab run pending.
 
 - 2026-11-22: renumbered from BUG-9302 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9302.
+- 2026-11-23: BUG-1532 (fix/w67-planner): civ_planner_build failed with this fix: the test's drop missed the offered plots
+  and the guest's planner sold the house back, whose refund the guest's income block dropped (0.7.16 hid it: the host
+  built the house sent at AddBuilding). Corrected inside civ.planner_closed: the sell refund of an unsent planner
+  building passes; the test drops on an offered plot. civ_planner_miss PASS x3, civ_planner_miss_off FAIL x2.

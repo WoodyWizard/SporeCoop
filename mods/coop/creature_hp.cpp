@@ -620,7 +620,9 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
         return 0;
     }
     if (argc > 3 && !strcmp(argv[1], "npchit")) { // host (tests, BUG-0735): the nearest wild animal hits a puppet
-        void* p = C.puppet_of ? C.puppet_of((uint8_t)atoi(argv[2])) : nullptr;
+        // (player 0: the host's own creature, BUG-1473's test of the party difficulty)
+        uint8_t who = (uint8_t)atoi(argv[2]);
+        void* p = who == 0 ? game::avatar() : C.puppet_of ? C.puppet_of(who) : nullptr;
         struct Q { void* p; void* best; float d; } q{p, nullptr, 60.f};
         if (p)
             game::for_each_object(
