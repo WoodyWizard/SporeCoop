@@ -107,6 +107,17 @@ COOP_FIX("tribe.claims_order", "BUG-1429", g_claims_order_fix,
 static bool g_claims_balance_fix = true;
 COOP_FIX("tribe.claims_balance", "BUG-1430", g_claims_balance_fix,
          "tribe: after the host loads its world again a player whose members were all claimed by others still gets its share");
+// BUG-1450: the balance gave a player with no member the first plain member in member order: the game's leader (the
+// host's chief #1 with the staff) when the host was the giver (lab 20261122-194210 tribe_held_item: after the guest's
+// rejoin #1 was "Bob's chief"; the guest's claims had been lost by TR-1's join window). On: the leader never moves in a
+// balance (tribe_logic::balance's `fixed`). Off: as 0.7.16.
+static bool g_balance_leader_fix = true;
+COOP_FIX("tribe.balance_leader", "BUG-1450", g_balance_leader_fix,
+         "tribe: the host's chief (the tribe's leader with the staff) stays the host's when a player joins with no member of its own");
+// tests (BUG-1450): `coop.tribe claims_at_join 1` makes the 2 s follow due in the tick of the next join (the window of
+// TR-1's join case, about 1 tick in 17), so the lab hits it every time
+bool g_claims_at_join;
+uint32_t g_claims_join_forced;
 static void member_claims_follow(void* pt, double now, const std::vector<void*>& ms);
 static void member_claims_tick(void* pt, double now, bool follow = true)
 {
@@ -183,7 +194,10 @@ static void member_balance(void* pt, const std::vector<uint8_t>& players)
         if (HEntry* hm = hm_of(c))
             by[hm->data.owner].push_back(c);
     // (D3: tribe_logic::balance, the rule; here its moves)
-    for (auto& [c, p] : tribe_logic::balance(by, players, ms.size(), [](void* m) { return !g_member_flags.count(m); })) {
+    auto plain = [](void* m) { return !g_member_flags.count(m); };
+    auto moves = g_balance_leader_fix ? tribe_logic::balance(by, players, ms.size(), plain, [](void* m) { return is_leader(m); })
+                                      : tribe_logic::balance(by, players, ms.size(), plain);
+    for (auto& [c, p] : moves) {
         if (HEntry* hm = hm_of(c))
             hm->data.owner = p;
         member_claim(c, p, 0);
@@ -250,6 +264,11 @@ void host_tick(double now)
     for (auto& p : C.sess->players())
         players.push_back(p.id);
     std::sort(players.begin(), players.end());
+    if (g_claims_at_join && pt && players.size() > g_host.split_for.size()) { // tests (BUG-1450): a join in this tick
+        g_claims_at_join = false;
+        g_claims_join_forced++;
+        g_mclaims_at = -1e9; // the follow is due now
+    }
     member_claims_tick(pt, now, !g_claims_order_fix); // E1 (BUG-1154); TR-1: the follow after the adopt loop
     bool resplit = false;
     if (players != g_host.split_for && pt) {

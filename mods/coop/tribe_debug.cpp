@@ -119,6 +119,12 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "goal %.0f / %.0f, goal message posted", done, need);
         return b;
     }
+    if (a.size() >= 2 && a[0] == "claims_at_join" && is_host()) { // claims_at_join 0|1: tests (BUG-1450), the claims
+        // follow runs in the tick of the next join (TR-1's join window, BUG-1429)
+        g_claims_at_join = atoi(a[1].c_str()) != 0;
+        return std::string("claims_at_join ") + (g_claims_at_join ? "armed" : "off") + " (fired " +
+               std::to_string(g_claims_join_forced) + ")";
+    }
     if (a.size() >= 2 && a[0] == "drop_chief") { // drop_chief <owner>: the chief leaves the tribe at once
         // (RemoveMember(c, destroy) as guest_state does for a mirror the host no longer sends):
         // BUG-0081, the next chiefs_tick must not call into it

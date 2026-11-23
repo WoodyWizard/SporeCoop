@@ -5003,3 +5003,30 @@ BUG-1492..1496 (audit TR-5, 7, 8, 9, 11; out/research/ext-audit-verify-cr-tr.md)
   return. ? Whether a theme track loops until stopped (or ends by itself) is still not known.
 * (code) **TR-8**: confirms the 2026-11-13 CORRECTION in use: tribe_host.cpp fruit_instead was the last reader of
   +0x48 as a u64.
+## The balance of member owners and the game's leader at a rejoin (2026-11-23, fix/w67-chief)
+<a id="tribe-balance-leader"></a>
+
+BUG-1450 (lab 20261122-194210 tribe_held_item, rel/0.7.16 5376d388): after the guest's `coop.leave` and `coop join`
+the game's leader #1 (the staff, `Citizen_IsLeader` true) was "Bob's chief" on both screens. Mod logic, no new game
+address.
+
+* ~ (log + code; the order inferred from who got #1) The host's member order (`members(pt)`, the game's list of the player tribe) has the leader first in the
+  tribe fixture: a dealing in turns from 0 (the first join of a session, no claims) gives it to the host (players[0]),
+  but `tribe_logic::balance` (a player here with no member gets total / players from the richest, plain members first
+  in member order) took it first whenever the host was the giver: the leader went to the guest and, being its lowest-id
+  adult, became the guest's chief (chiefs_tick).
+* ✔ (code) Why the guest had no member at the rejoin in 0.7.16: the 2 s claims follow ran in `host_tick` before the
+  resplit; in the tick of the join (due about 1 tick in 17 at the 0.12 s tick) it saw the guest's key present while
+  the host still held its members (owner 0 since the leave), so it rewrote their claims to "host"; the resplit gave all
+  to the host and the balance gave the guest 3 of 7, #1 first. Runs 2 and 3 of that night missed the window. TR-1
+  (BUG-1429, `tribe.claims_order`, in 0.7.16.1) already moved the follow after the resplit; the lab had no test of
+  that join case.
+* ✔ (code) A balance still runs legitimately with the leader at the front: a player who gave all its members away
+  (gifts are flagged, the giver's own members stay plain) and rejoins, a third player joining a session whose members
+  are all claimed, TR-6's share after a reload. `tribe.balance_leader` (BUG-1450): `balance` takes a `fixed` predicate
+  (the host passes `is_leader`): the leader never moves; a giver with only the leader above the share gives no more.
+* Test hook: `coop.tribe claims_at_join 1` (host) makes the follow due in the tick of the next join (the window hit
+  every time); `coop.status` `claims: ... at_join=<armed>/<fired>`. Tests tribe_owners_rejoin (+ `--back`) and the
+  twins tribe_owners_rejoin_off, tribe_owners_rejoin_back_off.
+* ? Not changed: the dealing in turns (no claims) gives member k to players[k % n]; when the leader is not first in
+  member order a guest can get it at the first join of a session. Not seen in the lab (the leader was first).

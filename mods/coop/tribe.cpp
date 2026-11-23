@@ -4865,10 +4865,10 @@ std::string status()
                  (unsigned)g_host.members.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected, g_host.bodies_sent, g_village_captions_closed,
                  g_member_moves, g_member_moves_unowned, g_cmd_gone, g_guest_missions);
     if (C.sess && C.sess->role() == net::Role::Host) { // E1 (BUG-1154)
-        char c[200];
-        snprintf(c, sizeof c, "claims: fix=%d serial=%u members=%u matched=%d from_disk=%u held=%u moved=%u\n", (int)g_owners_fix,
-                 g_mclaims_serial, (unsigned)g_member_claim.size(), (int)g_members_matched, g_mclaims_read, g_mclaims_held,
-                 g_mclaims_moved);
+        char c[240];
+        snprintf(c, sizeof c, "claims: fix=%d serial=%u members=%u matched=%d from_disk=%u held=%u moved=%u at_join=%d/%u\n",
+                 (int)g_owners_fix, g_mclaims_serial, (unsigned)g_member_claim.size(), (int)g_members_matched, g_mclaims_read,
+                 g_mclaims_held, g_mclaims_moved, (int)g_claims_at_join, g_claims_join_forced);
         strncat(b, c, sizeof b - strlen(b) - 1);
     } else
         snprintf(b, sizeof b,
