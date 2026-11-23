@@ -2,8 +2,10 @@
 """A game that stands in an editor while its partner waits (0.7.16.1: PR #216 by IltonBJSilva, its reverse case, CORE-2).
 
 Creature fixture, two games. Each part forces the stand the players saw on slow PCs (`kit.test.hang`: the main thread
-sleeps, nothing is sent, as in an editor's first load; `kit.test.dialog`: a message box, the window pumps messages and
-the keepalive answers for the game) and checks what the other game does (its session, its vote, its editor).
+sleeps, nothing is sent, as in an editor's first load; `coop.stalltest`: the main thread runs a message loop of its
+own outside the frame, as under a modal dialog of the game, and the keepalive answers for the game) and checks what the
+other game does (its session, its vote, its editor). Each stand is declared to the test's freeze monitor
+(twoinst.stand): the stood game's frames and console stop on purpose.
 
   --part host     BUG-1419 (PR #216): the host's evolution vote (`coop.vote editor`, the guest's real I'm ready); the
                   host's editor request goes to the game; once the guest has been told that the host is in an editor
@@ -14,9 +16,12 @@ the keepalive answers for the game) and checks what the other game does (its ses
   --part guest    BUG-1420 (the reverse, the owner's rule: a guest stuck in its own editor is removed after 30 s and
                   may join again; the host is not held). Both evolve (`coop.vote editor`), the host leaves its editor,
                   the guest stays in its own:
-                  1. vote: in its editor, the guest's game shows a message box for 50 s (`kit.test.dialog 50000`: no
-                     state goes out, the keepalive keeps the link) while the host's action vote (`coop.vote action`)
-                     waits for it (BUG-1369). Within 40 s of the box the host has removed the guest and the vote has
+                  1. vote: in its editor, the guest's main thread runs a message loop for 50 s (`coop.stalltest 50`:
+                     no frames, no state goes out, the keepalive keeps the link; lab 20261123-104630 showed that
+                     `kit.test.dialog` does not: its box is shown inside the frame, where the keepalive waits for the
+                     frame's end, so the host dropped the guest by its session timeout, not the vote) while the host's
+                     action vote (`coop.vote action`)
+                     waits for it (BUG-1369). Within 40 s of the stall the host has removed the guest and the vote has
                      ended (not by its 60 s); the guest's session ends with the host's reason; it joins again (still
                      in its editor). FAIL twin: SPORE_FIX_OFF=core.vote_stuck_kick (the vote runs to its 60 s, the
                      guest is never removed).
@@ -43,7 +48,7 @@ from coop_editor_sync import DONE, SAVE_NEW, confirm_captions, in_editor
 from coop_ui import Ui
 from harness import log_since, log_size, mode, waiter
 from sporectl import Console
-from twoinst import Checks, host_frame, keyframe, shot, start, wait_guest_in
+from twoinst import Checks, host_frame, keyframe, shot, stand, start, wait_guest_in
 
 PART = sys.argv[sys.argv.index('--part') + 1] if '--part' in sys.argv else 'guest'
 wait = waiter(step=1.0)
@@ -100,6 +105,7 @@ def host_part(host, guest, ck):
     told = wait(lambda: re.search(r'view heard=1 host=editor', status(guest)), 30)
     print('  guest:', [ln for ln in status(guest).splitlines() if ln.startswith('host busy')][:1], flush=True)
     ck(told is not None, 'the guest knows the host is in an editor')
+    stand('host', 45, "kit.test.hang 45000: the host's editor load that stands longer than the 30 s timeout")
     print('  host:', host.call('kit.test.hang 45000')['out'].strip(), flush=True)
     t0 = time.time()
     dropped = None
@@ -123,7 +129,8 @@ def guest_part(host, guest, ck):
         return
     ck(leave_editor(host, m0), 'the host is back in the stage, the guest still in its own editor')
     time.sleep(3)
-    # 1. a box on the guest's main thread while the host's action vote waits for it
+    # 1. the guest's main thread in a message loop of its own (as under a modal dialog) while the host's action vote
+    # waits for it
     off = log_size(lane.GUEST)
     print(' ', host.call('coop.vote action')['out'].strip().splitlines()[0], flush=True)
     time.sleep(3)
@@ -133,10 +140,11 @@ def guest_part(host, guest, ck):
     def show_box():
         c = Console(lane.GUEST, timeout=75)
         try:
-            box['out'] = c.call('kit.test.dialog 50000')['out']
+            box['out'] = c.call('coop.stalltest 50')['out']
         except OSError as e:
             box['out'] = f'({e})'
     th = threading.Thread(target=show_box, daemon=True)
+    stand('guest', 50, 'coop.stalltest 50: a message loop of its own, no frames, the keepalive runs')
     t_d = time.time()
     th.start()
     removed = vote_end = None
@@ -148,11 +156,11 @@ def guest_part(host, guest, ck):
         if removed is not None and vote_end is not None:
             break
         time.sleep(1)
-    print(f'  host: the guest removed after {removed} s, the vote ended after {vote_end} s of the box', flush=True)
+    print(f'  host: the guest removed after {removed} s, the vote ended after {vote_end} s of the stall', flush=True)
     ck(removed is not None and removed <= 40, f'the host removes the guest whose game stands ({removed} s)')
     ck(vote_end is not None and vote_end <= 40, f'the vote does not wait for it to its 60 s ({vote_end} s)')
     th.join(70)
-    print('  guest box:', (box.get('out') or '').strip()[:160], flush=True)
+    print('  guest stall:', (box.get('out') or '').strip()[:160], flush=True)
     ck(wait(lambda: not online(guest), 15), "the guest's session has ended")
     lines = [ln.strip() for ln in log_since(lane.GUEST, off) if 'rejected:' in ln]
     print(f'  guest: {lines[:1]}', flush=True)
@@ -163,6 +171,7 @@ def guest_part(host, guest, ck):
     # 2. the guest's game stands 45 s in its editor (no packet goes out)
     off = log_size(lane.GUEST)
     f0 = host_frame(host)
+    stand('guest', 45, "kit.test.hang 45000: the guest's own editor load that stands longer than the 30 s timeout")
     print('  guest:', guest.call('kit.test.hang 45000')['out'].strip(), flush=True)
     t0 = time.time()
     gone = None

@@ -1354,9 +1354,9 @@ void register_commands_core()
                        return 0;
                    },
                    nullptr, MT);
-    H->command_add(M, "coop.stalltest", "coop.stalltest <s> - tests (BUG-0687): the main thread runs a message loop of its own for s seconds (max 20): no frames, the keepalive runs",
+    H->command_add(M, "coop.stalltest", "coop.stalltest <s> - tests (BUG-0687): the main thread runs a message loop of its own for s seconds (max 60): no frames, the keepalive runs",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
-                       double secs = std::min(argc > 1 ? atof(argv[1]) : 5.0, 20.0), t0 = H->time_seconds();
+                       double secs = std::min(argc > 1 ? atof(argv[1]) : 5.0, 60.0), t0 = H->time_seconds();
                        MSG m;
                        while (H->time_seconds() - t0 < secs) {
                            while (PeekMessageW(&m, nullptr, 0, 0, PM_REMOVE)) {
