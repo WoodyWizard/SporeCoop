@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.16.1 and earlier
 fixed_in:
 branch: fix/w78-civ
-commits: 9b9fdf4a
+commits: 9b9fdf4a, 9479fa44
 tests: civ_design_kept, civ_design_kept_off (tools/tests/coop_civ_host_design.py --kept); unit tests/civ_tests.cpp test_audit_v1
 signature:
 docs: docs/re/civ.md#civ-audit-v1-0717
