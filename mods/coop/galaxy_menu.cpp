@@ -258,6 +258,8 @@ static double g_native_at;
 static int g_native_codes[6];      // per era (1..5): the index into g_pick_eras, -1 not offered
 static unsigned g_native_opens, g_native_picks, g_native_closes;
 static std::string g_native_last;
+static std::string g_native_planet; // 8M A: the planet the screen is open for
+static void (*g_gone_fn)();         // 8M A: the planet details panel goes with the screen
 
 // switch_now: the menu's state switch here (tests); else the caller switches (h_SetState: Play's switch made state 4)
 static bool open_native(const Row& row, uint8_t* entry, bool switch_now)
@@ -291,6 +293,7 @@ static bool open_native(const Row& row, uint8_t* entry, bool switch_now)
     }
     *(void**)(st + 0xC) = entry; // (what the menu's click on an empty star sets, 0xDF7960)
     g_native_entry = entry;
+    g_native_planet = row.shown.name;
     g_native_at = H->time_seconds();
     if (switch_now)
         skg::thiscall<void>(a_SetState, (void*)gge, 4, 0);
@@ -327,6 +330,7 @@ static void __fastcall h_FlowOpen(void* flow, void* edx, void* entry)
 static void native_closed()
 {
     g_native_entry = nullptr;
+    if (g_gone_fn) g_gone_fn();
     g_last_version = ~0u; // the next tick rebuilds the entries (the screen wrote into this one)
 }
 
@@ -493,6 +497,8 @@ static void __fastcall h_SetState(void* gge, void* edx, int state, int push)
             }
         }
     }
+    if (g_native_entry && state != 4 && g_gone_fn) // 8M A: the screen goes (Esc, the menu left): the panel first
+        g_gone_fn();
     o_SetState(gge, edx, state, push);
 }
 
@@ -565,6 +571,32 @@ void tick(double now)
     }
 }
 
+void on_screen_gone(void (*fn)()) { g_gone_fn = fn; }
+
+bool stage_screen(StageScreen& out)
+{
+    if (!g_native_entry || !a_NewGameState || !a_FindWin || game::mode_id() != modes::kMenu)
+        return false;
+    uint8_t* gge = a_Gge ? *(uint8_t**)a_Gge : nullptr;
+    uint8_t* st = *(uint8_t**)a_NewGameState;
+    uint8_t* flow = st ? *(uint8_t**)(st + 8) : nullptr; // (state 4 +0x8: the new-game flow, docs/re/space.md)
+    if (!gge || *(int*)(gge + 0x108) != 4 || !flow || *(void**)(flow + 0x628) != g_native_entry)
+        return false;
+    out = StageScreen{};
+    out.planet = g_native_planet;
+    for (int i = 0; i < 5; i++) {
+        const uint8_t era = (uint8_t)(i + 1);
+        const int code = g_native_codes[era];
+        if (code >= 0 && code < (int)g_pick_eras.size()) {
+            out.era[era] = g_pick_eras[code];
+            out.fresh[era] = code < (int)g_pick_from.size() && !g_pick_from[code].empty();
+        }
+        out.reached[era] = stage_reached(era);
+        out.button[era] = skg::thiscall<void*>(a_FindWin, flow + 0x28, kStageButtons[i], 1);
+    }
+    return true;
+}
+
 std::string command(int argc, const char* const* argv)
 {
     const std::string sub = argc > 1 ? argv[1] : "status";
@@ -573,6 +605,8 @@ std::string command(int argc, const char* const* argv)
         g_last_version = ~0u;
     } else if (sub == "rebuild")
         H->run_outside_frame(rebuild, nullptr);
+    if (sub == "panel") // tests (8M A, BUG-9340): the planet details panel as shown
+        return coop_ui::planet_panel_debug();
     if (sub == "forget" && argc > 2) // tests (BUG-9335): this player has played no era of planet argv[2]
         H->config_set_str(M, "galaxy_eras", remember_key(argv[2]).c_str(), "");
     if (sub == "pick" && argc > 2) // tests (BUG-9335): as a press on the open choice's button n

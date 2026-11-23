@@ -138,6 +138,7 @@ void coop_register_debug_commands(const SkHost* host, SkMod* self); // debug.cpp
 namespace {
 static void invite_prompt_tick(); // 6J (with the right-click menu, below)
 static void social_tick(double now); // 6L A (below)
+static void planet_panel_tick(double now); // 8M A (below)
 
 struct Remote {
     uint8_t id = 0;
@@ -5887,6 +5888,8 @@ void on_frame(void*, int, void*)
     fprof::mark("invite_prompt_tick()");
     social_tick(H->time_seconds()); // 6L A
     fprof::mark("social_tick");
+    planet_panel_tick(H->time_seconds()); // 8M A (BUG-9340)
+    fprof::mark("planet_panel_tick");
     portrait::tick(H->time_seconds()); // BUG-0937: the HUD portrait follows the avatar's species (outside the frame)
     fprof::mark("portrait::tick(H->time_seconds())");
     pfind::hud_tick(H->time_seconds()); // BUG-0949: the UI windows the labels keep off (outside the frame)
@@ -10513,6 +10516,118 @@ static void social_tick(double now)
     coop_ui::set_social(st, on_social_action);
 }
 
+// decision 8M A (BUG-9340): the planet details panel beside Spore's Choose A Stage screen for a galaxy server planet
+// (galaxy_menu::stage_screen): per stage its players and host (the server's planet list and players list), a new stage
+// to start, grey ones; the stage under the pointer with its players' names; the friends on the planet. Off: no panel
+// (the screen alone, as BUG-9337 left it).
+static bool g_planet_panel = true;
+COOP_FIX("galaxy.planet_panel", "BUG-9340", g_planet_panel, "galaxy menu: a planet details panel beside Spore's Choose A Stage screen");
+static void planet_panel_tick(double now)
+{
+    static double s_next = 0, s_ask = 0;
+    if (now < s_next)
+        return;
+    s_next = now + 0.1; // (the hover follows the pointer)
+    galaxy_menu::StageScreen sc;
+    coop_ui::PlanetPanel p;
+    if (!g_planet_panel || !galaxy_menu::stage_screen(sc)) {
+        coop_ui::set_planet_panel(p);
+        return;
+    }
+    if (now >= s_ask) { // (the players' list: who is on which era)
+        s_ask = now + 3;
+        parties::ask_online();
+    }
+    p.open = true;
+    for (char c : sc.planet)
+        p.title += (c >= 'a' && c <= 'z') ? (char)(c - 32) : c;
+    const auto planets = galaxy::planets_known();
+    const auto online = parties::online();
+    friends_load();
+    auto friend_of = [&](uint64_t ident) { return ident && g_friends.count(friend_key(-1, ident)); };
+    // the pointer on one of Spore's stage buttons (round: inside the circle of its rectangle)
+    int px = -1, py = -1;
+    const bool mouse_ok = mouse::last_move(px, py);
+    int hovered = 0;
+    p.top = 1e9f;
+    for (int e = 1; e <= 5; e++) {
+        if (!sc.button[e]) continue;
+        const sui::Rect r = sui::drawn_rect(sc.button[e]);
+        if (r.w() <= 0) continue;
+        p.right = std::max(p.right, r.x2);
+        p.top = std::min(p.top, r.y1);
+        p.bottom = std::max(p.bottom, r.y2);
+        const float cx = (r.x1 + r.x2) / 2, cy = (r.y1 + r.y2) / 2, rad = r.w() / 2;
+        if (mouse_ok && (px - cx) * (px - cx) + (py - cy) * (py - cy) <= rad * rad) hovered = e;
+    }
+    if (p.top > p.bottom) p.top = p.bottom = 0;
+    int total = 0, friends_here = 0;
+    bool saved = false;
+    for (int e = 1; e <= 5; e++) {
+        coop_ui::PlanetLine l;
+        l.name = e == net::galaxy::kEraCiv ? "Civilization" : net::galaxy::era_name((uint8_t)e);
+        l.icon = sc.button[e];
+        l.hover = e == hovered;
+        const std::string& key = sc.era[e];
+        const galaxy::PlanetInfo* info = nullptr;
+        for (auto& pi : planets)
+            if (!key.empty() && pi.name == key) info = &pi;
+        std::vector<std::string> names;
+        std::string host;
+        for (auto& o : online)
+            if (!key.empty() && o.planet == key) {
+                std::string n = utf8::shown_name(o.name);
+                if (info && info->host && o.slot == info->host) {
+                    host = n;
+                    n += " (host)";
+                }
+                names.push_back(n);
+            }
+        const int players = info ? info->players : 0;
+        total += players;
+        saved = saved || (info && info->stored);
+        if (key.empty()) {
+            l.tone = 2;
+            l.line = "Not on this planet";
+        } else if (sc.fresh[e]) {
+            l.tone = sc.reached[e] ? 1 : 2;
+            l.line = sc.reached[e] ? "New here: start it" : "New here: not reached in your Spore yet";
+        } else {
+            char b[96];
+            if (players > 0)
+                snprintf(b, sizeof b, "%d player%s", players, players == 1 ? "" : "s");
+            else
+                snprintf(b, sizeof b, "Nobody here");
+            l.line = b;
+            if (!host.empty())
+                l.line += "  -  host " + host;
+            else if (players == 0 && info && info->stored)
+                l.line += "  -  saved";
+            l.dot = players > 0;
+            if (!sc.reached[e]) {
+                l.tone = 2;
+                l.line += "  -  not reached yet";
+            }
+        }
+        for (size_t i = 0; i < names.size(); i++)
+            l.names += (i ? ", " : "") + names[i];
+        p.lines.push_back(l);
+    }
+    for (auto& o : online) {
+        if (!friend_of(o.identity) || net::galaxy::era_planet(o.planet) != sc.planet) continue;
+        friends_here++;
+        const uint8_t era = net::galaxy::era_of(o.planet);
+        p.friends.push_back({utf8::shown_name(o.name), era == net::galaxy::kEraCiv ? std::string("Civilization")
+                                                       : era ? std::string(net::galaxy::era_name(era)) : std::string()});
+    }
+    char sub[96];
+    snprintf(sub, sizeof sub, "  -  %d player%s here", total, total == 1 ? "" : "s");
+    p.sub = std::string("Online world") + sub;
+    if (friends_here) p.sub += ", " + std::to_string(friends_here) + (friends_here == 1 ? " friend" : " friends");
+    p.foot = saved ? "Saved on the galaxy server" : "";
+    coop_ui::set_planet_panel(p);
+}
+
 // the invite prompt: the same panel in the upper middle of the screen, Accept / Decline
 static void invite_prompt_tick()
 {
@@ -12984,6 +13099,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     }
     era_visitors::init(H, M); // decision 5S A spike (alpha)
     galaxy_menu::init(H, M);  // decision 5X B (alpha)
+    galaxy_menu::on_screen_gone(coop_ui::planet_panel_hide); // 8M A (BUG-9340): the panel goes with the screen
     party::init(H, M, &g_sess);    // roadmap 0b
     {
         parties::Ctx pc; // 6J

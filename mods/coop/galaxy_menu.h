@@ -11,4 +11,16 @@ void init(const SkHost* host, SkMod* mod);
 void tick(double now);
 std::string command(int argc, const char* const* argv); // coop.gmenu [status | on | off | rebuild]
 
+// 8M A (BUG-9340): Spore's Choose A Stage screen open for a server planet (BUG-9337), for the planet details panel
+struct StageScreen {
+    std::string planet;     // the planet's shown name
+    std::string era[6];     // per stage (net::galaxy era 1 Cell .. 5 Space): the era key offered ("" not offered)
+    bool fresh[6] = {};     // a new stage of the planet (started there, BUG-9336)
+    bool reached[6] = {};   // reached in this player's own Spore
+    void* button[6] = {};   // Spore's stage button on the screen (a UTFWin window)
+};
+bool stage_screen(StageScreen& out);
+// 8M A: called when the screen goes (a stage pressed, Back, or the menu's state left): the panel goes at once
+void on_screen_gone(void (*fn)());
+
 } // namespace galaxy_menu

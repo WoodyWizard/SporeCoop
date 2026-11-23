@@ -238,6 +238,25 @@ void toggle_social();
 bool social_open();
 bool social_press(float x, float y, bool right); // client pixels; true: the press was the Social Menu's
 std::string social_debug(); // tests (BUG-9334): open, the eras row's button (client pixels) and its caption
+// 8M A (BUG-9340): the planet details panel beside Spore's Choose A Stage screen for a galaxy server planet: one row
+// per stage (Spore's own stage icon, its players and host, a new stage, grey ones), the friends on the planet
+struct PlanetLine {
+    std::string name, line, names; // the stage; its players and host (or why grey); the hovered stage's players
+    int tone = 0;                  // 0 played (white), 1 a new stage (gold), 2 grey
+    bool dot = false;              // players there (green)
+    bool hover = false;            // the pointer is on its button on Spore's screen
+    void* icon = nullptr;          // Spore's stage button (its drawable is the row's icon)
+};
+struct PlanetPanel {
+    bool open = false;
+    std::string title, sub, foot;
+    std::vector<PlanetLine> lines;
+    std::vector<std::pair<std::string, std::string>> friends; // name, where
+    float right = 0, top = 0, bottom = 0; // Spore's stage buttons on the screen (client pixels): the panel goes right of them
+};
+void set_planet_panel(const PlanetPanel& p);
+void planet_panel_hide(); // at once (the screen goes: its icons' drawables are Spore's)
+std::string planet_panel_debug(); // tests: open, its rectangle, the rows as shown
 // the open Social Menu or player menu covers this screen rectangle (the overlay's name tags and arrows stay off it)
 bool ui_covers(float x1, float y1, float x2, float y2);
 // the player of the Co-op window's lobby row or the Party card drawn at a client pixel (-1 none)
