@@ -89,6 +89,9 @@ static void test_holds()
     CHECK(pump_waits(true, false, true) && !pump_kills(false, false) && !pump_kills(true, true));
     CHECK(!pump_waits(false, false, true) && !pump_waits(true, true, true));
     CHECK(!pump_waits(true, false, false) && pump_kills(true, false));
+    // BUG-9301 (CIV-1): a mirror taken out for a save goes back only while its civilization and the same vehicle live
+    CHECK(took_goes_back(true, true, true));
+    CHECK(!took_goes_back(true, false, false) && !took_goes_back(true, true, false) && !took_goes_back(false, true, true));
     // BUG-0151
     CHECK(local_play(true, true, true));
     CHECK(!local_play(false, true, true) && !local_play(true, false, true) && !local_play(true, true, false));

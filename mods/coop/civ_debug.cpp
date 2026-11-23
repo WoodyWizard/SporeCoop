@@ -114,7 +114,7 @@ std::string debug(const std::vector<std::string>& a)
                           std::to_string(g_rx.cut) + " abandoned=" + std::to_string(g_rx.abandoned) + " bad=" +
                           std::to_string(g_rx.bad) +
                           "\n"; // C1 (BUG-1140)
-        return std::string(b) + k + sp + cl + c + reg;
+        return std::string(b) + k + sp + cl + c + reg + took_status();
     }
     if (!a.empty() && a[0] == "fakeveh") { // tests (BUG-0469): fakeveh <hex design instance|off> [<hex type> <hex group>]
         // every mirror vehicle is built with that design key (the guest's own civ design otherwise)
@@ -729,6 +729,10 @@ std::string debug(const std::vector<std::string>& a)
         g_n.max_chunk = 0;
         return "chunk budget " + std::to_string(g_chunk_budget);
     }
+    if (a.size() >= 2 && a[0] == "savekill" && is_guest()) { // savekill on|off (tests, BUG-9301): the next save's end
+        took_debug_kill(a[1] == "on");                         // first removes a mirror it took out (as a host snapshot)
+        return took_status();
+    }
     if (!a.empty() && a[0] == "civlists") {
         // civlists (tests, BUG-0470): every civilization's vehicle vector (+0xB0) and selectable vector
         // (+0xD4): entries and nulls (a stripped vehicle read back as null)
@@ -744,9 +748,20 @@ std::string debug(const std::vector<std::string>& a)
                     z[k] += *it == nullptr;
                 }
             }
-            char line[128];
-            snprintf(line, sizeof line, "civ %p pol=%08X vehicles=%d nulls=%d selectable=%d nulls=%d\n", civ, pol_of(civ), n[0],
-                     z[0], n[1], z[1]);
+            // BUG-9301: entries that are no vehicle of the game's list now (pointers only: a removed, freed one)
+            int un = 0;
+            g_exist_frame = ~0ull;
+            for (int k = 0; k < 2; k++) {
+                void** b = F<void**>(civ, offs[k]);
+                void** e = F<void**>(civ, offs[k] + 4);
+                int m = 0;
+                for (void** it = b; it && it < e && m < 512; ++it, ++m)
+                    if (*it && !exists(k == 0 ? *it : (uint8_t*)*it - kVSpatial))
+                        un++;
+            }
+            char line[160];
+            snprintf(line, sizeof line, "civ %p pol=%08X vehicles=%d nulls=%d selectable=%d nulls=%d unlisted=%d\n", civ,
+                     pol_of(civ), n[0], z[0], n[1], z[1], un);
             out += line;
         }
         return out.empty() ? "no civilizations\n" : out;

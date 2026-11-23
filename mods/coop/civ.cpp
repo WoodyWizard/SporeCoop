@@ -2311,6 +2311,7 @@ static void clear_coop_tables(bool restore_speed)
 
 void on_session_end()
 {
+    took_clear(); // BUG-9301
     g_held.clear(); // BUG-0693
     g_space_held.clear(); // BUG-0766 / BUG-0884
     g_space_out.clear();
@@ -2345,6 +2346,7 @@ void on_world_change()
     if (m == modes::kEdit || m == modes::kEditor)
         return;
     g_n.world_resets++;
+    took_clear(); // BUG-9301: the taken mirrors' civilizations are freed with the world
     g_bld_rekeyed.clear(); // BUG-0670 (the buildings are freed)
     caption_disarm();
     // BUG-0773: after a real load the vehicles are gone and nothing is written (boost_ours: in the game's list now,

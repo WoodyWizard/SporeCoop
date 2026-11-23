@@ -202,8 +202,21 @@ struct Took {
     void* civ;
     uintptr_t off;
     void* p;
+    void* v;         // the vehicle (p is its spatial interface in the selectable vector)
+    uint32_t serial; // its cGameData::mID when it was taken out
 };
 static std::vector<Took> g_took;
+// BUG-9301 (audit CIV-1): save_start runs inside the save's first write, save_end only on the next frame's
+// savestrip::tick, after that frame's network receive: a host snapshot in between that no longer names a mirror
+// removes it (kill_local: Vehicle_Remove takes it out of the game's list at once and frees it later), and save_end put
+// the removed vehicle back into the civilization's vehicle and selectable vectors (a dangling pointer the civ update
+// walks). Now only a vehicle still in the game's list (the same object: its serial) of a civilization still listed
+// goes back; the taken list is cleared with the world and the session. Off: every taken entry back (0.7.16).
+static bool g_took_check_fix = true;
+COOP_FIX_UNSAFE("civ.save_took_listed", "BUG-9301", g_took_check_fix,
+                "civ: a guest's save puts back only the mirror vehicles the game still has (one removed during the save stays out)");
+static bool g_debug_save_kill; // tests (coop.civ savekill): the next save_end first removes a taken mirror
+uint32_t g_took_back, g_took_gone, g_took_cleared;
 static bool is_mirror(void* v) { return gv_bound(v) || kill_waiting(v); }
 static void host_buildings_keys(bool own);
 void save_start()
@@ -222,7 +235,7 @@ void save_start()
             for (void** it = b; it != e; ++it) {
                 void* v = *it ? (off == 0xB0 ? *it : (uint8_t*)*it - kVSpatial) : nullptr;
                 if (is_mirror(v))
-                    g_took.push_back({civ, off, *it});
+                    g_took.push_back({civ, off, *it, v, game::object_serial(v)});
                 else
                     *w++ = *it;
             }
@@ -235,13 +248,53 @@ void save_end()
 {
     host_buildings_keys(false); // BUG-0670
     own_designs_save(false);    // BUG-1274
+    if (g_debug_save_kill && !g_took.empty()) { // tests: as if this frame's host snapshot removed a mirror first
+        g_debug_save_kill = false;
+        void* v = g_took.front().v;
+        H->log(M, SK_INFO, "civ: savekill: the taken mirror %p removed before the save's end (tests, BUG-9301)", v);
+        if (exists(v))
+            kill_local(v);
+    }
+    std::vector<void*> civs;
+    if (g_took_check_fix && !g_took.empty()) {
+        g_exist_frame = ~0ull; // the game's vehicle list of now
+        if (game::mode_id() == modes::kCiv && nm())
+            civs = vec_of(thiscall<void*>(a_GetAllCivs, nm()));
+    }
     for (auto& t : g_took) { // back at the end of the list (the capacity is the one they left)
+        if (g_took_check_fix) {
+            bool civ_here = std::find(civs.begin(), civs.end(), t.civ) != civs.end();
+            if (!civlogic::took_goes_back(civ_here, civ_here && exists(t.v),
+                                          civ_here && exists(t.v) && game::object_serial(t.v) == t.serial)) {
+                g_took_gone++;
+                H->log(M, SK_INFO, "civ: a mirror vehicle %p taken out for the save is gone: not put back (BUG-9301)", t.v);
+                continue;
+            }
+        }
         void**& e = F<void**>(t.civ, t.off + 4);
-        if (e < F<void**>(t.civ, t.off + 8))
+        if (e < F<void**>(t.civ, t.off + 8)) {
             *e++ = t.p;
+            g_took_back++;
+        }
     }
     g_took.clear();
 }
+// BUG-9301: the world or the session ended between a save's start and its end: nothing goes back
+void took_clear()
+{
+    if (!g_took_check_fix || g_took.empty())
+        return;
+    g_took_cleared += (uint32_t)g_took.size();
+    g_took.clear();
+}
+std::string took_status()
+{
+    char b[160];
+    snprintf(b, sizeof b, "save_took: fix=%d taken=%u back=%u gone=%u cleared=%u armed=%d\n", (int)g_took_check_fix,
+             (unsigned)g_took.size(), g_took_back, g_took_gone, g_took_cleared, (int)g_debug_save_kill);
+    return b;
+}
+void took_debug_kill(bool on) { g_debug_save_kill = on; }
 bool save_filter(void* o, uint32_t noun)
 {
     if (noun != kVehicleNoun)

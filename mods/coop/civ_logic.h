@@ -89,6 +89,13 @@ inline bool hold_removal(bool planner_moves, bool movie) { return planner_moves 
 enum class Unseen : uint8_t { Remove, Defer };
 inline Unseen unseen_mirror(bool alive, bool dead, bool held) { return alive && !dead && held ? Unseen::Defer : Unseen::Remove; }
 inline bool kill_unseen(bool alive, bool dead) { return alive && !dead; }
+// BUG-9301 (audit CIV-1): a mirror a guest's save took out of a civilization's vehicle lists goes back at the save's
+// end only when that civilization is still listed and the vehicle is still in the game's list as the same object (its
+// serial): a host snapshot between the save's start and end may have removed it (freed a moment later)
+inline bool took_goes_back(bool civ_listed, bool vehicle_listed, bool same_serial)
+{
+    return civ_listed && vehicle_listed && same_serial;
+}
 // the waiting removals, once a frame: one the game removed first (not in its list, dead) is dropped, a held one waits
 inline bool pump_waits(bool listed, bool dead, bool held) { return listed && !dead && held; }
 inline bool pump_kills(bool listed, bool dead) { return listed && !dead; }
