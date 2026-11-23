@@ -1848,6 +1848,33 @@ void register_commands_editor()
                        return 0;
                    },
                    nullptr, SK_CMD_OUTSIDE_FRAME);
+    // BUG-1436 (tests): the game's Cell -> Creature switch as the game calls it (History's check, the end sequence's
+    // event 0x1F: through our hook h_CellToCreature); `quit`: the mod's quit to the galaxy menu (as for a received
+    // world), and the switch right after the game handled the quit message (h_SimMsg), while the stage is left
+    H->command_add(M, "coop.cellswitch", "coop.cellswitch [quit] - tests (BUG-1436): the game's Cell -> Creature switch through the hook; quit: "
+                   "the mod's quit to the galaxy menu first, the switch right after the game handled it",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (game::mode_id() != modes::kCell) {
+                           SAY("not in the Cell stage (dropped so far %u)", g_quit_switch_dropped);
+                           return 1;
+                       }
+                       if (argc > 1 && !strcmp(argv[1], "quit")) {
+                           std::string err;
+                           if (!world::post_quit_to_menu(err)) {
+                               SAY("quit refused: %s", err.c_str());
+                               return 1;
+                           }
+                           g_cellswitch_after_quit = true;
+                           SAY("quit posted: the switch follows when the game handles it (dropped so far %u)", g_quit_switch_dropped);
+                           return 0;
+                       }
+                       unsigned before = g_quit_switch_dropped;
+                       h_CellToCreature();
+                       SAY("switch called (leaving the stage %d): %s (dropped %u)", (int)game::leaving_stage(),
+                           g_quit_switch_dropped != before ? "not taken" : "passed to the game", g_quit_switch_dropped);
+                       return 0;
+                   },
+                   nullptr, SK_CMD_OUTSIDE_FRAME);
     H->command_add(M, "coop.vote", "coop.vote [test|go|tribeend [<archetype hex>]|noavatar <s>] - evolution vote (test: a vote without an editor; tribeend: the end-of-Tribe editor guard; noavatar: a vote end in <s> sees no avatar, BUG-1421; tests)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1 && !strcmp(argv[1], "test") && g_sess.role() == net::Role::Host && !g_vote.active) {

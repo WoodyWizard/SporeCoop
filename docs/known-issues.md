@@ -443,6 +443,10 @@ anchor so other docs can link to it:
 * Reproduce: host from a slot with several planets, join, then swap roles: the guest's galaxy menu shows them all.
 * Next steps (0.7.17): share only the played planet's `.spo` plus the galaxy's own files (RE of GGEUserData.dat: a
   missing `.spo` shows "Bad or Missing Saved Game"); a "continue the last co-op world" entry for a new host.
+* Fixed on fix/w75-share (0.7.17, waiting for the lab run copy_slot_planets and its twins): a share to a guest with
+  world 1.1 sends the played planet's file and the galaxy's own files only (`world.share_planet`); a host in the galaxy
+  menu gets "Continue <planet>" for its last co-op copy (`world.continue_coop`). The galaxy's files still list the old
+  planets (not rewritten: docs/re/space.md#space-share-one-planet).
 * Ticket: BUG-1434
 ## Tribe: on a guest's screen the host's chief sometimes holds its staff differently for about a second (2026-11-23, 0.7.16 final check)
 <a id="issue-tribe-chief-grip"></a>
