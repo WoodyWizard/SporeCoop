@@ -10,7 +10,7 @@ role: test
 versions: 0.7.16.1 and earlier
 fixed_in:
 branch: fix/w76-motion
-commits:
+commits: a08dfd8b
 tests: npc_nest_backoff, npc_nest_backoff_near
 signature:
 docs:

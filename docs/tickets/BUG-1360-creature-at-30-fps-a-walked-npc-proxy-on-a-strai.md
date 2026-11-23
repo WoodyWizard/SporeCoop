@@ -10,7 +10,7 @@ role:
 versions: 0.7.15.5, unreleased
 fixed_in:
 branch: fix/w76-motion
-commits:
+commits: 22385d59
 tests: npc_walk_novel, npc_walk_novel_stale, npc_walk_novel_stale_gait_off (twin), npc_walk_novel_gait_off (twin), npc_walk_fps30, npc_walk_player, tests/npc_tests.cpp test_walk_gait
 signature:
 docs: docs/re/creature.md#creature-proxy-stale-walk-speed

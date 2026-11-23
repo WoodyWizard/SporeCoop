@@ -10,7 +10,7 @@ role: host
 versions: 
 fixed_in:
 branch: fix/w76-motion
-commits:
+commits: de506908
 tests: social_sing, social_sing_bhv_off (twin)
 signature:
 docs:

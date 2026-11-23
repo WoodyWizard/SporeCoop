@@ -10,7 +10,7 @@ role:
 versions: 0.7.14.1, unreleased
 fixed_in:
 branch: fix/w62-flake-tcs, fix/w76-motion
-commits: fbdd2510
+commits: fbdd2510 46863dd0
 tests: tribe_walk_player, tribe_walk_player_lead_cap_off (twin), body_trail_tribe_player, tests/tribe_tests.cpp lead_cap
 signature:
 docs: docs/known-issues.md#issue-tribe-walk-player-jumps

@@ -10,7 +10,7 @@ role:
 versions: 0.7.14.1, unreleased
 fixed_in:
 branch: fix/w61-creature-b, fix/w76-motion
-commits: 14aa9dc9
+commits: 14aa9dc9 c7438cb1
 tests: npc_frozen_thaw, npc_frozen_thaw_lead_gap_off (twin), net_tests test_lead_gap_thaw
 signature:
 docs: docs/known-issues.md#issue-creature-thaw-proxy-off
