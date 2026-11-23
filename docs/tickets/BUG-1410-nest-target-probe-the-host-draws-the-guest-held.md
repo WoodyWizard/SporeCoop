@@ -51,3 +51,4 @@ spots. Open: waiting for that run, then the fix.
 
 ## History
 - 2026-11-21: opened from the third final check of 0.7.16 (fix/w62-flake-cc); diagnostics added to the test.
+- 2026-11-23: again in lab 20261122-194210 (nest_target_probe, lane 7, gate monitor drawn 6.3 m, the test RESULT OK): the same numbers (agl 15.48 / 21.82 at s 120, 29.76 / 36.10 at s 130, d=565), and the new ground lines show both games read the same ground there (dir 1 483.55 / 483.55, dir 3 469.27 / 469.27): the 6.3 m is in the host's drawn placement, not in GetHeightAt. Still open, 0.7.16.1.
