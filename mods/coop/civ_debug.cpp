@@ -823,6 +823,12 @@ std::string debug(const std::vector<std::string>& a)
         void* pc = planner_city();
         snprintf(line, sizeof line, "planner editor=%p city=%p host_index=%d\n", g_editor, pc, pc ? host_index_of_city(pc) : -1);
         out += line;
+        if (pc) { // BUG-1532 tests: what the planner does with a drop now (sell=1: sold back, off its offered plots)
+            void* hand = F<void*>(g_editor, kEdHand);
+            snprintf(line, sizeof line, "hand %p hover_slot=%d sell=%d\n", hand, F<int>(g_editor, kEdHover),
+                     hand ? (int)F<uint8_t>(hand, kSpSell) : -1);
+            out += line;
+        }
         std::vector<void*> moved;
         planner_moved(moved);
         for (void* sp : moved) {

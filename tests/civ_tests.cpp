@@ -95,6 +95,12 @@ static void test_holds()
     // BUG-1417 (CIV-7): the planner building is sent only when the closed planner kept it
     CHECK(planner_kept(true, true, true));
     CHECK(!planner_kept(true, false, true) && !planner_kept(true, true, false) && !planner_kept(false, true, true));
+    // BUG-1532: the sell-back refund of a building the guest's planner added and has not sent passes the income block
+    CHECK(planner_refund_passes(true, true, true));
+    CHECK(!planner_refund_passes(false, true, true) && !planner_refund_passes(true, false, true) &&
+          !planner_refund_passes(true, true, false));
+    // a guest's sold building of the city (the host has it) and its other income stay blocked
+    CHECK(guest_income_blocked(false, true, true, true, 1600.f) && !planner_refund_passes(true, true, false));
     // BUG-1418 (CIV-6): a host alone claims nothing by its deal; what a city has stays; with players the deal claims
     CHECK(city_claim(false, "", false, false, "host", true).empty());
     CHECK(city_claim(true, "host", false, false, "host", true) == "host");

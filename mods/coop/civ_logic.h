@@ -103,6 +103,13 @@ inline bool planner_kept(bool city_listed, bool in_buildings, bool same_noun)
 {
     return city_listed && in_buildings && same_noun;
 }
+// BUG-1532: the planner sells a building dropped off its offered plots back (the refund through its money object); a
+// guest's Civ income block dropped that refund, so a building taken away again cost its price. With civ.planner_closed
+// the refund passes for a building this planner added and has not sent (not for one of the city: the host has that)
+inline bool planner_refund_passes(bool fix, bool refund_site, bool ours_unsent)
+{
+    return fix && refund_site && ours_unsent;
+}
 // BUG-1418 (audit CIV-6): the claim a city of the player civilization gets at the host's refresh. has_old/old: its claim
 // now; old_absent: that claim's player is not here; owner_key: the key of its owner in the owner table ("" none, not a
 // player); owner_shared: the shared capital; alone: the host plays alone (fix on): its own deal claims nothing.
