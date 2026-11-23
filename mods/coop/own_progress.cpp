@@ -16,6 +16,7 @@
 #include "modes.h"
 #include "net/protocol.h"
 #include "own_world.h"
+#include "revive_logic.h"
 #include "settings.h"
 #include "store.h"
 #include "world.h"
@@ -150,6 +151,11 @@ static bool g_synced;
 static double g_ask_at = -100, g_report_at = -100, g_stage_since = -1, g_wait_told_at = -100;
 static Values g_last_report;
 static float g_gain_owed; // gains that came while this game had no creature
+// WP-R1 (BUG-1472): the revive's progress debt of this guest (the host's word: kDebt), reported back when gains pay it
+static float g_debt, g_debt_reported;
+static double g_debt_report_at = -100;
+static unsigned g_debt_paid_n, g_debt_in, g_debt_out;
+static float g_debt_paid;
 
 // ---- both: the notices, the bank
 static bool g_was_full, g_was_all;
@@ -275,8 +281,8 @@ static void recs_save(pstore::Store& s, int64_t now)
     if (!C.sess || C.sess->role() != net::Role::Host)
         return;
     for (auto& [k, r] : g_recs) {
-        if (k.rfind("s:", 0) != 0)
-            continue; // no stable key: memory only
+        if (k.rfind("s:", 0) != 0 && !(k == "host" && sane(r.v)))
+            continue; // no stable key: memory only (the host's own record holds its revive debt, WP-R1)
         std::string name;
         for (auto& p : C.sess->players())
             if (p.id != 0 && store::key_of(p.id) == k)
@@ -300,6 +306,86 @@ static void host_record(uint8_t player, const Values& v)
     Record& r = g_recs[key_of(player)];
     r.world = world_now();
     r.v = v; // (the debt column stays: WP-R1)
+}
+
+// ---- WP-R1 (BUG-1472): the revive's progress debt
+static const char* kHostKey = "host"; // store::key_of(0) (store.h): the host's own record
+static void send_debt(uint8_t to, uint8_t op, float amount)
+{
+    net::Writer w;
+    w.u8(kDebt);
+    w.u8(op);
+    w.f32(amount);
+    C.sess->send_reliable_to(to, net::MSG_PROGRESS, w);
+    g_debt_out++;
+}
+static Record& host_own_record()
+{
+    Record& r = g_recs[kHostKey];
+    Values v;
+    if (local_values(v) && sane(v)) { // (a record that is not a stage's own values does not decode: never written)
+        r.world = world_now();
+        r.v = v;
+    }
+    return r;
+}
+float local_debt()
+{
+    if (C.sess && C.sess->role() == net::Role::Host) {
+        auto it = g_recs.find(kHostKey);
+        return it == g_recs.end() ? 0.f : it->second.debt;
+    }
+    return g_debt;
+}
+float pay_debt(float gain)
+{
+    if (!(gain > 0) || !C.sess || !C.sess->connected())
+        return gain;
+    float* d = nullptr;
+    if (C.sess->role() == net::Role::Host) {
+        auto it = g_recs.find(kHostKey);
+        if (it == g_recs.end() || !(it->second.debt > 0))
+            return gain;
+        d = &host_own_record().debt;
+    } else {
+        if (!(g_debt > 0))
+            return gain;
+        d = &g_debt;
+    }
+    const float before = *d;
+    const float left = revive::pay_from_gain(*d, gain);
+    g_debt_paid += before - *d;
+    g_debt_paid_n++;
+    H->log(M, SK_INFO, "own progress: %.0f of a gain of %.0f pays the revive's debt (%.0f -> %.0f)", before - *d, gain,
+           before, *d);
+    if (*d <= 0)
+        feed("Your revive debt is paid: your gains count in full again");
+    return left;
+}
+void charge_debt(uint8_t player, float amount)
+{
+    if (!is_host() || !(amount > 0) || !revive::sane_debt(amount))
+        return;
+    const uint8_t me = C.sess->my_id();
+    Record& r = player == me ? host_own_record() : g_recs[key_of(player)];
+    if (player != me && r.world == 0) { // (a guest that never reported: its record starts here)
+        r.world = world_now();
+        if (auto it = g_live.find(player); it != g_live.end() && it->second.reported)
+            r.v = it->second.v;
+    }
+    r.debt = std::min(revive::kMaxDebt, r.debt + amount);
+    if (player != me)
+        send_debt(player, kDebtAdd, amount);
+    H->log(M, SK_INFO, "own progress: %s owes %.0f DNA of its next gains (the revive's price; %.0f in all)",
+           name_of(player).c_str(), amount, r.debt);
+}
+bool live_dna(uint8_t player, float& dna)
+{
+    auto it = g_live.find(player);
+    if (it == g_live.end() || !it->second.reported || it->second.v.mode != modes::kCreature)
+        return false;
+    dna = it->second.v.dna;
+    return true;
 }
 
 static void send_table(double now)
@@ -448,6 +534,11 @@ static void guest_tick(double now)
         game::dna_add_raw(g_gain_owed);
         H->log(M, SK_INFO, "own progress: +%.0f DNA of our deeds paid while we had no creature", g_gain_owed);
         g_gain_owed = 0;
+    }
+    if (g_debt != g_debt_reported && now - g_debt_report_at >= 1.0) { // WP-R1: our gains paid some of the debt
+        g_debt_reported = g_debt;
+        g_debt_report_at = now;
+        send_debt(0, kDebtSet, g_debt);
     }
     if ((v == g_last_report && now - g_report_at < 1.0) || now - g_report_at < 0.25)
         return;
@@ -653,6 +744,9 @@ void take_gain(float dna, const char* why)
     if (!(dna > 0) || dna > 10000)
         return;
     g_gains_in++;
+    dna = pay_debt(dna); // WP-R1 (BUG-1472): the revive's debt first
+    if (!(dna > 0))
+        return;
     if (game::mode_id() == modes::kCreature && game::avatar())
         game::dna_add_raw(dna); // the game's AddEvolutionPoints: our DNA and our bar (not reported: not forwarded)
     else
@@ -687,6 +781,10 @@ void on_message(uint8_t from, net::Reader& r)
                 write_values(w, *v);
             C.sess->send_reliable_to(from, net::MSG_PROGRESS, w);
             g_sets++;
+            if (g_effective) { // WP-R1 (BUG-1472): its revive debt of this world comes back with its values
+                const float debt = it != g_recs.end() && it->second.world == world_now() ? it->second.debt : 0.f;
+                send_debt(from, kDebtSet, debt);
+            }
             H->log(M, SK_INFO, "own progress: %s's values of %s %s", name_of(from).c_str(), modes::mode_name(mode),
                    v ? "go back to it" : !g_restore_fix ? "are the world's (core.progress_restore off)" : "are the world's (none kept)");
         } else if (kind == kReport) {
@@ -698,6 +796,15 @@ void on_message(uint8_t from, net::Reader& r)
             l.v = v;
             l.reported = true;
             host_record(from, v);
+        } else if (kind == kDebt) { // WP-R1 (BUG-1472): the guest's debt after its gains paid some of it
+            const uint8_t op = r.u8();
+            const float d = r.f32();
+            if (!r.ok() || op != kDebtSet || !revive::sane_debt(d) || !g_effective)
+                return;
+            g_debt_in++;
+            auto it = g_recs.find(key_of(from));
+            if (it != g_recs.end())
+                it->second.debt = d;
         }
         return;
     }
@@ -733,6 +840,17 @@ void on_message(uint8_t from, net::Reader& r)
         g_last_report = {};
         if (has)
             feed("Your own DNA and evolution bar are back (" + std::to_string(percent(v)) + " % of this stage)");
+    } else if (kind == kDebt) { // WP-R1 (BUG-1472): the host's word on our revive debt
+        const uint8_t op = r.u8();
+        const float d = r.f32();
+        if (!r.ok() || !revive::sane_debt(d) || (op != kDebtAdd && op != kDebtSet))
+            return;
+        g_debt_in++;
+        g_debt = op == kDebtAdd ? std::min(revive::kMaxDebt, g_debt + d) : d;
+        g_debt_reported = g_debt; // (the host knows it)
+        if (op == kDebtAdd)
+            feed("Your revive debt: your next " + std::to_string((int)std::ceil(g_debt)) +
+                 " DNA pay it first (your evolution bar waits for them)");
     } else if (kind == kGain) {
         float d = r.f32();
         uint8_t cause = r.left() >= 1 ? r.u8() : 0;
@@ -756,6 +874,8 @@ static void on_session_end()
     g_table_last.clear();
     g_table_at = -100;
     g_gain_owed = 0;
+    g_debt = g_debt_reported = 0; // (the host keeps it in its record and gives it back after our kAsk)
+    g_debt_report_at = -100;
     g_was_full = g_was_all = false;
     g_notice_mode = 0;
     g_stage_since = -1;
@@ -815,6 +935,9 @@ std::string status()
     out += b;
     snprintf(b, sizeof b, "  cap=%d low_level=%d bank=%d clipped=%u released=%u\n", cap == INT_MAX ? -1 : cap,
              cap == INT_MAX ? -1 : low, g_bank, g_clipped, g_released);
+    out += b;
+    snprintf(b, sizeof b, "  debt=%.1f debt_paid=%.1f debt_pays=%u debt_in=%u debt_out=%u\n", local_debt(), g_debt_paid,
+             g_debt_paid_n, g_debt_in, g_debt_out); // WP-R1 (BUG-1472)
     out += b;
     for (const auto& p : players_now()) {
         snprintf(b, sizeof b, "  player %u %s: known=%d stage=%s full=%d pct=%d food=%d\n", (unsigned)p.id,

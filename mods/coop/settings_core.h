@@ -31,6 +31,7 @@ enum Id : int {
     kSharedDna,      // Cell, Creature: 0 own wallet (WP-D, dna_own.h), 1 one pool, 2 own progress (BUG-1469, own_progress.h)
     kNpcTargets,     // Creature: the host's NPC animals treat partners like the host's creature (npc.cpp)
     kPackRescue,     // Creature: a deadly hit near a partner leaves 40 % health (teamplay.cpp)
+    kRevive,         // Creature: a lethal hit the pack rescue does not take downs the creature, a partner revives it (revive.cpp, BUG-1472)
     kPackHeal,       // Creature: partners heal each other nearby (teamplay.cpp tick)
     kJointHunt,      // Creature: a target another player hit deals +25 % (teamplay.cpp on_player_hit)
     // step 3 of F3 (feat/w46-settings-all): every other co-op mechanic of the plan's table, defaults = 0.7.11
@@ -67,6 +68,10 @@ enum Id : int {
 // (own_progress_logic.h Mode; read with get(), never on()). The default of a new world: owner question 2 of
 // docs/plan-0.7.17.md is open (own wallet, as 0.7.16, proposed): this one constant
 constexpr int kSharedDnaDefault = 0;
+
+// creature.revive's default (WP-R1, BUG-1472; PR #214): provisional until the owner answers question 4 of
+// docs/plan-0.7.17.md (pack rescue stays the first line, revive after it); the one place to flip it
+constexpr int kReviveDefault = 1;
 
 struct Def {
     const char* key;     // the console / wire / file name ("cell.regen"); never renamed (stored worlds keep it)
@@ -110,6 +115,9 @@ inline const Def kDefs[kCount] = {
     {"creature.pack_rescue", "Creature", "Pack rescue",
      "on: a deadly hit next to a partner leaves 40 % health (once a minute); off: the hit kills",
      1, 0, 1, Scope::Session, "teamplay", false},
+    {"creature.revive", "Creature", "Revive a downed partner",
+     "on: a lethal hit the pack rescue does not take downs the creature for 60 s; a partner standing next to it for 1.5 s revives it, else it dies and pays its own price (10 % of its own DNA, or a debt on its next gains under own progress); off: the hit kills",
+     kReviveDefault, 0, 1, Scope::Session, nullptr, false},
     {"creature.pack_heal", "Creature", "Partners heal each other nearby",
      "on: health regenerates while a partner is close; off: as in a solo game",
      1, 0, 1, Scope::Live, "teamplay", false},

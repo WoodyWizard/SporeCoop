@@ -3687,3 +3687,62 @@ the host is not in (squadron_logic.h, MSG_UFO_LEAD, docs/04-netcode.md#netcode-u
   escort design, if its game gives it one of its own creations, would show the host's creation of that id or the
   BUG-0323 fallback model. The key frame of the lab test shows it.
 * Negative: the 2-player case never reaches this path (a place with one guest has no announced row), Rivals neither.
+
+## The Space audit items of 0.7.17 (2026-11-23, fix/w77-space)
+<a id="space-audit-0717"></a>
+
+WP-X1 of docs/plan-0.7.17.md: the REAL Space rows of the external audit of 0.7.15.5 (out/research/ext-audit-verify-civ-spc.md)
+not taken by 0.7.16.1. Static reading of rel/0.7.17 (4daf12d1); no new game address. Mod-side mechanics:
+
+* ✔ (code) `coop.store adopt` calls each feature's `adopt(from, to)` after the store's own move; Rivals used to move only
+  the budget's key. A present guest's budget is "known" (`g_win.known`), so a plain K_SET is dropped: the adopted budget
+  goes as K_SET have 3 (space 1.3) and the host holds it until the guest reports it (BUG-1482).
+* ✔ (code) Nothing of the Rivals budget (K_ASK, K_SET, K_MONEY, a pending split or merge) runs on a guest whose
+  `own_world::space_other()` is true (BUG-1483). The same gate holds the host's kept colony list in space_map (BUG-1488);
+  space_badges, the hold (BUG-0816) and the finale's gift (BUG-1415) had it already.
+* ✔ (code) A sale's or an offer's payment follows the same world rule as a refund (the Out's world tag, BUG-0225): paid now
+  only in Space in that world, else owed to the owed-sales path of BUG-0832 (BUG-1485).
+* ✔ (docs 5.2, applied) "A colony of the host" for an armada target is a planet record with tech +0x194 == 5 **and** a
+  cCivData (+0x15C, pol +0x14) of the host's political id (cEmpire +0x84), not a partner's own-star mirror colony
+  (which carries the host's pol, BUG-0543). Tech 5 alone is every empire's colony (BUG-1486).
+* ✔ (code) spacecoop's "raids on my own colonies" filter (star owner == my pol) passes an own-star mirror colony; such
+  raids are now left to their owner (BUG-1487). The helper's win still completes the owner's raid by K_DEFENDED.
+* ✔ (code) Both ways out of the near-stars list problem of BUG-1144 now rebuild the list: unapply() (the whole mirror)
+  and apply() when it gives one star back (a lost colony, BUG-1484).
+* ✔ (code) K_TERRA deltas: an honest game's tool adds a small part of the record's 0..1 range per message; a non-finite
+  value is refused and a finite one clamped to +-1 (BUG-1489).
+* ✔ (code) Every jump of the mod goes through travel_to; the disabled check sits in its callers: jump(), travel(),
+  teleport_in_galaxy(), and now travel_to_star and `jumpto` (without `force`) too (BUG-1490).
+* ✔ (code) A Rivals offer is always answered: a receiver declines an offer it can not hold and a Withdraw of one it does
+  not hold; the seller takes back an offer with no answer after the offer life plus 30 s (a 0.7.16.1 receiver, BUG-1491).
+* Negative: SPC-14 parts a and b (a waiting tick's failed list, the 10 s resend) are harmless and unchanged; SPC-3's
+  rel_keys part is never read (a self pair).
+
+## A guest's own captain in Space (2026-11-23, feat/w74-captain)
+<a id="space-own-captain"></a>
+
+BUG-1475 (#217 a, the idea of PR #217 by IltonBJSilva). GOG 2024, Ghidra (static), no game run for this branch.
+* ✔ (Ghidra) cEmpire's serializer table 0x1572B60 (static init 0x1336DF0) has `mCaptainKey` at entry 0x1572D04: id
+  0x07F55DBF, offset 0xC4, write 0xAE33D0 -> Stream_WriteResourceKey 0xAE2DC0 (a key attribute, so the savestrip key
+  filters see it too); cPlayer's mInitCaptainKey (+0x1290) is in table 0x1350CA0.
+* ✔ (Ghidra) 0xC75B40 fastcall(cPlayer*) (its cPlayer comes from 0xF67D40, named Canvas::GetWindow by the March2017 base
+  but the cPlayer getter here) runs `SporeCoop::Captain_TagTraits` 0x555F70(&empire captain, card) for each nonzero card
+  +0x10FC..+0x110C: it rewrites the captain creation's Pollinator metadata {inst, 0x030BDEE3, group} (the card's
+  category replaced) and writes it back into the creation's own database. cEmpire_SetCaptainKey 0xC31100,
+  cEmpire_UpdateCaptainKey 0xC32AE0 (one caller, the Space mode's enter 0x1007612, only with GA installed) and
+  cPlayer_SetConsequenceTrait in Space call it. So setting a player's own creature as captain with the game's setter
+  would retag that creature in its My Creations for good: own_captain.cpp writes +0xC4 as the setter does, without it.
+  (history.cpp's own cards in Space still run it on whatever the captain is then: ~ a guest's own captain gets its own
+  cards in its metadata when a card changes later; not seen at runtime.)
+* ✔ (Ghidra) Readers of +0xC4 in Space (GetCaptainKey 0xC310F0 callers): the comm screen 0xAEC221 (and 0xAE9510 in GA),
+  0xC6E690, 0xFDA740, 0xFDB990 (the captain's model bake into the model world), 0xFDBF80 (the captain's items to the
+  achievements and inventory: skipped without a list), 0xFDF5E0 (the adventure request), 0xFE0F30 ("Name Your
+  Captain"), the captain panel 0xFE7140 / 0xFE7250 / 0xFE7330 / 0xFE7560 / 0xFE7CF0, the outfitter 0xFE7A10 (? its
+  result on a creation that never was a captain is not known), 0x1015F10 (the beam-down creature in GA), the captain
+  screen 0x1072810. No crew reader found.
+* The rule (captain::own_step, own_captain.cpp, `space.own_captain`): a guest of creature.mode own that plays an own
+  creation (not one under a key of the host's world, BUG-0278) gets it as its captain 5 s after the Space world came,
+  when the key is known here and has a species profile (BUG-1111 / BUG-1278 read both); a world without a captain is
+  left to "Name Your Captain"; a captain the game sets later (named, outfitted) is the player's own, kept and noted per
+  world (worlds.ini [captain]). Saves: savestrip's save hooks write the world's captain into +0xC4 for the save and ours
+  after it; the session's end puts the world's back. `coop.owncaptain [save]`.

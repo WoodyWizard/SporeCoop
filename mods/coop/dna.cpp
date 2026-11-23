@@ -177,8 +177,13 @@ bool on_dna(float& delta)
                 return false;
             }
         }
-        if (delta > 0)
+        if (delta > 0) {
             g_own_gains_kept++;
+            // WP-R1 (BUG-1472): a revive's progress debt is paid from this game's own next gains (DNA and bar)
+            delta = own_progress::pay_debt(delta);
+            if (!(delta > 0))
+                return false;
+        }
         if (g_sess.role() == net::Role::Host && delta != 0 && g_mode == modes::kCreature)
             LOG("dna: %.0f -> %.0f cause=own", game::dna(), game::dna() + delta);
         return true;

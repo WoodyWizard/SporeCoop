@@ -191,7 +191,7 @@ static void member_balance(void* pt, const std::vector<uint8_t>& players)
     }
 }
 // the game saves: the claims by position (world record tribe.owners v1)
-static void member_claims_save(pstore::Store& s, int64_t)
+static void member_claims_save(pstore::Store& s, int64_t now)
 {
     if (!g_owners_fix || !g_mclaims_serial || g_mclaims_serial != store::serial() || &s != store::world() ||
         game::mode_id() != modes::kTribe)
@@ -209,6 +209,21 @@ static void member_claims_save(pstore::Store& s, int64_t)
     pstore::Out o;
     claims::put_spots(o, v);
     s.put_world("tribe.owners", 1, o.d);
+    std::vector<std::string> keys; // BUG-1500: the owners keep their names in the store
+    for (auto& sp : v)
+        keys.push_back(sp.key);
+    store::mark_owners(s, "tribe.owner", keys, now);
+}
+// NET-3 (BUG-1499): the save opened the world's store itself: its claims are read and matched now and follow the
+// owners of this moment (as the next ticks would), so this save writes them
+static void member_claims_opened()
+{
+    if (!active() || !is_host() || game::mode_id() != modes::kTribe)
+        return;
+    if (void* pt = player_tribe()) {
+        g_mclaims_at = 0; // the follow runs now
+        member_claims_tick(pt, H->time_seconds());
+    }
 }
 static bool g_mclaims_reg = store::add({"tribe.owners", member_claims_save, [](const std::string& from, const std::string& to) {
                                             for (auto& [c, k] : g_member_claim)
@@ -219,7 +234,7 @@ static bool g_mclaims_reg = store::add({"tribe.owners", member_claims_save, [](c
                                                     sp.key = to;
                                             if (g_claims_order_fix)
                                                 g_host.split_for.clear(); // TR-1: the renamed claims go to their player
-                                        }});
+                                        }, member_claims_opened});
 
 void host_tick(double now)
 {
@@ -388,13 +403,20 @@ static bool g_fruit_order_fix = true;
 COOP_FIX("tribe.fruit_order", "BUG-0744", g_fruit_order_fix,
          "tribe: a guest's gather order on a fruit the host's game does not have there gathers the host's nearest fruit or fruit tree");
 uint32_t g_fruit_orders_moved;
+// BUG-1494 (audit TR-8): fruit_instead read cTreeData +0x48 and +0x4C as one u64; +0x4C is every fruit slot of the tree
+// (0x07 / 0x1F, never 0: docs/re/tribe.md CORRECTION 2026-11-13, two u32 masks), so a picked-empty tree passed and the
+// guest's members walked to it and gathered nothing. Now only +0x48 (the fruit left, as for_each_tree_pos reads it).
+// `coop.fix tribe.tree_mask off`: the u64 read (0.7.16.1).
+static bool g_tree_mask_fix = true;
+COOP_FIX("tribe.tree_mask", "BUG-1494", g_tree_mask_fix,
+         "tribe: a guest's gather order on a fruit the host lacks never goes to a tree with no fruit left");
 static void* fruit_instead(const net::Vec3& pos)
 {
     void* best = nullptr;
     float bd = 12.f;
     for_each_tree([&](void* t, const net::Vec3& p) {
         float d = net::dist(p, pos);
-        if (d < bd && F<uint64_t>(t, 0x48) != 0) {
+        if (d < bd && tribe_logic::tree_has_fruit(g_tree_mask_fix, F<uint32_t>(t, 0x48), F<uint32_t>(t, 0x4C))) {
             bd = d;
             best = t;
         }

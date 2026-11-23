@@ -38,6 +38,8 @@ only from working together.
 * Already there: one planet, shared NPCs, fights via the host, shared DNA.
 * **Revive.** If a player dies and a partner is nearby, the partner can pick them up
   (walk up and hold a social action / key), otherwise they respawn at the nest.
+  Done in 0.7.17 (BUG-1472, [revive](03-gameplay.md#gameplay-revive)): the pack rescue first, then down for 60 s; a
+  partner standing within 6 m for 1.5 s revives (no key), else the game's death and the downed player's own price.
 * **Joint hunting.** If two players hit the same target, each one's damage is +25 %.
 * **Joint socializing.** Any player's social actions advance friendship with the same
   nest (counted by the host) - with several players, befriending is easier.

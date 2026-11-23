@@ -514,6 +514,15 @@ COOP_FIX("allies.near_rebuild", "BUG-1144", g_near_fix,
          "space: after the allies mirror goes (a save, the end of the session) the game's list of owned stars nearby is "
          "rebuilt without its star (possible crash when an NPC ship would visit)");
 static uint32_t g_near_rebuilds;
+// BUG-1484 (audit SPC-5): apply() gives a star back to its old owner (usually nobody) when the partner's colony there is
+// lost or blocked and nothing else of the mirror uses it, but only unapply() rebuilt the list above: with the star
+// visited (in the list) the next NPC visitor spawn could pick it and fault at 0xC32817 (BUG-1144's crash). Now apply()
+// rebuilds the list too after it gave a star back. `coop.fix allies.apply_near_rebuild off`: 0.7.16.1.
+static bool g_apply_near_fix = true;
+COOP_FIX("allies.apply_near_rebuild", "BUG-1484", g_apply_near_fix,
+         "space: when a partner's colony goes from the allies mirror its star leaves the game's list of owned stars nearby "
+         "(possible crash when an NPC ship would visit)");
+static uint32_t g_apply_star_back;
 
 static void* near_stars()
 {
@@ -734,6 +743,7 @@ static void apply(Mirror& m)
             vcall<void>(it->second.rec, 1);
         it = m.planets.erase(it);
     }
+    bool star_back = false;
     if (m.applied)
         for (auto it = m.stars.begin(); it != m.stars.end();) {
             bool used = false;
@@ -742,9 +752,14 @@ static void apply(Mirror& m)
             if (!used) {
                 restore_star(m, it->first);
                 it = m.stars.erase(it);
+                star_back = true;
             } else
                 ++it;
         }
+    if (star_back && g_apply_near_fix) { // BUG-1484: no star of nobody in the game's list of owned stars nearby
+        g_apply_star_back++;
+        rebuild_near();
+    }
     if (todo.empty() && own_todo.empty() && !m.applied)
         return;
     if (!ensure_empire(m))
@@ -1624,7 +1639,8 @@ static std::string debug(const std::vector<std::string>& a)
             return "no near list\n";
         std::vector<void*> v = ptr_vec((uint8_t*)ns + 0x7C, 256);
         uint32_t me = my_pol();
-        std::string o = "near " + std::to_string(v.size()) + " rebuilds=" + std::to_string(g_near_rebuilds) + "\n";
+        std::string o = "near " + std::to_string(v.size()) + " rebuilds=" + std::to_string(g_near_rebuilds) +
+                        " apply_star_back=" + std::to_string(g_apply_star_back) + "\n";
         int stale = 0;
         for (void* s : v) {
             if (!readable(s, 0x74))
@@ -1847,6 +1863,31 @@ static std::string debug(const std::vector<std::string>& a)
         v.push_back(second);
         std::string why = cities_apply(id, wire::space_map::put_cities(v));
         return (why.empty() ? std::string("citytest ok\n") : "citytest: " + why + "\n") + describe_cities(id);
+    }
+    if (a[0] == "npccolony") { // tests (BUG-1486): an NPC empire's colony near me (no change): npccolony <PlanetID> <star> <pol>
+        void* ns = near_stars();
+        uint32_t me = my_pol();
+        std::vector<void*> cand = ns ? ptr_vec((uint8_t*)ns + 0x7C, 256) : std::vector<void*>{};
+        void* nm = a_NounMgr ? cdecl_call<void*>(a_NounMgr) : nullptr;
+        void* player = nm && readable(nm, 0x78) ? F<void*>(nm, 0x74) : nullptr;
+        if (player && readable(player, 0x11E0)) // the empires met (as npcstar)
+            for (auto p = F<uint32_t*>(player, 0x11D8); p && p < F<uint32_t*>(player, 0x11DC) && readable(p, 8); p += 2)
+                if (p[0] != me && (p[1] & 2))
+                    if (void* e = empire_of(p[0]))
+                        for (void* st : ptr_vec((uint8_t*)e + 0x88, 256))
+                            cand.push_back(st);
+        for (void* st : cand) {
+            if (!readable(st, 0x74))
+                continue;
+            uint32_t pol = F<uint32_t>(st, 0x54);
+            if (pol == me || pol == 0xFFFFFFFFu || !empire_of(pol) || mirror_pol(pol))
+                continue;
+            for (void* r : planets_of(st))
+                if (readable(r, 0x1A4) && F<uint32_t>(r, 0x194) == 5)
+                    return "npccolony " + hex(F<uint32_t>(r, 0x184)) + " " + std::to_string(F<uint32_t>(st, 0x70)) + " " +
+                           hex(pol) + "\n";
+        }
+        return "no NPC colony near\n";
     }
     if (a[0] == "npcstar") { // tests (BUG-1151): an NPC empire's star near me becomes mine, as a purchase or a conquest
         void* ns = near_stars();

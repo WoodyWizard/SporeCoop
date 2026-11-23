@@ -25,7 +25,10 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx);
 // host: damage a player deals to an NPC; returns the damage to apply
 float on_player_hit(void* target, uint8_t player, float damage);
 // own avatar is about to take `damage`: returns the damage to apply (the pack may save us)
+// (the pack rescue first, then the revive's knockout: revive.h, BUG-1472)
 float on_own_damage(void* avatar, float damage);
+// the pack's one-off rescue alone: true = it saved us (damage lowered so that 40 % health is left)
+bool pack_rescue(void* avatar, float& damage);
 void tick(void* avatar, double now); // own avatar regen
 std::string status();                // overlay line, "" if nothing
 // the target's object was freed or is another creature now: its hits do not count any more

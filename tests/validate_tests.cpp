@@ -611,6 +611,10 @@ static void test_settings()
     // BUG-1468: civ.own_money, a session switch of the Civilization group, provisional default off (owner question 1)
     CHECK(std::string(kDefs[kCivOwnMoney].key) == "civ.own_money" && kDefs[kCivOwnMoney].scope == Scope::Session &&
           std::string(kDefs[kCivOwnMoney].group) == "Civilization" && kDefs[kCivOwnMoney].max == 1 && kCivOwnMoneyDefault == 0);
+    // WP-R1 (BUG-1472): creature.revive, a session switch of the Creature group, its provisional default (owner question 4)
+    CHECK(std::string(kDefs[kRevive].key) == "creature.revive" && kDefs[kRevive].scope == Scope::Session &&
+          std::string(kDefs[kRevive].group) == "Creature" && kDefs[kRevive].max == 1 && kDefs[kRevive].def == kReviveDefault &&
+          kRevive == kPackRescue + 1 && !kDefs[kRevive].ini);
     // E2 (BUG-0864): the host's autosave: a choice of minutes, 10 by default, Live
     CHECK(kDefs[kAutosave].scope == Scope::Live && value_text(kAutosave, 2) == "10 min" && value_text(kAutosave, 0) == "off");
     CHECK(autosave_minutes(0) == 0 && autosave_minutes(2) == 10 && autosave_minutes(5) == 60 && autosave_minutes(9) == 10);
@@ -1118,6 +1122,32 @@ static void test_model_paint_runs()
     CHECK(!model_paint::effects_read(lead, eff, at, len, p2));
 }
 
+// CORE-8 (BUG-1504): a base layer written byte by byte whose top byte a run repeats into the coat and detail (`19 55 77
+// 00 FE 08`: base 0x00775519, coat and detail 0) is not patchable: a substitute's top byte would be repeated by the run
+static void test_model_paint_run_after()
+{
+    printf("paint: a layer followed by a run is not patched in place (BUG-1504)\n");
+    std::vector<uint8_t> m;
+    for (int i = 0; i < 26; i++)
+        m.push_back((uint8_t)(0x10 + i));
+    m.insert(m.end(), {0x19, 0x55, 0x77, 0x00, 0xFE, 0x08}); // base 00775519, then 8 more 00: coat 0, detail 0
+    for (int i = 0; i < 8; i++)
+        m.push_back((uint8_t)(0x40 + i));
+    uint32_t eff[3] = {};
+    size_t at[3] = {}, len[3] = {};
+    bool patch[3] = {};
+    CHECK(model_paint::effects_read(m, eff, at, len, patch, true));
+    CHECK(eff[0] == 0x00775519u && eff[1] == 0 && eff[2] == 0);
+    CHECK(!patch[0] && !patch[1] && !patch[2]); // the base's last byte is the run's byte
+    bool old[3] = {};
+    CHECK(model_paint::effects_read(m, eff, at, len, old, false));
+    CHECK(old[0]); // 0.7.16.1: patched in place, the run then repeats the substitute's top byte
+    // a literal 0xFE after the layer (FE 00) is no run: still patchable
+    std::vector<uint8_t> f(m.begin(), m.begin() + 30);
+    f.insert(f.end(), {0xFE, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B});
+    CHECK(model_paint::effects_read(f, eff, at, len, patch, true) && patch[0]);
+}
+
 // B3 of 0.7.15 (BUG-1136): the message manifest (net/messages.def, net/space_kinds.def). Every type and kind listed
 // once; the generated tables equal 0.7.14's (tests/manifest_golden.h: the wire values, the classes, the Space
 // directions, the dispatch of every type on both roles); the host's direction gate drops exactly the host-only types;
@@ -1297,8 +1327,8 @@ static void test_manifest()
     // types added after 0.7.14 (a 0.7.14 peer ignores them, B6): MSG_HOST_BUSY 70 (BUG-1142), MSG_TRIBE_ANIM 71 (C7,
     // BUG-1160), MSG_CELL_MATE 72 (BUG-1246), MSG_SPECIES_LINE 73 (WP-0 of 0.7.16, BUG-1270)
     // MSG_CIV_WALLET 74 (WP-M1 of 0.7.17, BUG-1468), MSG_PLAYER_HISTORY 75 (WP-H1, BUG-1470), MSG_PROGRESS 76 (WP-P1 / P2,
-    // BUG-1469), MSG_UFO_LEAD 78 (WP-S1 of 0.7.17, BUG-1288)
-    const std::set<int> added_types = {70, 71, 72, 73, 74, 75, 76, 78};
+    // BUG-1469), MSG_RESCUE 77 (WP-R1, BUG-1472), MSG_UFO_LEAD 78 (WP-S1 of 0.7.17, BUG-1288)
+    const std::set<int> added_types = {70, 71, 72, 73, 74, 75, 76, 77, 78};
     CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0] + added_types.size()));
     CHECK(MSG_HOST_BUSY == 70 && msg_info(70).known && msg_dir(70) == MsgDir::Host &&
           host_world::msg_class(70) == host_world::MsgClass::Session && dispatch_route(70, false) == Route::HostBusy &&
@@ -1328,6 +1358,11 @@ static void test_manifest()
     CHECK(MSG_PROGRESS == 76 && std::string(msg_info(76).name) == "PROGRESS" && msg_info(76).family == Family::creature &&
           msg_dir(76) == MsgDir::Any && host_world::msg_class(76) == host_world::MsgClass::HostWorld &&
           dispatch_route(76, true) == Route::Progress && dispatch_route(76, false) == Route::Progress);
+    // WP-R1 (BUG-1472): the revive, both directions, a guest elsewhere drops it at dispatch (HostWorld), creature 1.3
+    CHECK(MSG_RESCUE == 77 && std::string(msg_info(77).name) == "RESCUE" && msg_info(77).family == Family::creature &&
+          msg_dir(77) == MsgDir::Any && host_world::msg_class(77) == host_world::MsgClass::HostWorld &&
+          dispatch_route(77, true) == Route::Rescue && dispatch_route(77, false) == Route::Rescue &&
+          reserved_msg(77) && std::string(reserved_msg(77)->name) == "RESCUE");
     for (int t : added_types)
         for (auto& g : golden0714::kTypes)
             CHECK(g.id != t);
@@ -1567,6 +1602,7 @@ int main(int argc, char** argv)
     test_planet_rx();
     test_task_drop();
     test_model_paint_runs();
+    test_model_paint_run_after();
     if (g_fail) {
         printf("%d FAILED\n", g_fail);
         return 1;

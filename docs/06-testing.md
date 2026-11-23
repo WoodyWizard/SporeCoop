@@ -10146,6 +10146,25 @@ by chance. Their tests open the window with a host knob that stands for the real
   space_planet_runners) compares only running host citizens at the guest's moment (host, guest, host dumps by serial);
   its limits are provisional until both arms are measured (BUG-1454).
 
+## Test seams of the 0.7.17 audit items (2026-11-23, fix/w80-net)
+<a id="testing-seams-w80"></a>
+
+* `coop.store hold` (host): the per-player store is closed until the next save opens it (as before a world has its
+  name): `tribe_owners_reload_fresh` (BUG-1499).
+* `coop.space keptkey other on` before a join in `twoinst.session_restart(before_join=...)`: the guest comes as another
+  game under the same name (a new install); `tribe_owners_adopt` then checks `coop.store adopt` in Tribe (BUG-1500).
+* `coop.join 127.0.0.1:99999`: a join that fails at once (the port does not parse), for `dna_own_rejoin_failed`
+  (BUG-1498).
+* `coop.worldfix failpeer <id>`: the next share to that peer fails once (not as planet-missing, no retry for a
+  `coop.worldfix queue` share): `tribe_reload_any`, three players (BUG-1505).
+* `coop.uistate fullscreen 1|0|auto`: what "the game fills the screen" answers for Report a problem (the lab plays
+  windowed): `report_fullscreen` (BUG-1528).
+* `coop.diag pausemark 1|0`: the window-state poll takes the game window as unfocused; with `coop.stalltest 4` (a
+  4 s stop; the keepalive's line comes after 3 s) it makes a `perf: pause`: `perf_pause` (BUG-1529, hitch gate off:
+  the test makes hitches on purpose). In the lab's background mode the hooked GetForegroundWindow returns the game
+  window, so real stops in the lab stay hitches.
+* `crash.test zipfail2`: a thread crash whose second report archive takes the first one's second and fails while it is
+  written: `kit_crash --case zipfail2` (BUG-1521; `--old` switches `kit.fix reportzip` off).
 ## World share of one planet, Continue, the quit and the Creature switch (2026-11-23, fix/w75-share)
 <a id="testing-share-one-planet"></a>
 
@@ -10177,3 +10196,77 @@ by chance. Their tests open the window with a host knob that stands for the real
   (creature.avatar_bhv_anims off, BUG-1244): the FAIL halves of their tickets.
 * npc_nest_backoff (BUG-1530): its preconditions (NPCs at a nest, the roar backs them off, one inside the host's mound,
   on the guest's screen) end the test INCONCLUSIVE, not FAIL; only the drawn-inside and the 4 m follow checks fail it.
+
+## The revive tests (2026-11-23, feat/w71-revive)
+<a id="testing-revive"></a>
+
+BUG-1472 (WP-R1 of 0.7.17, [gameplay-revive](03-gameplay.md#gameplay-revive)). `tools/tests/coop_creature_revive.py`,
+creature fixture, one case per suite entry (all written by day, first run at night):
+
+| Entry | What | Twin (must FAIL) |
+|---|---|---|
+| `creature_revive` | a real NPC bite downs the guest (a host NPC provoked with `coop.npc hit`, the guest held one bite from death, the host 30 m away so the pack rescue does not take it): game health 1 and no dead flag on the guest, the host's puppet of it alive; 6 s of bites and `coop.team hit 50` not dealt; `coop.save` on the host refused; the host walks next to it: 40 % on both games | `creature_revive_setting_off` (`--setting off`: the bite kills), `creature_revive_hold_off` (`SPORE_FIX_OFF=creature.revive_hold`: the next bite kills) |
+| `creature_revive_price_wallet` / `_progress` / `_shared` | nobody comes: after 60 s the game's dead flag, the caption, the respawn away from where it fell; the game's DNA on both games: own wallet the guest -10 %, the host the same; shared both -10 %; own progress the guest's DNA stays, `coop.progress` debt = 10 %, its next `coop.dna add 30` raises its DNA by 30 - debt | `creature_revive_debt_off` (`SPORE_FIX_OFF=creature.revive_debt --case price --dna wallet`: the host pays) |
+| `creature_revive_first_line` | the host 4 m away: the first lethal hit is the pack rescue (40 %), the second within the minute downs (1 health), the host there revives it | - |
+| `creature_revive_wipe` | both down 30 m apart: both dead flags within 12 s, both respawn | - |
+| `creature_revive_paths` | the downed guest put 40 m up: held at 1 health where it fell; put into deep water (`deep_point` of coop_creature_sea_monster.py): held, or the game's own death closed the host's window | - |
+| `creature_revive_old` | the guest as a 0.7.16.1 peer (`coop.manifest plant creature 1 2`): its lethal hit kills at once, no window on the host | - |
+
+Seams: `coop.revive` (the own creature's game_hp / game_dead, the window, the last price; `down`: a lethal hit through
+the damage filter; `giveup`: as holding G). `coop_creature_respawn.py` gives up after its second lethal hit (it downs
+the creature now). Night run (4 lanes, about 1 h with the twins): `SPORE_DETECTOR=20 python3 tools/lab.py run
+creature_revive,creature_revive_price_wallet,creature_revive_price_progress,creature_revive_price_shared,creature_revive_first_line,creature_revive_wipe,creature_revive_paths,creature_revive_old,creature_respawn,team_real_damage,creature_revive_setting_off,creature_revive_hold_off,creature_revive_debt_off --lane 2 --lane 3 --lane 4 --lane 5 --retry 0 --branch feat/w71-revive` (build first, never lanes 1 and 8).
+## Tribe audit fixes of 0.7.17 WP-B1 (2026-11-23, fix/w79-tribe)
+<a id="testing-tribe-audit-wp-b1"></a>
+
+Each test has its twin (`<name>_off`, SPORE_FIX_OFF=<switch>, suite `twin`): the twin must FAIL, the test PASS.
+`coop.tribe` prints `tribe audit 0.7.17: ...` and `save_took: ...` (the counters the tests print).
+* `tribe_fruit_empty_tree` (coop_tribe_fruit_order.py --empty-trees, tribe, warm, ~3 min, BUG-1494 / TR-8): after the
+  host loses its fruit near the guest's one, `coop.tribe untree <x y z> 12.5` (host, test hook) sets cTreeData +0x48
+  (the fruit left) to 0 on every tree within 12.5 m; the guest's gather order must not go to one of them (the host's
+  last order line and the member's order record, `coop.tribe ai`). No tree there: INCONCLUSIVE. Twin
+  SPORE_FIX_OFF=tribe.tree_mask.
+* `tribe_air_release` (coop_tribe_air_release.py, tribe, warm, ~3 min, BUG-1493 / TR-7): the host holds a member 12 m
+  up for 30 s (`coop.tribe hang`), the guest takes no tribe state (`coop.tribe statehold 1`); 7 s later the guest's
+  mirror is under 2 m over the guest's ground, and up again within 6 s of `statehold 0`. Twin
+  SPORE_FIX_OFF=tribe.air_release (it hangs at 12 m). The host-away half (local_play) shares the release, unit test only.
+* `tribe_gameover_elsewhere` (coop_tribe_gameover_elsewhere.py, ~6 min, not warm: the guest loads Game9/Otherworld as
+  tribe_other_world does, BUG-1495 / TR-9): the host knocks out its tribe until its game-over caption; for 10 s the
+  guest's `busy:` has no `paused`. Twin SPORE_FIX_OFF=tribe.elsewhere_anims. The music kinds: unit test only (a
+  guest's own trees play the same theme sounds in its own world: the audio list cannot tell them apart).
+* `tribe_theme_end` (coop_tribe_theme_end.py, tribe, warm, ~3 min, BUG-1496 / TR-11): the host's members fight, the
+  guest's `coop.audio list` has a theme play (caller 0xBC2414) still playing; the guest leaves (`coop.leave`); within
+  4 s each of those tracks got the game's stop command. Twin SPORE_FIX_OFF=tribe.theme_end. A twin that passes means
+  the themes end by themselves: then the ticket's session-end half is closed as not reachable.
+* `tribe_away_goal` (coop_tribe_away_conquest.py --goal, tribe, warm, ~9 min, BUG-1492 / TR-5): BUG-0879's away
+  conquest, then the host's goal progress (`coop.wsync dump tribe_goal`) one village above the save's within 30 s.
+  Twin SPORE_FIX_OFF=tribe.away_goal.
+* `tribe_save_took` (coop_tribe_save_took.py, tribe, warm, ~3 min, BUG-1522): the host makes 3 members (the guest
+  spawns mirrors: only spawned mirrors leave a save), the guest arms `coop.tribe savekill on` (its next save's end first
+  removes one taken mirror as guest_state's sweep does, and the host's states skip that member on the guest from then
+  on, else the next snapshot binds the orphan again) and saves; `coop.tribe tribelists` (members / unlisted per tribe,
+  orphans: player tribe members no mirror is bound to) must show unlisted=0 and no new orphan. Twin
+  SPORE_FIX_OFF=tribe.save_took_listed (unsafe: the removal refused, the mirror put back as an orphan).
+
+## The captain tests of WP-K1 (2026-11-23, feat/w74-captain)
+<a id="testing-captain-0717"></a>
+
+Written by day, not run yet (night run: `SPORE_DETECTOR=20 python3 tools/lab.py run space_captain_items
+space_captain_items_off space_own_captain space_own_captain_off own_prebake own_prebake_off adventure_tutorial
+adventure_tutorial_partner_off space_captain space_captain_none --lane N --retry 0 --no-build`, ~70 min on one lane, or
+split over 4 lanes). Each test reads the game's own state on the other machine:
+* `space_captain_items` (BUG-1279): `coop.captain plant` gives the host's captain a captain's property list (the game's
+  CaptainProps_Copy of the galaxy menu's template 0x15A44C0, ~ not checked to hold the item config), the host saves; the
+  guest's `coop.captain` props=1 (CaptainProps_Get) and its captain panel (Accept, rank badge) leaves BUG-0304's
+  "items: none" unchanged. If the host's list does not reach the package file, the host's "captain lists: none=" grows:
+  the test fails at the guest's props (an INCONCLUSIVE cause, read the host's line). Twin: creations.captain_props.
+* `space_own_captain` (BUG-1475): the guest chooses its first own creature; cEmpire +0xC4 on the guest becomes it, the
+  host's stays; the captain screen opens without a fault; a save of the guest's game names the host's captain only.
+  Twin: space.own_captain. space_captain (BUG-1278's twin) and space_captain_items switch space.own_captain off on both
+  games: they need the fixture's captain.
+* `own_prebake` (BUG-1237): a fresh copy of a guest creature (as civ_own_species: never baked) is chosen in a running
+  Creature world; "own prebake: swap_bake=1" (the game's IsBaked when SetSpecies ran). Cold start only (the copy is
+  written into the guest's My Creations before the games start). Twin: creations.own_prebake.
+* `adventure_tutorial` check 6 (BUG-1262): the puppet's body (modelhash of its species here) is the partner's captain's
+  body on the partner's game, within 30 s after the play. Twin `adventure_tutorial_partner_off`; when both games play a
+  captain of the same body the twin cannot fail (printed).

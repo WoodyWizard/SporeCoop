@@ -17,6 +17,11 @@
                  `coop.exittest` (ExitProcess on the main thread): the exit report names the worker
                  thread, without the main-thread marker (it named the exiting main thread)
 
+  zipfail2       BUG-1521 (KIT-21): `crash.test zipfail2`: a thread crash whose second archive (the one with the
+                 minidump) takes the first one's second and fails while it is written: the archive last-problem.txt
+                 names is still there and is a whole zip (the first one; with the fix the second had its own name and
+                 a .part file)
+
   --old      switch each case's fix off first (`kit.fix <name> 0`): every case must FAIL then
   --case a,b only these cases
 
@@ -36,7 +41,7 @@ from sporectl import Console  # noqa: E402 (twoinst puts tools/ on the path)
 GAME = lane.game_dir()
 LOGDIR = os.path.join(GAME, 'SporebinEP1', 'mods', 'logs')
 FIX = {'stackoverflow': 'stackov', 'oom': 'crashsafe', 'prune': 'logprune', 'thread_worker': 'crashtid',
-       'thread_exit': 'crashtid'}
+       'thread_exit': 'crashtid', 'zipfail2': 'reportzip'}
 CASES = list(FIX)
 
 
@@ -160,6 +165,41 @@ def case_oom(ck):
         ck('the previous run had a problem: crashed' in log, 'the next start knows the last game crashed')
         st = call('coop.notify', 10)
         print('  notify:', (st['out'] if st else '')[:200].replace('\n', ' | '))
+    return False
+
+
+def case_zipfail2(ck):
+    import zipfile
+    mark = os.path.join(LOGDIR, 'last-problem.txt')
+    if os.path.exists(mark):
+        os.remove(mark)
+    before = files('crash-*.dmp')
+    call('crash.test zipfail2', 5)
+    dmp = set()
+    for _ in range(40):
+        time.sleep(1)
+        dmp = files('crash-*.dmp') - before
+        if dmp and os.path.exists(mark):
+            break
+    game_gone(30)
+    time.sleep(2)
+    named = ''
+    if os.path.exists(mark):
+        lines = [x for x in open(mark, errors='replace').read().strip().splitlines() if x.strip()]
+        named = next((x for x in reversed(lines) if x.lower().endswith('.zip')), '')
+        print('  last-problem.txt:', ' | '.join(lines[-3:]))
+    ck(dmp, 'the minidump is written')
+    target = os.path.join(LOGDIR, named.replace('\\', '/').split('/')[-1]) if named else ''
+    ok = False
+    if target and os.path.exists(target):
+        try:
+            with zipfile.ZipFile(target) as z:
+                ok = z.testzip() is None and any(n.endswith('.txt') for n in z.namelist())
+        except zipfile.BadZipFile:
+            ok = False
+    print(f'  archive named: {os.path.basename(target) if target else None}, a whole zip: {ok}; '
+          f'.part left: {[os.path.basename(p) for p in files("SporeCoop-report-*.part")]}')
+    ck(named and ok, 'the archive last-problem.txt names is there and is a whole zip after the second archive failed')
     return False
 
 

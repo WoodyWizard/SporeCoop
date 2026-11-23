@@ -135,6 +135,7 @@ extern bool g_menu_drop_fix; // tests: `coop.fix core.menu_drop off` keeps the m
 void first_start();
 // tests / layout shots (coop.uistate color <argb>): the lobby's colour of players without one (0 = "-")
 void set_test_color(uint32_t argb);
+void set_test_fullscreen(int v); // tests (BUG-1528): 1 / 0 the game counts as full screen or not, -1 its window decides
 // README pictures (coop.uistate demo <address> <real port> <shown port>, `demo off`): a documentation address in
 // place of the PC's own, the shown port in place of the real one in the window's texts
 void set_demo(const std::string& addr, const std::string& from, const std::string& to);

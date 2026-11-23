@@ -584,18 +584,23 @@ world on its own disk, next to its save:
 | Space Rivals (space_rivalry.cpp) | world `space.rivals` v1 {u8 rivals, u16 n, n x (key, key, u8 relation)}; `space.budget` v1 i32 per player | store.space_rivals | BUG-1152 |
 | Civ owners of cities and vehicles (civ.cpp) | world `civ.owners` v1 (see civ.cpp) | store.civ_owners | BUG-1153 |
 | Tribe owners of members (tribe.cpp) | world `tribe.owners` v1 (see tribe.cpp) | store.tribe_owners | BUG-1154 |
+| The owners' names of Tribe members and Civ cities / vehicles (tribe_host.cpp, civ_host.cpp through store::mark_owners) | `tribe.owner` v1 / `civ.owner` v1 per player: one byte (1), a marker that keeps the player (and its name) in the file, so `coop.store adopt` and the join hint find players who own things only in a world record | store.owner_names | BUG-1500 |
 | Own DNA per player (dna.cpp, dna_own.h) | `dna.own` v1 per player: u32 Creature world, f32 budget, u32 Cell world, i32 spent count | creature.own_dna_store | BUG-1291 |
 | Own Civ money per player (civ_wallet.cpp, the setting `civ.own_money`) | `civ.wallet` v1 per player: i32 money (the guest's wallet when it left or the game saved; the host's own is its save's money); erased when a session plays the world with the setting off (back into the host's money once) or in Space (the Civ money ends) | the setting (`civ.wallet_row` for the guest side) | BUG-1468 |
 | Reserved for 0.7.17 (player_store.h kRecHistory, WP-H1): own stage history | `history` (layout: WP-H1) | (WP-H1) | BUG-1470 |
 | Reserved for 0.7.17 (player_store.h kRecCivWallet, WP-M1): own Civ money | `civ.wallet` (layout: WP-M1) | (WP-M1) | BUG-1468 |
 | Own stage history per player (history.cpp, history_logic.h; WP-H1) | `history` v1 per player: 5 x u32 the cards (cPlayer +0x10FC.. order), f32 social, f32 combat, u32 the own Cell card (32 bytes) | core.own_history | BUG-1470 |
-| Own progress (own_progress.cpp, own_progress_logic.h; all.shared_dna 2) | `progress` v1 per player (29 bytes): u32 world (the host's stage world, modes::current_world), u32 stage mode, f32 DNA, f32 bar, i32 Cell food, i32 Cell spent, u8 brain level, f32 debt (WP-R1's column, 0 until it); a guest's record is given back (MSG_PROGRESS kSet) only for the same world and stage | core.progress_restore | BUG-1469, BUG-1472 |
+| Own progress (own_progress.cpp, own_progress_logic.h; all.shared_dna 2) | `progress` v1 per player (29 bytes): u32 world (the host's stage world, modes::current_world), u32 stage mode, f32 DNA, f32 bar, i32 Cell food, i32 Cell spent, u8 brain level, f32 debt (WP-R1: a revive's progress debt, paid from the player's next own gains; the host's own debt under the key `host`); a guest's record is given back (MSG_PROGRESS kSet) only for the same world and stage, its debt (kDebt set) for the same world | core.progress_restore, creature.revive_debt | BUG-1469, BUG-1472 |
 
   The Space kept stores (space_kept.h) are keyed by the same stable key (`spaceext::kept_key` = `store::key_of`), so
   `KeptStore::restore()` at world open puts the disk's values where the next join's first report finds them: the
   restore then runs exactly as after a rejoin (K_KEPT / K_BADGES_KEPT / K_SET).
 * Status and test seams: `coop.store` (world, players, records, reads, writes, fails), `coop.store save` (as after a
-  save of the game), `coop.store reload`.
+  save of the game), `coop.store reload`, `coop.store hold` (BUG-1499: closed until the next save, as before a world has
+  its name).
+* A save that opens the world's store itself (the first save after the world got its name, a save within a second of a
+  load) first lets every consumer take that store (`store::Feature::opened`: the claims read, matched and followed now,
+  the Space kept stores synced, Rivals bound to the world), then collects (BUG-1499, store.save_opened).
 
 ## The host's autosave (2026-11-15, feat/w51-store)
 <a id="arch-autosave"></a>

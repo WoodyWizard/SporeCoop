@@ -16,6 +16,7 @@
 #include "store.h"
 #include "species_line.h"
 #include "own_progress.h"
+#include "revive.h"
 #include "history.h"
 #include "designs.h"
 #include "net/compat.h"
@@ -83,12 +84,14 @@ static int host_avatar_age()
     void* av = game::mode_id() == modes::kCreature ? game::avatar() : nullptr;
     return av && skg::readable((uint8_t*)av + 0xB34, 4) ? *(int*)((uint8_t*)av + 0xB34) : -1;
 }
-static const std::string* peer_version(uint8_t id)
+// NET-1 (BUG-1497): returned a pointer into the vector players() returns by value (freed when it returned); the
+// answer is a bool now. No switch: the old side reads freed heap (undefined behaviour, not observable in a test)
+static bool peer_has_version(uint8_t id)
 {
-    for (auto& p : g_sess.players())
+    for (const auto& p : g_sess.players())
         if (p.id == id)
-            return &p.version;
-    return nullptr;
+            return !p.version.empty();
+    return false;
 }
 // host: may guest r take the host's evolution in place (same world, the host's stage or an editor)?
 static bool evolve_inplace_ok(uint8_t id, const Remote& r, uint32_t stage)
@@ -98,8 +101,7 @@ static bool evolve_inplace_ok(uint8_t id, const Remote& r, uint32_t stage)
     uint32_t world = ad ? modes::current_place(ad) : 0;
     if (r.echo || r.buf.empty() || !ad || ad->own_worlds)
         return false;
-    const std::string* v = peer_version(id);
-    if (!v || v->empty())
+    if (!peer_has_version(id))
         return false; // an older SporeCoop: it does not follow the host's species in place
     const auto& ls = r.buf.latest();
     bool editor = ls.mode == modes::kEdit || ls.mode == modes::kEditor;
@@ -711,6 +713,7 @@ static void core_state_end()
     g_pace_heard = 1; // BUG-0510
     g_pace_carry.reset();
     g_dna_spend_owed = 0; // BUG-0466
+    g_dna_spend_owed_world = 0; // BUG-1506
     if (g_own_editor_flags_fix && !(game::mode_id() == modes::kEdit || game::mode_id() == modes::kEditor)) {
         g_own_editor = false; // BUG-0811: (in an editor its result still comes, and charges, as in a game of one)
         g_own_editor_charge_due = false;
@@ -1043,8 +1046,11 @@ void setup_callbacks()
                     float dd = std::max(d, -game::dna()); // the total never goes below 0
                     dna_host_gain({dna_ledger::Cause::Earned, from, dd}, game::dna());
                     game::dna_add_raw(dd);
-                } else
+                } else {
+                    if (g_dna_spend_owed >= 0)
+                        g_dna_spend_owed_world = g_stage_world; // BUG-1506: taken off only in this world
                     g_dna_spend_owed += d; // in an editor or a load: taken off when our creature is back
+                }
             } else if (r.ok() && d > 0 && d < 10000 && add == dna_route::Add::Owe && g_dna_owed < 100000) {
                 trace::line("dna", "from %u +%.0f kept as owed (no own creature now)", from, d);
                 if (g_dna_owed <= 0)
@@ -1249,6 +1255,9 @@ void setup_callbacks()
             own_progress::on_message(from, r);
             return;
         }
+        case net::Route::Rescue: // WP-R1 of 0.7.17 (BUG-1472): a downed creature and its revive
+            revive::on_message(from, r);
+            return;
         case net::Route::History: // WP-H1 (BUG-1470): every player's own stage history
             history::on_message(from, r);
             return;
@@ -1312,6 +1321,7 @@ void setup_callbacks()
         creations::on_player_leave(id); // BUG-0076: the next player of this id is not shown as this one
         npc::on_player_leave(id);       // BUG-0125
         own_progress::on_player_leave(id); // BUG-1469: its live values go (its record stays, by key)
+        revive::on_player_leave(id);       // BUG-1472: its window ends without a price
         views::forget(id);              // BUG-0280
         pfind::on_player_leave(id);     // F2: its colour is free again
         if (g_player_forget_fix)

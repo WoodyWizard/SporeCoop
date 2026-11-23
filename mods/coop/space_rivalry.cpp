@@ -38,6 +38,8 @@
 #include "game.h"
 #include "modes.h"
 #include "net/validate.h"
+#include "own_world.h"
+#include "space_logic.h"
 #include "space_ext.h"
 #include "sporekit_game.hpp"
 #include "space_kept.h"
@@ -124,6 +126,29 @@ static bool g_merge_hold_fix = true;
 COOP_FIX("space.merge_hold_totals", "BUG-1414", g_merge_hold_fix,
          "space rivals: a guest outside Space at the switch to allies gets the shared money only after its own budget merged");
 static uint32_t g_merge_held; // shared totals held while the merge was pending
+// BUG-1482 (audit SPC-3): `coop.store adopt` gives a present guest the stored things of its name (a new rejoin token).
+// Its Rivals budget only moved key in the host's store: nobody sent it to the guest (whose budget is known, so a K_SET
+// would be dropped anyway), and the guest's next report (its money, usually a newcomer's 0) replaced it within 3 s. Now
+// the host sends the adopted budget with a forced K_SET (have 3, space 1.3 guests) every 2 s and keeps it as that
+// guest's budget until the guest reports it (spacelogic::AdoptHold). `coop.fix space.rival_adopt off`: 0.7.16.1.
+static bool g_adopt_fix = true;
+COOP_FIX("space.rival_adopt", "BUG-1482", g_adopt_fix,
+         "space rivals: a budget the host gives a player with coop.store adopt reaches that player's game");
+static std::map<uint8_t, spacelogic::AdoptHold> g_adopt; // host: guest id -> its adopted budget, until confirmed
+static uint32_t g_adopted, g_adopt_sets, g_adopt_got, g_adopt_old_peer, g_adopt_reports_held;
+// BUG-1483 (audit SPC-4): a guest playing a Space save of its own in a Rivals session (allowed: BUG-0709, BUG-0816) still
+// asked the host for its budget (K_ASK) and took the answer (K_SET: the own save's money became the co-op budget or a
+// newcomer's 0), reported the own save's money as its Rivals budget (K_MONEY) and merged it. Now nothing of the Rivals
+// budget runs while own_world::space_other(): the own save keeps its money, the host keeps the co-op budget.
+// `coop.fix space.rival_own_save off`: 0.7.16.1.
+static bool g_own_save_fix = true;
+COOP_FIX("space.rival_own_save", "BUG-1483", g_own_save_fix,
+         "space rivals: a guest in a Space save of its own keeps that save's money (no co-op budget asked, set or reported)");
+static uint32_t g_own_save_skips;
+static bool own_save() // a guest in a Space save of its own (BUG-1483)
+{
+    return g_own_save_fix && !spaceext::is_host() && own_world::space_other();
+}
 static int g_fake_money;            // tests: the budget this guest reports instead of its money ...
 static double g_fake_money_until;   // ... until then
 static double g_hold_set_until; // tests: the host does not answer K_ASK until then (the window before K_SET)
@@ -165,8 +190,8 @@ static uint32_t g_mode_resumed, g_rel_resumed, g_disk_read;
 static bool g_was_host;
 // BUG-0422: a merge credited the departed player's last budget to a newcomer under its id (the name-keyed
 // budget store keeps a rejoiner's own)
-PLAYER_STATE("space_rivalry", [](uint8_t id) { g_budget.erase(id); g_merge_credit_of.erase(id); },
-             [](uint8_t id) -> size_t { return g_budget.count(id) + g_merge_credit_of.count(id); });
+PLAYER_STATE("space_rivalry", [](uint8_t id) { g_budget.erase(id); g_merge_credit_of.erase(id); g_adopt.erase(id); },
+             [](uint8_t id) -> size_t { return g_budget.count(id) + g_merge_credit_of.count(id) + g_adopt.count(id); });
 static std::vector<std::pair<uint8_t, std::string>> g_roster;
 static double g_last_state;
 
@@ -504,6 +529,10 @@ static void apply_pending_money()
     int* m = money_ptr();
     if (!m)
         return;
+    if (own_save()) { // BUG-1483: not this save's money; a split or a merge waits for the host's world
+        g_own_save_skips++;
+        return;
+    }
     if (g_split_pending) {
         g_split_pending = false;
         add_money(g_split_delta);
@@ -667,9 +696,28 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
             break;
         }
         if (spaceext::rivals()) {
+            if (spaceext::is_host() && g_adopt_fix) { // BUG-1482: the guest's money before it took the adopted budget
+                auto it = g_adopt.find(origin);
+                if (it != g_adopt.end()) {
+                    bool take = it->second.report(v);
+                    if (!take) {
+                        g_adopt_reports_held++;
+                        break;
+                    }
+                    if (!it->second.on) {
+                        g_adopt_got++;
+                        g_adopt.erase(it);
+                    }
+                }
+            }
             g_budget[origin] = v;
-            if (spaceext::is_host())
-                budget_put(spaceext::kept_key(origin), v);
+            if (spaceext::is_host()) {
+                std::string k = spaceext::kept_key(origin);
+                budget_put(k, v);
+                if (g_adopt_fix) // BUG-1482: the stored budget carries its player's name (what `coop.store adopt` looks for)
+                    if (auto& e = g_store.entries()[k]; e.name.empty())
+                        e.name = spaceext::name_of(origin);
+            }
         }
         break;
     }
@@ -708,9 +756,20 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
             v = net::money_clamp(v);
         }
         int* m = money_ptr();
-        if (to != me() || origin != 0 || !spaceext::rivals() || !m || g_win.known)
+        bool adopted = g_adopt_fix && have == spacelogic::kSetAdopted; // BUG-1482: the host's word
+        if (to != me() || origin != 0 || !spaceext::rivals() || !m || (g_win.known && !adopted))
             break;
-        if (have == 2) { // BUG-1029: new to this Rivals session
+        if (own_save()) { // BUG-1483
+            g_own_save_skips++;
+            break;
+        }
+        if (adopted) {
+            if (v != *m)
+                add_money(v - *m);
+            g_adopted++;
+            spaceext::notice(spaceext::tr("The host gave you your stored budget: ", "Хост вернул вам ваш сохранённый бюджет: ") +
+                             std::to_string(*m));
+        } else if (have == 2) { // BUG-1029: new to this Rivals session
             if (v != *m)
                 add_money(v - *m);
             g_newcomers++;
@@ -865,12 +924,52 @@ static void disk_save(pstore::Store& s, int64_t now)
             s.put(k, e.name, "space.budget", 1, b.d, now);
         }
 }
+// BUG-1482: the host gave the stored budget now under key `to` to the guest of that key: send it until it reports it
+static void adopt_send(uint8_t id, int v)
+{
+    wire::space_rivalry::Set m;
+    m.to = id;
+    m.have = spacelogic::kSetAdopted;
+    m.v = v;
+    net::Writer w;
+    m.write(w);
+    spaceext::send(K_SET, w);
+    g_adopt_sets++;
+}
+static void adopt_budget(const std::string& to)
+{
+    const int* v = budget_find(to);
+    if (!g_adopt_fix || !v || !spaceext::is_host() || !spaceext::rivals())
+        return;
+    for (auto& [id, nm] : roster()) {
+        if (id == me() || spaceext::kept_key(id) != to)
+            continue;
+        bool has = false;
+        std::vector<net::FamilyRev> fam;
+        if (!spaceext::peer_families(id, has, fam) || !wire::space_rivalry::reads_adopt(has, fam)) {
+            g_adopt_old_peer++; // a 0.7.16.1 guest drops have 3: as in 0.7.16.1, its own reports go on
+            H->log(M, SK_INFO, "rivalry: player %u's game is older than space 1.3: the adopted budget is not sent", id);
+            continue;
+        }
+        g_budget[id] = *v;
+        g_adopt[id].start(*v, H->time_seconds());
+        H->log(M, SK_INFO, "rivalry: the stored budget %d given to player %u (coop.store adopt)", *v, id);
+    }
+}
 static bool g_store_reg = store::add({"space.rivals", disk_save, [](const std::string& from, const std::string& to) {
                                           g_store.rekey(from, to); // its budget (its K_ASK, or the next one, gets it)
+                                          adopt_budget(to);        // BUG-1482: ... or now
                                           std::map<std::pair<std::string, std::string>, Relation> m;
                                           for (auto& [kp, r] : g_rel_keys)
                                               m[key(kp.first == from ? to : kp.first, kp.second == from ? to : kp.second)] = r;
                                           g_rel_keys = std::move(m);
+                                      },
+                                      [] { // NET-3 (BUG-1499): the save opened the store itself: it is this world's
+                                          if (!spaceext::connected() || !spaceext::is_host() || !g_disk_fix || !money_ptr())
+                                              return;
+                                          if (spaceext::rivals()) // the Rivals state played now is this world's (kept)
+                                              g_state_world = store::world_name();
+                                          disk_read();
                                       }});
 
 static void tick(double now)
@@ -900,6 +999,16 @@ static void tick(double now)
         }
     }
     puppets_tick();
+    if (spaceext::is_host()) // BUG-1482: the adopted budgets until each guest reports it
+        for (auto it = g_adopt.begin(); it != g_adopt.end();) {
+            if (!g_adopt_fix || !spaceext::rivals()) {
+                it = g_adopt.erase(it);
+                continue;
+            }
+            if (it->second.due(now))
+                adopt_send(it->first, it->second.v);
+            it = it->second.on ? std::next(it) : g_adopt.erase(it);
+        }
     if (g_split_pending || g_merge_pending)
         apply_pending_money();
     // a guest in a freshly loaded world (a rejoin loads the host's save): ask the host for its budget
@@ -915,12 +1024,12 @@ static void tick(double now)
         g_win.applied = spaceext::world_epoch();
     if (spaceext::is_host())
         g_win.known = true;
-    else if (spaceext::rivals() && sp && !g_win.known && !g_split_pending && now - g_last_ask > 2.0) {
+    else if (spaceext::rivals() && sp && !g_win.known && !g_split_pending && now - g_last_ask > 2.0 && !own_save()) {
         spaceext::send(K_ASK, net::Writer());
         g_last_ask = now;
     }
     // the own budget for everybody (the merge counts the host's last copy of it)
-    if (spaceext::rivals() && g_win.known) {
+    if (spaceext::rivals() && g_win.known && !own_save()) { // BUG-1483: an own save's money is no Rivals budget
         if (int* m = money_ptr()) {
             g_budget[me()] = *m;
             int report = now < g_fake_money_until ? g_fake_money : *m; // tests: a crafted budget (BUG-1110)
@@ -954,6 +1063,7 @@ static void session_end()
                g_state_world.c_str(), (unsigned)g_store.size(), (unsigned)g_rel_keys.size());
     }
     g_was_host = false;
+    g_adopt.clear(); // BUG-1482
     spaceext::set_rivals(false);
     spaceext::clear_relations();
     g_props.clear();
@@ -1079,14 +1189,16 @@ static std::string status()
     s += " props";
     for (auto& p : g_props)
         s += " " + std::to_string(p.from) + ">" + std::to_string(p.to) + (p.kind == P_ALLY ? "ally" : "peace");
-    char b[480];
+    char b[640];
     snprintf(b, sizeof b,
              " hits_sent=%u hits_got=%u dmg_got=%.1f pvp_deaths=%u enemy_puppets=%u splits=%u merges=%u puppet_hits=%u"
              " (last type %d by %s) restored=%u budget_kept=%u newcomers=%u merge_fix_skipped=%u money_refused=%u"
-             " merge_pending=%d merge_held=%u\n",
+             " merge_pending=%d merge_held=%u adopted=%u adopt_sets=%u adopt_got=%u adopt_held=%u adopt_old_peer=%u"
+             " adopt_pending=%u own_save=%d own_save_skips=%u\n",
              g_hits_sent, g_hits_got, g_dmg_got, g_pvp_deaths, g_enemy_puppets, g_splits, g_merges, g_puppet_hits,
              g_last_hit_type, g_last_hit_att == 1 ? "me" : g_last_hit_att == 2 ? "other" : "none", g_restored, g_budget_kept,
-             g_newcomers, g_merge_fix_skipped, g_money_refused, (int)g_merge_pending, g_merge_held);
+             g_newcomers, g_merge_fix_skipped, g_money_refused, (int)g_merge_pending, g_merge_held, g_adopted, g_adopt_sets,
+             g_adopt_got, g_adopt_reports_held, g_adopt_old_peer, (unsigned)g_adopt.size(), (int)own_save(), g_own_save_skips);
     char d[240]; // E1 (BUG-1152)
     snprintf(d, sizeof d, "  disk: fix=%d kept_rivals=%d world=%s kept_budgets=%u key_relations=%u read=%u mode_resumed=%u rel_resumed=%u\n",
              (int)g_disk_fix, (int)g_kept_rivals, g_state_world.empty() ? "-" : g_state_world.c_str(), (unsigned)g_store.size(),

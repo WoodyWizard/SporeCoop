@@ -2036,3 +2036,47 @@ exe (dc04aee5), the symbols are in data/symbols/overrides_dc04aee5.sym. Builds o
   per world and card. Switches: core.own_history, core.trait_credit, space.own_archetype; test
   tools/tests/coop_own_cards.py. Editor requests (vote.cpp) copy the cards from the local cPlayer, so a guest's
   editors get its own consequence abilities.
+
+## The per-player captain: the captains' records, lists and bakes (2026-11-23, feat/w74-captain)
+<a id="creations-captain-0717"></a>
+
+WP-K1 of docs/plan-0.7.17.md (BUG-1279, BUG-1262, BUG-1237, BUG-1475). GOG 2024, Ghidra (static only: no game run for
+this branch); the outside agent's commit 4e7490e6 (fix/agy-open-bugs) and its review out/research/agy-review-creations.md
+were the starting point. Code: creations_captain.cpp, own_captain.cpp, creations.cpp (the own prebake), captain_logic.h.
+* ✔ (Ghidra) `SporeCoop::CaptainProps_Save` 0x5BF220: cdecl bool(creation, props, bool async, db) plain ret; db null ->
+  the resource manager's database of the creation, not writable -> Pollination.package (0x11AC19C); then 0x6B1CE0
+  (AddPropertyList vt 0x34, async -> 0x6B4AF0 App/AsyncSave, else RM vt 0x20). Six call sites; all but CaptainProps_Copy
+  drop the result, so a refused save (false) is safe. The mod refuses it for a list of ours (the host captain's on a
+  connected guest, a 0x7A copy, a creation of a SporeCoop package) unless this game has its own EditorSaves creation
+  under the key now (captain::refuse_props_save).
+* ✔ (Ghidra) The binary .prop format as App::PropertyList::Read 0x6A2F60 / the property reader 0x694410 read it:
+  count (bit 31: a 12-byte parent key follows), per property {id, u16 type, u16 flags}; a scalar of type 1/2/5/6 is 1 byte,
+  3/7/8 two, 9/10/13 four, 11/12/14 eight, 0x12 / 0x13 a length and 1 / 2 byte characters, any other type 16 bytes
+  (the variant's inline size); flags & 0x30 an array {count, item size, items} (primitives by their own size, strings
+  length-prefixed, others by the item size); type 0x11 and flags 0x40 fail. `captain::strip_prop` walks it.
+* ✔ (Ghidra) App::cPropManager's vtable 0x1409210 (App::IPropManager::Get's object): vt 0x28 HasPropertyList, 0x2C
+  GetPropertyList (CaptainProps_Get), 0x34 AddPropertyList, 0x38 RemovePropertyList, **0x3C RemovePropertyLists
+  0x6A5BB0 thiscall(int count, const ResourceKey* keys) ret 8** (stride 12, in memory only): the mod drops the cached
+  list of a key it registers or drops.
+* ✔ (Ghidra) An adventure from the galaxy menu copies its captain into a new creation of this profile: SporeCoop::GAMenu_Play
+  0xDFBD40 -> `SporeCoop::cAssetViewManager_CopyCreation` 0x6462E0 (a key from cIDGenerator: per profile and sequential,
+  which is why the lab saw 2927BAE4 / 2927BAE2 and one key for two captains; written into EditorSaves.package 0x11AC199,
+  metadata tag 0x4178B8E8 "a captain copy"); a captain without a list gets the template 0x15A44C0's (CaptainProps_Copy).
+  From Space the request's captain is cEmpire +0xC4 as it is. So an adventure captain's records are in a file package
+  (EditorSaves) and records_from_game can read them (the review's #9); the file's index can lag the game for a moment,
+  so the sender reads again after 2, 4, 8, 16, 30 s (`captain::captain_retry`).
+* BUG-1279: the host sends its Space captain's list only when it is a captain's (it has 0xC339D5C7) and without
+  0x0D8A4BC9 (cEmpire_UpdateCaptainKey 0xC32AE0 follows that link at every Space enter; on a guest it could name an
+  unrelated creation); re-read on a captain change, on the way back into Space and every 30 s. `coop.creations status`:
+  "captain lists: ... here=N", one "host captain list" line per registered list; `coop.captain` "props=1" (the game's
+  CaptainProps_Get finds a list for the empire's captain), `coop.captain plant` (tests).
+* BUG-1262: the copy's records are the sender's model records, creaturedata and list under 0x7A...... (its metadata's own
+  key at +0x14 rewritten), at priority 1000; the bake is asked outside the frame every 0.5 s in an adventure; only a bake
+  state 1 lets the puppet use it (a creature made from an unbaked key stays white, BUG-1321), and the puppet is made again
+  in the frame (C.appearance_changed from tick, never from an outside-frame task: BUG-1254's teardown). `coop.creations
+  status`: "captains: ... baked=N shown=N", "player N captain: <copy> (orig <key>) bake=B look=L".
+* BUG-1237: the own creature's bake is asked (game::model_baked with the request) once its key resolves here
+  (key_known + species_by_key) and 1 s after the avatar came, every 0.5 s; the swap waits for bake 1 at most 5 s after the
+  key was wanted; with the switch off the state is only read. "own prebake: fix asks waits swap_bake baked unbaked".
+  A change of the own creature in a running world (the co-op window) has no settle wait of its own: that is where the
+  report's 2 s of plain green came from (inferred, the night run measures it).

@@ -340,6 +340,35 @@ static void test_unreadable()
     CHECK(pstore::stable_key(0x1111, "t:00000000deadbeef") != pstore::stable_key(0x2222, "t:00000000deadbeef"));
 }
 
+// NET-4 (BUG-1500): a player owning things only in a world record keeps its name in the file through a marker record
+static void test_owner_markers()
+{
+    printf("owner markers (BUG-1500)\n");
+    const uint64_t salt = 99;
+    std::string bob = pstore::stable_key(salt, "t:aaaa"), carol = pstore::stable_key(salt, "t:cccc"),
+                fresh = pstore::stable_key(salt, "t:ffff");
+    Store s;
+    s.reset("game0/t.spo");
+    s.put_world("tribe.owners", 1, bytes({9, 9})); // the claims name bob and carol (keys inside the world record)
+    // without markers: nobody of the name after a round trip (the 0.7.16.1 failure: "0 stored players")
+    Store r;
+    CHECK(r.parse(s.text(), "game0/t.spo") == Parsed::Ok && r.by_name("Bob", fresh).empty());
+    // with markers: names written, found again after the round trip; the host is never marked
+    CHECK(s.mark_owners("tribe.owner", {{bob, "Bob"}, {carol, "Carol"}, {"host", "Alice"}}, 100));
+    CHECK(!s.mark_owners("tribe.owner", {{bob, "Bob"}, {carol, "Carol"}}, 100)); // nothing new
+    CHECK(r.parse(s.text(), "game0/t.spo") == Parsed::Ok);
+    CHECK(r.by_name("Bob", fresh) == std::vector<std::string>{bob} && r.name_of(carol) == "Carol");
+    CHECK(r.by_name("Alice", fresh).empty());
+    // an absent owner (name "" in the map): the stored name stays
+    CHECK(!r.mark_owners("tribe.owner", {{bob, ""}, {carol, "Carol"}}, 200) && r.name_of(bob) == "Bob");
+    // a key the claims no longer name loses its marker (and the player goes when it has nothing else)
+    CHECK(r.mark_owners("tribe.owner", {{bob, ""}}, 300) && r.name_of(carol).empty() && !r.players.count(carol));
+    // another feature's marker is its own
+    CHECK(r.mark_owners("civ.owner", {{carol, "Carol"}}, 300) && r.get(bob, "tribe.owner") && r.get(carol, "civ.owner"));
+    // adopt moves the marker with the player
+    CHECK(r.adopt(bob, fresh, "Bob", 400) && r.get(fresh, "tribe.owner") && !r.get(bob, "tribe.owner"));
+}
+
 int main()
 {
     test_unreadable();
@@ -350,6 +379,7 @@ int main()
     test_round_trip();
     test_bad_files();
     test_name_fallback();
+    test_owner_markers();
     test_bounds();
     test_codec();
     test_kept_restore();

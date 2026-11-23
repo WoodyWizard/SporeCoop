@@ -82,6 +82,7 @@
 #include "creations.h"
 #include "species_line.h"
 #include "history.h"
+#include "own_captain.h"
 #include "designs.h"
 #include "notify.h"
 #include "hud_portrait.h"
@@ -107,6 +108,7 @@
 #include "view_centres.h"
 #include "coop_state.h"
 #include "own_progress.h"
+#include "revive.h"
 
 const SkHost* H;
 SkMod* M;
@@ -287,6 +289,15 @@ bool g_away_dna_stage_fix = true;
 COOP_FIX("core.away_dna_stage", "BUG-0233", g_away_dna_stage_fix, "core: DNA kept while the host was away stays in its stage and world");
 uint32_t g_solo_mode = 0;      // guest: the stage mode g_solo_dna was earned in
 uint32_t g_dna_owed_world = 0; // host: the stage world g_dna_owed was owed in
+// CORE-14 (BUG-1506): a guest's spend that arrived while the host had no creature (g_dna_spend_owed, BUG-0466) was taken
+// off the host's DNA in any Creature world with an avatar: a host that loaded another Creature world meanwhile paid it
+// there. On: tagged with the world it was owed in and dropped in another stage or world, as g_dna_owed (BUG-0233). Off
+// (`coop.fix creature.spend_owed_world off`): 0.7.16.1
+bool g_spend_owed_world_fix = true;
+COOP_FIX("creature.spend_owed_world", "BUG-1506", g_spend_owed_world_fix,
+         "creature: a guest's DNA spend owed while the host was in an editor or a load is taken off only in that world");
+uint32_t g_dna_spend_owed_world = 0; // host: the stage world g_dna_spend_owed was owed in
+uint32_t g_spend_owed_dropped = 0;   // tests
 uint32_t g_stage_world = 0;    // the world of the last stage this machine played
 uint32_t g_solo_dropped = 0, g_owed_dropped = 0; // tests
 // why the host is not playing our stage: 'm' main menu, 'e' editor, 'l' loading, 0 it is (or unknown)
@@ -629,11 +640,23 @@ void host_away_tick(double now)
             g_owed_dropped++;
         }
     }
-    if (g_dna_spend_owed < 0 && g_sess.role() == net::Role::Host && g_mode == modes::kCreature && game::avatar()) {
-        float d = std::max(g_dna_spend_owed, -game::dna()); // BUG-0466: never below 0
-        dna_host_gain({dna_ledger::Cause::Earned, 0, d}, game::dna());
-        game::dna_add_raw(d);
-        g_dna_spend_owed = 0;
+    if (g_dna_spend_owed < 0 && g_sess.role() == net::Role::Host) {
+        // CORE-14 (BUG-1506): the spend is taken off in the world it was owed in only (as g_dna_owed, BUG-0233)
+        auto o = g_spend_owed_world_fix
+                     ? dna_route::owed(true, g_mode, stage_mode(g_mode), game::avatar() != nullptr, g_world,
+                                       g_dna_spend_owed_world, modes::kCreature)
+                     : (g_mode == modes::kCreature && game::avatar() ? dna_route::Owed::Pay : dna_route::Owed::Keep);
+        if (o == dna_route::Owed::Pay) {
+            float d = std::max(g_dna_spend_owed, -game::dna()); // BUG-0466: never below 0
+            dna_host_gain({dna_ledger::Cause::Earned, 0, d}, game::dna());
+            game::dna_add_raw(d);
+            g_dna_spend_owed = 0;
+        } else if (o == dna_route::Owed::Clear) {
+            LOG("owed spend %.1f dropped: owed in world %08X, now mode %08X world %08X (BUG-1506)", g_dna_spend_owed,
+                g_dna_spend_owed_world, g_mode, g_world);
+            g_dna_spend_owed = 0;
+            g_spend_owed_dropped++;
+        }
     }
     if (g_dna_pending >= 0 && g_sess.role() == net::Role::Client && host_here() && game::avatar() && !g_host_away) {
         float d = g_dna_pending - game::dna(); // the host's total, once we play its world
@@ -777,8 +800,8 @@ static void stall_note(double since)
     }
     std::string wins;
     EnumThreadWindows(GetCurrentThreadId(), stall_window, (LPARAM)&wins);
-    LOG("keepalive: no frame for %.1f s, the main thread runs a message loop (BUG-0687): chain%s", H->time_seconds() - since,
-        chain.c_str());
+    LOG("keepalive: no frame for %.1f s, the main thread runs a message loop (BUG-0687)%s: chain%s",
+        H->time_seconds() - since, support::window_note().c_str(), chain.c_str()); // BUG-1529: the window's state
     LOG("keepalive: the main thread's windows%s", wins.c_str());
 }
 
@@ -1004,6 +1027,7 @@ static void frame_observe(double now)
     creations::tick(now);
     species::tick(now); // WP-0 (BUG-1270): the species line (after the creations: it reads their keys)
     history::tick(now); // WP-H1 (BUG-1470): every player's own stage history
+    own_captain::tick(now); // WP-K1 (BUG-1475): a guest's own captain in Space
     designs::tick(now); // BUG-1272: a guest's own outfit to its species line
     civedit::tick(now); // WP-C3 (BUG-1275): a guest's own Civ editors' results into its line
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
@@ -1203,6 +1227,7 @@ static void frame_stage_ticks(double now)
     spacecoop::tick(now);
     if (g_sess.connected() && g_mode == modes::kCreature)
         teamplay::tick(game::avatar(), now);
+    revive::tick(now); // WP-R1 of 0.7.17 (BUG-1472): a downed creature, its revive, the party wipe
 }
 
 // on_frame, phase: our player state (net::state_due: every 0.05 s, a stop at once) and the echo test remote
@@ -1371,6 +1396,35 @@ void draw_owner_tags()
                 n = "\u2605 " + n + "'s chief";
             float at[3] = {p.x, p.y, p.z};
             pfind::tag(chief ? "chief" : "member", owner, n, sc[0], sc[1], at, chief ? 1 : 3); // F2 colour, BUG-0949
+            g_tags_drawn++;
+        },
+        nullptr);
+}
+
+// WP-R1 of 0.7.17 (BUG-1472; PR #214): a downed creature (revive.cpp): "DOWN <s>: name" over a partner's, with the
+// revive's progress; the own one a red line in the middle of the screen (a tag over the own creature did not show on
+// the guest's game in PR #214's runs). Drawn without name tags too: the countdown is the game's news
+static void draw_downed_tags()
+{
+    revive::for_each_downed(
+        [](void* c, uint8_t player, float seconds, float rev, void*) {
+            const std::string pct = rev > 0 ? " (" + std::to_string((int)std::lround(rev * 100)) + "%)" : std::string();
+            if (player == g_sess.my_id()) {
+                int sw = 0, sh = 0;
+                H->screen_size(&sw, &sh);
+                std::string t = "DOWN " + std::to_string((int)std::ceil(seconds)) + "s: a partner next to you revives you" +
+                                pct + ". Hold G to give up.";
+                H->overlay_text(sw / 2 - text_width(t) / 2, (int)(sh * 0.42f), 0xFFFF6060, t.c_str());
+                return;
+            }
+            net::Vec3 p = game::position(c);
+            float len = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+            float up = len > 1 ? 3.4f / len : 0;
+            float w[3] = {p.x + p.x * up, p.y + p.y * up, p.z + p.z * up}, sc[2];
+            if (!H->world_to_screen(w, sc))
+                return;
+            std::string t = "DOWN " + std::to_string((int)std::ceil(seconds)) + "s: " + g_sess.name_of(player) + pct;
+            H->overlay_text((int)sc[0] - text_width(t) / 2, (int)sc[1] - 24, 0xFFFF6060, t.c_str());
             g_tags_drawn++;
         },
         nullptr);
@@ -1571,6 +1625,9 @@ static std::vector<pfind::Target> find_targets(float me[3], bool& has_me)
         } else if (here && (!fix || find_placed(p, ref_r))) {
             have = true;
             t.flat = r.puppet_adapter->flat;
+            if (g_mode == modes::kCreature) // BUG-1472: a downed partner's arrow says so (where to go to revive it)
+                if (float sl = revive::seconds_left_of(id); sl > 0)
+                    t.what = "DOWN " + std::to_string((int)std::ceil(sl)) + "s";
         } else if (g_mode == modes::kCiv && pk.city.count(id)) {
             p = pk.city[id];
             have = true;
@@ -1616,6 +1673,7 @@ void on_overlay(void*, int, void*)
             draw_owner_tags();
             draw_civ_tags();
         }
+        draw_downed_tags(); // BUG-1472
     }
     { // F2: arrows to the partners off screen; the minimap takes the same positions (outside the frame)
         float me[3] = {0, 0, 0};
@@ -2756,6 +2814,10 @@ static void init_player_modules()
         sc.playing = [] { return stage_mode(g_mode) && g_local != nullptr; };
         sc.world_name = [] { return modes::current_world_name(); };
         sc.rivals = [] { return spaceext::rivals() || pfind::g_test_rivals; }; // (tests: coop.find rivals 1)
+        sc.holds_world = [] { // BUG-1502: an editor or a load keeps the world (and the session) started
+            uint32_t m = game::mode_id();
+            return m == modes::kEditor || m == modes::kEdit || m == modes::kLoad;
+        };
         sc.feed = feed;
         settings::init(H, M, sc);
         store::Ctx stc; // E1 (BUG-1149): the per-player store on the host's disk
@@ -2822,6 +2884,30 @@ static void init_creature_hooks()
     tc.notice = [](const std::string& t) { notice(t, -1); };
     tc.my_name = [] { return g_name; };
     teamplay::init(H, M, std::move(tc));
+    revive::Ctx rc; // WP-R1 of 0.7.17 (BUG-1472; PR #214): a downed creature, its revive, the party wipe
+    rc.sess = &g_sess;
+    rc.peers = [] {
+        std::vector<net::PlayerState> v;
+        const double now = H->time_seconds();
+        for (auto& [id, r] : g_remotes) {
+            if (r.echo || id >= net::kMaxPlayers || r.buf.empty() || r.buf.age(now) > 2.0)
+                continue;
+            net::PlayerState st = r.buf.latest();
+            if (same_place(st) && (st.flags & net::PF_IN_WORLD)) {
+                st.id = id;
+                v.push_back(st);
+            }
+        }
+        return v;
+    };
+    rc.puppet_of = [](uint8_t id) { return creature_puppet_live(id); };
+    rc.notice = [](const std::string& t) { notice(t, -1); };
+    rc.feed = [](const std::string& t) { feed(t); };
+    rc.dna_mode = [] { return own_progress::dna_mode(); };
+    rc.has_wallet = [](uint8_t id) { return id == g_sess.my_id() ? own_dna_on() : dna_own_wallet(id, net::Family::creature); };
+    rc.wallet = [](uint8_t id) { return dna_own_budget(id); };
+    rc.charge_wallet = [](uint8_t id, float d) { dna_own_spend(id, d); };
+    revive::init(H, M, std::move(rc));
     if (uintptr_t a = H->sym("Simulator::CreatureSelectionUI"))
         H->hook_create(M, (void*)a, (void*)h_SelectUI, (void**)&o_SelectUI);
     a_AbilityModeCore = H->sym("Simulator::cCreatureGameData::GetAbilityMode"); // BUG-0913
@@ -2874,6 +2960,7 @@ static void init_tribe_and_creations()
     creations::init(H, M, std::move(crc));
     species::init(H, M, &g_sess); // WP-0 (BUG-1270)
     history::init(H, M, &g_sess); // WP-H1 (BUG-1470, BUG-1471)
+    own_captain::init(H, M, &g_sess); // WP-K1 (BUG-1475)
     civedit::init(H, M, &g_sess); // WP-C3 (BUG-1275)
     civ_arrival_init();           // WP-X1 (BUG-1276)
     modes::g_species_for_player = [](uint8_t id) { return creations::player_species(id); };

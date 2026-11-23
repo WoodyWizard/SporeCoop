@@ -86,6 +86,26 @@ static std::wstring file_of(const std::string& world, bool make)
 static bool g_unreadable_fix = true;
 COOP_FIX_UNSAFE("store.unreadable_kept", "BUG-1424", g_unreadable_fix,
                 "store: a salt or world file another program holds open is read (all share flags), and one that cannot be read now is never replaced (a new salt lost every stored player)");
+// NET-3 (BUG-1499): a save that opened the world's store itself (the first save after a world got its name, or a save
+// within a second of a load, before tick() opened it) collected at once, and every feature that holds a world's
+// records (tribe.owners, civ.owners, the Space kept stores) skipped its save: the store they had read was another
+// serial. Their records of that world were not written (Save and Quit then lost them). On: the features take the store
+// opened by the save (Feature::opened) before the records are collected. Off (`coop.fix store.save_opened off`): as
+// 0.7.16.1. tests: `coop.store hold` closes the store until the next save (as before a world has its name)
+static bool g_save_opened_fix = true;
+COOP_FIX("store.save_opened", "BUG-1499", g_save_opened_fix,
+         "store: a save that opens the world's store itself writes the tribe / civ owners and the Space kept things too");
+// NET-4 (BUG-1500): Tribe and Civ keep their owners' keys in world records only (tribe.owners, civ.owners), and a player
+// without a record of its own is not written: after a reload those worlds had no stored players, so `coop.store adopt`
+// printed "0 stored players named ..." and the join hint never came. On: every key the claims name gets a one-byte
+// marker record (tribe.owner / civ.owner) that keeps its name; and adopt collects the renamed claims before it writes
+// (the file had the old keys until the next game save). Off (`coop.fix store.owner_names off`): as 0.7.16.1
+static bool g_owner_names_fix = true;
+COOP_FIX("store.owner_names", "BUG-1500", g_owner_names_fix,
+         "store: the owners of Tribe members and Civ cities keep their names in the store, so coop.store adopt and the "
+         "join hint find them after a reload");
+static bool g_test_hold;  // tests: the store stays closed until the next save
+static uint32_t g_opened_by_save; // status: saves that opened the store themselves
 static DWORD g_read_error;      // the last failed read's error
 static uint32_t g_unreadable_n; // reads that found a file unreadable (status `unreadable=`)
 
@@ -279,6 +299,8 @@ void tick()
     next = now + 1.0;
     g_seen_name = name;
     g_seen_client = client;
+    if (g_test_hold)
+        return; // tests (BUG-1499): closed until the next save opens it
     std::string w = client ? "" : world_now();
     if (w.empty()) {
         if (client || name.empty() || name == "SaveGame") { // a guest, or the menu: no world (its file stays)
@@ -325,6 +347,32 @@ static void write_now(bool force)
     H->run_outside_frame(write_job, new WriteJob{f, g_cur.text(), g_cur.world});
 }
 
+void mark_owners(pstore::Store& s, const char* marker, const std::vector<std::string>& keys, int64_t now)
+{
+    if (!g_owner_names_fix)
+        return;
+    std::map<std::string, std::string> owners;
+    for (auto& k : keys)
+        if (pstore::key_ok(k) && k != "host")
+            owners[k] = "";
+    if (C.sess && is_host())
+        for (auto& p : C.sess->players())
+            if (auto it = owners.find(key_of(p.id)); it != owners.end())
+                it->second = p.name;
+    s.mark_owners(marker, owners, now);
+}
+
+// the world's store was just opened by a save (BUG-1499): the features take it before the save's records are collected
+static void opened_by_save()
+{
+    g_opened_by_save++;
+    if (!g_save_opened_fix || !g_open)
+        return;
+    for (auto& f : features())
+        if (f.opened)
+            f.opened();
+}
+
 static void collect()
 {
     int64_t now = now_unix();
@@ -344,9 +392,11 @@ void after_save()
     std::string w = world_now(); // fresh: the save may have named the game just now (snapshot.spo -> the planet)
     if (w.empty())
         return;
+    g_test_hold = false;
     if (!g_open || g_cur.world != w) {
         g_seen_name = modes::current_world_name();
         open_world(w);
+        opened_by_save();
     }
     collect();
     write_now(false);
@@ -377,10 +427,10 @@ void on_player_join(uint8_t id)
 
 static void say_status(SkOut* out)
 {
-    H->out_printf(out, "store: world=%s open=%d serial=%u parsed=%s players=%u records=%u reads=%u writes=%u fails=%u bad=%u saves=%u adopted=%u told=%u since_save=%.0f unreadable=%u\n",
+    H->out_printf(out, "store: world=%s open=%d serial=%u parsed=%s players=%u records=%u reads=%u writes=%u fails=%u bad=%u saves=%u adopted=%u told=%u since_save=%.0f unreadable=%u opened_by_save=%u hold=%d\n",
                   g_cur.world.empty() ? "-" : g_cur.world.c_str(), (int)g_open, g_serial, pstore::parsed_name(g_parsed),
                   (unsigned)g_cur.players.size(), (unsigned)g_cur.records(), g_reads, g_writes, g_write_fails, g_bad_files,
-                  g_saves, g_adopted, g_told, since_save(), g_unreadable_n);
+                  g_saves, g_adopted, g_told, since_save(), g_unreadable_n, g_opened_by_save, (int)g_test_hold);
     if (!g_last_error.empty())
         H->out_printf(out, "  last error: %s\n", g_last_error.c_str());
     for (auto& [f, r] : g_cur.wrecs)
@@ -410,15 +460,29 @@ int command(void*, int argc, const char* const* argv, SkOut* out)
             H->out_printf(out, "a guest keeps no store\n");
             return 1;
         }
+        g_test_hold = false;
         if (!g_open) {
             std::string w = world_now();
-            if (!w.empty())
+            if (!w.empty()) {
                 open_world(w);
+                opened_by_save();
+            }
         }
         collect();
         write_now(true);
         H->out_printf(out, "store: %s queued for writing\n", g_open ? g_cur.world.c_str() : "(no world)");
         return g_open ? 0 : 1;
+    }
+    if (sub == "hold") { // tests (BUG-1499): close the store until the next save opens it (a world without a name yet)
+        if (is_client()) {
+            H->out_printf(out, "a guest keeps no store\n");
+            return 1;
+        }
+        g_open = false;
+        g_cur.reset("");
+        g_test_hold = true;
+        H->out_printf(out, "store: closed until the next save (save_opened %s)\n", g_save_opened_fix ? "on" : "off");
+        return 0;
     }
     if (sub == "adopt") { // the host's word: a player that came with a new token gets the stored things of its name
         if (!is_host() || !g_open || argc < 3) {
@@ -448,6 +512,8 @@ int command(void*, int argc, const char* const* argv, SkOut* out)
             if (f.adopt)
                 f.adopt(cand[0], to);
         g_adopted++;
+        if (g_owner_names_fix)
+            collect(); // BUG-1500: the claims renamed in memory go into this write (not only at the next game save)
         write_now(true);
         H->out_printf(out, "the stored things of '%s' are %s's now\n", argc > 3 ? argv[3] : argv[2], argv[2]);
         H->log(M, SK_INFO, "store: the host gave the stored things of '%s' to %s (coop.store adopt)", argc > 3 ? argv[3] : argv[2],

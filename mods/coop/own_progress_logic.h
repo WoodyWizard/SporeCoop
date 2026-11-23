@@ -272,7 +272,11 @@ enum Kind : uint8_t {
     kReport = 3, // guest -> host: Values (every second while it plays the host's stage, at once on a change)
     kTable = 4,  // host -> guests: u8 flags (1 own progress played), u8 n, n x Row
     kGain = 5,   // host -> guest: f32 DNA its deed earned on the host's game, u8 cause (GainCause)
+    kDebt = 6,   // WP-R1 (BUG-1472), the revive's progress debt: u8 op (DebtOp), f32 amount. host -> guest: kDebtAdd (a
+                 // price charged) or kDebtSet (the record's debt, after its kAsk); guest -> host: kDebtSet (its debt now,
+                 // after its gains paid some of it)
 };
+enum DebtOp : uint8_t { kDebtAdd = 1, kDebtSet = 2 };
 enum GainCause : uint8_t { kGainHunt = 1, kGainFriend = 2, kGainActor = 3 };
 constexpr uint8_t kTableActive = 1;
 constexpr uint8_t kRowKnown = 1, kRowFull = 2;
@@ -320,7 +324,7 @@ inline bool read_table(net::Reader& r, bool& active, std::vector<Player>& out)
 }
 
 // ---- the per-player store record `progress` (pstore::kRecProgress) v1, under the player's stable key: u32 world (the
-// host's stage world, modes::current_world), Values, f32 debt (the revive's progress debt, WP-R1; 0 here). 29 bytes
+// host's stage world, modes::current_world), Values, f32 debt (the revive's progress debt, WP-R1 BUG-1472: revive_logic.h pay_from_gain). 29 bytes
 constexpr uint16_t kStoreVersion = 1;
 struct Record {
     uint32_t world = 0;
