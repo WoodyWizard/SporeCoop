@@ -128,7 +128,7 @@ static pstore::Got read_file(const std::wstring& f, std::string& out)
 
 // a temporary file next to it, then a replace: a crash mid-write leaves the old file (or the .tmp) whole
 // replace false: the file is not replaced when it is there now (a new salt: BUG-9309)
-static bool write_file(const std::wstring& f, const std::string& text, std::string& err, bool replace = true)
+static bool write_file(const std::wstring& f, const std::string& text, std::string& err, bool replace = true) // not a lab switch: a parameter (a new salt never replaces a file that came meanwhile)
 {
     std::wstring tmp = f + L".tmp";
     HANDLE h = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
