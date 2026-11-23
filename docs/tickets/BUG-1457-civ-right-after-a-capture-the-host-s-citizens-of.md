@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.16
 fixed_in: 0.7.16.1
 branch: fix/w67-citizens
-commits: a7dea9df b636001b 0fca2c5e
+commits: a7dea9df b636001b 17844a7b 265582e4
 tests: civ_own_species, civ_own_species_hostmode (the citizen pairing after the capture; key frames guest_citizen1 / 2), twin civ_own_species_pointer_off
 signature:
 docs: docs/re/civ.md#civ-citizens-pointer, docs/06-testing.md#testing-pointer-unplaced

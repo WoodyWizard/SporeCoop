@@ -10156,5 +10156,7 @@ by chance. Their tests open the window with a host knob that stands for the real
   `civ.pointer_view` a Civ game without a mouse move is at the point under its window's centre.
 * `coop.npc marker unplace` (tests): the pointer at (0 0 0) and the last mouse move forgotten, as such a game has it.
   `civ_own_species` does it for the guest at the start and checks after the capture that at most 2 of the host's
-  citizens of the guest's city have no guest citizen within 15 m (best sample of 20 s). Twin
-  `civ_own_species_pointer_off` (`SPORE_FIX_OFF=civ.pointer_view`): FAILs (8-14 of 19 unpaired).
+  citizens of the guest's city have no guest citizen within 15 m and at most 2 have no own copy (the guest's citizen
+  bound to it, `coop.wobj list citizen`) within 15 m, in one sample of 20 s (the position rule alone: a crowd in the
+  plaza paired by chance, 3 of 19 unpaired in a twin run). Twin `civ_own_species_pointer_off`
+  (`SPORE_FIX_OFF=civ.pointer_view`): FAILs (7-14 of 19 unpaired, 19 of 19 without their copy).
