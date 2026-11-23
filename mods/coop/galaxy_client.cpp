@@ -4,6 +4,7 @@
 #include <cstring>
 #include <ctime>
 #include <map>
+#include <set>
 #include <algorithm>
 #include <deque>
 #include <vector>
@@ -63,6 +64,12 @@ static bool g_session_seen; // the planet's session was up once (its end then me
 static double g_next_ping, g_last_rx, g_hello_at;
 using PlanetRow = PlanetInfo;
 static std::vector<PlanetRow> g_planets;
+// BUG-9339: the menu's poll put the whole planet list on the screen in one line ("Planets: Abber|Civ (0, no host, saved)
+// ...", cut off at the screen's edge with a handful of planets): the screen gets "<galaxy>: N planets, M players online",
+// the log and `coop.galaxy list` the whole list. Off: the whole list on the screen
+static bool g_short_list = true;
+COOP_FIX("galaxy.short_planet_list", "BUG-9339", g_short_list, "galaxy: the planet list on the screen is one short line (the whole list in the log)");
+static bool g_list_asked; // coop.galaxy list asked: its answer is the whole list
 static uint32_t g_planets_ver;
 static double g_next_list;
 
@@ -323,14 +330,32 @@ static void on_control(net::Reader& r)
                    v[i].stored == g_planets[i].stored && v[i].tech == g_planets[i].tech &&
                    !memcmp(v[i].species, g_planets[i].species, sizeof v[i].species);
         g_planets = v;
-        if (same)
+        const bool asked = g_list_asked;
+        g_list_asked = false;
+        if (same && !asked)
             return; // (the menu's poll: said once)
-        g_planets_ver++;
+        if (!same)
+            g_planets_ver++;
         std::string line = v.empty() ? "No planet has players yet: enter one to host it." : "Planets:";
         for (auto& p : v)
             line += " " + p.name + " (" + std::to_string(p.players) + (p.host ? "" : ", no host") +
                     (p.stored ? ", saved" : "") + ")";
-        say(line);
+        if (asked || !g_short_list || v.empty()) {
+            say(line);
+        } else { // BUG-9339: the menu's poll: the whole list in the log, a short line on the screen
+            H->log(M, SK_INFO, "galaxy: %s", line.c_str());
+            std::set<std::string> planets;
+            unsigned players = 0;
+            for (auto& p : v) {
+                planets.insert(net::galaxy::crossing_planet(p.name));
+                players += p.players;
+            }
+            char b[160];
+            snprintf(b, sizeof b, "%s: %u planet%s, %u player%s online", g_galaxy.empty() ? "Galaxy" : g_galaxy.c_str(),
+                     (unsigned)planets.size(), planets.size() == 1 ? "" : "s", players, players == 1 ? "" : "s");
+            if (C.feed)
+                C.feed(b);
+        }
     } else if (type == ROLE) {
         std::string planet = r.str8();
         const uint8_t role = r.u8();
@@ -973,6 +998,7 @@ std::string list()
 {
     if (!g_welcomed)
         return "Not connected to a galaxy server.";
+    g_list_asked = true; // BUG-9339: asked by name: the whole list
     send_control(control(LIST));
     return "Asking the galaxy server for its planets...";
 }

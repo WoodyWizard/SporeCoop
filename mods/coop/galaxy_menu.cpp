@@ -479,9 +479,14 @@ static bool play(const std::string& planet, uint8_t* entry = nullptr)
 // stage card and the Play step); for a server planet that wants a stage choice it goes to state 4 (Spore's Choose
 // A Stage screen) instead, as the panel of an empty star does. (Switching from the Play step left the stage card on
 // screen: 2026-11-22, TITAN.)
+// BUG-9338: when Spore's screen is not used (its switch off), our box opened from the Play step, on top of the Play
+// state's stage loading card (which stayed): Play goes back to the planets (state 2, as the screen's Back) and the box
+// opens there. Off: as before (the box over the card)
+static bool g_box_no_card = true;
+COOP_FIX("galaxy.choice_box_no_card", "BUG-9338", g_box_no_card, "galaxy menu: our stage box opens over the planets, not over Spore's stage loading card");
 static void __fastcall h_SetState(void* gge, void* edx, int state, int push)
 {
-    if (state == 0xC && g_native && g_flow_hooks && active() && a_PlayState && a_NewGameState) {
+    if (state == 0xC && g_flow_hooks && active() && a_PlayState) {
         uint8_t* ps = *(uint8_t**)a_PlayState;
         uint8_t* e = ps ? *(uint8_t**)(ps + 0xC) : nullptr;
         if (e && e[0xAC]) {
@@ -490,10 +495,17 @@ static void __fastcall h_SetState(void* gge, void* edx, int state, int push)
             const std::string planet = b && en > b ? utf8(b, en) : "";
             const std::vector<Row> rs = rows();
             const Row* row = row_of(rs, planet);
-            if (row && galaxy::current_planet() != era_to_enter(*row) && wants_choice(*row) && open_native(*row, e, false)) {
-                g_play_name = planet;
-                g_play_at = H->time_seconds();
-                state = 4;
+            if (row && galaxy::current_planet() != era_to_enter(*row) && wants_choice(*row)) {
+                if (g_native && a_NewGameState && open_native(*row, e, false)) {
+                    g_play_name = planet;
+                    g_play_at = H->time_seconds();
+                    state = 4;
+                } else if (g_box_no_card) { // BUG-9338
+                    g_play_name = planet;
+                    g_play_at = H->time_seconds();
+                    open_choice(*row);
+                    state = 2;
+                }
             }
         }
     }

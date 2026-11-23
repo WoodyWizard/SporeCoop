@@ -10379,11 +10379,20 @@ static uint32_t session_stage_of(int sid)
     auto it = g_remotes.find((uint8_t)sid);
     return it == g_remotes.end() || it->second.buf.empty() ? 0 : it->second.buf.latest().mode;
 }
-static std::string where_text(const std::string& planet, uint32_t stage, bool online)
+// BUG-9342: a galaxy player's place is the server's era key ("Abber|Creature", a crossing "Abber~3|Creature"): shown as
+// "Abber  -  Creature" (the planet and its stage). Off: the key as it is
+static bool g_where_era_names = true;
+COOP_FIX("ui.social_era_names", "BUG-9342", g_where_era_names, "ui: a galaxy player's place shows the planet and its stage, not the era key");
+static std::string where_text(const std::string& planet_key, uint32_t stage, bool online)
 {
     if (!online)
         return "Offline";
-    const std::string st = stage_label(stage);
+    std::string st = stage_label(stage), planet = planet_key;
+    if (g_where_era_names && net::galaxy::era_of(planet_key)) {
+        const uint8_t era = net::galaxy::era_of(planet_key);
+        planet = net::galaxy::crossing_planet(planet_key);
+        if (st.empty()) st = era == net::galaxy::kEraCiv ? "Civilization" : net::galaxy::era_name(era);
+    }
     if (planet.empty())
         return st.empty() ? "Galaxy menu" : st;
     return st.empty() ? planet : planet + "  -  " + st;
