@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.16
 fixed_in: 0.7.16.1
 branch: fix/w67-citizens
-commits:
+commits: a7dea9df b636001b 0fca2c5e
 tests: civ_own_species, civ_own_species_hostmode (the citizen pairing after the capture; key frames guest_citizen1 / 2), twin civ_own_species_pointer_off
 signature:
 docs: docs/re/civ.md#civ-citizens-pointer, docs/06-testing.md#testing-pointer-unplaced
@@ -56,15 +56,21 @@ the window's centre (where its camera looks), so the host sends the citizens of 
 guest binds them (`binds=19 snap_n=19`). Switch `coop.fix civ.pointer_view off`: (0 0 0) until the mouse moves
 (0.7.16). Tests: `coop.npc marker unplace` (the pointer at (0 0 0), the last mouse move forgotten).
 civ_own_species unplaces the guest's pointer at the start and checks after the capture that at most 2 of the host's
-citizens of the city have no guest citizen within 15 m (best sample of 20 s); twin `civ_own_species_pointer_off`.
+citizens of the city have no guest citizen within 15 m and at most 2 have no own copy (the guest's citizen bound to it,
+`coop.wobj list citizen`) within 15 m, in one sample within 20 s; twin `civ_own_species_pointer_off`.
 
 ## Verification
 - FAIL with SPORE_FIX_OFF=civ.pointer_view (civ_own_species_pointer_off): out/lab/20261123-095006 (8-14 of 19
-  unpaired for 20 s, guest pointer (0 0 0), `binds=0 snap_n=0`), RUNB_TWIN.
+  unpaired for 20 s, guest pointer (0 0 0), `binds=0 snap_n=0`); out/lab/20261123-095727 (best sample 3 of 19
+  unpaired by position alone: a crowd paired by chance, hence the own-copy rule); with the own-copy rule
+  out/lab/20261123-100251 x2 (7 and 14 of 19 unpaired, 19 of 19 without their copy).
 - PASS: out/lab/20261123-095006 civ_own_species (0 of 19 unpaired, guest pointer at the city); out/lab/20261123-095217
   civ_own_species x3 and civ_own_species_hostmode x3 (0 of 19 each, no `unmatched:citizen` from the detector
-  SPORE_DETECTOR=20; key frames 02 / 03: the same crowd in the plaza on both games).
-- Regressions: RUNB_REG.
+  SPORE_DETECTOR=20; key frames 02 / 03: the same crowd in the plaza on both games); out/lab/20261123-100251
+  civ_own_species x2 with the own-copy rule (0 of 19, 0 without their copy).
+- Regressions (out/lab/20261123-095727): civ_owners_session, civ_citizens, civ_citizen_lod, find_partners_civ PASS;
+  civ_planner_build FAIL, also with civ.pointer_view off (20261123-100735) and PASS with civ.planner_closed off
+  (20261123-100903): BUG-1532 (BUG-1417's change on rel/0.7.16.1), not this one.
 
 ## History
 - 2026-11-23: opened (fix/w66-frames, key frame review of the 0.7.16 final check, lab 20261122-194210 on 5376d388).
