@@ -8,20 +8,23 @@
   4. BUG-0797: the guest's own game populates its pool: the live cells of its own game
      (the game's cell pool: `coop.pool census` strays, not mirrors) reach FILLED (40) in a read of the 60 s (the game fills
      the pool 10-40 s after the load); the guest's game is in its own pool (cell_away solo=1)
-  --steady (suite own_cell_steady, BUG-1408, open): 90 s, and once the pool has FILLED cells it keeps at least KEEP (10)
-     in every later read. BUG-1408: the guest's own pool falls from ~170 to 0-25 within 5 s and fills again 15-25 s
-     later (the game's tile cull, DestroyCell from 0xE7C3E6), in every run since 2026-11-13: a real defect (cause not
-     found), so it has its own test; own_cell judged it by chance (the old check: the last 25 s of 60 s).
+  --steady (suite own_cell_steady, BUG-1408): 90 s; the pool is FILLED in the first read (~25 s after the load) and
+     keeps at least KEEP (10) in every later read. BUG-1408: the guest's tiles of entering Cell were made ~15 ms before
+     its own pool started (h_Populate refused their population), the game populates a tile only when it makes it, so
+     the pool held 1 cell for 40 s and then only the cells of a few edge tiles, gone at once when those tiles left the
+     active range (175 -> 1, the tile cull 0xE7C3E6). With cell.solo_refill the refused tiles are populated at the
+     solo start (the guest's `cell_away` line: solo_refill=<tiles>/<starts>).
 
-  SPORE_FIX_OFF=cell.send_here coop_own_cell.py      (step 3 FAILS)
-  SPORE_FIX_OFF=cell.solo_elsewhere coop_own_cell.py (step 4 FAILS)
+  SPORE_FIX_OFF=cell.send_here coop_own_cell.py           (step 3 FAILS)
+  SPORE_FIX_OFF=cell.solo_elsewhere coop_own_cell.py      (step 4 FAILS)
+  SPORE_FIX_OFF=cell.solo_refill coop_own_cell.py --steady (BUG-1408: the first read is 0, FAILS)
 """
 import argparse
 import re
 import time
 
 import own_world
-from twoinst import Checks, start
+from twoinst import Checks, keyframe, start
 
 FILLED = 40  # own live cells in the guest's pool: populated (the game's burst makes 150-185, the twin 0)
 KEEP = 10    # --steady: the fewest own live cells in any read after the pool was FILLED (BUG-1408)
@@ -105,8 +108,15 @@ def main():
     first = next((i for i, n in enumerate(cells) if n >= FILLED), None)
     after = cells[first:] if first is not None else []
     if after and min(after) < KEEP:
-        print(f'  (BUG-1408, open: the filled pool fell under {KEEP} afterwards: {after})', flush=True)
+        print(f'  (BUG-1408: the filled pool fell under {KEEP} afterwards: {after}; own_cell_steady checks it)', flush=True)
     if a.steady:
+        keyframe('own_pool', "Cell, the guest's own world 90 s after the load: the guest's screen shows cells and food of "
+                 "its own game around its cell (BUG-1408: not an empty pool); the host's screen its own pool",
+                 {'host': host, 'guest': guest}, settle=0)
+        # BUG-1408: the tiles of the screen made at the load hold their cells from the solo start on (before: 1 cell for
+        # 40 s, the first 3-4 reads 0 in every run), and the trough after a fill is gone
+        ck(first == 0, f'BUG-1408: the guest\'s own pool is filled in the first read, ~25 s after the load (read {first} '
+                       f'of {len(cells)}: {cells[:4]})')
         ck(first is not None and first < len(cells) - 6, f'the pool filled with 30 s left to watch (read {first} of '
                                                          f'{len(cells)})')
         ck(after and min(after) >= KEEP, f'BUG-1408: once filled the guest\'s own pool keeps at least {KEEP} live cells '

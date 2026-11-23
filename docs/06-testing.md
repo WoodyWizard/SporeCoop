@@ -10319,3 +10319,13 @@ Test-only changes (no mod code) for flakes of the 0.7.16 final checks; each name
 * Tests: cell_diet_premade, cell_elsewhere_spend, cell_ko_partner_clouds, cell_flush_all_lists_off (the twin of
   cell_flush_handover), cell_shadow_empty (4 games), cell_breaking_kill, cell_partner_scale, cell_own_cloud,
   cell_plant_shrink, lineage_cells (+ _ui), each with its `_off` twin in suite.py.
+
+## The own Cell pool's refill test (2026-11-23, fix/w85-cell-pool)
+<a id="testing-own-pool-refill"></a>
+
+* `own_cell_steady` (extended, 7 min, fixture cell, `coop_own_cell.py --steady`): BUG-1408's test now also asks for a
+  filled pool (40 own live cells) in the FIRST read (~25 s after the guest's load; before the fix the first 3-4 reads
+  were 0 in every run, the tiles of the screen empty for 40 s), then 10 or more in every later read; key frame
+  `own_pool` at the end (the guest's screen: cells and food of its own game). Twin `own_cell_steady_refill_off` (twin
+  suite, `SPORE_FIX_OFF=cell.solo_refill`): must FAIL on the first read. The `cell_away` line of the guest's `coop.pool`
+  shows `solo_refill=<tiles>/<starts>`.

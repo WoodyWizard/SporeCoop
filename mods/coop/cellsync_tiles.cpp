@@ -19,13 +19,37 @@ void SK_CDECL h_Wipe()
     g_in_wipe = false;
 }
 
+// BUG-1408: a guest's own pool that starts on tiles made while the population was the host's. The tile pass of
+// entering Cell (RebuildLevel's PopulateTiles, all 1) runs ~15 ms before solo_tick starts the guest's own pool in a
+// Cell world of its own, so h_Populate refused every gameplay marker of the ~40 tiles of the screen; the game populates
+// a tile only when it makes it, and those tiles stayed (cell pool 1/4096 for the first 40 s in every own_cell run). The
+// own pool then held only the cells of the few tiles the drift of the camera made later at the edge of the active
+// range, and lost all of them at once when those tiles left it (the tile cull 0xE7C3E6: 175 -> 1, lab 20261122-193406;
+// the host's own pool swings the same way but keeps the cells of its other tiles). Now the tiles whose population
+// h_Populate refused are noted (h_PopTile), and when the own pool starts with none of the host's cells (no mirror
+// released, or another Cell world) the guest's tile passes populate them, kRefillPerPass at a time below kPopCap.
+// Off (`coop.fix cell.solo_refill off`): those tiles stay empty (0.7.16.1).
+static bool g_fix_solo_refill = true;
+COOP_FIX("cell.solo_refill", "BUG-1408", g_fix_solo_refill,
+         "cell: a guest that plays its own Cell pool gets the cells of the tiles it made while it mirrored the host");
+constexpr uint32_t kRefillPerPass = 4;
+static cell_logic::RefusedTiles g_refused; // guest: tile objects whose gameplay population h_Populate refused
+static int g_tile_depth;                   // inside PopulateTile (h_PopTile)
+CALL_GUARD_DEPTH("cellsync.tile_depth", g_tile_depth);
+static bool g_tile_refused;                // a gameplay marker of the tile being populated was refused
+static bool g_refill_due;                  // guest: the own pool started without the host's cells: refill g_refused
+static uint32_t g_refilled, g_refill_passes, g_refill_starts;
+
 Populate_t o_Populate;
 int SK_CDECL h_Populate(float prob, int layer, int level, void* query, void* bbox, void* marker, int x)
 {
     // guests do not spawn their own creatures/food on the gameplay layer: the host's are mirrored
     if (is_guest() && in_cell() && query == fg_query()) {
-        if (!g_solo)
+        if (!g_solo) {
+            if (g_tile_depth > 0)
+                g_tile_refused = true; // BUG-1408
             return 0;
+        }
         g_n.solo_spawns++; // BUG-0205: the host is away, our game fills its own pool
     }
     kin_pop_enter(); // BUG-1257: the population makes these cells (cellsync_kin.cpp)
@@ -261,7 +285,76 @@ void SK_CDECL h_PopTile(uint32_t* t, int all)
         }
     } else if (t && !g_shadow_tiles.empty() && g_shadow_tiles.count(t[0]))
         return; // RemoveCellsOfOldScale repopulates every tile object: not the shared ones twice
-    o_PopTile(t, all);
+    if (!t || !is_guest() || !in_cell()) {
+        o_PopTile(t, all);
+        return;
+    }
+    // BUG-1408: a guest notes the tiles whose gameplay population was refused (the host's pool is mirrored)
+    const bool outer = g_tile_depth == 0, refused_before = g_tile_refused;
+    if (outer)
+        g_tile_refused = false;
+    {
+        callguard::Depth d(g_tile_depth);
+        o_PopTile(t, all);
+    }
+    if (outer) {
+        if (t[1] == 0) {
+            g_refused.on_populated(t[0], g_tile_refused);
+            if (g_refused.idx.size() > 1024)
+                g_refused.prune(tile_alive);
+        }
+        g_tile_refused = false;
+    } else
+        g_tile_refused = g_tile_refused || refused_before;
+}
+
+// BUG-1408: the tile object of a pool index (pool G+0x38: docs/re/cell.md 0), null when it is not alive
+static uint32_t* tile_obj(uint32_t idx)
+{
+    if (!tile_alive(idx))
+        return nullptr;
+    uint8_t* g = G();
+    return (uint32_t*)(F<uint8_t*>(g, 0x38) + (size_t)(idx & 0xFFFF) * F<uint32_t>(g, 0x38 + 0x14));
+}
+
+void solo_refill_start(uint32_t released, bool elsewhere)
+{
+    g_refill_due = cell_logic::solo_refill_due(g_fix_solo_refill, released, elsewhere) && !g_refused.idx.empty();
+    if (g_refill_due)
+        g_refill_starts++;
+}
+void solo_refill_stop() { g_refill_due = false; }
+std::string solo_refill_status()
+{
+    char b[120];
+    snprintf(b, sizeof b, " solo_refill=%u/%u due=%d refused=%u fix=%d", g_refilled, g_refill_starts, (int)g_refill_due,
+             (unsigned)g_refused.idx.size(), (int)g_fix_solo_refill);
+    return b;
+}
+
+// a guest's tile pass while it plays its own pool: kRefillPerPass of the refused tiles of its list populated now
+static void solo_refill(TileList* list)
+{
+    if (!g_refill_due || !g_solo || !is_guest() || !list || scale_moving())
+        return;
+    g_refused.prune(tile_alive);
+    std::vector<uint32_t> todo;
+    for (int32_t* e = list->begin; e < list->end; e += 2)
+        if (g_refused.has((uint32_t)e[1]))
+            todo.push_back((uint32_t)e[1]);
+    uint32_t n = cell_logic::solo_refill_take((uint32_t)todo.size(), kRefillPerPass, cells_live(), kPopCap);
+    for (uint32_t i = 0; i < n; i++)
+        if (uint32_t* t = tile_obj(todo[i]))
+            if (t[1] == 0) {
+                h_PopTile(t, 0);
+                g_refilled++;
+            }
+    g_refill_passes++;
+    if (todo.size() <= n) {
+        g_refill_due = false;
+        trace::line("cell", "own pool: %u tiles made while the population was the host's populated now in %u passes; cell "
+                            "pool %u (BUG-1408)", g_refilled, g_refill_passes, cells_live());
+    }
 }
 
 static int32_t g_last_tile[4]; // tests (BUG-1064): the last tile asked outside a pass (the cull's, right before its DestroyCell)
@@ -831,6 +924,8 @@ static void pop_tiles(int level, TileList* list, int all)
         if (own)
             tiles_check("the frame between (no partner tiles)", level);
         o_PopTiles(level, list, all);
+        if (own)
+            solo_refill(list); // BUG-1408
         if (own) {
             tiles_check("the own pass (no partner tiles)", level);
             static double last_log;

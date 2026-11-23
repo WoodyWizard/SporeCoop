@@ -2939,3 +2939,38 @@ static reading, confirmed in rel/0.7.17's code; the night run decides each).
 * ✔ (code) BreakOrSwallow's states +0x18C 7/8/9 come 0.1-0.3 s before event 5 without +0x113 (BUG-1511).
 * Switches: cell.elsewhere_spend, cell.ko_partner_clouds, cell.flush_all_lists, cell.shadow_empty, cell.breaking_dying,
   cell.partner_scale, cell.own_cloud, cell.plant_shrink; their counters in `coop.pool`'s `cell_audit` line.
+
+## A guest's own pool on tiles made while it mirrored the host (2026-11-23, fix/w85-cell-pool)
+<a id="cell-own-pool-refill"></a>
+
+BUG-1408. GOG 2024, objdump of `SporeApp.exe`, the guest logs of labs 20261122-193406 (own_cell #1 / #2),
+20261122-194210 and 20261123-023643 (rel/0.7.16's out/lab).
+
+* ✔ (logs, 4 of 4 runs) the guest's first tile pass of its own Cell world (Othercell, s 34.75-34.78) made the 40 tiles of
+  its screen and left the cell pool at 1/4096 (only the avatar); "host away: the guest plays its own pool (0 cells
+  released)" came 11-19 ms later (solo_tick, the next tick). Until s 64.8 the pool stayed 1 with the same 40 tiles; then
+  the slow drift of the idle cell's camera made 1-6 tiles at the edge of the active range (40 -> 41 / 43 / 46) and the
+  pool grew to 150-180, all of it in those tiles. When they left the range again (43 -> 38) the tile cull took them all
+  at once (175 -> 1, DestroyCell from 0xE7C3E6). Cause: h_Populate refused every gameplay marker of those 40 tiles (a
+  guest that is not solo mirrors the host's pool), and the game populates a tile only when it makes it
+  (PopulateTiles' new tiles, RebuildLevel, RemoveCellsOfOldScale): a tile that stays active stays empty.
+* ✔ (logs) the host's own pool in the same runs swings the same way by whole tiles (377 -> 180, 297 -> 132 within 10 s,
+  tiles 32-43, an idle cell), but its other tiles keep their cells: the game's single-player behaviour. So the guest's
+  trough was "only edge tiles have cells", not a cull of the guest's own tiles.
+* ✔ (objdump) ShouldCullCell 0xE5F8C0 builds the tile of a cell from its own fields: layer = (+0x35C != G+0x40FC), level
+  +0x358, x / y = floor(pos x 1 / (TileSizes[level] / G+0x514C x step(level) x 0.85)); IsTileActive 0xE5F810 then checks
+  level + 1 >= T and level <= T + 5 (T from S+0x1C through [G+0x5190]+0x1C, 0x1483DA0 at 1000) and the range of 0xE5F610.
+  The cull destroys only when the cell's +0x36C link is gone (cObjectPool_::GetIfNotDeleted on G+0x1C): +0x36C / +0x370
+  are written by 0xE5F450 (an object of the pool G+0x8C linked to the cell: +0x36C = its argument, +0x370 = the new
+  object's handle) and cleared at 0xE5923B; what that link is (a carried / held cell?) is not known (?).
+* ✔ (objdump) PopulateMarker 0xE7C500: per probability step, for every marker entry (0x4C bytes) of type +0x28 0-2 whose
+  level +0x3C is the call's: 0xE7C3F0 spawns it (`SporeCoop::Cell_SpawnMarker` in the .sym); type 3: one recursive
+  PopulateMarker per level L-4 .. L. PopulateTile 0xE7C6C0 passes only the markers whose byte +4 is the tile's +0x14 and
+  whose level is -1 or LevelOfFood; RemoveCellsOfOldScale calls it with all 0 (0xE7CDE8), PopulateTiles with its own.
+* Fix `cell.solo_refill` (cellsync_tiles.cpp): h_PopTile notes on a guest every gameplay tile object whose population
+  h_Populate refused (cell_logic::RefusedTiles; populated later with the own pool: dropped); solo_start, when it released
+  no mirror or the guest plays another Cell world (cell_logic::solo_refill_due), makes the guest's next tile passes
+  populate the refused tiles still in its list, 4 per pass below kPopCap (no pass while the world scale moves). The
+  host's return purges them as strays, as every own cell. A host away in the host's world with mirrors released keeps
+  the old way (the mirrors are those tiles' cells). `coop.pool`'s `cell_away` line: `solo_refill=<tiles>/<starts> due=
+  refused= fix=`. Lab: own_cell_steady (the first read filled, no trough) and its twin own_cell_steady_refill_off.

@@ -471,6 +471,7 @@ void solo_reset()
     }
     g_solo = g_solo_owed = false;
     g_solo_food[0] = g_solo_food[1] = 0;
+    solo_refill_stop(); // BUG-1408
 }
 
 static void solo_start()
@@ -479,6 +480,7 @@ static void solo_start()
         g_food_q.clear(); // BUG-1002: the host's totals queued before it went away
     // the host's pool is not simulated now: its mirrors become cells of our game, with their AI.
     // Dying and dead ones keep the locks of their death.
+    const uint32_t released0 = g_n.solo_released;
     for (auto& [h, m] : g_mirrors) {
         uint8_t* c = m.local ? modes::cell_at(m.local) : nullptr;
         if (!c || F<uint8_t>(c, kDying) || F<uint8_t>(c, kDead))
@@ -500,6 +502,8 @@ static void solo_start()
     g_solo = true;
     g_solo_owed = false;
     g_n.solo_times++;
+    // BUG-1408: none of the host's cells here: the tiles made while we mirrored it get their own cells
+    solo_refill_start(g_n.solo_released - released0, own_world::elsewhere());
     trace::line("cell", "host away: the guest plays its own pool (%u cells released)", g_n.solo_released);
 }
 
@@ -535,6 +539,7 @@ void solo_tick()
     }
     if (is_guest() && in_cell()) { // the host is back: its pool replaces ours at its first state
         g_solo = false;
+        solo_refill_stop(); // BUG-1408
         g_solo_owed = g_solo_food[0] || g_solo_food[1];
         trace::line("cell", "host back: the host's pool replaces the guest's at its first state");
     } else if (is_guest() && solo_keep_in_editor())
