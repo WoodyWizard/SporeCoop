@@ -226,8 +226,17 @@ def main():
         host.call(f'button {mx} {my} up')
         time.sleep(1.5)
     else:
-        host.call(f'click {mx} {my}')
-        time.sleep(4)
+        # BUG-1447: Tribe / Civ: the host's marker follows the last mouse move over its window (modes.cpp
+        # mouse_on_planet); a move at the real pointer can put it back at once (lab 20261122-194210: ptr_still reset at
+        # the click, the marker on its start point again, "host moved 0.0 m"): the click again (up to 3) until the
+        # host's own marker left its start; the checks below are unchanged
+        for _ in range(3):
+            host.call(f'click {mx} {my}')
+            time.sleep(4)
+            p = avatar_pos(host)
+            if game_obj or not (p0 and p) or dist(p0, p) > 0.3:
+                break
+            print(f'host: the marker is back at {p} after the click: again', flush=True)
     p1 = avatar_pos(host)
     r1 = remote_pos(guest)
     if game_obj:

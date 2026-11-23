@@ -133,8 +133,14 @@ def case_religion(host, guest, ck, cities, home, tgt):
     ck(hd and hf and hf > 0 and hd['convert'] > 0, f'host (control): the city has followers of the player ({hf}), meter {hd and hd["convert"]}')
     if not (hd and hf):
         return
-    gd = wait_for(lambda: (lambda g: g if g and followers_of(g, pol) == followers_of(influence(host, tgt)[0], pol) else None)(
-        influence(guest, tgt)[0]), 5)
+    # BUG-1445: the guest's meter +0x750 follows the written map only in the city's next update (0xBE2260), not at the
+    # write: wait for the followers and the meter (lab 20261122-194210 read the followers equal, the meter still 0.0);
+    # the checks below are unchanged
+    def same():
+        g, h = influence(guest, tgt)[0], influence(host, tgt)[0]
+        return g if g and h and followers_of(g, pol) == followers_of(h, pol) and abs(g['convert'] - h['convert']) <= 2 \
+            else None
+    gd = wait_for(same, 5)
     gd = gd or influence(guest, tgt)[0]
     hd, _ = influence(host, tgt)
     print(f'  guest city {tgt}: {gd}', flush=True)
