@@ -31,8 +31,11 @@ static Ctx C;
 static bool g_puppet_live_fix = true;
 COOP_FIX("effects.puppet_live", "BUG-0795", g_puppet_live_fix, "creature: a partner's effect is only played on its creature while that creature is still alive in this game (the game's effect code ran on a freed one)");
 static uint32_t g_puppet_gone;
+static uint32_t g_test_no_puppet; // tests (BUG-1517): players whose puppet this game has not (a bit per player id)
 static void* partner_puppet(uint8_t player)
 {
+    if (player < 32 && (g_test_no_puppet >> player & 1))
+        return nullptr;
     if (g_puppet_live_fix)
         return C.puppet_live ? C.puppet_live(player) : nullptr;
     return C.puppet_of ? C.puppet_of(player) : nullptr;
@@ -112,6 +115,14 @@ static uint32_t g_w_no_pos, g_w_relayed, g_w_far, g_w_seen, g_w_rate;
 static uint32_t g_dropped_spoof;
 static uint32_t g_bad_pool, g_bad_id, g_bad_bone, g_bad_xf, g_bad_short;
 static constexpr float kPosMax = 1e5f; // a world position further out is not a planet's stage
+// BUG-1517 (UIFX-6): the bone of a pool-3 one-shot was checked against the RECEIVER's puppet of the sender before the
+// host's relay, so a host with no live puppet of guest 1 (its puppet not made yet, the host elsewhere) dropped guest 1's
+// one-shots for guests 2-3 too, who have that puppet. On: the wire checks stay before the relay, the bone is checked
+// against the puppet that plays it, on every game, right before the game's CreateEffect. `coop.fix effects.bone_local
+// off`: checked before the relay (0.7.16.1)
+static bool g_bone_local_fix = true;
+COOP_FIX("effects.bone_local", "BUG-1517", g_bone_local_fix, "effects: a guest's one-shot effect reaches the other guests also when the host has no creature of that guest");
+static uint32_t g_relayed_unchecked; // pool-3 one-shots relayed before the bone check (BUG-1517)
 // BUG-1048: a received world effect's scale must be in the sender's range (0, 1000]; off: any finite scale
 static bool g_scale_fix = true;
 COOP_FIX("effects.scale_check", "BUG-1048", g_scale_fix, "effects: a partner's world effect with a scale of 0, below 0 or over 1000 is dropped");
@@ -145,7 +156,7 @@ static bool valid_message(uint8_t player, uint8_t stop, uint8_t pool, uint32_t i
             g_bad_xf++;
             return false;
         }
-    } else if (pool == 3) {
+    } else if (pool == 3 && !g_bone_local_fix) { // (BUG-1517: on, checked at the play)
         // the game indexes the model's bone array (stride 0x2bc = 700) with this index and does not
         // check it (cCreatureBase::CreateEffect 0xC150D0); the array's end gives the count
         void* puppet = partner_puppet(player);
@@ -1050,6 +1061,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             w.f32(agl);           // BUG-0608
         }
         C.sess->broadcast_reliable(net::MSG_EFFECT, w, from);
+        if (pool == 3 && !stop && g_bone_local_fix)
+            g_relayed_unchecked++;
     }
     g_rx++;
     if (!g_fix)
@@ -1087,6 +1100,12 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         g_skipped++;
         if (g_log)
             H->log(M, SK_INFO, "effect: from %u skipped, no puppet (id %08X key %08X)", player, id, key);
+        return;
+    }
+    if (!stop && pool == 3 && g_bone_local_fix && !game::creature_bone_ok(puppet, (int32_t)key)) {
+        g_bad_bone++; // the game indexes the model's bone array with it unchecked (CreateEffect 0xC150D0)
+        if (g_log)
+            H->log(M, SK_INFO, "effect: from %u dropped, bone %u not on its puppet here (id %08X)", player, key, id);
         return;
     }
     game::EffectEvent ev{id, key, pool, stop != 0};
@@ -1244,6 +1263,12 @@ bool set_log(bool on)
 }
 
 // tests (BUG-1252): the rate limit's bucket in debt by n tokens, as a burst of effects leaves it (n / 40 s to refill)
+void test_no_puppet(uint8_t player, bool on)
+{
+    if (player < 32)
+        g_test_no_puppet = on ? g_test_no_puppet | 1u << player : g_test_no_puppet & ~(1u << player);
+}
+
 void drain_tokens(double n)
 {
     g_tokens = -n;
@@ -1411,8 +1436,8 @@ std::string status()
     snprintf(b, sizeof b, "effects world drops: no_pos=%u relayed=%u far=%u seen=%u rate=%u sent_probes=%u\n",
              g_w_no_pos, g_w_relayed, g_w_far, g_w_seen, g_w_rate, g_world_sent_probes);
     s += b;
-    snprintf(b, sizeof b, "effects received drops: spoof=%u pool=%u id=%u bone=%u transform=%u short=%u\n",
-             g_dropped_spoof, g_bad_pool, g_bad_id, g_bad_bone, g_bad_xf, g_bad_short);
+    snprintf(b, sizeof b, "effects received drops: spoof=%u pool=%u id=%u bone=%u transform=%u short=%u relayed_unchecked=%u no_puppet_test=%X\n",
+             g_dropped_spoof, g_bad_pool, g_bad_id, g_bad_bone, g_bad_xf, g_bad_short, g_relayed_unchecked, g_test_no_puppet);
     s += b;
     snprintf(b, sizeof b, "effects onto own ground: %u\n", g_ground_moved); // BUG-0608
     s += b;

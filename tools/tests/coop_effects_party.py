@@ -19,6 +19,12 @@ its main thread while the load runs (BUG-0527: the hooks' work + effects::tick w
 CreateEffect calls, over the frames where that took under 5 ms; ticks over 5 ms are the OS's preemption on a
 loaded machine and must stay under 5 % of the frames; from `coop.effects`' cost parts line. `--old-cost`: the
 check before, the whole tick's wall time, which the preemption and the workload made fail).
+--oneshot (BUG-1517, UIFX-6, Creature): the host's game has no puppet of guest 1 (`coop.effects nopuppet <id>` on the
+host: as when its puppet is not made yet or the host is elsewhere); guest 1's pool-3 one-shot (the mating call
+E1B24DDB at bone 0, fed into the host's network path with `coop.effects inject`) must still be relayed: guest 2's game
+creates the game's effect object on its puppet of guest 1 (`effects received ... pool=3 game=1`), a key frame of guest
+2's screen. SPORE_FIX_OFF=effects.bone_local --oneshot: the host checks the bone against its own (missing) puppet and
+drops it before the relay (FAIL, twin effects_party_oneshot_off).
 """
 import argparse
 import re
@@ -165,11 +171,40 @@ def free_games_local(a, b, seconds):
         time.sleep(1)
 
 
+def oneshot(ck, p, host, bob, carol):
+    """BUG-1517: guest 1's pool-3 one-shot reaches guest 2 while the host has no puppet of guest 1"""
+    from twoinst import keyframe
+    print('  host: ' + host.call(f'coop.effects nopuppet {bob.pid} 1').strip().splitlines()[0], flush=True)
+    before = nums(carol.con).get('received', 0)
+    got = None
+    try:
+        for _ in range(3):
+            out = host.call(f'coop.effects inject {bob.pid} {bob.pid} 0 3 E1B24DDB 0')
+            m = re.search(r'bone=\d+ .*relayed_unchecked=\d+', out)
+            print(f'  host after the inject: {m.group(0) if m else "?"}', flush=True)
+            t0 = time.time()
+            while time.time() - t0 < 4 and got is None:
+                time.sleep(0.3)
+                rx = last_rx(carol.con, bob.pid)
+                if nums(carol.con).get('received', 0) > before and rx and rx['pool'] == 3 and rx['id'] == 'E1B24DDB':
+                    got = rx
+            if got:
+                break
+    finally:
+        host.call(f'coop.effects nopuppet {bob.pid} 0')
+    print(f'  guest 2 received from guest 1: {got}', flush=True)
+    ck(got is not None and got['game'] == 1,
+       f"guest 2's game made guest 1's one-shot on its puppet of guest 1 while the host had none ({got})")
+    keyframe('oneshot_relayed', "guest 2's screen: guest 1's creature with the mating call's effect on it (relayed by a "
+             "host that has no creature of guest 1)", {'guest2': carol.con}, settle=0)
+
+
 def main():
     global FX_ID, OWN_POS
     ap = argparse.ArgumentParser()
     ap.add_argument('--fixture', default='creature', choices=('cell', 'creature', 'tribe', 'civ', 'space'))
     ap.add_argument('--old-cost', action='store_true', help='the cost check before BUG-0527 (whole tick, wall time)')
+    ap.add_argument('--oneshot', action='store_true', help='BUG-1517: a one-shot relayed by a host without the puppet')
     a = ap.parse_args()
     p = Party.start(a.fixture, players=3, join_together=True)
     ck = Checks()
@@ -186,6 +221,10 @@ def main():
     ck(free_games(p), 'all three games take input')
     ck(all(p.is_in(g) for g in p.guests), f'both guests play the host\'s {a.fixture} stage')
     time.sleep(3)
+    if a.oneshot:  # BUG-1517
+        oneshot(ck, p, host, bob, carol)
+        ck.faults(host=host.con, guest=bob.con, extra=carol.con)
+        raise SystemExit(ck.result())
     # the host's world effect must reach guest 2 (and guest 1), then guest 1's must reach guest 2
     case(ck, host, carol, host.pid, 'host world effect on guest 2')
     case(ck, host, bob, host.pid, 'host world effect on guest 1')

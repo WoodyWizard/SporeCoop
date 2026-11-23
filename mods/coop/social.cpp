@@ -515,6 +515,19 @@ static uint32_t g_meter_opened = 0, g_meter_bars = 0, g_meter_closed = 0, g_win_
 static float g_meter_frac = 0;
 static int g_meter_vis_at_win = -1; // the meter layout's own visible byte when the win arrived (tests)
 
+// BUG-1515 (CR-13): the win (op 2) runs Finish, but K_RESULT also ends the engagement, so the next frame meter_tick
+// queued the close (op 3) and the finish of the guest's meter was hidden one frame after it began. The game's own
+// session hides its meter at the session end, after the win's reaction (docs/re/creature.md#creature-meter-hold).
+// Now the close after a win waits kWinHold s (a new engagement still opens at once). `coop.fix social.meter_hold
+// off`: closed the next frame (0.7.16.1)
+static bool g_meter_hold_fix = true;
+COOP_FIX("social.meter_hold", "BUG-1515", g_meter_hold_fix, "creature: a guest's social meter shows its finish for a moment after the win before it is hidden");
+constexpr double kWinHold = 1.5;   // s the finished meter stays up (the game's reaction plays meanwhile)
+constexpr double kWinSample = 0.5; // s after the win the tests read the layout's visible byte
+static double g_meter_won_at = -1;  // time of the last win's Finish (-1: none since the last open / close)
+static double g_meter_sample_at = -1; // (tests) the win to sample, kept by the close
+static int g_meter_vis_after_win = -1; // the layout's visible byte kWinSample s after the win (tests)
+
 // the layout's visible byte: SetVisible 0xE319D0 is UILayout::SetVisible(meter + 0xC), which writes
 // [layout +0x14] +0x8C (0x8103B0); -1 when there is no window
 static int meter_visible(void* m)
@@ -599,6 +612,7 @@ static void meter_run(void*) // outside the frame: the meter is UI
             thiscall<void>(a_MeterVisible, m, 1);
             g_meter_npc = t.npc;
             g_meter_frac = 0;
+            g_meter_won_at = -1;
             g_meter_opened++;
         } else if (t.op == 1 && t.npc == g_meter_npc && a_MeterBar) {
             thiscall<void>(a_MeterBar, m, 0, t.frac);
@@ -606,6 +620,8 @@ static void meter_run(void*) // outside the frame: the meter is UI
             g_meter_bars++;
         } else if (t.op == 2 && t.npc == g_meter_npc) {
             g_meter_vis_at_win = meter_visible(m);
+            g_meter_won_at = g_meter_sample_at = H->time_seconds();
+            g_meter_vis_after_win = -1;
             if (a_MeterBar)
                 thiscall<void>(a_MeterBar, m, 0, 1.0f);
             g_meter_frac = 1;
@@ -626,6 +642,7 @@ static void meter_run(void*) // outside the frame: the meter is UI
             thiscall<void>(a_MeterVisible, m, 0);
             if (g_meter_npc == t.npc)
                 g_meter_npc = -1;
+            g_meter_won_at = -1;
             g_meter_closed++;
         }
     }
@@ -647,6 +664,12 @@ COOP_FIX("social.meter_end", "BUG-0808", g_meter_end_fix, "creature: the social 
 // guest, every frame: the meter follows the engagement
 static void meter_tick()
 {
+    const double now = H->time_seconds();
+    if (g_meter_sample_at >= 0 && now - g_meter_sample_at >= kWinSample) {
+        if (void* m = meter_ui()) // (tests, BUG-1515: the game's own byte, either switch)
+            g_meter_vis_after_win = meter_visible(m);
+        g_meter_sample_at = -1;
+    }
     if (g_engaged >= 0 && g_engaged != g_meter_npc && g_meter_tasks.empty()) {
         void* px = npc::proxy((uint16_t)g_engaged);
         if (g_meter_retry_fix && H->time_seconds() - g_meter_missed_at < kMeterRetry)
@@ -658,6 +681,8 @@ static void meter_tick()
         if (!g_meter_retry_fix)
             g_meter_npc = g_engaged; // (0.7.13: marked before the task opened it)
     } else if (g_engaged < 0 && g_meter_npc >= 0 && g_meter_tasks.empty()) {
+        if (g_meter_hold_fix && g_meter_won_at >= 0 && now - g_meter_won_at < kWinHold)
+            return; // (BUG-1515: the finish plays)
         meter_task(3, g_meter_npc);
     }
 }
@@ -667,7 +692,7 @@ void debug_meter_null(unsigned n) { g_meter_test_null = n; } // tests (BUG-1058)
 std::string meter_dump() // tests: the game's meter object as the guest's screen has it
 {
     void* m = meter_ui();
-    char b[400];
+    char b[512];
     if (!m)
         return "meter: none\n";
     uint8_t* u = (uint8_t*)m;
@@ -676,9 +701,9 @@ std::string meter_dump() // tests: the game's meter object as the guest's screen
     float frac = hi != lo ? (pos - lo) / (hi - lo) : 0;
     snprintf(b, sizeof b,
              "meter: ui=%p visible=%d visible_at_win=%d raw=%.3f/%.3f/%.3f full=%d rounds=%d bar0=%.2f open_for=%d opened=%u bars=%u closed=%u win_msgs=%u stage_win_msgs=%u "
-             "frac_set=%.2f missed=%u\n",
+             "frac_set=%.2f missed=%u visible_after_win=%d\n",
              m, meter_visible(m), g_meter_vis_at_win, lo, pos, hi, (int)u[0x26], *(int*)(u + 0x44), frac, g_meter_npc, g_meter_opened, g_meter_bars, g_meter_closed, g_win_msgs,
-             g_stage_msg_win, g_meter_frac, g_meter_missed);
+             g_stage_msg_win, g_meter_frac, g_meter_missed, g_meter_vis_after_win);
     return b;
 }
 

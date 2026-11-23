@@ -19,12 +19,19 @@ behaviour's effects end within 1 s, the sprint's dust is started and stopped by 
 is the stop reaching the guest's game, not the effect's state after it.
 
   SPORE_FIX_OFF=mirror.fx_keys   FAILS (the stop of the evicted key is never sent)
+
+--burst (BUG-1516, UIFX-4): step 2 is a burst instead of a full table: the host's rate limit of the relay is held
+empty for 4 s (`coop.mirrorfx drain 4`, as a fight of a whole village empties the 60/s bucket), the host stops the
+member's effect inside it. PASS: the guest's game gets the stop; a key frame of both games shows the member (the note:
+no effect left on the guest's mirror of it).
+  SPORE_FIX_OFF=mirror.fx_stops with --burst   FAILS (the stop is dropped by the limit and never sent again)
 """
 import re
+import sys
 import time
 
 from coop_tribe_cycle_restart import members
-from twoinst import Checks, start
+from twoinst import Checks, keyframe, start
 
 EFFECT, KEY, POOL = 0x21C934A7, 0x55559EF, 2
 ARGS = f'{EFFECT:#x} {KEY:#x} {POOL}'
@@ -62,7 +69,11 @@ def main():
         return 0
     s0 = has(guest, mid)[3]
     print(f'  member #{mid}: the guest\'s game made the effect on the mirror; stops so far {s0}', flush=True)
-    print(' ', host.call('coop.mirrorfx fill 256')['out'].strip(), flush=True)
+    burst = '--burst' in sys.argv
+    if burst:  # BUG-1516: the limit empty, as in a long fight
+        print(' ', host.call('coop.mirrorfx drain 4')['out'].strip(), flush=True)
+    else:
+        print(' ', host.call('coop.mirrorfx fill 256')['out'].strip(), flush=True)
     print(' ', host.call(f'coop.mirrorfx key stop {mid} {ARGS}')['out'].strip(), flush=True)
     t0 = time.time()
     got = has(guest, mid)
@@ -71,6 +82,9 @@ def main():
         got = has(guest, mid)
     print(f'  after the host\'s stop: {got}; host {host.call("coop.mirrorfx")["out"].strip()}', flush=True)
     ck(got[3] > s0, f'the guest\'s game got the stop of the mirror\'s effect ({s0} -> {got[3]})')
+    if burst:
+        keyframe('fx_burst_stop', f'member #{mid} on both games after the host stopped its effect inside a burst: the '
+                 'guest\'s mirror of it shows no fight effect left on it', settle=0)
     ck.faults(host=host, guest=guest)
     return ck.result()
 
