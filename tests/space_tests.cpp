@@ -8,6 +8,7 @@
 #include "rejoin_kept.h"
 #include "space_kept.h"
 #include "space_logic.h"
+#include "squadron_logic.h"
 #include <string>
 
 static int g_fail = 0;
@@ -407,6 +408,128 @@ static void test_rejoin_kept()
     CHECK(d.parse(big) && d.size() == KeptFile::kMax);
 }
 
+// BUG-1288 (WP-S1 of 0.7.17): the host's table of guest leaders and the roles (squadron_logic.h)
+static void test_fleet_leads()
+{
+    printf("fleet leaders (BUG-1288)\n");
+    using namespace squadron_logic;
+    const uint32_t S = kSpaceMode;
+    const Place A{S, 0x80000011u}, B{S, 0x80000022u}, galaxy{S, 0};
+    auto peer = [](uint8_t id, const Place& p, bool capable = true) {
+        return PeerPlace{id, p.mode, p.world, true, capable};
+    };
+    // a place with the host has no row; one guest alone has an inactive row (not announced)
+    std::vector<PeerPlace> v{peer(0, A), peer(1, A), peer(2, B)};
+    auto t = step_leads({}, v, 0, true);
+    CHECK(t.size() == 1 && t[0].place == B && t[0].leader == 2 && !t[0].active() && announced(t).empty());
+    // a second guest comes later with a lower id: the first one there keeps the lead (sticky, not the lowest id)
+    v = {peer(0, A), peer(1, B), peer(2, B)};
+    auto t2 = step_leads(t, v, 1, true);
+    CHECK(t2.size() == 1 && t2[0].leader == 2 && t2[0].active() && announced(t2).size() == 1);
+    CHECK(!same_announced(t, t2) && same_announced(t2, step_leads(t2, v, 2, true)));
+    // the host leaves A, both guests there: a new row, the lowest id leads
+    v = {peer(0, B), peer(1, A), peer(2, A)};
+    auto t3 = step_leads({}, v, 0, true);
+    CHECK(t3.size() == 1 && t3[0].place == A && t3[0].leader == 1 && t3[0].active());
+    // the host comes back to A: no row (the host leads, 0.7.16)
+    v = {peer(0, A), peer(1, A), peer(2, A)};
+    CHECK(step_leads(t3, v, 1, true).empty());
+    // the leader zooms out (galaxy view): it keeps the place for kLeaderGrace, then the follower leads
+    v = {peer(0, A), peer(1, galaxy), peer(2, B)};
+    std::vector<Lead> lb{{B, 1, 2, -1}};
+    auto g1 = step_leads(lb, v, 10, true);
+    CHECK(g1.size() == 1 && g1[0].leader == 1 && g1[0].away_since == 10 && g1[0].active() && g1[0].present == 1);
+    auto g2 = step_leads(g1, v, 10 + kLeaderGrace - 0.5, true);
+    CHECK(g2.size() == 1 && g2[0].leader == 1 && g2[0].away_since == 10);
+    auto g3 = step_leads(g2, v, 10 + kLeaderGrace + 0.1, true);
+    CHECK(g3.size() == 1 && g3[0].leader == 2 && g3[0].away_since < 0 && !g3[0].active());
+    // ... back within the grace: still the leader, no longer away
+    v = {peer(0, A), peer(1, B), peer(2, B)};
+    auto g4 = step_leads(g2, v, 13, true);
+    CHECK(g4.size() == 1 && g4[0].leader == 1 && g4[0].away_since < 0);
+    // the leader went to another valid place, or left the session: a new leader at once
+    v = {peer(0, A), peer(1, A), peer(2, B), peer(3, B)};
+    auto n1 = step_leads(lb, v, 0, true);
+    CHECK(n1.size() == 1 && n1[0].leader == 2);
+    v = {peer(0, A), peer(2, B), peer(3, B)};
+    CHECK(step_leads(lb, v, 0, true)[0].leader == 2);
+    // an older guest (space 1.2) is never named and never counts
+    v = {peer(0, A), peer(1, B, false), peer(2, B)};
+    auto o1 = step_leads({}, v, 0, true);
+    CHECK(o1.size() == 1 && o1[0].leader == 2 && !o1[0].active());
+    v = {peer(0, A), peer(1, B, false), peer(2, B, false)};
+    CHECK(step_leads({}, v, 0, true).empty());
+    // a guest without a state, the galaxy view, another mode: no place
+    v = {peer(0, A), {1, S, B.world, false, true}, peer(2, galaxy), peer(3, Place{0x1654C04u, 0x1234})};
+    CHECK(step_leads({}, v, 0, true).empty());
+    // the switch off (or Rivals): no rows at all
+    v = {peer(0, A), peer(1, B), peer(2, B)};
+    CHECK(step_leads(t2, v, 0, false).empty());
+    // two guest-led places at once (4 players: host elsewhere, two pairs)
+    v = {peer(0, galaxy), peer(1, A), peer(2, B), peer(3, A)};
+    auto two = step_leads({{B, 2, 1, -1}}, v, 0, true);
+    CHECK(two.size() == 2 && find_lead(two, A) && find_lead(two, A)->leader == 1 && find_lead(two, A)->active() &&
+          find_lead(two, B)->leader == 2 && !find_lead(two, B)->active());
+
+    // the roles: the host always leads; with the host here a guest mirrors it (0.7.16), whatever the table says
+    std::vector<Lead> ann{{B, 2, 2, -1}};
+    auto r = local_role(true, 0, A, false, true, true, ann);
+    CHECK(r.role == FleetRole::Leader && r.leader == 0);
+    r = local_role(false, 1, B, true, true, true, ann);
+    CHECK(r.role == FleetRole::Mirror && r.leader == 0);
+    r = local_role(false, 1, B, false, true, true, ann);
+    CHECK(r.role == FleetRole::Mirror && r.leader == 2);
+    r = local_role(false, 2, B, false, true, true, ann);
+    CHECK(r.role == FleetRole::Leader && r.leader == 2);
+    // the switch off, an older host, the galaxy view, a place without a row: None (0.7.16 away from the host)
+    CHECK(local_role(false, 1, B, false, false, true, ann).role == FleetRole::None);
+    CHECK(local_role(false, 1, B, false, true, false, ann).role == FleetRole::None);
+    CHECK(local_role(false, 1, galaxy, false, true, true, ann).role == FleetRole::None);
+    CHECK(local_role(false, 1, A, false, true, true, ann).role == FleetRole::None);
+    CHECK(local_role(false, 1, A, true, false, false, {}).role == FleetRole::Mirror); // fix off with the host: 0.7.16
+
+    // the relay checks: only the named leader's state, a follower's hit to the leader, the leader's damage to a follower
+    std::vector<PeerPlace> pp{peer(0, A), peer(1, B), peer(2, B), peer(3, A)};
+    std::vector<Lead> tab{{B, 2, 2, -1}};
+    CHECK(can_forward_state(2, 2, B, tab));
+    CHECK(!can_forward_state(1, 1, B, tab) && !can_forward_state(2, 1, B, tab) && !can_forward_state(2, 2, A, tab));
+    CHECK(!can_forward_state(2, 2, B, {{B, 2, 1, -1}})); // an inactive row: nobody to send to
+    CHECK(should_forward_state_to(pp[1], B, 2) && !should_forward_state_to(pp[2], B, 2) &&
+          !should_forward_state_to(pp[0], B, 2) && !should_forward_state_to(pp[3], B, 2));
+    CHECK(!should_forward_state_to(peer(1, B, false), B, 2)); // an older guest never gets MSG_UFO_LEAD
+    CHECK(can_forward_hit(1, 2, B, tab, pp));
+    CHECK(!can_forward_hit(3, 2, B, tab, pp) && !can_forward_hit(1, 1, B, tab, pp) && !can_forward_hit(2, 2, B, tab, pp) &&
+          !can_forward_hit(0, 2, B, tab, pp) && !can_forward_hit(1, 2, A, tab, pp));
+    CHECK(can_forward_damage(2, 2, 1, B, tab, pp));
+    CHECK(!can_forward_damage(1, 1, 2, B, tab, pp) && !can_forward_damage(2, 2, 3, B, tab, pp) &&
+          !can_forward_damage(2, 2, 0, B, tab, pp) && !can_forward_damage(2, 2, 2, B, tab, pp) &&
+          !can_forward_damage(2, 1, 1, B, tab, pp));
+
+    // what a role change does: the host-led changes of 0.7.16 do nothing (mirror_tick drops the host's mirrors)
+    auto tr = step_role(FleetRole::Mirror, 0, A, FleetRole::None, kNoLeader, galaxy);
+    CHECK(tr.changed && !tr.drop_mirrors && !tr.clear_leader && !tr.reset_rx);
+    tr = step_role(FleetRole::Mirror, 0, A, FleetRole::Mirror, 0, B);
+    CHECK(tr.changed && !tr.drop_mirrors && !tr.reset_rx);
+    tr = step_role(FleetRole::Leader, 0, A, FleetRole::Leader, 0, B); // the host's ids are never cleared
+    CHECK(tr.changed && !tr.clear_leader);
+    // no promotion: the host leaves, a follower becomes the leader and drops its mirrors (2 players never get here:
+    // a guest alone has no announced row)
+    tr = step_role(FleetRole::Mirror, 0, A, FleetRole::Leader, 1, A);
+    CHECK(tr.drop_mirrors && tr.clear_leader && tr.reset_rx);
+    tr = step_role(FleetRole::Mirror, 0, A, FleetRole::Mirror, 1, A);
+    CHECK(tr.drop_mirrors && !tr.clear_leader && tr.reset_rx);
+    tr = step_role(FleetRole::Mirror, 2, B, FleetRole::Leader, 1, B);
+    CHECK(tr.drop_mirrors && tr.clear_leader && tr.reset_rx);
+    // the host arrives where a guest led: the leader's ids go, the followers' mirrors of it go
+    tr = step_role(FleetRole::Leader, 2, B, FleetRole::Mirror, 0, B);
+    CHECK(!tr.drop_mirrors && tr.clear_leader && tr.reset_rx);
+    tr = step_role(FleetRole::Mirror, 2, B, FleetRole::Mirror, 0, B);
+    CHECK(tr.drop_mirrors && tr.reset_rx);
+    tr = step_role(FleetRole::Leader, 2, B, FleetRole::None, kNoLeader, galaxy);
+    CHECK(tr.clear_leader && !tr.drop_mirrors && !tr.reset_rx);
+    CHECK(!step_role(FleetRole::Mirror, 2, B, FleetRole::Mirror, 2, B).changed);
+}
+
 int main()
 {
     test_jump_target();
@@ -418,6 +541,7 @@ int main()
     test_kept_rivals();
     test_restore_window();
     test_rejoin_kept();
+    test_fleet_leads();
     printf(g_fail ? "space_tests: %d FAILED\n" : "space_tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

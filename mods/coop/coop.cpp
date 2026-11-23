@@ -2911,6 +2911,24 @@ static void init_civ_and_space()
         auto it = g_remotes.find(0);
         return it != g_remotes.end() && !it->second.buf.empty() && same_place(it->second.buf.latest());
     };
+    sqc.my_place = []() -> squadron_logic::Place { return {g_mode, g_world}; }; // BUG-1288
+    sqc.peer_places = [] {
+        std::vector<squadron_logic::PeerPlace> v;
+        for (auto& [id, r] : g_remotes) {
+            if (r.echo)
+                continue;
+            squadron_logic::PeerPlace p;
+            p.id = id;
+            if (!r.buf.empty()) {
+                const auto& ls = r.buf.latest();
+                p.has_state = true;
+                p.mode = ls.mode;
+                p.world = ls.world;
+            }
+            v.push_back(p);
+        }
+        return v;
+    };
     sqc.puppet_owner = [](void* u) -> int {
         for (auto& [id, r] : g_remotes)
             if (r.puppet == u && !r.echo)

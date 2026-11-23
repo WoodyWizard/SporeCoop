@@ -132,6 +132,7 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | 72 | `CELL_MATE` | RU | guest | HostWorld | Cell (host) | cell | u8 kind: 0 (unreliable, 5 Hz) the pose of the mate its mating call brought: u32 res instance, u32 key[3], u8 level, f32 size, vec3 pos, f32 vx, vy, quat, f32 world scale; 1 (reliable) it is gone (BUG-1246) |
 | 73 | `SPECIES_LINE` | R | any | Session | SpeciesLine | creations | u8 kind (species_line_core.h): a player's species line row, its stored row, a piece of a line creation (the host relays it; WP-0, BUG-1270) |
 | 75 | `PLAYER_HISTORY` | R | any | Session | History | session | u8 kind (wire/history.h): 1 host -> guest its own stage history (cards, trait progress), 2 guest -> host its own game's Cell card (WP-H1, BUG-1470) |
+| 78 | `UFO_LEAD` | RU | any | Module | Squadron | space | u8 kind (wire/space_ufo.h): 0 a guest leader's ship state, 1 a follower's hit, 2 the leader's NPC hit on a follower, 3 the host's table of guest leaders per place; the NPC ships of a star system or planet without the host (the host relays; BUG-1288) |
 
 | Family | Id | Rev | Used in | Covers |
 |---|---|---|---|---|
@@ -142,7 +143,7 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | cell (Cell) | 5 | 1.2 | Cell | `CELL_STATE`, `CELL_HIT`, `CELL_EAT`, `CELL_FOOD`, `CELL_KO`, `CELL_BITTEN`, `CELL_MATE` |
 | tribe (Tribe) | 6 | 1.1 | Tribe | `TRIBE_STATE`, `TRIBE_CMD`, `TRIBE_ANIM` |
 | civ (Civilization) | 7 | 1.2 | Civilization, Space | `CIV_STATE`, `CIV_CMD`, `CIV_BUILD`, `ROLE`, `CIV_ALARM` |
-| space (Space) | 8 | 1.3 | Space | `UFO_STATE`, `UFO_HIT`, `UFO_DAMAGE`, `SPACE` |
+| space (Space) | 8 | 1.3 | Space | `UFO_STATE`, `UFO_HIT`, `UFO_DAMAGE`, `SPACE`, `UFO_LEAD` |
 | shared (shared resources) | 9 | 1.0 | Tribe, Civilization, Space | `RES`, `RES_ADD` |
 | creations (creations) | 10 | 1.2 | every stage and the menus | `CREATION`, `SPECIES_LINE` |
 
@@ -857,6 +858,7 @@ WP-0 of docs/plan-0.7.17.md. Parallel branches collided on message ids before (B
   the merge takes either lock line and runs the rebase once more on the merged tree.
 * Settings and store: docs/07-modes.md#modes-reserved-0717, docs/01-architecture.md#arch-player-store.
 
+<<<<<<< ours
 ## MSG_PLAYER_HISTORY: every player's own stage history (2026-11-23, feat/w70-history)
 <a id="netcode-player-history"></a>
 
@@ -875,3 +877,30 @@ history_logic.h `peer_reads`, `kSessionMinor`); a guest sends K_CELL only to a h
 A 0.7.16.1 peer (session 1.2) plays the shared history exactly as before: no record, the wsync row "stages" writes the
 host's cards, its kills raise the host's progress (no redirect for a peer that cannot read its own). A 0.7.16.1 peer
 ignores type 75 (an unknown type). Decoders: tests/fuzz_decoders.cpp; codecs: tests/validate_tests.cpp test_history.
+=======
+## MSG_UFO_LEAD: guest leaders of the Space NPC ships (2026-11-23, fix/w73-fleet)
+<a id="netcode-ufo-lead"></a>
+
+BUG-1288, WP-S1 of 0.7.17: id 78 (the WP-0 reservation), family space 1.3, wire/space_ufo.h, everything through the host.
+Two or more guests in a star system or planet without the host share one guest's NPC ships (the leader); the host's
+place keeps MSG_UFO_STATE / MSG_UFO_HIT / MSG_UFO_DAMAGE of 0.7.16 byte for byte.
+
+| Kind | Direction | Reliable | Body |
+|---|---|---|---|
+| 0 K_STATE | leader -> host -> followers | no | u8 leader, u32 mode, u32 world, u16 n, n bytes: an MSG_UFO_STATE body (ship chunk or shot list) of the leader's game, at most 1150 |
+| 1 K_HIT | follower -> host -> leader | yes | u8 leader, u32 mode, u32 world, u8 shooter (written by the host), u16 ship id, f32 damage (0..100000), i32 type, vec3 dir |
+| 2 K_DAMAGE | leader -> host -> victim | yes | u8 leader, u32 mode, u32 world, u8 victim, f32 damage, i32 type, vec3 dir, u16 attacker ship id |
+| 3 K_LEADS | host -> guests | yes | u8 n (at most 16), n x (u32 mode, u32 world, u8 leader): the announced rows of the host's table |
+
+* The host decides (squadron_logic.h `step_leads`): per valid place without the host where a capable guest is, the
+  first guest there leads and keeps it while it stays (6 s while it is in no place); a row is announced only with a
+  follower. K_LEADS goes on a change and every 2 s while there are rows. A guest only reads it (`local_role`): with the
+  host in its place it mirrors the host whatever the table says.
+* The host relays a K_* only when it fits its table: K_STATE from the leader of an active row to the capable guests in
+  that place; K_HIT from a capable guest in the place to its leader; K_DAMAGE from the leader to a capable guest there.
+  It relays from wherever it is (an editor, the galaxy view).
+* Old peers: the host asks `peer_families` (space 1.3 or newer: `wire::space_ufo::supports`, `kMinor` 3) before naming
+  a guest or sending it anything; a guest asks `host_families` before it takes a role from the table. A 0.7.16.1 peer on
+  either side: no table, no K_*, every guest away from the host plays its own NPC ships (as 0.7.16.1).
+* Off: `coop.fix fleet.leader off` (no table, nothing relayed). Rivals: no rows.
+>>>>>>> theirs

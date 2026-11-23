@@ -1277,8 +1277,8 @@ static void test_manifest()
         known += msg_info((uint8_t)t).known;
     // types added after 0.7.14 (a 0.7.14 peer ignores them, B6): MSG_HOST_BUSY 70 (BUG-1142), MSG_TRIBE_ANIM 71 (C7,
     // BUG-1160), MSG_CELL_MATE 72 (BUG-1246), MSG_SPECIES_LINE 73 (WP-0 of 0.7.16, BUG-1270)
-    // MSG_PLAYER_HISTORY 75 (WP-H1 of 0.7.17, BUG-1470)
-    const std::set<int> added_types = {70, 71, 72, 73, 75};
+    // MSG_PLAYER_HISTORY 75 (WP-H1 of 0.7.17, BUG-1470), MSG_UFO_LEAD 78 (WP-S1 of 0.7.17, BUG-1288)
+    const std::set<int> added_types = {70, 71, 72, 73, 75, 78};
     CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0] + added_types.size()));
     CHECK(MSG_HOST_BUSY == 70 && msg_info(70).known && msg_dir(70) == MsgDir::Host &&
           host_world::msg_class(70) == host_world::MsgClass::Session && dispatch_route(70, false) == Route::HostBusy &&
@@ -1297,6 +1297,9 @@ static void test_manifest()
           msg_info(75).family == Family::session && msg_dir(75) == MsgDir::Any &&
           host_world::msg_class(75) == host_world::MsgClass::Session && dispatch_route(75, true) == Route::History &&
           dispatch_route(75, false) == Route::History);
+    CHECK(MSG_UFO_LEAD == 78 && std::string(msg_info(78).name) == "UFO_LEAD" && msg_info(78).family == Family::space &&
+          msg_dir(78) == MsgDir::Any && host_world::msg_class(78) == host_world::MsgClass::Module &&
+          dispatch_route(78, true) == Route::Squadron && dispatch_route(78, false) == Route::Squadron);
     for (int t : added_types)
         for (auto& g : golden0714::kTypes)
             CHECK(g.id != t);
