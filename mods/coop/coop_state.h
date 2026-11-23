@@ -129,6 +129,13 @@ struct Remote {
     uint64_t world_sent = 0; // host: (mode << 32 | save crc) last sent to this guest
     double other_mode_since = -1; // host: since when the guest plays another mode
     bool joined_phase = false; // host: the guest played the host's mode after the last world send
+    // host, BUG-1435: the guest has yet to load the world sent last (world::share_serial changed): its pass through the
+    // galaxy menu for that load is no "left to the menu", and its frames in the old copy before it are no "joined the
+    // phase". load_acked: when the share was no longer in flight (0: still is); load_left: when the guest left the
+    // host's mode after that (0: not yet); load_played: it played the host's mode since the share
+    uint32_t load_serial = 0;
+    bool load_wait = false, load_played = false;
+    double load_acked = 0, load_left = 0;
     bool needs_world = false;  // host: joined while the host was not playing; send the world later
     double cine_wait_since = 0; // host: since when this guest's share waits for a cinematic (BUG-0232)
     // host, BUG-0508: after the host's editor this guest was in the same world and
@@ -585,6 +592,7 @@ extern std::atomic<int> g_slow_dns_ms;
 extern std::string g_space_key;
 extern uint32_t g_evo_keys_set;
 extern uint32_t g_share_retries;
+extern unsigned g_load_waits, g_load_wait_timeouts; // BUG-1435 (session_glue.cpp)
 extern uint32_t g_space_load_shares;
 extern uint8_t g_give_pick;
 extern unsigned g_evo_fallback;

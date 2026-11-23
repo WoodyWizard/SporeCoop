@@ -184,6 +184,11 @@ int c_status(void*, int, const char* const*, SkOut* out)
         // the guest reloads soon, also when it is together now (a rejoin into the world it had)
         if (g_sess.role() == net::Role::Host)
             SAY("world_due %u %d\n", id, r.needs_world || world::share_in_flight(id) ? 1 : 0);
+        // tests (BUG-1435): this guest has yet to load the world sent last; the waits so far (ended by its load / by a
+        // timeout), the shares asked for it
+        if (g_sess.role() == net::Role::Host)
+            SAY("load_wait %u %d loads=%u timeouts=%u shares=%u\n", id, r.load_wait ? 1 : 0, g_load_waits,
+                g_load_wait_timeouts, world::share_serial(id));
     }
     return 0;
 }

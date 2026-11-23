@@ -218,7 +218,7 @@ void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)
     M = mod;
     g_feed = std::move(feed);
     H->command_add(M, "coop.worldfix",
-                   "coop.worldfix [<name> 0|1 | queue <id>... | failnext | retry <ms> | landsave <ms>|-1] - world sharing fix switches (tests: 0 = the old behaviour); "
+                   "coop.worldfix [<name> 0|1 | queue <id>... | failnext | retry <ms> | landsave <ms>|-1 | menusettle <s>] - world sharing fix switches (tests: 0 = the old behaviour); "
                    "queue: shares for these players in one frame, each with a save",
                    c_worldfix, nullptr, SK_CMD_MAIN_THREAD);
     savestrip::set_write_watch(save_write_watch);
@@ -685,6 +685,12 @@ static std::vector<PendingShare> g_pending;
 extern bool g_share_reset_fix;
 
 static std::map<uint8_t, double> g_share_asked; // BUG-0754: host time a share to the peer was asked for
+static std::map<uint8_t, uint32_t> g_share_serial; // BUG-1435: shares asked for the peer (any caller)
+uint32_t share_serial(uint8_t peer)
+{
+    auto it = g_share_serial.find(peer);
+    return it == g_share_serial.end() ? 0 : it->second;
+}
 double since_share(uint8_t peer)
 {
     auto it = g_share_asked.find(peer);
@@ -708,6 +714,7 @@ bool share_in_flight(uint8_t peer)
 bool share_with(uint8_t peer, std::string& err, bool save_first, uint32_t tag)
 {
     g_share_asked[peer] = H->time_seconds(); // BUG-0754
+    g_share_serial[peer]++;                  // BUG-1435
     if (save_first) {
         for (auto& p : g_pending)
             if (p.peer == peer && p.need_save) {
@@ -984,7 +991,10 @@ struct Deferred {
     double back_since = 0;
 };
 static Deferred g_deferred;
-static const double kMenuSettle = 3.0, kStageSettle = 3.0;
+static const double kStageSettle = 3.0;
+// the galaxy menu's settle before a queued load (s); tests (BUG-1435, `coop.worldfix menusettle <s>`): a slow PC's
+// menu pass (the players' report took 5.2-5.4 s from the stage to the load, the lab ~4 s)
+static double g_menu_settle = 3.0;
 static double g_menu_since; // when the galaxy menu came up (0: not in it, or a load started from it)
 static double g_stage_since;    // when the current stage mode began (0: not in a stage)
 static double g_playable_since; // when the local player got something to control in it (0: not yet)
@@ -1435,7 +1445,7 @@ static void via_menu_tick()
         // (terrain spheres that draw their textures in render jobs over many frames): a load from
         // inside Present disposed spheres whose jobs the render frame had already taken, and they
         // were drawn without terrain (docs/re/space.md 8.3). Let the menu settle first.
-        if (!other && now - g_menu_since < kMenuSettle)
+        if (!other && now - g_menu_since < g_menu_settle)
             return;
         // switching the save folder and starting the load reads files and builds UI: outside the
         // frame (this tick runs inside Present)
@@ -1934,7 +1944,7 @@ static bool in_stage(uint32_t m)
 // from Cell the cell pool was freed under our adapter, and a space save loaded from Cell kept the
 // old CurrentGameName ("Karke.spo"), so the next save wrote the wrong planet. The game's quit
 // message 0x4715068 (handled by 0xB63610) saves the game and leaves any stage for the galaxy menu
-// (in space: the planet first); the save is loaded once the menu is up (~1 s + kMenuSettle). A
+// (in space: the planet first); the save is loaded once the menu is up (~1 s + g_menu_settle). A
 // request that comes while the game is in the menu waits for the settle too and also loads outside
 // the frame: a world received in the menu right after it opened was loaded at once from inside
 // Present and the menu's planet faulted (docs/re/space.md 8.3).
@@ -2271,6 +2281,11 @@ static int c_worldfix(void*, int argc, const char* const* argv, SkOut* out)
         g_land_after_ms = atoi(argv[2]);
         g_land_at = 0;
         H->out_printf(out, "land %d ms after the next share save\n", g_land_after_ms);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "menusettle")) { // tests (BUG-1435): the galaxy menu's settle before a queued load, s
+        g_menu_settle = atof(argv[2]);
+        H->out_printf(out, "galaxy menu settle before a load %.1f s\n", g_menu_settle);
         return 0;
     }
     if (argc > 2 && !strcmp(argv[1], "autoload")) { // tests: auto_load_world of coop.ini
