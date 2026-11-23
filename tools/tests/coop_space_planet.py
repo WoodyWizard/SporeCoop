@@ -44,7 +44,10 @@ RUN_MIN = 2
 RUN_ROUNDS = 60
 RUN_SAMPLES = 40  # fewer runner samples: INCONCLUSIVE
 RUN_OFF = 2.5  # m: a runner's copy this far from the host's citizen at the same moment is behind
-RUN_SHARE = 0.10  # at most this share of the runner samples behind (provisional: the lab measurement of BUG-1404 sets it)
+# at most this share of the runner samples behind. BUG-1454: the fix-on arm measured 0 / 1.4 / 0 / 0 % over 2.5 m (lab
+# 20261123-111347, 211-443 samples, p90 0.90-1.28 m): 5 % keeps a 3x margin; the fix-off arm (not measured yet) must
+# exceed it for the twin space_planet_runners_lead_off to stand
+RUN_SHARE = 0.05
 # BUG-1454: a console read is answered within a frame or two (~20 ms): back to back, the two host reads of a round were
 # under 0.05 s apart (60 rounds in ~17 s, lab 20261123-023643) and every round was dropped: 0 samples in 4 runs.
 # The reads of a round are RUN_GAP s apart (a runner moves ~1.5 m between the host reads: 0.1 m print steps are 0.3 m/s)
@@ -216,6 +219,9 @@ def case_runners(host, guest, ck):
     if s:
         print(f'  runner samples {len(s)}: p50 {s[len(s) // 2]:.2f} m, p90 {s[int(len(s) * 0.9)]:.2f} m, max {s[-1]:.2f} m; '
               f'{behind} over {RUN_OFF} m', flush=True)
+        # BUG-1454: the share over each limit, for both arms of the measuring run (the fix-off arm sets RUN_OFF/RUN_SHARE)
+        print('  runner samples over: ' + ', '.join(f'{lim} m {sum(1 for d in s if d > lim) / len(s):.1%}'
+                                                    for lim in (1.0, 1.5, 2.0, 2.5, 3.0)), flush=True)
     print('  ', [ln for ln in guest.call('coop.wobj')['out'].splitlines() if 'space_citizen' in ln or 'space citizens' in ln])
     if len(s) < RUN_SAMPLES:
         return f'{len(s)} runner samples (at least {RUN_SAMPLES}): no host citizens ran near the guest'
