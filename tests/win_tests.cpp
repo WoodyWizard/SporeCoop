@@ -1032,6 +1032,82 @@ static void test_install_bat()
     CHECK(get(bin + L"\\mods\\sporekit\\symbols\\gog2024_dc04aee5.sym") == "sym 2");
 }
 
+// install.bat's exit code (-1: it did not run or end)
+static int run_bat_code(const std::wstring& bin, const wchar_t* name = L"install.bat")
+{
+    std::wstring cmd = std::wstring(L"cmd.exe /c ") + name + L" < NUL > NUL";
+    STARTUPINFOW si{sizeof si};
+    PROCESS_INFORMATION pi{};
+    if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, bin.c_str(), &si, &pi))
+        return -1;
+    DWORD code = (DWORD)-1;
+    if (WaitForSingleObject(pi.hProcess, 60000) == WAIT_OBJECT_0)
+        GetExitCodeProcess(pi.hProcess, &code);
+    else
+        TerminateProcess(pi.hProcess, 1);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return (int)code;
+}
+
+// the zip's SporeCoop folder next to a fake game (as tools/package.sh stages it)
+static void stage_zip(const std::wstring& bin, const char* v)
+{
+    std::wstring sc = bin + L"\\SporeCoop";
+    CHECK(CopyFileW(g_bat.c_str(), (bin + L"\\install.bat").c_str(), FALSE));
+    put(sc + L"\\steam_api.sporekit.dll", std::string("\r\nsporekit-loader (SporeCoop)\r\n ") + v);
+    put(sc + L"\\sporekit.dll", std::string("sporekit ") + v);
+    put(sc + L"\\SporeCoop.package", std::string("package ") + v);
+    put(sc + L"\\mods\\coop.dll", std::string("coop ") + v);
+    put(sc + L"\\mods\\coop.ini", "[coop]\r\nname=Player\r\n");
+    if (!g_excl.empty())
+        CHECK(CopyFileW(g_excl.c_str(), (sc + L"\\ini.exclude").c_str(), FALSE));
+}
+
+// BUG-9310 (KIT-25 of the 0.7.15.5 audit): install.bat copied steam_api.dll to steam_api_orig.dll whenever that
+// backup was missing, also when steam_api.dll was SporeCoop's loader already (a reinstall after the backup was lost to
+// an antivirus or a cleanup): the loader then loaded itself and the game did not start. And every copy's result was
+// hidden: "SporeCoop installed." (exit 0) after a copy that failed (a read-only or locked file, Program Files).
+static void test_install_bat_backup()
+{
+    printf("install.bat keeps the game's steam_api.dll, a failed copy is said (BUG-9310)\n");
+    if (g_bat.empty()) {
+        printf("  (skipped: no --bat)\n");
+        return;
+    }
+    // 1. installed, then the backup lost: steam_api.dll is the loader; nothing may be copied over the backup's place
+    std::wstring g = fake_game(L"kit25a"), bin = g + L"\\SporebinEP1";
+    stage_zip(bin, "1");
+    CHECK(run_bat_code(bin) == 0);
+    CHECK(get(bin + L"\\steam_api_orig.dll") == "the game's steam api");
+    DeleteFileW((bin + L"\\steam_api_orig.dll").c_str());
+    int code = run_bat_code(bin);
+    std::string orig = exists(bin + L"\\steam_api_orig.dll") ? get(bin + L"\\steam_api_orig.dll") : "(none)";
+    printf("  1. backup lost, reinstall: exit %d, steam_api_orig.dll '%s'\n", code, orig.substr(0, 40).c_str());
+    CHECK(code == 1);
+    CHECK(orig.find("sporekit-loader") == std::string::npos);
+    // 2. a backup that is the loader (left by such a reinstall) and the game's file back in steam_api.dll (Steam's
+    //    file check): the game's file becomes the backup, the loader goes in
+    g = fake_game(L"kit25b"), bin = g + L"\\SporebinEP1";
+    stage_zip(bin, "2");
+    put(bin + L"\\steam_api_orig.dll", "\r\nsporekit-loader (SporeCoop)\r\n 1");
+    code = run_bat_code(bin);
+    orig = get(bin + L"\\steam_api_orig.dll");
+    printf("  2. a loader as the backup, the game's file back: exit %d, steam_api_orig.dll '%s'\n", code,
+           orig.substr(0, 40).c_str());
+    CHECK(code == 0);
+    CHECK(orig == "the game's steam api");
+    CHECK(get(bin + L"\\steam_api.dll").find("sporekit-loader") != std::string::npos);
+    // 3. a copy fails (steam_api.dll read-only, as a file the player may not write): no "installed", exit 1
+    g = fake_game(L"kit25c"), bin = g + L"\\SporebinEP1";
+    stage_zip(bin, "3");
+    SetFileAttributesW((bin + L"\\steam_api.dll").c_str(), FILE_ATTRIBUTE_READONLY);
+    code = run_bat_code(bin);
+    printf("  3. steam_api.dll read-only: exit %d, steam_api.dll '%s'\n", code, get(bin + L"\\steam_api.dll").substr(0, 30).c_str());
+    CHECK(code == 1);
+    SetFileAttributesW((bin + L"\\steam_api.dll").c_str(), FILE_ATTRIBUTE_NORMAL);
+}
+
 // ---------------- BUG-0391: a Spore folder without Galactic Adventures ----------------
 
 // Steam's base Spore: SporeBin, Data, Support, ... and no SporebinEP1 (the Galactic Adventures DLC)
@@ -1917,6 +1993,7 @@ int main(int argc, char** argv)
     test_setup_packs();
     test_setup_close();
     test_install_bat();
+    test_install_bat_backup();
     test_uninstall();
     test_uninstall_bat();
     test_ga_folder();

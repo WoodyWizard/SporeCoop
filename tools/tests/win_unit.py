@@ -17,6 +17,8 @@ For install.bat, --old runs the install.bat of 7874654 (before BUG-0080, from to
 BUG-0392; --old-gadir: before the Steam Galactic Adventures folder "Spore 24720" was known (BUG-0391).
 A Steam folder in ~/.local/share/Steam is read (never written) to check the vdf / acf parsing. --setup runs the setup tests against another SporeCoopSetup.exe (a path under the repository:
 Bottles does not see /tmp), for example one built from main.
+--old-kit25 (SPORE_WIN_UNIT_ARGS=--old-kit25): the install.bat of before BUG-9310 (a lost backup replaced by the
+loader, failed copies hidden): test_install_bat_backup must fail.
 --old-uninstall / --old-closewait: the uninstall before BUG-0851 (also the uninstall.bat of 572c8e68) / the
 old final close of test_setup_close (BUG-0853). SPORE_WIN_UNIT_PREFIX=<folder under the repository> runs
 win_tests.exe with a Bottles runner's wine (SPORE_WINE=<binary>) in that private prefix: no lane, no game.
@@ -34,15 +36,19 @@ import lane  # noqa: E402
 
 OLD_BAT_COMMIT = '7874654'  # the last tools/package.sh that wrote install.bat itself (BUG-0080)
 OLD_UBAT_COMMIT = '572c8e68'  # uninstall.bat before BUG-0851
+OLD_KIT25_COMMIT = '5376d388'  # install.bat before BUG-9310 (rel/0.7.16: no loader check, copy errors hidden)
 
 
 def crlf(text):
     return re.sub(r'\r*\n', '\r\n', text)
 
 
-def stage_bat(old, old_ubat=None):
+def stage_bat(old, old_ubat=None, old_kit25=False):
     """install.bat (and ini.exclude) to test, with Windows line endings as tools/package.sh ships them"""
-    if old:
+    if old_kit25 and not old:  # BUG-9310 alone: the installer/install.bat of before the fix
+        bat = subprocess.run(['git', '-C', ROOT, 'show', f'{OLD_KIT25_COMMIT}:installer/install.bat'],
+                             capture_output=True, text=True, check=True).stdout
+    elif old:
         sh_text = subprocess.run(['git', '-C', ROOT, 'show', f'{OLD_BAT_COMMIT}:tools/package.sh'],
                                  capture_output=True, text=True, check=True).stdout
         bat = sh_text.split("cat > \"$STAGE/install.bat\" <<'EOF'\n", 1)[1].split('\nEOF\n', 1)[0] + '\n'
@@ -91,7 +97,7 @@ def main():
         args += ['--steam', win(steam)]
     if '--setup' in sys.argv[1:-1]:  # another SporeCoopSetup.exe (e.g. one built from main: its tests must fail)
         args += ['--setup', win(os.path.abspath(sys.argv[sys.argv.index('--setup') + 1]))]
-    bat, excl = stage_bat('--old' in args, '--old' in args or '--old-uninstall' in args)
+    bat, excl = stage_bat('--old' in args, '--old' in args or '--old-uninstall' in args, '--old-kit25' in args)
     args += ['--bat', win(bat), '--exclude', win(excl), '--ubat', win(os.path.join(ROOT, 'build', 'uninstall_test.bat'))]
     w = 'Z:' + exe.replace('/', '\\')
     wo = 'Z:' + out.replace('/', '\\')
