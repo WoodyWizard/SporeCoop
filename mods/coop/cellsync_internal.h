@@ -384,6 +384,7 @@ void effect(uint8_t* c, const char* name);
 uint8_t* puppet_cell(int id);
 bool go_down(uint8_t* c);
 bool res_types(uint8_t* c, int* cell_type, int* ai_type);
+bool ref_types(void* ref, int* cell_type, int* ai_type);
 int ai_type(uint8_t* c);
 void hurt_avatar(int dmg, int type);
 std::string away_status();
@@ -591,6 +592,8 @@ void kin_init();
 // BUG-1507 (cellsync.cpp): the switch cell.elsewhere_spend; guest: we do not play the host's Cell world now
 extern bool g_fix_elsewhere_spend;
 bool not_host_world();
+void spend_fake(int n); // tests (BUG-1507)
+std::string tiles_shadow_status(); // tests (BUG-1510)
 std::string audit_status(); // the counters of the Cell audit fixes of 0.7.17 (coop.pool, cellsync_combat.cpp)
 void kin_pop_enter();
 void kin_pop_leave();

@@ -245,8 +245,7 @@ COOP_FIX("cell.breaking_dying", "BUG-1511", g_fix_breaking_dying,
 unsigned g_breaking_refused; // tests (BUG-1511)
 static bool breaking(uint8_t* c)
 {
-    int st = c ? F<int>(c, 0x18C) : 0; // 7 / 8 / 9: the game's break / swallow states (h_Break)
-    return g_fix_breaking_dying && (st == 7 || st == 8 || st == 9);
+    return g_fix_breaking_dying && c && cell_logic::breaking_state(F<int>(c, 0x18C)); // (h_Break's states)
 }
 static bool g_fix_kill_refused = true;
 COOP_FIX("cell.kill_refused", "BUG-0821", g_fix_kill_refused, "cell: a guest's kill the host refused or the game spared does not block that creature's next kills for 10 s");
@@ -739,9 +738,10 @@ static void downed_tick(uint8_t* a, double now, double dt)
 // the resource's cell type (+0xB4: 2 solid, 3 plant, 5 poison, ...) and ai.type (docs/re/cell.md 1:
 // the first int of the AI block chosen by difficulty, as IsDamageable 0xE52940 picks it); false when
 // the resource data cannot be read. One reader for kind_of, ai_type and the guest-bite gate.
-bool res_types(uint8_t* c, int* cell_type, int* ai_type)
+bool res_types(uint8_t* c, int* cell_type, int* ai_type) { return ref_types(c ? F<void*>(c, kRes) : nullptr, cell_type, ai_type); }
+// the same for a resource reference (+0x108 of a cell; CreateCellObject's res argument)
+bool ref_types(void* ref, int* cell_type, int* ai_type)
 {
-    void* ref = c ? F<void*>(c, kRes) : nullptr;
     if (!ref || !a_GetData)
         return false;
     void* holder = nullptr;
@@ -1221,7 +1221,7 @@ static void spend_tick(bool cell, bool was_in_cell)
             const uint32_t m = game::mode_id(), w = modes::current_world();
             const bool left = m != modes::kCell && m != modes::kEditor;
             for (auto it = g_spend_owed.begin(); it != g_spend_owed.end();) {
-                if (left || (cell && it->second.world && w && it->second.world != w)) {
+                if (cell_logic::owed_drop(true, !left, cell, it->second.world, w)) {
                     H->log(M, SK_INFO, "cell: player %d's own editor spend of %d DNA dropped: %s (BUG-1507)", it->first,
                            it->second.spent, left ? "the Cell stage was left" : "another world");
                     g_owed_dropped++;
@@ -1291,6 +1291,15 @@ void spend_measure()
     C.sess->send_reliable_to(0, net::MSG_CELL_FOOD, w);
     g_spend_pending += d;
     g_spends_sent++;
+}
+
+// tests (BUG-1507, `coop.pool spend fake <n>`): as if our own cell editor had just spent n DNA (measured next tick)
+void spend_fake(int n)
+{
+    if (uint8_t* s = S()) {
+        g_own_ed_due = true;
+        g_own_ed_before = F<int32_t>(s, 0x2C) - n;
+    }
 }
 
 // guest: the host's count to show here (the host's own plus our spends it has not taken yet)

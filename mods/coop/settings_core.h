@@ -40,6 +40,7 @@ enum Id : int {
     kLateJoin,       // a player may join a session whose host plays its world already
     kCellKnockout,   // Cell: a lethal hit next to a partner knocks out (revive within 10 s) instead of killing
     kCellRespawn,    // Cell: nobody revived the knocked-out cell in 10 s: it respawns next to the partner, small
+    kLineageCells,   // Cell: the players' old cells as wild species (lineage_cells.h, BUG-1477, PR #211); off by default
     kSwitchVote,     // Cell -> Creature: the host's switch waits for a vote of everybody (BUG-0315)
     kCreatureMode,   // Cell, Creature: 0 every player's own creature, 1 everybody plays the host's (F5)
     kEditorNow,      // Cell, Creature: the host's evolution editor opens at once, guests get an offer in Creature (BUG-0516, BUG-1263)
@@ -83,6 +84,9 @@ struct Def {
 // civ.own_money's default (BUG-1468): provisional until the owner answers question 1 of docs/plan-0.7.17.md; the one
 // place to flip it (tests/validate_tests.cpp reads it from here)
 constexpr int kCivOwnMoneyDefault = 0;
+// cell.lineage_cells's default (BUG-1477): off (docs/plan-0.7.17.md item 9, the owner's decision of 2026-11-20); the one
+// place to flip it
+constexpr int kLineageCellsDefault = 0;
 
 inline const Def kDefs[kCount] = {
     {"cell.regen", "Cell", "Regeneration near a partner",
@@ -130,6 +134,9 @@ inline const Def kDefs[kCount] = {
     {"cell.respawn_small", "Cell", "Respawn next to the partner",
      "on: a knocked-out cell nobody revived respawns next to the partner as a small cell; off: it dies as in a solo game",
      1, 0, 1, Scope::Session, nullptr, false},
+    {"cell.lineage_cells", "Cell", "Old cells as wild species",
+     "on: about one in six wild creatures of a fitting diet takes the look of a player's old cell (the host's own, and a guest's only when it ticks its box in the co-op window); off: only the game's own species",
+     kLineageCellsDefault, 0, 1, Scope::Session, nullptr, false},
     {"core.switch_vote", "Cell", "Vote before the Creature stage",
      "on: the host's switch from Cell to Creature waits for a vote of everybody; off: the stage starts at once",
      1, 0, 1, Scope::Session, nullptr, false},

@@ -1,4 +1,5 @@
 #include "creations_internal.h"
+#include "lineage_cells.h"
 
 namespace creations {
 
@@ -6,7 +7,7 @@ using skg::cdecl_call;
 using skg::thiscall;
 
 const SkHost* H;
-static SkMod* M;
+SkMod* M;
 Ctx C;
 
 const KindInfo kInfo[kKinds] = {
@@ -48,6 +49,7 @@ static std::vector<Option> g_opts[kKinds];
 static dbpf::Package g_es;  // My Creations, read every few seconds
 static bool g_es_ok;
 static double g_opts_read = -100;
+bool g_test_hide_own[kKinds]; // tests (BUG-1476, `coop.creations hideown <kind> on|off`): My Creations of a kind read as empty
 Key g_choice[kKinds];  // explicit choice ({} = default)
 // BUG-0344: on the host a creature or cell choice holds only in the stage world it was made in (a
 // choice from choices.ini of another world swapped the host's just evolved species for an old
@@ -381,6 +383,8 @@ static void refresh_options(double now)
         // creation ids are handed out in order: the highest is the newest
         std::sort(g_opts[k].begin(), g_opts[k].end(),
                   [](const Option& a, const Option& b) { return a.key.instance > b.key.instance; });
+        if (g_test_hide_own[k])
+            g_opts[k].clear(); // tests: as an empty test profile
     }
 }
 
@@ -1279,9 +1283,65 @@ static bool choice_here(int k)
 
 static bool host_world_key(Kind k, uint32_t inst); // a creation of the host's world (BUG-0278)
 bool records_from_game(const Key& k, std::vector<dbpf::Record>& out); // its records, any registered package
+
+// BUG-1476 (#210 by IltonBJSilva, its small part; docs/re/cell.md#cell-diet-premades): a guest whose My Creations has
+// no cell saw "My cell: the host's species" with no arrows (BUG-0598's hint), so it could only play the host's cell.
+// Now such a guest's "My cell" row offers the three premade player cells of the game's own packages, one per diet: the
+// herbivore and carnivore cells of the Cell wizard's diet cards and the game's cell with both mouths (the wizard has no
+// omnivore card). Every game has them: the bundle goes without records (as any premade), the partners build the same
+// model. Off (`coop.fix cell.diet_premades off`): no choice without an own cell (0.7.16.1).
+static bool g_diet_premades_fix = true;
+COOP_FIX("cell.diet_premades", "BUG-1476", g_diet_premades_fix,
+         "cell: a guest without cells of its own picks one of three premade cells (herbivore, carnivore, omnivore) in My cell");
+struct DietCell {
+    uint32_t instance;
+    const char* name;
+};
+constexpr DietCell kDietCells[3] = {{0xE219E5D2u, "Herbivore (game cell)"},
+                                    {0x252A132Fu, "Carnivore (game cell)"},
+                                    {0x0C176D89u, "Omnivore (game cell)"}};
+static bool guest_role() { return C.sess && C.sess->role() == net::Role::Client; }
+// the premades a guest without an own cell is offered ({} otherwise; only those this game has)
+static std::vector<Option> diet_premades(Kind k)
+{
+    std::vector<Option> v;
+    if (!g_diet_premades_fix || k != kCell || !guest_role() || !g_opts[kCell].empty())
+        return v;
+    static bool have[3]; // (the game's packages stay mounted: a key found once is kept; not found yet: asked again)
+    for (int i = 0; i < 3; i++) {
+        Option o{{kDietCells[i].instance, kInfo[kCell].type, kInfo[kCell].group}, kDietCells[i].name};
+        if (!have[i])
+            have[i] = key_exists(o.key);
+        if (have[i])
+            v.push_back(o);
+    }
+    return v;
+}
+static const char* diet_premade_name(const Key& k)
+{
+    if (k.type != kInfo[kCell].type || k.group != kInfo[kCell].group)
+        return nullptr;
+    for (auto& d : kDietCells)
+        if (d.instance == k.instance)
+            return d.name;
+    return nullptr;
+}
+bool premades_listed(Kind k) { return !diet_premades(k).empty(); }
+void test_hide_own(int k, bool on)
+{
+    if (k < 0 || k >= kKinds)
+        return;
+    g_test_hide_own[k] = on;
+    g_opts_read = -100; // read again now
+    refresh_options(H->time_seconds());
+    g_last_check = 0;
+}
 static bool own_option(Kind k, const Key& key)
 {
     for (auto& o : g_opts[k])
+        if (o.key == key)
+            return true;
+    for (auto& o : diet_premades(k)) // BUG-1476: a premade picked in My cell is the player's own choice
         if (o.key == key)
             return true;
     return false;
@@ -1326,6 +1386,8 @@ Option mine(Kind k)
         for (auto& o : g_opts[k])
             if (o.key == g_choice[k])
                 return o;
+        if (const char* pn = g_diet_premades_fix ? diet_premade_name(g_choice[k]) : nullptr)
+            return {g_choice[k], pn}; // BUG-1476
         return {g_choice[k], g_choice[k].instance ? hex(g_choice[k].instance) : ""};
     }
     auto named = [&](const Key& a) -> Option {
@@ -3131,6 +3193,7 @@ void tick(double now)
         return;
     late_tick(now); // BUG-1289
     own_world_tick();
+    lineage_cells::tick(now); // BUG-1477
     if (now - g_last_check > 2.0) {
         g_last_check = now;
         share_own(now);
@@ -3169,8 +3232,12 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     if ((kind == kWorldSpecies || kind == kOwnSpecies || kind == kOwnDesign) && (is_host() || from != 0))
         return;
+    if (r.ok() && kind == kKindLineageCell && total == 0) { // BUG-1477: a player's old cell(s) withdrawn
+        lineage_cells::on_withdraw(owner, from, id);
+        return;
+    }
     if (!r.ok() ||
-        (kind >= kKinds && kind != kWorldSpecies && kind != kOwnSpecies && kind != kOwnDesign) ||
+        (kind >= kKinds && kind != kWorldSpecies && kind != kOwnSpecies && kind != kOwnDesign && kind != kKindLineageCell) ||
         total > (8u << 20) ||
         (uint64_t)off + n > total)
         return;
@@ -3202,6 +3269,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         apply_own_design(owner, data);
         return;
     }
+    if (kind == kKindLineageCell) { // BUG-1477: a player's old cell (lineage_cells.cpp registers, keeps and relays it)
+        lineage_cells::on_bundle(owner, from, id, std::move(data));
+        return;
+    }
     if (is_host()) { // keep it for players joining later and pass it on
         g_store[{owner, kind}] = data;
         for (auto& p : C.sess->players())
@@ -3217,6 +3288,7 @@ void on_player_join(uint8_t id)
         return;
     g_own_sent.erase(id); // a new guest under this id: it has none of our creations yet
     g_design_sent.erase(id);
+    lineage_cells::on_player_join(id); // BUG-1477
     for (auto& [ok, data] : g_store)
         if (ok.first != id)
             send_bundle(id, ok.first, (Kind)ok.second, fnv(data.data(), data.size()), data);
@@ -3227,6 +3299,8 @@ COOP_FIX("core.creations_leave", "BUG-0076", g_leave_fix, "creations: a player's
 
 void on_player_leave(uint8_t id)
 {
+    if (id != 0)
+        lineage_cells::on_player_leave(id); // BUG-1477: its old cells go from the host's pool
     if (!g_leave_fix || id == 0)
         return; // (the host's leave ends the session: on_session_end)
     auto owned = [id](auto& m) {
@@ -3243,6 +3317,7 @@ void on_player_leave(uint8_t id)
 
 void on_session_end()
 {
+    lineage_cells::on_session_end(); // BUG-1477
     g_own_told.clear(); // BUG-0345: the notice again in the next session
     // the host's creations registered under their original keys (priority 2000, above the guest's
     // own My Creations): after the session a guest's own creation of the same id (ids are per
@@ -3312,6 +3387,8 @@ void* player_species(uint8_t player)
 std::vector<Option> options(Kind k)
 {
     refresh_options(H->time_seconds());
+    if (g_opts[k].empty()) // BUG-1476: a guest without an own cell: the three premades
+        return diet_premades(k);
     return g_opts[k];
 }
 

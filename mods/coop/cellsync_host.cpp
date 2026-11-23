@@ -203,8 +203,7 @@ static void write_cell(net::Writer& w, uint8_t* c, uint32_t idx, int dest)
     if (g_fix_own_cloud && F<uint8_t>(c, 0x110) && dest > 0)
         if (auto pc = g_partner_clouds.find(idx); pc != g_partner_clouds.end())
             own = pc->second == (uint8_t)dest;
-    w.u8((uint8_t)((F<uint8_t>(c, kDying) ? 1 : 0) | (F<uint8_t>(c, kDead) ? 2 : 0) | (F<uint8_t>(c, 0x110) ? 4 : 0) |
-                   (own ? 8 : 0)));
+    w.u8(cell_logic::state_flags(F<uint8_t>(c, kDying), F<uint8_t>(c, kDead), F<uint8_t>(c, 0x110), own));
 }
 
 static void send_state(int dest, const std::vector<SendCell>& cells)

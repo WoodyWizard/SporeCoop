@@ -114,8 +114,9 @@ bool have_creepy_cute();
 std::string world_missing_parts();
 std::vector<uint32_t> model_parts(const std::vector<uint8_t>& bem); // part ids a creature model names
 
-// My Creations of this kind, newest first
+// My Creations of this kind, newest first (BUG-1476: a guest without an own cell gets the three premade diet cells)
 std::vector<Option> options(Kind k);
+bool premades_listed(Kind k); // BUG-1476: options(k) are the premades (the co-op window says "game cells")
 Option mine(Kind k);
 bool one_creature(); // F5: creature.mode host (every guest plays the host's cell and creature)
 void choose(Kind k, const Key& key); // {} = keep the world's own

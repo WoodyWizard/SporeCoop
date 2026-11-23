@@ -173,12 +173,10 @@ static bool tile_elsewhere(int32_t key, TileList* except)
         for (int32_t* e = l->begin; e < l->end; e += 2) {
             if (e[0] != key || g_starved.count((uint32_t)e[1]))
                 continue;
-            if (g_shadow_tiles.count((uint32_t)e[1])) {
-                g_shadow_counted++;
-                if (g_fix_shadow_empty)
-                    continue;
-            }
-            return true;
+            const bool shadow = g_shadow_tiles.count((uint32_t)e[1]) != 0;
+            g_shadow_counted += shadow;
+            if (cell_logic::tile_entry_populated(false, shadow, g_fix_shadow_empty))
+                return true;
         }
         return false;
     };
@@ -610,6 +608,15 @@ static void flush_lists_end()
 {
     g_flushing = false;
     g_flush_lists.clear();
+}
+
+// tests (BUG-1510, `coop.pool tilestat`): the shadows and starved tiles of our lists now
+std::string tiles_shadow_status()
+{
+    char b[120];
+    snprintf(b, sizeof b, "tilestat shadows=%u starved=%u shadow_counted=%u shadow_empty=%d\n", (unsigned)g_shadow_tiles.size(),
+             (unsigned)g_starved.size(), g_shadow_counted, (int)g_fix_shadow_empty);
+    return b;
 }
 
 void partner_tiles_reset(bool drain)

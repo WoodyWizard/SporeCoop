@@ -78,6 +78,7 @@
 #include "net/session.h"
 #include "net/utf8.h"
 #include "creation_props.h"
+#include "lineage_cells.h"
 #include "creations.h"
 #include "species_line.h"
 #include "history.h"
@@ -1938,8 +1939,7 @@ std::vector<std::pair<std::string, net::Vec3>> partners()
         const auto& s = r.buf.latest();
         if ((s.flags & net::PF_IN_WORLD) && !(s.flags & net::PF_DEAD) && same_place(s)) {
             net::Vec3 p = s.pos;
-            if (own > 0 && std::isfinite(own) && s.scale > 0 && std::isfinite(s.scale) && s.scale != own) {
-                const float k = s.scale / own;
+            if (const float k = own > 0 ? cell_logic::partner_scale_k(s.scale, own) : 1.f; k != 1.f) {
                 p = {p.x * k, p.y * k, p.z * k};
                 cellsync::g_partner_scaled++;
             }
@@ -2202,6 +2202,9 @@ void init_ui()
         own = (int)creations::options(k).size();
         return true;
     };
+    a.creation_premades = [] { return g_mode == modes::kCell && creations::premades_listed(creations::kCell); };
+    a.lineage_box = [] { return lineage_cells::box(); };       // BUG-1477
+    a.lineage_toggle = [] { lineage_cells::toggle(); };
     a.creation_cycle = [](int dir) {
         creations::Kind k = g_mode == modes::kCell ? creations::kCell : creations::kCreature;
         if (g_mode == modes::kSpace)

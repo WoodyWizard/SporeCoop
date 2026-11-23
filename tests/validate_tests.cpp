@@ -603,7 +603,11 @@ static void test_settings()
     CHECK(value_name(kCellRegen, 0).empty() && value_text(kCellRegen, 0) == "off");
     for (int i = kNameTags; i < kCount; i++) // every row of step 3 but friendly fire and the creature mode is on by default
         CHECK(kDefs[i].def == (i == kFriendlyFire || i == kCreatureMode ? 0 : i == kCivOwnMoney ? kCivOwnMoneyDefault
+                               : i == kLineageCells ? kLineageCellsDefault
                                : i == kPlayerLimit ? 4 : i == kAutosave ? 2 : 1));
+    // BUG-1477: cell.lineage_cells, a session switch of the Cell group, off by default (the owner's decision of 2026-11-20)
+    CHECK(std::string(kDefs[kLineageCells].key) == "cell.lineage_cells" && kDefs[kLineageCells].scope == Scope::Session &&
+          std::string(kDefs[kLineageCells].group) == "Cell" && kDefs[kLineageCells].max == 1 && kLineageCellsDefault == 0);
     // BUG-1468: civ.own_money, a session switch of the Civilization group, provisional default off (owner question 1)
     CHECK(std::string(kDefs[kCivOwnMoney].key) == "civ.own_money" && kDefs[kCivOwnMoney].scope == Scope::Session &&
           std::string(kDefs[kCivOwnMoney].group) == "Civilization" && kDefs[kCivOwnMoney].max == 1 && kCivOwnMoneyDefault == 0);

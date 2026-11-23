@@ -762,12 +762,12 @@ static bool host_reads_shrink()
 bool shrink_plant(uint8_t* c, int new_level)
 {
     const float* sizes = a_TileSizes ? (const float*)a_TileSizes : nullptr;
-    const int l = c ? F<int>(c, kLevel) : -1;
-    if (!sizes || !c || new_level != l - 1 || new_level < 0 || l > 16 || !(sizes[l] > 0.f)) {
+    float k = 1.f;
+    if (!c || !cell_logic::plant_shrink(F<int>(c, kLevel), new_level, sizes, k)) {
         g_shrinks_refused++;
         return false;
     }
-    F<float>(c, kTargetSize) *= sizes[new_level] / sizes[l];
+    F<float>(c, kTargetSize) *= k;
     F<int>(c, kLevel) = new_level;
     if (F<float>(c, 0x1F0) > 0.f)
         F<float>(c, 0x1F0) = 0.f;
