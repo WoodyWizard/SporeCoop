@@ -67,14 +67,16 @@
 // files re-locks it without another bump, `tools/msg_manifest.py lock --rebase <family> "<WP>: <what>, unreleased
 // <family> 1.x of 0.7.17"` (as feat/w54-shims did for creations 1.1 in 0.7.16). The ids 74-78 and the kinds 10-12 are
 // reserved in net/manifest.h kReservedMsgs and creations.h.
-FAMILY(session,   1, 1, 3, STAGE_ALWAYS, "session", "net/protocol.h")
+// WP-S1 of 0.7.17 (fix/w73-fleet, BUG-1288): space 1.3 adds MSG_UFO_LEAD 78 and wire/space_ufo.h (the NPC ships of a
+// place without the host, led by a guest the host names; a peer before space 1.3 is never sent it nor named).
+FAMILY(session,   1, 1, 3, STAGE_ALWAYS, "session", "net/protocol.h wire/history.h")
 FAMILY(world,     2, 1, 1, STAGE_ALWAYS, "world transfer", "")
 FAMILY(creature,  3, 1, 3, STAGE_CREATURE, "Creature", "")
 FAMILY(npc,       4, 1, 2, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
 FAMILY(cell,      5, 1, 2, STAGE_CELL, "Cell", "")
 FAMILY(tribe,     6, 1, 1, STAGE_TRIBE, "Tribe", "wire/tribe_anim.h")
 FAMILY(civ,       7, 1, 2, STAGE_CIV | STAGE_SPACE, "Civilization", "")
-FAMILY(space,     8, 1, 3, STAGE_SPACE, "Space", "wire/common.h wire/space_core.h wire/space_map.h wire/space_contracts.h wire/space_diplomacy.h wire/space_finale.h wire/space_rivalry.h wire/space_allies.h wire/space_trade.h wire/space_planets.h wire/space_badges.h wire/space_eco.h")
+FAMILY(space,     8, 1, 3, STAGE_SPACE, "Space", "wire/common.h wire/space_core.h wire/space_map.h wire/space_contracts.h wire/space_diplomacy.h wire/space_finale.h wire/space_rivalry.h wire/space_allies.h wire/space_trade.h wire/space_planets.h wire/space_badges.h wire/space_eco.h wire/space_ufo.h")
 FAMILY(shared,    9, 1, 0, STAGE_TRIBE | STAGE_CIV | STAGE_SPACE, "shared resources", "wire/common.h wire/shared_res.h")
 FAMILY(creations, 10, 1, 2, STAGE_ALWAYS, "creations", "species_line_core.h")
 
@@ -155,6 +157,8 @@ MSG(70, HOST_BUSY,    R,  Host,  Session,   HostBusy,    Client, session,   "the
 MSG(71, TRIBE_ANIM,   RU, Host,  Module,    Tribe,       Client, tribe,     "u8 kind (wire/tribe_anim.h), payload: the tribe members' animations, holds, air height, the theme and party music, the game-over and pause waits (MSG_NPC_ANIM's kinds 2-16, 20, 21 for a peer before tribe 1.1, BUG-1160)")
 MSG(72, CELL_MATE,    RU, Guest, HostWorld, Cell,        Host,   cell,      "u8 kind: 0 (unreliable, 5 Hz) the pose of the mate its mating call brought: u32 res instance, u32 key[3], u8 level, f32 size, vec3 pos, f32 vx, vy, quat, f32 world scale; 1 (reliable) it is gone (BUG-1246)")
 MSG(73, SPECIES_LINE, R,  Any,   Session,   SpeciesLine, Both,   creations, "u8 kind (species_line_core.h): a player's species line row, its stored row, a piece of a line creation (the host relays it; WP-0, BUG-1270)")
+MSG(75, PLAYER_HISTORY, R, Any,  Session,   History,     Both,   session,   "u8 kind (wire/history.h): 1 host -> guest its own stage history (cards, trait progress), 2 guest -> host its own game's Cell card (WP-H1, BUG-1470)")
+MSG(78, UFO_LEAD,     RU, Any,   Module,    Squadron,    Both,   space,     "u8 kind (wire/space_ufo.h): 0 a guest leader's ship state, 1 a follower's hit, 2 the leader's NPC hit on a follower, 3 the host's table of guest leaders per place; the NPC ships of a star system or planet without the host (the host relays; BUG-1288)")
 
 #undef MSG
 #undef FAMILY

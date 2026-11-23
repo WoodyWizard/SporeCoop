@@ -586,7 +586,7 @@ world on its own disk, next to its save:
 | Tribe owners of members (tribe.cpp) | world `tribe.owners` v1 (see tribe.cpp) | store.tribe_owners | BUG-1154 |
 | Own DNA per player (dna.cpp, dna_own.h) | `dna.own` v1 per player: u32 Creature world, f32 budget, u32 Cell world, i32 spent count | creature.own_dna_store | BUG-1291 |
 | Reserved for 0.7.17 (player_store.h kRecCivWallet, WP-M1): own Civ money | `civ.wallet` (layout: WP-M1) | (WP-M1) | BUG-1468 |
-| Reserved for 0.7.17 (player_store.h kRecHistory, WP-H1): own stage history | `history` (layout: WP-H1) | (WP-H1) | BUG-1470 |
+| Own stage history per player (history.cpp, history_logic.h; WP-H1) | `history` v1 per player: 5 x u32 the cards (cPlayer +0x10FC.. order), f32 social, f32 combat, u32 the own Cell card (32 bytes) | core.own_history | BUG-1470 |
 | Reserved for 0.7.17 (player_store.h kRecProgress, WP-P1 / P2, WP-R1's debt): own progress | `progress` (layout: WP-P1) | (WP-P1) | BUG-1469, BUG-1472 |
 
   The Space kept stores (space_kept.h) are keyed by the same stable key (`spaceext::kept_key` = `store::key_of`), so

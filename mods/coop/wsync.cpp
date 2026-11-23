@@ -15,6 +15,7 @@
 #include "civ.h"
 #include "designs.h"
 #include "fixes.h"
+#include "history.h"
 #include "own_world.h"
 #include "game.h"
 #include "modes.h"
@@ -253,7 +254,7 @@ static bool r_stages(Table& out)
 static int s_stages(const Table& want, bool apply)
 {
     void* p = cplayer();
-    if (want.empty() || !p)
+    if (want.empty() || !p || history::guest_owns()) // BUG-1470: this game plays its own player's stage history
         return 0;
     int n = 0;
     for (int i = 0; i < 5; i++) {
