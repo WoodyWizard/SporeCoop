@@ -408,6 +408,30 @@ static void test_rejoin_kept()
     CHECK(d.parse(big) && d.size() == KeptFile::kMax);
 }
 
+// NET-2 (BUG-1498): the slot's token counts only for the host and name it was written for
+static void test_rejoin_slot_pair()
+{
+    printf("rejoin slot pair (BUG-1498)\n");
+    using rejoin::SlotLine;
+    const uint64_t a = SlotLine::pair_of("127.0.0.1:47820", "Bob"), b = SlotLine::pair_of("10.0.0.5:47820", "Bob");
+    CHECK(a && b && a != b && a != SlotLine::pair_of("127.0.0.1:47820", "Carol"));
+    CHECK(a == SlotLine::pair_of("127.0.0.1:47820", "Bob")); // stable: a restart after a crash finds it
+    std::string t = SlotLine::text(0x1234, a);
+    CHECK(t.find("127.0.0.1") == std::string::npos && t.find("Bob") == std::string::npos);
+    SlotLine s;
+    CHECK(s.parse(t) && s.token == 0x1234 && s.pair == a);
+    CHECK(s.usable_for(a, true));  // the same host and name (a crash rejoin): the token goes again
+    CHECK(!s.usable_for(b, true)); // another host (a failed join, a crash then another host): not sent
+    CHECK(s.usable_for(b, false)); // net.rejoin_slot_pair off: as 0.7.16.1, any join
+    // a slot an older version wrote (the token alone): any join, as before
+    SlotLine o;
+    CHECK(o.parse("0000000000abcdef\n") && o.token == 0xabcdef && o.pair == 0 && o.usable_for(b, true));
+    // an empty or damaged slot: no token
+    SlotLine e;
+    CHECK(!e.parse("") && !e.parse("xyz") && !e.parse("0000000000000000 0000000000000001\n") && !e.usable_for(a, true));
+    CHECK(SlotLine::text(0, a).empty());
+}
+
 // BUG-1288 (WP-S1 of 0.7.17): the host's table of guest leaders and the roles (squadron_logic.h)
 static void test_fleet_leads()
 {
@@ -541,6 +565,7 @@ int main()
     test_kept_rivals();
     test_restore_window();
     test_rejoin_kept();
+    test_rejoin_slot_pair();
     test_fleet_leads();
     printf(g_fail ? "space_tests: %d FAILED\n" : "space_tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
