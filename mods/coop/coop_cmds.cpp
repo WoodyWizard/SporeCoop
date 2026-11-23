@@ -4,6 +4,7 @@
 // where they were). Commands that are the whole interface of a recorder (coop.track, coop.bodyrec) stay next to it.
 #include "civ_wallet.h"
 #include "coop_state.h"
+#include "own_progress.h"
 #include "cocoon.h"
 #include "net/compat.h"
 #include "net/kick.h"
@@ -1211,6 +1212,17 @@ void register_commands_core()
                    sreport::command, nullptr, MT);
     H->command_add(M, "coop.settings", "coop.settings [list] | get <key> | set <key> on|off|default|<n> | force <key> <v> (tests) | stored - the session settings (the host decides; session ones before the start)",
                    settings::command, nullptr, MT);
+    H->command_add(M, "coop.progress",
+                   "coop.progress [resync] - own progress (all.shared_dna 2, BUG-1469): this game's own DNA / bar / food, every player's bar, the host's records; resync: ask the host for our values again",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1 && !strcmp(argv[1], "resync"))
+                           own_progress::resync();
+                       SAY("%s", own_progress::status().c_str());
+                       SAY("  dna.cpp: totals_ignored=%u gains_kept=%u deeds_given=%u end_held=%u\n", g_own_totals_ignored,
+                           g_own_gains_kept, g_own_deeds_given, own_end_held_count());
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.find", "coop.find [colors | color <name|0..7> | project x y z | labels] - F2: the arrows to the partners of the last frame, the player colours, pick a colour",
                    pfind::command, nullptr, MT);
     H->command_add(M, "coop.live", "coop.live - tests (BUG-0426): the object list of this frame (game::listed: walks, hits, destroys seen)",
