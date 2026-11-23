@@ -1,14 +1,14 @@
 ---
 id: BUG-1447
 title: civ (coop_mode --fixture civ): the host's marker moved at the test's click and was put back at once by a pointer move (ptr_still reset at the click, host moved 0.0 m)
-status: open
+status: fixed
 kind: test
 stage: Civ
 reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w65-night
 commits: 8fff6369
 tests: tools/tests/coop_mode.py (civ, and the other click modes)
@@ -33,8 +33,10 @@ coop_mode.py: in Tribe / Civ the click is repeated (up to 3 times, printed) unti
 point; the checks (the host moved, the guest has it) are unchanged.
 
 ## Verification
-Open, waiting for the lab run: PASS `SPORE_DETECTOR=20 python3 tools/lab.py run civ --lane N --retry 0 --no-build`.
+Was waiting for the lab run: PASS `SPORE_DETECTOR=20 python3 tools/lab.py run civ --lane N --retry 0 --no-build`.
 no-fail-run: a test fix; FAIL before 20261122-194210 civ.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): civ PASS in 20261123-015558 and 20261123-023643. Closed.
 
 ## History
 - 2026-11-23: opened; fix/w65-night: the click again while the marker is back at its start.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

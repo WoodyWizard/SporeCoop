@@ -1,14 +1,14 @@
 ---
 id: BUG-1449
 title: tribe_held_item: the grip check counted the copy's hold while the host's chief held too (the mirrored hold, tribe.mirror_hold up to 8 s)
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w65-night
 commits: fb569645
 tests: tools/tests/coop_tribe_looks.py (tribe_held_item)
@@ -35,10 +35,12 @@ the host's member (owner 0), which catches BUG-1450. Nothing loosened: a copy th
 not still fails.
 
 ## Verification
-Open, waiting for the lab run: PASS `SPORE_DETECTOR=20 python3 tools/lab.py run tribe_held_item --lane N --retry 0
+Was waiting for the lab run: PASS `SPORE_DETECTOR=20 python3 tools/lab.py run tribe_held_item --lane N --retry 0
 --no-build` (it can FAIL on the new owner check while BUG-1450 is open: that is the mod bug); FAIL
 `SPORE_LAB_FIXOFF="tribe_held_item=tribe.held_item" SPORE_DETECTOR=20 python3 tools/lab.py run tribe_held_item --lane M
 --retry 0 --no-build` (the mirrors' hands empty). no-fail-run: a test fix; FAIL before 20261122-194210.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): tribe_held_item PASS in 20261123-023643; the twin SPORE_FIX_OFF=tribe.held_item FAIL in 20261123-021322 ("what the members hold has the host's size" differs); its FAIL in 20261123-015558 is the new owner check ("the host's chief #1 is still the host's member"), the mod bug BUG-1450. Closed.
 
 ## History
 - 2026-11-23: opened; fix/w65-night: the grip check compares with the host's hold, the leader's owner checked.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

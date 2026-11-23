@@ -49,6 +49,8 @@ cell_tiles / cell_away lines, so the next run names the destroyer. The check is 
 Lab (shows the cause): `SPORE_DETECTOR=20 python3 tools/lab.py run own_cell --repeat 4 --lane N --retry 0
 --no-build`: the line "the guest's own pool fell ... DestroyCell by
 {...}" names the caller (0xE7C3E6 = the tile cull). Open: waiting for that run, then the fix.
+- Still open (2026-11-23): 20261122-193406 own_cell#2 FAIL named the destroyer: "the guest's own pool fell 175 -> 1 at 30 s: DestroyCell by {'SporeApp.exe+0xA7C3E6': 174}" (the tile cull, 0xE7C3E6), cell_tiles all 0 on the guest at that moment; #1 and #3 PASS, also 20261122-194210 and 20261123-023643. Next: the fix (why the cull takes a guest's own pool).
 
 ## History
 - 2026-11-21: opened from the third final check of 0.7.16 (fix/w62-flake-cc); diagnostics added to the test.
+- 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.

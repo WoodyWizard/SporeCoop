@@ -46,9 +46,8 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
 - Lab: `coop.pool near <x> <y> <r>` (the cells drawn at a place) answers again; the slow-link test's cell list is now
   `coop.pool nearkeys` (BUG-1330). The Cell kin test parts the players again when the guest was knocked out alone in
   its new area and came back next to the host (BUG-1334).
-- Lab: fixes of tests from the 0.7.16 final check: cell_ko_food, the cell attack tests, space_puppet's landing, the
-  walker's clicks near its nest, and a cold start that waits for the lane's console ports (BUG-1354, BUG-1355, BUG-1356,
-  BUG-1358, BUG-1359).
+- Lab: fixes of tests from the 0.7.16 final check: cell_ko_food, the cell attack tests, space_puppet's landing, and a
+  cold start that waits for the lane's console ports (BUG-1354, BUG-1355, BUG-1356, BUG-1359).
 - Lab: the extra guests of 3- and 4-player tests start without the hold records, settings and per-player store an
   earlier test left in their profiles (BUG-1405); defer_identity hunts for the reused block as BUG-1099 found it
   works (BUG-1406).
@@ -109,24 +108,25 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
 ### Fixed
 - Civilization: a guest that plays the host's species and has creatures of its own sees "My creature: ... < >" and
   under it "My role: ... < >" in the co-op window again, so it can pick a civilization role and keep the host's
-  species; each row's arrows change only its own choice. Before, the creature row took the role row's place.
+  species; each row's arrows change only its own choice. Before, the creature row took the role row's place
+  (BUG-1403).
 - Creature: when the host's creature dies, every player's evolution bar loses the same part of a point as the host's;
-  a guest's bar stayed up to almost a point ahead of the party's until the next DNA gain.
+  a guest's bar stayed up to almost a point ahead of the party's until the next DNA gain (BUG-1393).
 - Tribe: the host's game could fault (and crash) right after a new village appeared on a planet whose list of
-  species for new villages was used up.
+  species for new villages was used up (BUG-1392).
 - Creature: after the host confirms its evolution caption, the guest sees the host's family where the host's game put
   it at once, instead of watching it creep there for about a minute (BUG-1376).
 - Saves: a save asked for right after another one (a player joining right after an autosave or a Save) is no longer
   lost: the game ignored it while its last save was finishing and the mod took it as made; it now waits a moment and
-  saves.
+  saves (BUG-1365).
 - Cell -> Creature: the party evolves together again in the first Creature editor. The host's editor waits again (up
   to the vote's time) for a guest that is on its way to the Creature stage over a normal connection, as in 0.7.15:
   both editors open together. Before, the host's editor opened at once and the guest got its own editor later, alone,
   after its arrival. A guest on a slow connection is still not waited for (the host's screen stayed black meanwhile),
-  nor one in its own editor (BUG-1336; still open until its lab run).
+  nor one in its own editor (BUG-1336).
 - Cell: after the host changes its own cell, no wild cells of the cell it played before swim around any more. A guest
   without a cell of its own takes the host's new one, but the host's rebuilt level had already made wild copies of the
-  old one next to that guest (BUG-1333; still open until its lab run).
+  old one next to that guest (BUG-1333).
 - Cell: a guest on a slow connection (or a host with a slow upload) now sees the host's cells all around its own cell.
   Before, on a link of about 512 kbit/s the guest kept only about a quarter of them, spread over the pool, and the
   others vanished a second after they came: mostly empty water around it. The host now sends each guest the cells
@@ -176,31 +176,24 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
 - Tribe: a baby or a new member that belongs to a guest now looks like the guest's own creature from the moment it
   appears; before, it was the tribe's species for a moment first (BUG-1299).
 - Space: a guest whose own ship has the same id as the host's ship now flies its own ship on its screen; before, its
-  game could show the host's ship instead (BUG-1301; still open until its lab run).
-- Space: on a colony planet, the citizens that run about now run where the host's run on a guest's screen; before, a
-  runner could stand 3-4 m away from its place for a moment when it started or stopped (BUG-1404; still open until its
-  lab run).
+  game could show the host's ship instead (BUG-1301).
 - Tribe: a guest's game no longer faults when it joins a Tribe world and a tribe member it has just made becomes the
-  chief: the chief's staff now waits until the member's body is built (BUG-1335; still open until its lab run).
-- Creature: a guest no longer sees some of the host's animals far away half sunk into the ground (BUG-1357; still open
-  until its lab run).
-
+  chief: the chief's staff now waits until the member's body is built (BUG-1335).
+- Creature: a guest no longer sees some of the host's animals far away half sunk into the ground (BUG-1357).
 - Tribe: a member a guest buys at its hut that the host's game makes from the guest's request (when the host did not
   see the guest's hut) is now the guest's own creature on the host's screen too; before, it stayed the tribe's species
-  there until it grew up (BUG-1345; still open until its lab run).
-- Tribe: on a guest's screen the host's chief no longer shows its staff in the resting grip for about a second while
-  it swings it on the host's screen (BUG-1347; still open until its lab run).
+  there until it grew up (BUG-1345).
+- Tribe: on a guest's screen the host's chief now takes its staff again when its first grip did not start, so it
+  shows the staff in the resting grip for about a second while it swings it on the host's screen less often; a
+  rarer case of it is still open (BUG-1347).
 - Votes: a vote for an action (moving on to the Creature stage, firing a superweapon) waits again for a player who is
   in its own editor, as before 0.7.15.1: it passes when that player is ready, leaves, or after the vote's time. Only
-  the evolution vote goes on without such a player (BUG-1369; still open until its lab run).
+  the evolution vote goes on without such a player (BUG-1369).
 - Civilization: a player who joins while playing a Civilization world of their own keeps that world's money also when
-  their game is slow at the moment of joining; before, the host's money could replace it (BUG-1371; still open until
-  its lab run).
+  their game is slow at the moment of joining; before, the host's money could replace it (BUG-1371).
 - Tribe: a new village the host's game forms during play now appears on a guest's screen with its people at once,
-  also when its species was new to the guest's game; before, it came about 5 seconds late (BUG-1375; still open until
-  its lab run).
-- Tribe: on a laggy connection a guest's copy of a tribe member that starts to walk no longer jumps about a metre in
-  one frame while it catches up with the host's member (BUG-1235; still open until its lab run).
+  also when its species was new to the guest's game; before, it came about 5 seconds late (BUG-1375).
+
 ## [0.7.15.5] - 2026-11-19
 
 A fix for players who could not leave the Tribe stage: the City Hall editor at its end could not be named after a

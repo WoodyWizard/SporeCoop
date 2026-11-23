@@ -46,6 +46,8 @@ Open, waiting for the lab run (measure first): `SPORE_DETECTOR=20 python3 tools/
 SPORE_DETECTOR=20 python3 tools/lab.py run space_planet_runners --repeat 4 --lane M --retry 0 --no-build` (FAIL
 expected); read both arms' "runner samples ... p50 / p90" lines and set the limits between them. Without the new case
 the old twin needs ~12 repeats to mean anything.
+- Still open (2026-11-23): space_planet_runners INCONCLUSIVE on fd28f88f in every run, fix on and off: 20261123-021900 (2 of 2), the twin 20261123-022402 (2 of 2), 20261123-023643 (3 in a row) and 20261123-071312 (4 in a row), each "0 runner samples (at least 40): no host citizens ran near the guest". The case never came, so the limits are not set and BUG-1404 stays unproven. Next: a way to make host citizens run near the guest (a planet or spot where they do, or a lever).
 
 ## History
 - 2026-11-23: opened; fix/w65-tests: the claim corrected, a runners case added.
+- 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.

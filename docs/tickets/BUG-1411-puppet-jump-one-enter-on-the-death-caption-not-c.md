@@ -1,14 +1,14 @@
 ---
 id: BUG-1411
 title: puppet_jump: one Enter on the death caption, not checked: the guest's game stayed dead and paused 77 s, no respawn, no jump to judge
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-21
 source: lab rel/0.7.16 20261121-003202 puppet_jump
 role: 
 versions: unreleased
-fixed_in:
+fixed_in: unreleased
 branch: fix/w62-flake-cc
 commits: c34e3345
 tests: puppet_jump
@@ -42,7 +42,9 @@ If a run shows "still up after N Enter(s)", the caption does not take input: the
 
 ## Verification
 no-fail-run: test-only change. Lab: `SPORE_DETECTOR=20 python3 tools/lab.py run puppet_jump --repeat 4 --lane N --retry
-0 --no-build` PASS (watch for "the death caption took N Enter(s)"). Open, waiting for the lab run.
+0 --no-build` PASS (watch for "the death caption took N Enter(s)"). Was waiting for the lab run.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): puppet_jump PASS 4 of 4 in 20261122-193406, and in 20261122-194210 and 20261123-023643. Closed.
 
 ## History
 - 2026-11-21: opened from the third final check of 0.7.16 (fix/w62-flake-cc); fixed in the test.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

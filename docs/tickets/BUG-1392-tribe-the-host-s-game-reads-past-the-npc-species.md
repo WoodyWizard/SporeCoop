@@ -1,14 +1,14 @@
 ---
 id: BUG-1392
 title: Tribe: the host's game reads past the NPC species list once when its update calls FormTribe less than 1 s after a village formed (tribe.form_species decided with the tribes before) (dc04aee5:Resource::StandardFileFilter::IsValid+0x1FEF)
-status: open
+status: fixed
 kind: crash
 stage: Tribe
 reported: 2026-11-21
 source: lab
 role: host
 versions: 0.7.16 dev (coop 0.7.15.5 build of rel/0.7.16 21025f40)
-fixed_in:
+fixed_in: unreleased
 branch: fix/w62-core
 commits: c1c0a136
 tests: tools/tests/coop_tribe_form_species.py (tribe_form_species, twin tribe_form_species_fresh_off)
@@ -44,12 +44,14 @@ every-frame calls while held) still use the second's answer. `coop.tribe form_sp
 so the game's next FormTribe comes in the next frame, inside the kept second: the race on every run.
 
 ## Verification
-Open, waiting for the lab run (no lab runs in this task):
+Was waiting for the lab run (no lab runs in this task):
 - PASS expected: `SPORE_DETECTOR=20 python3 tools/lab.py run tribe_form_species --lane N --retry 0 --no-build`
 - FAIL expected (twin): `... run tribe_form_species_fresh_off ...` ("no fault in the host's game while its update
   calls FormTribe" FAIL, a fault at 0x406EFF).
 - The FAIL run of the bug itself, before the fix: 20261121-003202 tribe_form_species.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): tribe_form_species PASS in 20261122-194210 and 20261123-023643; the twin tribe_form_species_fresh_off FAIL in 20261122-191140 (a host fault while its update calls FormTribe). Closed.
 
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: fix/w62-core: cause from the final check's logs, fix tribe.form_species_fresh, test forces the race.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

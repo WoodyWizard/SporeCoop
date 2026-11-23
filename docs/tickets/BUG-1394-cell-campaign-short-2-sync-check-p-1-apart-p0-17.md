@@ -50,7 +50,9 @@ Cell_SnapToGrid and the CORRECTION of cell-world-scale recorded.
 ## Verification
 Open, waiting for the lab run: campaign_short (and cell_end_sync, cell_levelup_view) with the new log line; a run that
 shows it gives the camera state for the fix. no-fail-run: diagnostics only so far.
+- Still open (2026-11-23): no game log of the runs 20261122-191140 .. 20261123-075458 (campaign_short x3 in 20261123-013755, the nightly 20261122-194210, the full run 20261123-023643; cell_end_sync and cell_levelup_view PASS) has the BUG-1394 line: the case did not come again. Diagnostics only, no fix.
 
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: fix/w62-core: cause traced to the game's recentre (0xE6DB70), diagnostics line added; open.
+- 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.

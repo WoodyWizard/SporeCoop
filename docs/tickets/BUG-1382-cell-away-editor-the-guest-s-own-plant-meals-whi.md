@@ -1,14 +1,14 @@
 ---
 id: BUG-1382
 title: cell_away_editor: the guest's own plant meals while the host is away are counted against the +10 of coop.pool food (0 -> 22)
-status: open
+status: fixed
 kind: test
 stage: Cell
 reported: 2026-11-20
 source: lab rel/0.7.16 20261120-133703 cell_away_editor
 role: 
 versions: unreleased
-fixed_in:
+fixed_in: unreleased
 branch: fix/w61-cell
 commits: e1ec5246
 tests: cell_away_editor, cell_away
@@ -37,7 +37,9 @@ cell may eat after its return) and the guest the same. The dip check is unchange
 ## Verification
 no-fail-run: test-only change. Lab: `SPORE_DETECTOR=20 python3 tools/lab.py run cell_away,cell_away_editor --lane N
 --retry 0 --no-build` PASS. The old twin (pool.away off) is retired (BUG-1138); a lost meal would still fail both checks.
-Open, waiting for the lab run.
+Was waiting for the lab run.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): cell_away_editor and cell_away PASS in 20261121-003202, 20261122-194210, 20261123-023643. Closed.
 
 ## History
 - 2026-11-20: opened from the second final check of 0.7.16; fixed in the test on fix/w61-cell.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

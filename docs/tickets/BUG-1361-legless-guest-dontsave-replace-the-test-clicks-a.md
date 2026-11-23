@@ -1,16 +1,16 @@
 ---
 id: BUG-1361
 title: legless_guest_dontsave/_replace: the test clicks a save dialog that BUG-1255 removed for a guest on the world's species (test bug)
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-20
 source: final check 20261120-133703
 role: guest
 versions: 0.7.15.2..0.7.16 (unreleased)
-fixed_in:
+fixed_in: unreleased
 branch: fix/w61-creature
-commits:
+commits: d5d44e38
 tests: legless_guest_dontsave, legless_guest_replace, legless_guest (coop_legless_guest.py --guest dontsave|replace|new)
 signature: legless_guest_dontsave FAIL "guest (dontsave): it plays the host's evolved species, not the legless one" with the guest on a new own key (292AA448, the host shows 7C300BFB)
 docs:
@@ -51,12 +51,14 @@ and the new "no dialog" check is stricter than before (BUG-1255's regression is 
 (the guest then plays its own creation) still has BUG-0756's dialog and is unchanged.
 
 ## Verification
-Open, waiting for the lab run (no game today, owner rule):
+Was waiting for the lab run (no game today, owner rule):
 * PASS expected: `SPORE_DETECTOR=20 python3 tools/lab.py run legless_guest legless_guest_replace legless_guest_dontsave
   legless_guest_done legless_guest_cancel --lane N --lane M --retry 0 --no-build`
 * FAIL expected (the dialog check): `SPORE_FIX_OFF=creations.own_editor_no_replace` legless_guest_dontsave (the
   0.7.15.1 dialog comes up after done).
 * The FAIL of the old test: out/lab/20261120-133703 (legless_guest_dontsave, lane 6).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): legless_guest_dontsave PASS in 20261121-003202 and 20261122-194210 (legless_guest, _replace, _done, _cancel PASS there too); the twin SPORE_FIX_OFF=creations.own_editor_no_replace FAIL in 20261121-001418 ("done in the guest's first own editor asks nothing"). Closed.
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

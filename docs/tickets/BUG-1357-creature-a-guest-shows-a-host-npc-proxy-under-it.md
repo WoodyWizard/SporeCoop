@@ -1,14 +1,14 @@
 ---
 id: BUG-1357
 title: Creature: a guest shows a host NPC proxy under its ground while the host's NPC is under the host's ground (NF_AIR with a negative height)
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-20
 source: final-check-20261120-041304
 role: 
 versions: 0.7.15.5, unreleased
-fixed_in:
+fixed_in: unreleased
 branch: fix/w60-misc
 commits: eb7a43d0
 tests: npc_air_under, npc_air_under_off, migration_heal, nest_follow
@@ -57,6 +57,7 @@ the same failing guest check.
 Earlier: waiting for the lab run (no game today, owner rule). Tonight: npc_air_under PASS, npc_air_under_off
 (`SPORE_FIX_OFF=npc.air_under`) FAIL, npc_air (the 4 m lift, unchanged) PASS, migration_heal PASS. Open, waiting for
 the lab run.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): npc_air_under (the corrected host check) PASS in 20261121-003202, 20261122-194210, 20261123-023643; the twin npc_air_under_off FAIL in 20261121-000724 (and 20261120-130608): the guest drew 1 NPC proxy under the ground; migration_heal and nest_follow PASS in the same runs. Closed.
 
 ## History
 - 2026-11-20: opened from the 0.7.16 final check; fixed on fix/w60-misc (npc.air_under), not run yet.
@@ -64,3 +65,4 @@ the lab run.
   precondition: the host's drawn rows are re-grounded by its game before it draws (0.00 m) while the state it sent was
   -0.80 m (the twin's guest drew -0.80 m). The precondition reads the received state now (npctrack column sa). Open,
   waiting for the lab run: npc_air_under PASS, npc_air_under_off FAIL.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

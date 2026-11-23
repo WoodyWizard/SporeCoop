@@ -1,14 +1,14 @@
 ---
 id: BUG-1367
 title: multi3: the chaos bot leaves the host in its own evolution editor, so no guest is in the host world and a rejoiner waits for good
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-20
 source: lab 20261120-133703
 role: host
 versions: rel/0.7.16 673f7a55
-fixed_in:
+fixed_in: unreleased
 branch: fix/w61-multi
 commits: ed6666e0
 tests: multi3, multi4_creature_seed, multi4_creature_slow
@@ -41,14 +41,16 @@ coop_multi.py: the rounds' and back_in's wait_all() call bot.leave_editors on ev
 measurement too. The check itself is unchanged: every guest must be in the host's world for the round.
 
 ## Verification
-Open, waiting for the lab run.
+Was waiting for the lab run.
 * FAIL (the old bot): out/lab/20261120-133703 multi3 (seed 637600690: the host's evolution editor at s 93).
 * Wanted PASS, the same seed: `SPORE_DETECTOR=20 python3 tools/lab.py run multi3 --lane N --retry 0 --no-build`
   and the replay `SPORE_LANE=N SPORE_LANE_B=N python3 tools/tests/coop_multi.py --fixture creature --players 3
   --minutes 3.0 --seed 637600690` (the host's editor is left, Bob's rejoin gets the world).
 * no-fail-run for a twin: the bot's behaviour, not a mod switch; the FAIL run above is the old bot.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): multi3 PASS in 20261121-003202, 20261122-194210, 20261123-065537; multi4_creature_seed and multi4_creature_slow PASS in 20261121-003202 and 20261122-194210 (FAIL before: 20261120-133703 multi3). Closed.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-multi): the host's own evolution editor (core.editor_now) after a mating the bot started; the bot
   now leaves every player's editor before a round and while it waits for a rejoin.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

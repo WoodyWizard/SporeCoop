@@ -1,14 +1,14 @@
 ---
 id: BUG-1371
 title: Civ: a guest joining from its own Civ world takes the host's money total when WELCOME and the first total arrive in one frame (civ_other_world)
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-20
 source: lab
 role: guest
 versions: rel/0.7.16
-fixed_in:
+fixed_in: unreleased
 branch: fix/w61-civ
 commits: d8f60860
 tests: civ_other_world, civ_other_world_slowjoin, civ_other_world_slowjoin_off (twin)
@@ -51,10 +51,12 @@ after it, so WELCOME and the first total share a frame almost always; it prints 
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 - FAIL (before, by itself): 20261120-133703:civ_other_world (rel/0.7.16 673f7a55).
-- Open, waiting for the lab run: civ_other_world and civ_other_world_slowjoin must PASS (slowjoin prints join_held >= 1
+- Was waiting for the lab run: civ_other_world and civ_other_world_slowjoin must PASS (slowjoin prints join_held >= 1
   when the case came), civ_other_world_slowjoin_off must FAIL (money 3000 = the host's), the old twin
   `SPORE_FIX_OFF=res.elsewhere coop_civ_other_world.py` must still FAIL.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): civ_other_world and civ_other_world_slowjoin PASS in 20261121-003202, 20261122-194210, 20261123-023643; the twin civ_other_world_slowjoin_off FAIL in 20261121-000724 (the guest's world took the host's money). Closed.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-civ): cause from the logs, fix and twin; no lab run (owner rule).
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

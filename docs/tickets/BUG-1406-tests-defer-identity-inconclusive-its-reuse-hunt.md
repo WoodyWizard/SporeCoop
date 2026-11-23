@@ -1,14 +1,14 @@
 ---
 id: BUG-1406
 title: tests: defer_identity INCONCLUSIVE: its reuse hunt (xf20) predates BUG-1099 (tries before the free, misses destroyed, backward-merged rounds tried in vain)
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-21
 source: final check 20261121-003202 (defer_identity)
 role: guest
 versions: 0.7.13, unreleased
-fixed_in:
+fixed_in: unreleased
 branch: fix/w62-flake-tcs
 commits: 7ba78dc2, 84c8f9e6
 tests: defer_identity
@@ -49,12 +49,14 @@ behaviour; npc.defer_identity is untouched. `SPORE_DEFER_FLAGS=xf20` with `--fra
 ## Verification
 no-fail-run: test setup only (how often the scenario is reached); the fix it tests (BUG-0825) keeps its FAIL/PASS runs.
 INCONCLUSIVE (old hunt): out/lab/20261121-003202, out/lab/20261120-041304.
-Open, waiting for the lab run:
+Was waiting for the lab run:
 * `SPORE_DETECTOR=20 python3 tools/lab.py run defer_identity --repeat 3 --until all --lane N --retry 0 --no-build`:
   PASS wanted (a reuse in its rounds; the creature at the freed block lives after the cinematic).
 * Twin: `SPORE_FIX_OFF=npc.defer_identity ... run defer_identity --repeat 2 --until all` must FAIL (the creature at the
   freed block destroyed with the queue), as before.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): defer_identity PASS in 20261122-194210, 20261123-021900 (2 of 2) and 20261123-023643; the twin SPORE_FIX_OFF=npc.defer_identity FAIL in 20261123-022402 (#1: "destroyed with the queue: 1"); the twin's two INCONCLUSIVE runs in 20261122-192135 were the hunt's budget of BUG-1453. Closed.
 
 ## History
 - 2026-11-21: opened; the hunt changed on fix/w62-flake-tcs (xf40B4KM, 1500 frames), waiting for the lab run.
 - 2026-11-23: CORRECTION (BUG-1453): the late frees at 1026-1295 frames were the cinematic's end (5-8 frames after its Enter), not a time effect; the hunt is 300 frames with up to 60 rounds now.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

@@ -1,14 +1,14 @@
 ---
 id: BUG-1397
 title: saved_box_twice: the second save is refused with the box reason (the mod sees the closed box up to 0.2 s after the UI), the test wants only the still-finishing reason
-status: open
+status: fixed
 kind: test
 stage: All
 reported: 2026-11-21
 source: final check 20261121-003202
 role: host
 versions: 0.7.16
-fixed_in:
+fixed_in: unreleased
 branch: fix/w62-saves
 commits: 0b94adaa
 tests: saved_box_twice, saved_box_twice_off
@@ -41,9 +41,11 @@ unchanged (it must be the BUG-1365 one), so it now tests what it was meant to te
 (`SPORE_FIX_OFF=world.save_allowed`) is unchanged: the second save says "saved" and nothing is written.
 
 ## Verification
-Open, waiting for the lab run (no lab runs today, owner rule). FAIL run of the old check: 20261121-003202
+Was waiting for the lab run (no lab runs today, owner rule). FAIL run of the old check: 20261121-003202
 (saved_box_twice). Lab: `SPORE_DETECTOR=20 python3 tools/lab.py run saved_box_twice saved_box_twice_off --lane N
 --retry 0 --no-build`: saved_box_twice must PASS, saved_box_twice_off must FAIL ("saved" and nothing written).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): saved_box_twice PASS in 20261122-194210 and 20261123-023643; the twin saved_box_twice_off FAIL in 20261122-191140 ("saved" and nothing written). Closed.
 
 ## History
 - 2026-11-21: opened (fix/w62-saves): cause from the test's log line, test waits for the mod's view of the box.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

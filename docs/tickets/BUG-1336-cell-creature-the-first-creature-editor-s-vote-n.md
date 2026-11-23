@@ -1,14 +1,14 @@
 ---
 id: BUG-1336
 title: Cell -> Creature: the first Creature editor's vote never waits for a guest still in Cell, the party no longer evolves together (BUG-1245 regression)
-status: open
+status: fixed
 kind: bug
 stage: Cell, Creature
 reported: 2026-11-20
 source: lab
 role: 
 versions: 0.7.15.2, 0.7.15.3, 0.7.15.4, 0.7.15.5, 0.7.16
-fixed_in:
+fixed_in: unreleased
 branch: fix/w59-cell
 commits: d04d6a10
 tests: leave_avatar_cell, leave_avatar_cell_wait_off, legless_guest, parts_transition, choice_world, evo_screens_switch, evo_screens_switch_slow, core_tests arrival_wait
@@ -47,7 +47,7 @@ waited. Off: BUG-1245 as before. choice_world now leaves the guest's own arrival
 samples (the BUG-1240 behaviour is wanted there). Unit test core_tests arrival_wait.
 
 ## Verification
-Lab not run yet (orchestrator: no lab until "lab ok", the final check runs on other lanes); commands below.
+Lab not run then (orchestrator: no lab until "lab ok", the final check runs on other lanes); commands below.
 * FAIL runs (before the fix): out/lab/20261119-214823 leave_avatar_cell, legless_guest, parts_transition, choice_world.
 * PASS expected: `SPORE_DETECTOR=20 python3 tools/lab.py run leave_avatar_cell legless_guest --lane N --retry 0
   --no-build` and `SPORE_DETECTOR=20 python3 tools/lab.py run parts_transition choice_world --lane M --retry 0 --no-build`
@@ -56,6 +56,8 @@ Lab not run yet (orchestrator: no lab until "lab ok", the final check runs on ot
 * regression (BUG-1245 / BUG-1240 / BUG-1269 tests): `SPORE_DETECTOR=20 python3 tools/lab.py run evo_screens_switch
   evo_screens_switch_noready evo_screens_switch_slow evo_screens_switch_lowfps --lane N --retry 0 --no-build`
   (the slow one: the host's screen not black 20 s; the others: both editors, each its own creature).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): leave_avatar_cell, legless_guest and choice_world PASS in 20261120-133703, 20261121-003202, 20261122-194210, 20261123-023643; parts_transition PASS in 20261121-003202, 20261122-194210, 20261123-023643 (its FAIL in 20261120-133703 was the test race of BUG-1380); the twin leave_avatar_cell_wait_off FAIL in 20261120-130608 ("its first editor waits for the vote"); evo_screens_switch, _slow, _noready, _lowfps PASS in 20261123-015558 and 20261123-023643. Closed.
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

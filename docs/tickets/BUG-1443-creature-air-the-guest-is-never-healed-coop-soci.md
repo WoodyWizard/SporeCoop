@@ -1,14 +1,14 @@
 ---
 id: BUG-1443
 title: creature_air: the guest is never healed (coop.social has no hp: it only turned the overlay on); bites knocked it out before its later NPCs were tried
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w65-night
 commits: 2811d2c2
 tests: tools/tests/coop_creature_air.py (creature_air)
@@ -36,8 +36,10 @@ coop_creature_air.py: `coop.team hp 10` for each NPC, every second of its ground
 (the bites are counted from the damage log, the heal hides none). The checks are unchanged.
 
 ## Verification
-Open, waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run creature_air --lane N --retry 0 --no-build`
+Was waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run creature_air --lane N --retry 0 --no-build`
 PASS, the guest's trace without a knockout. no-fail-run: a test fix; the FAIL before is 20261122-194210 creature_air.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): creature_air PASS in 20261123-015558 and 20261123-071312. Its FAIL in 20261123-023643 was the precondition "a wild NPC away from the host the guest mirrors ([])", not the heal. Closed.
 
 ## History
 - 2026-11-23: opened; fix/w65-night: the heal goes through coop.team hp.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

@@ -49,7 +49,9 @@ Open, waiting for the lab run:
   (4 of 4; the old code failed in about half of the runs).
 * FAIL twin: `SPORE_FIX_OFF=space.citizen_lead ... run space_planet_citizens --repeat 4 --until all` should fail in about half of
   the runs (a flaky twin: the old failure rate); also space_planet_vehicles and space_colony_spice PASS (same file).
+- Still open (2026-11-23): the fix shipped in 0.7.16 is plausible but not proven. space_planet_citizens PASS in 20261122-194210 and 20261123-023643, but its twin SPORE_FIX_OFF=space.citizen_lead PASSED 4 of 4 in 20261122-192851: the test cannot show the switch (BUG-1454), and BUG-1454's runner case was INCONCLUSIVE in every run (no runners near the guest). The CHANGELOG line was removed; docs/known-issues.md has the entry.
 
 ## History
 - 2026-11-21: opened; fixed on fix/w62-flake-tcs (space.citizen_lead), waiting for the lab run.
 - 2026-11-23: BUG-1454: the twin passed 4 of 4 (20261122-192851): space_planet_citizens cannot show this switch (2 of 9 runs fail at 0.5 s snapshots, the "about half" was before BUG-1210); the claim moves to the new space_planet_runners (limits to be measured).
+- 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.

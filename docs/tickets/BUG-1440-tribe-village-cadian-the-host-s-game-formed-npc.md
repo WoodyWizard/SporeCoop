@@ -1,14 +1,14 @@
 ---
 id: BUG-1440
 title: tribe_village_cadian: the host's game formed NPC tribe 1 during the Tribe map read: the host's half read the ground before the village's stamps, the guest's after (14 points, 7.07 m)
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-22
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w65-night
 commits: 1a9f358f
 tests: tools/tests/coop_tribe_village_ground.py (tribe_village_cadian, --map)
@@ -45,12 +45,14 @@ loop). The places list is built after the map, so a village formed during play i
 limit and every check stay.
 
 ## Verification
-Open, waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run tribe_village_cadian --lane N --retry 0
+Was waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run tribe_village_cadian --lane N --retry 0
 --no-build` PASS (3 runs: `--repeat 3`); a run with "(the terrain took stamps during the map read ...: reading the map
 again)" that ends PASS shows the guard at work.
 no-fail-run: a test fix; the FAIL before is 20261122-194210 tribe_village_cadian (a race of the village's forming
 against the map read).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): tribe_village_cadian PASS 3 of 3 in 20261123-020239, and in 20261123-023643. Closed.
 
 ## History
 - 2026-11-22: opened.
 - 2026-11-22: fix/w65-night: cause from the stamp times and the 14 points' places; the map is read on a settled terrain.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

@@ -1,14 +1,14 @@
 ---
 id: BUG-1365
 title: A save the game drops: coop.save and the mod's saves report 'saved' while the game's Save handler ignores the message (its last save still finishing), own_editor_drop 'not saved'
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-20
 source: final check 20261120-133703 (own_editor_drop)
 role: host
 versions: <=0.7.16
-fixed_in:
+fixed_in: unreleased
 branch: fix/w61-creature-a
 commits: 3ffe3266
 tests: saved_box_twice, saved_box_twice_off, own_editor_drop
@@ -43,11 +43,12 @@ reason "the previous save is still finishing"; the share loop and the autosave t
 host's game takes its save (a refused one is printed); a "saved" that writes nothing still fails it.
 
 ## Verification
-Open, waiting for the lab run (no lab runs today, owner rule):
+Was waiting for the lab run (no lab runs today, owner rule):
 `SPORE_DETECTOR=20 python3 tools/lab.py run saved_box_twice saved_box_twice_off own_editor_drop --lane N --lane M --retry 0 --no-build`
 * saved_box_twice must PASS (the second save right after the box: refused for now, taken within 5 s, written);
 * saved_box_twice_off must FAIL (`SPORE_FIX_OFF=world.save_allowed`: "saved" and nothing written);
 * own_editor_drop must PASS.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): saved_box_twice PASS in 20261122-194210 and 20261123-023643 (its FAILs in 20261121-002710 and 20261121-003202 were the old check of BUG-1397); the twin saved_box_twice_off FAIL in 20261122-191140 ("the second save the mod reported as made is written"); own_editor_drop PASS in 20261121-003202, 20261122-194210, 20261123-023643. Closed.
 
 ## History
 - 2026-11-20: opened.
@@ -58,3 +59,4 @@ Open, waiting for the lab run (no lab runs today, owner rule):
   run too (store writes 2 -> 2, no save in the host's log); the fix only made it visible. Tests now ask again while a
   save is refused for now (BUG-1398, twoinst.save_taken); saved_box_twice waits for the mod's view of the box
   (BUG-1397). The fix and its switch are unchanged.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

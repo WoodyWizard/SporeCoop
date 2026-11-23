@@ -1,14 +1,14 @@
 ---
 id: BUG-1444
 title: creature_aggression: the NPC pick read the guest's mirrors before it had spawned them (warm settle 0.3 s, 0 mirrored at s 9.4, 21 at s 10.0)
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w65-night
 commits: 2811d2c2
 tests: tools/tests/coop_creature_aggression.py (creature_aggression)
@@ -34,8 +34,10 @@ coop_creature_aggression.py: the pick is read every 0.5 s for up to 20 s until t
 the check is unchanged.
 
 ## Verification
-Open, waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run creature_aggression --lane N --retry 0
+Was waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run creature_aggression --lane N --retry 0
 --no-build` PASS. no-fail-run: a test fix; the FAIL before is 20261122-194210 creature_aggression.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): creature_aggression PASS in 20261123-015558 and 20261123-023643. Closed.
 
 ## History
 - 2026-11-23: opened; fix/w65-night: the pick waits for the guest's mirrors.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

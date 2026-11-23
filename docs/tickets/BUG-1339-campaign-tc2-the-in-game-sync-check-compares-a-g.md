@@ -1,16 +1,16 @@
 ---
 id: BUG-1339
 title: campaign_tc2: the in-game sync-check compares a guest whose own game stands paused: the host's new cities and their vehicles are missing there until it goes on
-status: open
+status: fixed
 kind: test
 stage: Civ
 reported: 2026-11-20
 source: lab
 role: guest
 versions: 0.7.16
-fixed_in:
+fixed_in: unreleased
 branch: fix/w59-tribe
-commits:
+commits: 6c8d4d30
 tests: campaign_tc2 (gate sync-check); unit net_tests diag digest (stands byte), fuzz_decoders diag Digest
 signature: gate sync-check: MISMATCH with player N (Civilization ...): v: 1..3 missing on the guest, that guest's trace busy=paused
 docs: docs/06-testing.md#testing-sync-guest-stands
@@ -47,10 +47,12 @@ designs) or the own editors, as the guest's `civ(guest) created=6` stayed flat w
 
 ## Verification
 Unit: net_tests (the digest's stands byte round trip, a sender without it reads 0), fuzz_decoders (diag Digest).
-Lab: not run yet (the 0.7.16 final check holds the lab): campaign_tc2 again (its gate clean; a `stands` line in the
+Lab: not run then (the 0.7.16 final check holds the lab): campaign_tc2 again (its gate clean; a `stands` line in the
 campaign log names the reason if a guest stands again). No forced twin: a guest's pause during a host's founding is not
 made on purpose by any test; `SPORE_FIX_OFF=diag.guest_stands` brings the 0.7.16 compare back.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): campaign_tc2 PASS in 20261120-133703, 20261121-003202, 20261122-194210, 20261123-023643 with its gate clean (FAIL before: the gate in 20261119-214823; no forced twin, as above). Closed.
 
 ## History
 - 2026-11-20: opened (fix/w59-tribe, triage package G of the 0.7.16 final check): not civlook; a paused guest compared.
 - 2026-11-20: diag.guest_stands and the campaign's stand evidence on fix/w59-tribe; lab runs pending.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

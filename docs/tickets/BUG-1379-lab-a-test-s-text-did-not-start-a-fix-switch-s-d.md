@@ -1,14 +1,14 @@
 ---
 id: BUG-1379
 title: Lab: a test's text 'did not start' (a fix switch's description) is taken for a game that did not start: the twin tribe_chief_still_retry_off's FAILs rerun until a PASS
-status: open
+status: fixed
 kind: tooling
 stage: Tools
 reported: 2026-11-20
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w61-civ
 commits: 9c86e722
 tests: unit-verdict (tools/tests/labverdict_selftest.py, case env), tribe_chief_still_retry_off
@@ -45,9 +45,11 @@ find". Self-test case `env` (make test, unit-verdict).
 - FAIL (before): the self-test's case env fails on rel/0.7.16 673f7a55 (no env_trouble; the old rule takes the fix
   line for environment trouble), lab 20261120-130608:tribe_chief_still_retry_off (the verdict from .env2.log).
 - PASS: `python3 tools/tests/labverdict_selftest.py` on fix/w61-civ (case env, 8 checks).
-- Open, waiting for the lab run: tribe_chief_still_retry_off FAILs as its run's verdict (a single run; the case is
+- Was waiting for the lab run: tribe_chief_still_retry_off FAILs as its run's verdict (a single run; the case is
   timing, about 2 of 3 runs of 360 s showed it).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): tribe_chief_still_retry_off FAIL as its run's verdict in 20261121-000724 (stretches (45.4, 1.3) and (329.8, 1.8)); labverdict_selftest PASS in make test. Closed.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-civ): cause and fix (lab tooling).
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

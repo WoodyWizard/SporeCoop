@@ -1,14 +1,14 @@
 ---
 id: BUG-1412
 title: creature_sneak: the observer's game drew the partner's puppet see-through before any sneak (model alpha 0.13-0.2, +0xB7C 1.0); the sneak look was compared on it
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-21
 source: lab rel/0.7.16 20261121-003202 creature_sneak
 role: 
 versions: 0.7.4, unreleased
-fixed_in:
+fixed_in: unreleased
 branch: fix/w62-flake-cc
 commits: 1e99207e
 tests: creature_sneak
@@ -47,7 +47,9 @@ before the sneak"): then the see-through puppet is a mod bug of its own.
 ## Verification
 no-fail-run: test-only change. Lab: `SPORE_DETECTOR=20 python3 tools/lab.py run creature_sneak --repeat 4 --lane N
 --retry 0 --no-build` PASS; a run that prints "see-through before any sneak" confirms the cause (or refutes the camera
-fade if moving does not help). Open, waiting for the lab run.
+fade if moving does not help). Was waiting for the lab run.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): creature_sneak PASS 4 of 4 in 20261122-193406, and in 20261122-194210 and 20261123-023643. Closed.
 
 ## History
 - 2026-11-21: opened from the third final check of 0.7.16 (fix/w62-flake-cc); fixed in the test.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

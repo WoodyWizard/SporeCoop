@@ -1,14 +1,14 @@
 ---
 id: BUG-1437
 title: evo_screens_switch slow/noready/lowfps: the test's own Enter ended the host's caption stand before its BUG-1396 move (no animal moved)
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-22
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w65-night
 commits: 5101d015
 tests: tools/tests/coop_evo_screens.py (evo_screens_switch, evo_screens_switch_slow, evo_screens_switch_noready, evo_screens_switch_lowfps, evo_screens_switch_lead_gap_off)
@@ -55,7 +55,7 @@ Enter before the move, the move at the copy, Enter after the hold, the reads aft
 on/off around them.
 
 ## Verification
-Open, waiting for the lab run:
+Was waiting for the lab run:
 - PASS expected: `SPORE_DETECTOR=20 python3 tools/lab.py run evo_screens_switch evo_screens_switch_slow
   evo_screens_switch_noready evo_screens_switch_lowfps --lane N --lane M --retry 0 --no-build` (each prints
   "BUG-1396: while the host's game stands: npc ... put at ..." and "ok the test moved one of the host's animals").
@@ -63,7 +63,9 @@ Open, waiting for the lab run:
   --lane N --retry 0 --no-build` ("the guest's copies of the host's animals stand where the host's game has them after
   its caption" FAIL, the moved animal ~10 m off).
 - The FAILs before: 20261122-194210 evo_screens_switch_slow, _noready, _lowfps.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): evo_screens_switch_slow, _noready and _lowfps PASS in 20261123-015558 and 20261123-023643; the twin evo_screens_switch_lead_gap_off FAIL in 20261123-020905 ("none over 5 m in 3 reads" fails: the moved animal's copy stayed off). Closed.
 
 ## History
 - 2026-11-22: opened.
 - 2026-11-22: fix/w65-night: cause from the host logs and key frame times; the test holds the host's caption until its move.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

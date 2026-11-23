@@ -1,14 +1,14 @@
 ---
 id: BUG-1439
 title: monitor_plant: the proxies problem was not planted: the guest's coop.npc list read in its 1 s proxy settle window after the warm reset had no spawned proxy, the plant was skipped silently
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-22
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w65-night
 commits: b32a56c9
 tests: tools/tests/coop_monitor_plant.py (monitor_plant)
@@ -39,11 +39,13 @@ that there is one and a check that the pwalk reply says it walks ("walks to"), s
 silently. The monitor's rule and the "caught" checks are unchanged.
 
 ## Verification
-Open, waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run monitor_plant --lane N --retry 0 --no-build`
+Was waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run monitor_plant --lane N --retry 0 --no-build`
 PASS (its log has "ok the guest has a spawned NPC proxy" and a `pwalk: proxy N ... walks to` line).
 no-fail-run: a test fix; the FAIL before is 20261122-194210 monitor_plant (the race happens only when the warm reset's
 reload ends within ~1 s of the plant).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): monitor_plant PASS in 20261123-015558 and 20261123-023643. Closed.
 
 ## History
 - 2026-11-22: opened.
 - 2026-11-22: fix/w65-night: cause from the guest's stage entry and the plant's time; the test waits for a spawned proxy.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

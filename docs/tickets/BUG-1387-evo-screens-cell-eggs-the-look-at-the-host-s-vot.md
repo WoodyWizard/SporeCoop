@@ -1,14 +1,14 @@
 ---
 id: BUG-1387
 title: evo_screens_cell_eggs: the look at the host's vote window after the vote ran out counts as a missing window (17 of 18 looks)
-status: open
+status: fixed
 kind: test
 stage: Cell
 reported: 2026-11-20
 source: lab rel/0.7.16 20261120-133703 evo_screens_cell_eggs_lowfps
 role: 
 versions: unreleased
-fixed_in:
+fixed_in: unreleased
 branch: fix/w61-cell
 commits: 96f237a7
 tests: evo_screens_cell_eggs_lowfps, evo_screens_cell_eggs
@@ -33,7 +33,9 @@ missing window during the vote still fails.
 
 ## Verification
 no-fail-run: test-only change. Lab: `SPORE_DETECTOR=20 python3 tools/lab.py run evo_screens_cell_eggs,evo_screens_cell_eggs_lowfps
---lane N --retry 0 --no-build` PASS. Open, waiting for the lab run.
+--lane N --retry 0 --no-build` PASS. Was waiting for the lab run.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): evo_screens_cell_eggs_lowfps and evo_screens_cell_eggs PASS in 20261121-003202, 20261122-194210, 20261123-023643. Closed.
 
 ## History
 - 2026-11-20: opened from the second final check of 0.7.16; fixed in the test on fix/w61-cell.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

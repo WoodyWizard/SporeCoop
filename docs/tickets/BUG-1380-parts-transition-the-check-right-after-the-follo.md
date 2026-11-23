@@ -1,14 +1,14 @@
 ---
 id: BUG-1380
 title: parts_transition: the check right after the follow phase races with the world the host sends after all after its first creature editor (guest in GalaxyGameEntry)
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-20
 source: final check 20261120-133703 (parts_transition)
 role: guest
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w61-creature-a
 commits: c4261908
 tests: parts_transition
@@ -37,10 +37,12 @@ the modes it saw (GalaxyGameEntry / Loading on the reload); a guest that does no
 Not loosened: the same state is required, only its moment is no longer the one frame after the follow phase.
 
 ## Verification
-Open, waiting for the lab run (no lab runs today, owner rule):
+Was waiting for the lab run (no lab runs today, owner rule):
 `SPORE_DETECTOR=20 python3 tools/lab.py run parts_transition --lane N --retry 0 --no-build` must PASS (its log names
 the modes seen when the share lands at the check). FAIL runs of the old test: 20261119-214823, 20261120-133703.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): parts_transition PASS in 20261121-003202, 20261122-194210, 20261123-023643. Closed.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-creature-a): cause by the logs; the test waits for the state.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

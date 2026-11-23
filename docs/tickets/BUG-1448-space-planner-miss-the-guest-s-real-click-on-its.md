@@ -38,6 +38,8 @@ the click hit.
 ## Verification
 Open, waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run space_planner_miss --lane N --retry 0
 --no-build` PASS expected. no-fail-run: cause not found; FAIL 20261122-194210.
+- Still open (2026-11-23): space_planner_miss PASS in 20261123-015558 and 20261123-023643, but the change is diagnostics only and no run missed the click again, so the cause is still unknown.
 
 ## History
 - 2026-11-23: opened; fix/w65-night: evidence collected, diagnostics added.
+- 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.

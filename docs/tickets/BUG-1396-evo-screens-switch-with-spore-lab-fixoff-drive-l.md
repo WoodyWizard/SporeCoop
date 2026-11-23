@@ -1,14 +1,14 @@
 ---
 id: BUG-1396
 title: evo_screens_switch with drive.lead_gap off passed: the host's game moved none of its animals during its caption stand, so the BUG-1376 twin had nothing to show
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-21
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w62-core
 commits: a5ca9fe4 c6f93414
 tests: tools/tests/coop_evo_screens.py (evo_screens_switch, SPORE_FIX_OFF=drive.lead_gap)
@@ -46,13 +46,15 @@ copy stands there at once, with `drive.lead_gap` off it crosses the line over a 
 m left after 5 s). The claim of BUG-1376 stays; the test now makes it hold.
 
 ## Verification
-Open, waiting for the lab run:
+Was waiting for the lab run:
 - PASS expected: `SPORE_DETECTOR=20 python3 tools/lab.py run evo_screens_switch --lane N --retry 0 --no-build`
 - FAIL expected: `SPORE_LAB_FIXOFF="evo_screens_switch=drive.lead_gap" SPORE_DETECTOR=20 python3 tools/lab.py run
   evo_screens_switch --lane M --retry 0 --no-build` ("the guest's copies of the host's animals stand where the host's
   game has them after its caption" FAIL, the moved animal ~10 m off).
 - The PASS of the twin before this change: 20261121-001418 evo_screens_switch.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): evo_screens_switch PASS in 20261123-015558 and 20261123-023643; the twin evo_screens_switch_lead_gap_off FAIL in 20261123-020905 (the moved animal's copy off after the caption). The twin's FAIL in 20261122-191140 and evo_screens_switch's FAIL in 20261122-194210 were the test's own precondition and gate (BUG-1437, BUG-1438). Closed.
 
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: fix/w62-core: cause found in the twin's logs; the test moves one host animal during the stand.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

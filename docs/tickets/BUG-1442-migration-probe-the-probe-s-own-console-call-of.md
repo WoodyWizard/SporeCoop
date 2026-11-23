@@ -1,14 +1,14 @@
 ---
 id: BUG-1442
 title: migration_probe: the probe's own console call of CreatureGame_NestHerdFor in GalaxyGameEntry (the guest reloading the host's world) crashed the guest (dc04aee5:SporeApp.exe SporeCoop::Herd_NestPosition)
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w65-night
 commits: e06d3a16
 tests: tools/tests/coop_migration_probe.py (migration_probe), tools/tests/coop_migration.py new_nest (also migration, nest_follow, nest_target_probe)
@@ -41,10 +41,12 @@ migration, migration_probe, nest_follow, nest_target_probe). A world closed in t
 the call is not covered (the console has no guarded call); the probe's 4 s step makes that rare.
 
 ## Verification
-Open, waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run migration_probe --lane N --retry 0
+Was waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run migration_probe --lane N --retry 0
 --no-build` PASS with no crash report (its rows print `nestherd=0x0 nest=None` while the guest is out of Creature).
 no-fail-run: a test fix; the crash before is 20261122-194210 migration_probe.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): migration_probe PASS in 20261123-015558, no crash report. Closed.
 
 ## History
 - 2026-11-22: opened.
 - 2026-11-23: fix/w65-night: the crash triaged (crash_triage: the console's call); new_nest() checks the mode first.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

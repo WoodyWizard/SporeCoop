@@ -1,14 +1,14 @@
 ---
 id: BUG-1455
 title: space_captain: the Accept click came before the adventure mission screen was drawn (its control already shown to coop.ui where); the click missed, the open screen then blocked the rank badge click
-status: open
+status: fixed
 kind: test
 stage: Space
 reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w65-tests
 commits: 04d96951
 tests: tools/tests/coop_space_captain.py (space_captain)
@@ -38,8 +38,10 @@ not take (no palette hit in 4 s, no captain screen) is given again, up to 3 time
 (Accept must still run the palette and open the captain screen; the badge must open it).
 
 ## Verification
-Open, waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run space_captain --repeat 4 --lane N --retry 0
+Was waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run space_captain --repeat 4 --lane N --retry 0
 --no-build` PASS 4 of 4. no-fail-run: a test fix; the FAIL before is 20261122-194210 space_captain.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): space_captain PASS 3 of 3 in 20261123-020239, and in 20261123-023643. Closed.
 
 ## History
 - 2026-11-23: opened; fix/w65-tests: the click waits for a settled Accept and is given again when not taken.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

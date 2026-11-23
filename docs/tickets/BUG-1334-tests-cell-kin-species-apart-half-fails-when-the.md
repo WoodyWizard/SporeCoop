@@ -1,14 +1,14 @@
 ---
 id: BUG-1334
 title: Tests: cell_kin_species apart half fails when the guest is knocked out alone in its fresh area and respawns next to the host
-status: open
+status: fixed
 kind: test
 stage: Cell
 reported: 2026-11-20
 source: lab
 role: 
 versions: 0.7.16
-fixed_in:
+fixed_in: unreleased
 branch: fix/w59-cell
 commits: 505778b1
 tests: cell_kin_species
@@ -40,14 +40,16 @@ the guest within half the apart distance of the host stops the sampling without 
 parted again (invulnfor again on both) and sampled anew, at most twice; the third try is checked as before.
 
 ## Verification
-Lab not run yet (orchestrator: no lab until "lab ok", the final check runs on other lanes); commands below.
+Lab not run then (orchestrator: no lab until "lab ok", the final check runs on other lanes); commands below.
 * FAIL run: out/lab/20261119-214823 cell_kin_species (lane 2).
 * PASS expected: `SPORE_DETECTOR=20 python3 tools/lab.py run cell_kin_species --lane N --retry 0 --no-build`
 * twin (BUG-1257's), FAIL expected: `SPORE_FIX_OFF=cell.kin_species SPORE_DETECTOR=20 python3 tools/lab.py run
   cell_kin_species --lane M --retry 0 --no-build`
 * to split from cellslow as the triage asked: `SPORE_FIX_OFF=cell.slow_link SPORE_DETECTOR=20 python3 tools/lab.py run
   cell_kin_species --lane N --retry 0 --no-build` (PASS expected too).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): cell_kin_species PASS in 20261123-015558 and 20261123-023643 (fd28f88f); its FAILs in 20261121-003202 and 20261122-194210 were the knockouts of BUG-1407 and BUG-1441 (test fixes in fd28f88f); the BUG-1257 twin SPORE_FIX_OFF=cell.kin_species FAIL in 20261123-021322 (and 20261120-132626). Closed.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-cell): the night plan of the second final check ran the "split from cellslow" line as `SPORE_LAB_FIXOFF="cell_slow_link=cell.slow_link"` on cell_slow_link (PASS expected) instead of on cell_kin_species: that is cell_slow_link_off's case and it FAILED as it must (lab 20261120-133208: median 0.31, `c: 158 missing`; the twin 0.28 in 20261120-130608). The command meant: `SPORE_LAB_FIXOFF="cell_kin_species=cell.slow_link" SPORE_DETECTOR=20 python3 tools/lab.py run cell_kin_species --lane N --retry 0 --no-build` (PASS expected).
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

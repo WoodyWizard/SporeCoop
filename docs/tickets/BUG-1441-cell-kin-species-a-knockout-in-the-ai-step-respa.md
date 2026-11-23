@@ -1,14 +1,14 @@
 ---
 id: BUG-1441
 title: cell_kin_species: a knockout in the AI step respawned the host next to the guest; its way back to its own place was measured from there, the host's place check ran at the guest's place (empty kin sets)
-status: open
+status: fixed
 kind: test
 stage: Cell
 reported: 2026-11-22
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w65-night
 commits: 68d86794
 tests: tools/tests/coop_cell_kin_species.py (cell_kin_species --editor)
@@ -44,12 +44,14 @@ kin of the host's cell is near; every sample counts for "only the host's kin" (u
 is loosened.
 
 ## Verification
-Open, waiting for the lab run:
+Was waiting for the lab run:
 - PASS expected: `SPORE_DETECTOR=20 python3 tools/lab.py run cell_kin_species --lane N --retry 0 --no-build`.
 - FAIL expected (the BUG-1257 switch off): `SPORE_LAB_FIXOFF="cell_kin_species=cell.kin_species" SPORE_DETECTOR=20
   python3 tools/lab.py run cell_kin_species --lane M --retry 0 --no-build`.
 no-fail-run: the knockout cannot be forced; the FAIL before is 20261122-194210 cell_kin_species.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): cell_kin_species PASS in 20261123-015558 and 20261123-023643; the twin SPORE_FIX_OFF=cell.kin_species FAIL in 20261123-021322. Closed.
 
 ## History
 - 2026-11-22: opened.
 - 2026-11-22: fix/w65-night: cause from the host's ko lines and the key frames' places; the way back is measured anew.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

@@ -1,14 +1,14 @@
 ---
 id: BUG-1377
 title: Tests: tribe_caption_race INCONCLUSIVE: the raided village had no tribe mission (raids by coop.tribe order only), so no conquest caption
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-20
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w61-civ
 commits: de99d975, 326d54e1
 tests: tribe_caption_race (coop_tribe_conquest_guest.py --click-at-close)
@@ -44,9 +44,11 @@ whose host still plays no caption.
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 - INCONCLUSIVE (the precondition missing, before): 20261120-133703:tribe_caption_race.
-- no-fail-run: a test precondition made certain (the checks are unchanged). Open, waiting for the lab run:
+- no-fail-run: a test precondition made certain (the checks are unchanged). Was waiting for the lab run:
   tribe_caption_race must PASS with `guest_missions 0 -> 1` printed (best several runs: `--repeat 4`).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): tribe_caption_race PASS in 20261121-003202, 20261122-194210, 20261123-023643 (INCONCLUSIVE before: 20261120-133703). Closed.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-civ): cause from the logs and the docs; the guest's raid order makes the mission; no lab run (owner rule).
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

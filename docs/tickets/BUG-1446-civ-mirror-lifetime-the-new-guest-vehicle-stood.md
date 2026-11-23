@@ -1,14 +1,14 @@
 ---
 id: BUG-1446
 title: civ_mirror_lifetime: the new guest vehicle stood 24.4 m from the host's vehicle, inside the 25 m bind-by-kind radius: bound by that rule, not through the freed block (not BUG-0951's case)
-status: open
+status: fixed
 kind: test
 stage: Civ
 reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w65-night
 commits: 8fff6369
 tests: tools/tests/coop_civ_mirror_lifetime.py (civ_mirror_lifetime)
@@ -34,8 +34,10 @@ coop_civ_mirror_lifetime.py: a round whose new vehicle stands under 30 m from th
 (another round, printed); the checks are unchanged.
 
 ## Verification
-Open, waiting for the lab run: PASS `SPORE_DETECTOR=20 python3 tools/lab.py run civ_mirror_lifetime --lane N --retry 0
+Was waiting for the lab run: PASS `SPORE_DETECTOR=20 python3 tools/lab.py run civ_mirror_lifetime --lane N --retry 0
 --no-build`. no-fail-run: a test fix (the test is a regression guard without a twin); FAIL before 20261122-194210.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): civ_mirror_lifetime PASS in 20261123-015558 and 20261123-023643. Closed.
 
 ## History
 - 2026-11-23: opened; fix/w65-night: rounds inside the bind radius are not this test's case.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

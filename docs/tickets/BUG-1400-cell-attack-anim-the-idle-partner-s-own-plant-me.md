@@ -1,14 +1,14 @@
 ---
 id: BUG-1400
 title: cell_attack_anim: the idle partner's own plant meal (its eat animation 0xB) counted as an attack animation
-status: open
+status: fixed
 kind: test
 stage: Cell
 reported: 2026-11-21
 source: lab rel/0.7.16 20261121-003202 cell_attack_anim
 role: 
 versions: unreleased
-fixed_in:
+fixed_in: unreleased
 branch: fix/w62-flake-cc
 commits: e4076da2
 tests: cell_attack_anim, cell_attack_jaw, cell_attack_spike, cell_attack_mouth
@@ -43,7 +43,9 @@ own meals still fails, and BUG-1243's twin cases stay the same.
 ## Verification
 no-fail-run: test-only change (the meal of an idle cell cannot be forced). Lab: `SPORE_DETECTOR=20 python3 tools/lab.py
 run cell_attack_anim,cell_attack_jaw,cell_attack_mouth --lane N --retry 0 --no-build` PASS (`make -j8` first: the dll prints
-own_eats). Open, waiting for the lab run.
+own_eats). Was waiting for the lab run.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): cell_attack_anim, cell_attack_jaw and cell_attack_mouth PASS in 20261122-194210 and 20261123-023643. Closed.
 
 ## History
 - 2026-11-21: opened from the third final check of 0.7.16 (fix/w62-flake-cc); fixed in the test.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

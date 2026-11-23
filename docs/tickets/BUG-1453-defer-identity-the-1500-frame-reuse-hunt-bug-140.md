@@ -1,14 +1,14 @@
 ---
 id: BUG-1453
 title: defer_identity: the 1500-frame reuse hunt (BUG-1406) spends the round budget: its late frees were the cinematic's end, not a time effect; 16 rounds gave the fix-off twin 0 reuses twice
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w65-tests
 commits: 15a93727
 tests: tools/tests/coop_defer_identity.py (defer_identity)
@@ -41,11 +41,13 @@ change, mods/coop/npc.cpp reuse_watch_chunk): a header change in bit 0 alone mea
 the target was freed (3 of 32 twin rounds, ~15 fix-on rounds counted as freed) - for a branch fix/w65-mod.
 
 ## Verification
-Open, waiting for the lab run: PASS `SPORE_DETECTOR=20 python3 tools/lab.py run defer_identity --repeat 2 --lane N
+Was waiting for the lab run: PASS `SPORE_DETECTOR=20 python3 tools/lab.py run defer_identity --repeat 2 --lane N
 --retry 0 --no-build`; FAIL `SPORE_LAB_FIXOFF="defer_identity=npc.defer_identity" SPORE_DETECTOR=20 python3
 tools/lab.py run defer_identity --repeat 2 --lane M --retry 0 --no-build` ("that creature still lives ..."). If the
 twin's ~60 rounds show no in-hunt free while fix-on runs do, the switch matters after all (then RE: who holds refs).
 no-fail-run: a test change; INCONCLUSIVE before 20261122-192135.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): defer_identity PASS in 20261123-021900 (2 of 2) and 20261123-023643; the twin SPORE_FIX_OFF=npc.defer_identity FAIL in 20261123-022402 (#1: "that creature still lives ... destroyed with the queue: 1"; #2 passed, the case is timing). Closed.
 
 ## History
 - 2026-11-23: opened; fix/w65-tests: short hunts, many rounds.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

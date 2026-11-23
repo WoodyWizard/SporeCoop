@@ -1,17 +1,17 @@
 ---
 id: BUG-1405
 title: tests: an extra guest (Carol, mp1/mp2 profile) keeps its hold records and settings from an earlier test (party_space_names: 6 charges, not 3)
-status: open
+status: fixed
 kind: test
 stage: Space
 reported: 2026-11-21
 source: final check 20261121-003202 (party_space_names)
 role: guest
 versions: unreleased
-fixed_in:
+fixed_in: unreleased
 branch: fix/w62-flake-tcs
 commits: d3303a4d, 84c8f9e6
-tests: party_space_names
+tests: party_space_names (tools/tests/coop_party_space.py)
 signature:
 docs:
 related: BUG-0679, BUG-1034, BUG-0762, BUG-1149
@@ -43,11 +43,13 @@ badges, settings, choices.ini, worlds.ini, Games-sporecoop-store and -backup bef
 
 ## Verification
 FAIL (no change): final check out/lab/20261121-003202 (party_space_names on lane 6: 6 charges).
-Open, waiting for the lab run (lane 6 first: its mp1 record holds 6 bombs now):
+Was waiting for the lab run (lane 6 first: its mp1 record holds 6 bombs now):
 * FAIL twin: `SPORE_EXTRA_RESET_FIX=0 SPORE_DETECTOR=20 python3 tools/lab.py run party_space_names --lane 6 --retry 0
   --no-build` (9 charges: the record's 6 + 3).
 * PASS: then `SPORE_DETECTOR=20 python3 tools/lab.py run party_space_names --lane 6 --retry 0 --no-build` twice (the
   second run starts after a record of 3 bombs).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): party_space_names: the twin SPORE_EXTRA_RESET_FIX=0 FAIL in 20261122-193040 (the second Bob's tool with 6 charges), then PASS in 20261122-193139, 20261122-194210, 20261123-065537. Closed.
 
 ## History
 - 2026-11-21: opened; fixed on fix/w62-flake-tcs (the extras' profile records cleared), waiting for the lab run.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

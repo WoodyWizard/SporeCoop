@@ -1,14 +1,14 @@
 ---
 id: BUG-1402
 title: play_civ: the role action clicks the creature row's arrows in Civ (BUG-1289) and changes the guest's species
-status: open
+status: fixed
 kind: test
 stage: Civ
 reported: 2026-11-21
 source: lab 20261121-003202 (0.7.16 final check 3)
 role: guest
 versions: rel/0.7.16 21025f40
-fixed_in:
+fixed_in: unreleased
 branch: fix/w62-flake-tcs
 commits: 5f8ec7c6
 tests: play_civ
@@ -50,10 +50,12 @@ the guest's role actions are `role_other_row` (no guest role is picked in play_c
 civ_role_damage / coop_civ still cover the role sync).
 
 ## Verification
-Open, waiting for the lab run. FAIL run (old test): out/lab/20261121-003202 (play_civ, seed 907689703). Lab:
+Was waiting for the lab run. FAIL run (old test): out/lab/20261121-003202 (play_civ, seed 907689703). Lab:
 `SPORE_DETECTOR=20 python3 tools/lab.py run play_civ --lane N --retry 0 --no-build` (and the replay
 `SPORE_LANE=N python3 tools/tests/play_civ.py --minutes 10.0 --seed 907689703`): PASS, and the guest log has no
 `ui: click cnext` while the row shows the creature (counter `role_other_row` > 0 in the action line).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): play_civ PASS in 20261122-194210. Closed.
 
 ## History
 - 2026-11-21: opened (fix/w62-flake-tcs): cause found in the guest log, test fixed.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

@@ -1,14 +1,14 @@
 ---
 id: BUG-1370
 title: session_report: the network address check matches the four-part version 0.7.15.5 in SESSION.txt
-status: open
+status: fixed
 kind: test
 stage: UI
 reported: 2026-11-20
 source: lab 20261120-133703
 role: host
 versions: rel/0.7.16 673f7a55 (coop 0.7.15.5)
-fixed_in:
+fixed_in: unreleased
 branch: fix/w61-multi
 commits: 0156c720
 tests: session_report
@@ -38,12 +38,14 @@ what it found. Two asserts at the top of the script pin both sides (versions are
 `192.168.1.20` next to a version are). Not loosened: the address search is the same, only the version token is skipped.
 
 ## Verification
-Open, waiting for the lab run.
+Was waiting for the lab run.
 * FAIL (the old check): out/lab/20261120-133703 session_report (3 FAIL lines, on SESSION.txt with versions only).
 * The checker on the three real SESSION.txt files of that run: old regex finds `0.7.15.5` x4 in each, the new one none.
 * Wanted PASS: `SPORE_DETECTOR=20 python3 tools/lab.py run session_report --lane N --retry 0 --no-build`;
   the twin `SPORE_FIX_OFF=core.session_report` must still FAIL (no guest asked, no session zip).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): session_report PASS in 20261121-003202, 20261122-194210, 20261123-065537; the twin SPORE_FIX_OFF=core.session_report FAIL in 20261121-001418. Closed.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-multi): the cause is the four-part version in the B6 lines; the check skips the version token.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

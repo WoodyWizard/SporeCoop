@@ -1,14 +1,14 @@
 ---
 id: BUG-1386
 title: monitor hp: a partner line of a guest that is not in a world (flags 0x0, hp 0/0, reloading) is compared with the guest's own line of its next session
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-11-20
 source: lab rel/0.7.16 20261120-133703 cell_rejoin_leave
 role: 
 versions: unreleased
-fixed_in:
+fixed_in: unreleased
 branch: fix/w61-cell
 commits: edf2228d
 tests: cell_rejoin_leave, gates_selftest
@@ -37,7 +37,9 @@ world still is one (FAIL on the old monitor, PASS on the new).
 ## Verification
 no-fail-run: gate-only change, proved by `make test` (gates_selftest hp_not_in_world: FAIL on the old monitor.py, PASS on
 the new) and `monitor.py replay` of the run's logs (old: the hp violation, new: none). Lab: `SPORE_DETECTOR=20 python3
-tools/lab.py run cell_rejoin_leave --lane N --retry 0 --no-build` PASS. Open, waiting for the lab run.
+tools/lab.py run cell_rejoin_leave --lane N --retry 0 --no-build` PASS. Was waiting for the lab run.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): cell_rejoin_leave PASS in 20261121-003202, 20261122-194210, 20261123-023643. Closed.
 
 ## History
 - 2026-11-20: opened from the second final check of 0.7.16; fixed in the monitor on fix/w61-cell.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

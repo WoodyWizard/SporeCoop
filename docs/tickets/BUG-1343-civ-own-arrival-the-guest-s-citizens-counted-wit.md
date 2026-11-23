@@ -1,14 +1,14 @@
 ---
 id: BUG-1343
 title: civ_own_arrival: the guest's citizens counted with its camera away from its city, and no NPC city of the guest's vehicle specialty to buy in
-status: open
+status: fixed
 kind: test
 stage: Civ
 reported: 2026-11-20
 source: lab
 role: 
 versions: rel/0.7.16
-fixed_in:
+fixed_in: unreleased
 branch: fix/w60-tribe
 commits: a73bda43
 tests: civ_own_arrival
@@ -50,9 +50,11 @@ Test only (coop_civ_own_arrival.py), the checks unchanged:
 
 ## Verification
 no-fail-run: test fixes (the FAILs: lab 20261120-041304, 20261119-193856, 20261119-130049).
-Open, waiting for the lab run: civ_own_arrival must PASS (print `the citizen managers' city (want N): {'host': N,
+Was waiting for the lab run: civ_own_arrival must PASS (print `the citizen managers' city (want N): {'host': N,
 'guest': N}`, and in a run without a military NPC city `city N given specialty 0`).
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): civ_own_arrival PASS in 20261120-133703, 20261121-003202, 20261122-194210, 20261123-023643. Closed.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: cause and fix on fix/w60-tribe (no lab today, owner rule); lab run pending.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).

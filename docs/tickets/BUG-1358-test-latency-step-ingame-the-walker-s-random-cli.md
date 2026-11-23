@@ -42,6 +42,8 @@ and its variants).
 ## Verification
 no-fail-run: test-only change (the walker's input). Lab tonight: latency_step_ingame PASS (both directions measured);
 `SPORE_FIX_OFF=net.offset_window` latency_step_ingame FAIL (its twin, unchanged). Open, waiting for the lab run.
+- Still open (2026-11-23). latency_step_ingame PASS in 20261120-133703, 20261121-003202, 20261122-194210 and 20261123-075458 (2 of 2), but FAIL in 20261123-023643 and 20261123-071312 for this ticket's cause: the host's walk no longer clicks its nest ("not the click ...: the nest or an egg under it"), yet at the end of its walk near the nest its game still opened the evolution editor ("editor request in Creature: editor 312E9D6A ... (an evolution in the stage)" with "nest: an egg hatched or was eaten", s 82.6 and s 93.4), so the guest's walk had no partner ("back 505m (not found)"). Next: find what opens it (the egg hatch, a walk over the nest) and keep the walker off the nest. Its words were removed from the CHANGELOG's test-fix line.
 
 ## History
 - 2026-11-20: opened from the 0.7.16 final check; fixed in coop_puppet_walk.py on fix/w60-misc.
+- 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.

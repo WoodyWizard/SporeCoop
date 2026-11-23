@@ -1,14 +1,14 @@
 ---
 id: BUG-1333
 title: Cell: after the host changes its own cell, the level rebuild makes wild kin of the cell a following guest is about to leave (BUG-1257)
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-11-20
 source: lab
 role: 
 versions: 0.7.16
-fixed_in:
+fixed_in: unreleased
 branch: fix/w59-cell
 commits: 505778b1 bead290b
 tests: cell_own_level10, cell_own_level10_follow_off, cell_tests own_cell_follow
@@ -43,7 +43,7 @@ before). Unit test cell_tests own_cell_follow. Test: cell_own_level10 (which now
 play now, BUG-1257's kin: the check predates partner kin); twin cell_own_level10_follow_off.
 
 ## Verification
-Lab not run yet (orchestrator: no lab until "lab ok", the final check runs on other lanes); commands below.
+Lab not run then (orchestrator: no lab until "lab ok", the final check runs on other lanes); commands below.
 * FAIL run (before the fix): out/lab/20261119-214823 cell_own_level10 (lane 4).
 * PASS expected: `SPORE_DETECTOR=20 python3 tools/lab.py run cell_own_level10 --lane N --retry 0 --no-build`
 * twin, FAIL expected: `SPORE_DETECTOR=20 python3 tools/lab.py run cell_own_level10_follow_off --lane N --retry 0
@@ -62,7 +62,9 @@ Lab not run yet (orchestrator: no lab until "lab ok", the final check runs on ot
   (`kin filter since the change: partner+N follow+M ...`; partner+0 with the switch off means the window made no kin of
   the guest: the twin did not reach the bug). Lab again: `SPORE_DETECTOR=20 python3 tools/lab.py run cell_own_level10
   --lane N --retry 0 --no-build` PASS; `... run cell_own_level10_follow_off --lane M --retry 0 --no-build` FAIL expected.
+- 2026-11-23: Lab on the fix's mod code (rel/0.7.16: 673f7a55 / 21025f40 when the fix was in them, 5376d388 and fd28f88f, whose mod code is the same; 20261122-194210 is the nightly on 5376d388, 20261123-023643 the full run on fd28f88f): cell_own_level10 PASS in 20261121-003202, 20261122-194210, 20261123-023643; the twin cell_own_level10_follow_off FAIL in 20261121-000724 ("no NPC of the previous own cell BAF1AD40 is left": x5), its PASS in 20261120-130608 was the timing described above. Closed.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-cell): the twin passed in the second final check; the test lists the pool at the follow too and prints the kin counters.
+- 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
