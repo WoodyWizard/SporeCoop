@@ -26,6 +26,13 @@ its species line, docs/01-architecture.md#arch-species-line: its Civ outfit, els
    Editors::IBakeManager, `coop.civ citizens` rows `baked=`): a citizen made of an unbaked species is drawn white, no
    paint (lab 20261119-114816 frames 02 / 03 on the guest, 20261119-095414 frame 02 on the host).
 
+   BUG-1457: and the city's citizens walk at the same places on both games (the guest's copies bound to the host's,
+   worldobj `citizen`): at most 2 of the host's citizens within 100 m of the city without a guest citizen within 15 m
+   (the detector's rule), within 20 s of the capture. The guest's pointer is unplaced at the start (`coop.npc marker
+   unplace`: (0 0 0), no mouse move over its window, as the lab's guest had now and then: lab 20261122-194210).
+
+SPORE_FIX_OFF=civ.pointer_view (civ_own_species_pointer_off): step 3's citizen pairing FAILs (the guest's pointer stays
+at (0 0 0), the host sends it the citizens of the host's capital only, 12-14 of 19 of the captured city unpaired).
 SPORE_FIX_OFF=civ.own_species_bake: step 3's bake check FAILs on a game that had not baked the line's model yet (the
 citizens white on its key frames).
 SPORE_FIX_OFF=civ.own_species: step 3 FAILs (the guest's city keeps the civilization's species).
@@ -48,6 +55,7 @@ import lane
 import settings_lib
 import sameview as sv
 import twoinst
+import worlddiff
 from coop_civ import civ, dist
 from coop_creature_e84 import close_boxes
 from coop_nest_species import read_pkg, write_pkg
@@ -132,6 +140,40 @@ def wait_city(players, city, want, secs):
         time.sleep(1)
 
 
+def unpaired(host, guest, centre, r=100.0):
+    """BUG-1457: (host citizens within r of centre, those without a guest citizen within 15 m, the guest's pointer)"""
+    hw, gw = worlddiff.dump(host, 250, centre), worlddiff.dump(guest, 250, centre)
+
+    def near(w, lim):
+        return [x for x in w.rows if x['kind'] == 'g' and x['noun'] == int(CITIZEN, 16) and not worlddiff._origin(x['pos'])
+                and math.dist(x['pos'], centre) < lim]
+    h, g = near(hw, r), near(gw, r * 1.3)
+    _, uh, _ = worlddiff._match(h, g, 15.0)
+    return len(h), len(uh), gw.me
+
+
+def check_paired(ck, host, guest, centre, what, secs=20):
+    """BUG-1457: within secs, at most 2 of the host's citizens of the city near `centre` (at least 10) without a guest
+    citizen within 15 m (the guest's copies walk where the host's walk)"""
+    t0 = time.time()
+    best = None
+    while True:
+        n, u, me = unpaired(host, guest, centre)
+        print(f'    {what}: host {n} citizens, {u} without a guest citizen within 15 m (guest pointer '
+              f'{worlddiff._fmt(me) if me else None}) after {time.time() - t0:.0f} s', flush=True)
+        if n >= 10 and (best is None or u < best[1]):
+            best = (n, u)
+        if (best and best[1] <= 2) or time.time() - t0 > secs:
+            break
+        time.sleep(2)
+    wo = ' '.join(ln.strip() for ln in (guest.call('coop.wobj')['out'] or '').splitlines() if ln.startswith('kind citizen'))
+    print(f'    guest: {wo}', flush=True)
+    return ck(best is not None and best[1] <= 2,
+              f'{what}: the citizens walk at the same places on both games (best of {secs} s: host '
+              f'{best[0] if best else 0} citizens, {best[1] if best else "-"} without a guest citizen within 15 m, at '
+              f'most 2)')
+
+
 def closeup(players, centre, tag, note):
     """key frames of one citizen of the city near `centre` up close, the same camera on every game: a citizen walking
     25-90 m from the centre (out of the buildings of the middle), seen from 12 m and 7 m up, from two sides"""
@@ -155,6 +197,8 @@ def main():
     host, guest = start('civ_npc')
     players = {'host': host, 'guest': guest}
     ck = Checks()
+    # BUG-1457: the guest's pointer as a game has it before any mouse move over its window (the lab's guest now and then)
+    print('  guest:', guest.call('coop.npc marker unplace')['out'].strip(), flush=True)
     time.sleep(4)
     hc, _ = civ(host)
     cap = [k for k, v in hc.items() if v['player']]
@@ -238,6 +282,7 @@ def main():
        f'the guest\'s city\'s citizens are the {"civilization" if HOST_MODE else "guest"}\'s species on both games '
        f'({want:08X}: {fmt(seen)})')
     check_paint(ck, players, tgt, f'city {tgt}')  # (at once: a citizen made white stays white)
+    check_paired(ck, host, guest, hc[tgt]['pos'], f'city {tgt}')  # BUG-1457
     look = ('the civilization\'s species, as at the capital (creature.mode host)' if HOST_MODE else
             'the guest\'s creature (not the civilization\'s species of the capital)')
     keyframe('guest_city', f'the city {tgt} the guest captured, both games: its citizens walking about are {look}')

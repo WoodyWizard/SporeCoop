@@ -44,5 +44,7 @@ uint32_t key_presses(int vk);
 bool key_pressed(int vk, uint32_t& seen);
 // the last mouse move over the game window, client pixels (false before the first one)
 bool last_move(int& x, int& y);
+// tests (BUG-1457): forget it (last_move false until the next move)
+void forget_move();
 
 } // namespace mouse
