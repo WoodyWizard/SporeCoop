@@ -1864,6 +1864,31 @@ static std::string debug(const std::vector<std::string>& a)
         std::string why = cities_apply(id, wire::space_map::put_cities(v));
         return (why.empty() ? std::string("citytest ok\n") : "citytest: " + why + "\n") + describe_cities(id);
     }
+    if (a[0] == "npccolony") { // tests (BUG-1486): an NPC empire's colony near me (no change): npccolony <PlanetID> <star> <pol>
+        void* ns = near_stars();
+        uint32_t me = my_pol();
+        std::vector<void*> cand = ns ? ptr_vec((uint8_t*)ns + 0x7C, 256) : std::vector<void*>{};
+        void* nm = a_NounMgr ? cdecl_call<void*>(a_NounMgr) : nullptr;
+        void* player = nm && readable(nm, 0x78) ? F<void*>(nm, 0x74) : nullptr;
+        if (player && readable(player, 0x11E0)) // the empires met (as npcstar)
+            for (auto p = F<uint32_t*>(player, 0x11D8); p && p < F<uint32_t*>(player, 0x11DC) && readable(p, 8); p += 2)
+                if (p[0] != me && (p[1] & 2))
+                    if (void* e = empire_of(p[0]))
+                        for (void* st : ptr_vec((uint8_t*)e + 0x88, 256))
+                            cand.push_back(st);
+        for (void* st : cand) {
+            if (!readable(st, 0x74))
+                continue;
+            uint32_t pol = F<uint32_t>(st, 0x54);
+            if (pol == me || pol == 0xFFFFFFFFu || !empire_of(pol) || mirror_pol(pol))
+                continue;
+            for (void* r : planets_of(st))
+                if (readable(r, 0x1A4) && F<uint32_t>(r, 0x194) == 5)
+                    return "npccolony " + hex(F<uint32_t>(r, 0x184)) + " " + std::to_string(F<uint32_t>(st, 0x70)) + " " +
+                           hex(pol) + "\n";
+        }
+        return "no NPC colony near\n";
+    }
     if (a[0] == "npcstar") { // tests (BUG-1151): an NPC empire's star near me becomes mine, as a purchase or a conquest
         void* ns = near_stars();
         uint32_t me = my_pol();

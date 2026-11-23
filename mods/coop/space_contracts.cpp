@@ -694,7 +694,35 @@ std::vector<uint32_t> near_stars(uint32_t from, size_t n)
 // 7.4); "here": the planet the host is on or a colony of the host's star; else one of the host's stars
 // (cEmpire +0x88: vector<cStarRecord*>, GetStars 0xC30A10 / 0xC30A30). The guests' colonies (feature 1's
 // roster) are not in the host's save: no raid there (docs/known-issues.md).
-bool colony(void* rec) { return rec && F<int>(rec, 0x194) == 5; }
+// BUG-1486 (audit SPC-11): tech level 5 is any empire's colony (docs/re/space.md 5.2), so the armada (the auto offer
+// every 10 minutes with the host in an NPC empire's system, or an explicit planet) could target an NPC empire's colony
+// (a raid of "the star's owner", so the host's raid listener never heard of it: the wave ended only by the "ships gone"
+// rule or the time limit) or a partner's own-star mirror colony on the host's home star (BUG-0543, it carries the host's
+// political id). Now the record also needs a cCivData of the host's political id (+0x15C, pol +0x14) and must not be
+// such a mirror. `coop.fix contracts.host_colony off`: any tech-5 record (0.7.16.1).
+bool g_host_colony_fix = true;
+COOP_FIX("contracts.host_colony", "BUG-1486", g_host_colony_fix,
+         "space: an armada contract targets a colony of the host's own empire only (not an NPC's, not a partner's mirror)");
+uint32_t n_not_host_colony; // tech-5 records refused as targets
+bool colony(void* rec)
+{
+    if (!rec || IsBadReadPtr(rec, 0x198) || F<int>(rec, 0x194) != 5)
+        return false;
+    if (!g_host_colony_fix)
+        return true;
+    void* e = empire();
+    uint32_t me = e && !IsBadReadPtr(e, 0x88) ? F<uint32_t>(e, 0x84) : 0xFFFFFFFFu;
+    std::vector<uint32_t> pols;
+    void** b = F<void**>(rec, 0x15C);
+    void** en = F<void**>(rec, 0x160);
+    if (b && en > b && en - b <= 64 && !IsBadReadPtr(b, (en - b) * 4))
+        for (void** it = b; it < en; ++it)
+            if (*it && !IsBadReadPtr(*it, 0x18))
+                pols.push_back(F<uint32_t>(*it, 0x14));
+    bool ok = spacelogic::host_colony(5, pols, me, spaceext::allies_own_mirror(F<uint32_t>(rec, 0x184)));
+    n_not_host_colony += !ok;
+    return ok;
+}
 
 uint32_t colony_of_star(uint32_t star)
 {
@@ -1385,12 +1413,12 @@ std::string status()
     snprintf(b, sizeof b,
              "contracts: id=%u type=%s state=%s reason=%u crew=%s needed=%u secs=%d star=%u wave=%u/%u ships_left=%u "
              "ships_up=%u targets=%d/%d money=%u tool=%08X offered=%u done=%u failed=%u rewards=%u tools_got=%u "
-             "money_got=%d planet=%08X raids=%u ships=%u gone=%u period=%.0f resumed=%u wave_raids=%d\n",
+             "money_got=%d planet=%08X raids=%u ships=%u gone=%u period=%.0f resumed=%u wave_raids=%d not_host_colony=%u\n",
              g.id, type_name(g.type), state_name(g.state), g.reason, crew.empty() ? "-" : crew.c_str(), g.needed,
              g.state ? (int)std::ceil(g.deadline - now()) : 0, g.targets.empty() ? 0u : g.targets[0].star, g.wave,
              g.waves, g.left, g.up, d, (int)g.targets.size(), g.money, g.tool, n_offered, n_done, n_failed, n_rewards,
              n_tools, g_money_got, g.targets.empty() ? 0u : g.targets[0].planet, n_raids, n_ships, n_gone,
-             g_period, n_resumed, (int)raids_on_target().size());
+             g_period, n_resumed, (int)raids_on_target().size(), n_not_host_colony);
     return b;
 }
 
@@ -1492,6 +1520,8 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "tool %08X %s: %s\n", h, tool_name(h).c_str(), has_tool(h) ? "have" : "no");
         return b;
     }
+    if (a[0] == "jump" && a.size() > 1) // tests (BUG-1490): the "Jump there" button of a contract's row
+        return jump_to((uint32_t)strtoul(a[1].c_str(), nullptr, 0)) + "\n";
     if (a[0] == "star" && a.size() > 1) {
         uint32_t s = (uint32_t)strtoul(a[1].c_str(), nullptr, 0);
         snprintf(b, sizeof b, "star %u: %s\n", s, star_name(s).c_str());
