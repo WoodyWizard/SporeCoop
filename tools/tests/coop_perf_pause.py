@@ -9,12 +9,12 @@ Now a poll thread notes the window's state every 100 ms and such a gap is a `per
 longest frame; the keepalive's BUG-0687 line names the window state.
 
 The lab plays in background mode (the game counts as in the foreground), so the test tells the poll that the window is
-unfocused (`coop.diag pausemark 1`) while the main thread stops for 3 s (`coop.stalltest 3`, a message loop of its own:
+unfocused (`coop.diag pausemark 1`) while the main thread stops for 4 s (`coop.stalltest 4`, a message loop of its own:
 no frames, the keepalive runs):
-  PASS: the host's log has `perf: pause` of about 3000 ms and no `perf: hitch` over 2 s for it, the keepalive line
-  names "foreground 0"; `coop.diag` shows the longest frame of the minute under 2 s. Then without the mark a 3 s stop is
+  PASS: the host's log has `perf: pause` of about 4000 ms and no `perf: hitch` over 2 s for it, the keepalive line
+  names "foreground 0" (it comes after 3 s); `coop.diag` shows the longest frame of the minute under 2 s. Then without the mark a 4 s stop is
   a hitch as before.
-  SPORE_FIX_OFF=diag.hitch_pause: the unfocused stop is a `perf: hitch 3000 ms`: FAIL.
+  SPORE_FIX_OFF=diag.hitch_pause: the unfocused stop is a `perf: hitch 4000 ms`: FAIL.
 
   SPORE_LANE=2 python3 tools/tests/coop_perf_pause.py
 """
@@ -63,13 +63,13 @@ def main():
         host.call('coop.diag detail 1')
         print(' ', host.call('coop.diag pausemark 1')['out'].strip(), flush=True)
         time.sleep(0.5)
-        log = stop(host, 3)
+        log = stop(host, 4)
         host.call('coop.diag pausemark 0')
         pauses = [int(x) for x in re.findall(r'perf: pause (\d+) ms', log)]
         hitches = [int(x) for x in re.findall(r'perf: hitch (\d+) ms', log)]
         keep = [ln for ln in log.splitlines() if 'keepalive: no frame' in ln]
         print(f'  unfocused stop: pauses {pauses}, hitches {hitches}; {keep[:1]}', flush=True)
-        ck(any(p >= 2500 for p in pauses), f'the 3 s stop while unfocused is logged as the game\'s own pause ({pauses})')
+        ck(any(p >= 3500 for p in pauses), f'the 4 s stop while unfocused is logged as the game\'s own pause ({pauses})')
         ck(not any(h >= 2000 for h in hitches), f'and not as a hitch over 2 s ({hitches})')
         ck(any('foreground 0' in ln for ln in keep), 'the keepalive line names the window state (foreground 0)')
         st = host.call('coop.diag')['out']
@@ -77,10 +77,10 @@ def main():
         print('  host', m.group(0) if m else st.splitlines()[:1], flush=True)
         ck(m and int(m.group(1)) < 2000 and int(m.group(3)) >= 1,
            'the minute\'s longest frame leaves the pause out, the pause is counted')
-        log = stop(host, 3)
+        log = stop(host, 4)
         hitches = [int(x) for x in re.findall(r'perf: hitch (\d+) ms', log)]
         print(f'  focused stop: hitches {hitches}', flush=True)
-        ck(any(h >= 2500 for h in hitches), f'a 3 s stop with the window in front is a hitch as before ({hitches})')
+        ck(any(h >= 3500 for h in hitches), f'a 4 s stop with the window in front is a hitch as before ({hitches})')
     finally:
         host.call('coop.diag pausemark 0')
     ck.faults(host=host, guest=guest)
