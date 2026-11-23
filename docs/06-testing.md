@@ -10145,3 +10145,23 @@ by chance. Their tests open the window with a host knob that stands for the real
 * space_planet_citizens cannot show space.citizen_lead (it reads mostly standing citizens); `--case runners` (suite
   space_planet_runners) compares only running host citizens at the guest's moment (host, guest, host dumps by serial);
   its limits are provisional until both arms are measured (BUG-1454).
+
+## Test seams of the 0.7.17 audit items (2026-11-23, fix/w80-net)
+<a id="testing-seams-w80"></a>
+
+* `coop.store hold` (host): the per-player store is closed until the next save opens it (as before a world has its
+  name): `tribe_owners_reload_fresh` (BUG-1499).
+* `coop.space keptkey other on` before a join in `twoinst.session_restart(before_join=...)`: the guest comes as another
+  game under the same name (a new install); `tribe_owners_adopt` then checks `coop.store adopt` in Tribe (BUG-1500).
+* `coop.join 127.0.0.1:99999`: a join that fails at once (the port does not parse), for `dna_own_rejoin_failed`
+  (BUG-1498).
+* `coop.worldfix failpeer <id>`: the next share to that peer fails once (not as planet-missing, no retry for a
+  `coop.worldfix queue` share): `tribe_reload_any`, three players (BUG-1505).
+* `coop.uistate fullscreen 1|0|auto`: what "the game fills the screen" answers for Report a problem (the lab plays
+  windowed): `report_fullscreen` (BUG-1528).
+* `coop.diag pausemark 1|0`: the window-state poll takes the game window as unfocused; with `coop.stalltest 4` (a
+  4 s stop; the keepalive's line comes after 3 s) it makes a `perf: pause`: `perf_pause` (BUG-1529, hitch gate off:
+  the test makes hitches on purpose). In the lab's background mode the hooked GetForegroundWindow returns the game
+  window, so real stops in the lab stay hitches.
+* `crash.test zipfail2`: a thread crash whose second report archive takes the first one's second and fails while it is
+  written: `kit_crash --case zipfail2` (BUG-1521; `--old` switches `kit.fix reportzip` off).

@@ -116,3 +116,4 @@ Observed in the lab:
   save area guard, fixed in 0.7.4); the 0.7.10.1 and 0.7.11.1 runs enter the editor without a crash.
 - 2026-11-12: fixed (fix/w48-reports): SporeKit keeps another program's frame cap, a vsync option, logs, a notice; a wrapper's cap holds.
 - 2026-11-12: released in 0.7.13.
+- 2026-11-22: zip 2 (0.7.14.1, 0.7.13, 0.7.11.1) read: cap 6 ms set before frame 1 and kept, no vsync, frame times steady while hosting; the freezes are the game's focus-loss pause (also without a session), one caused by Report a problem opening Explorer; out/research/dc-report-tearing-20261116.md. Follow-ups in 0.7.17 (WP-N1, fix/w80-net): BUG-1528 (no Explorer while the game fills the screen), BUG-1529 (such stops logged as the game's own pause, not as hitches).

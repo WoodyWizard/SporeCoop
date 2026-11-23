@@ -904,3 +904,13 @@ place keeps MSG_UFO_STATE / MSG_UFO_HIT / MSG_UFO_DAMAGE of 0.7.16 byte for byte
   either side: no table, no K_*, every guest away from the host plays its own NPC ships (as 0.7.16.1).
 * Off: `coop.fix fleet.leader off` (no table, nothing relayed). Rivals: no rows.
 >>>>>>> theirs
+
+## The rejoin slot names its host and name (2026-11-23, fix/w80-net)
+<a id="netcode-rejoin-slot-pair"></a>
+
+The rejoin slot file (`<AppData>\SporeCoop\rejoin-<instance>-<slot>.txt`, BUG-0235) holds `<token> <pair>` since 0.7.17:
+the pair is a hash of the host address and the player name (rejoin_kept.h `SlotLine`, KeptFile::key under a fixed salt;
+no plain address on disk). A join sends the slot's token only to the host and under the name it was written for, so a
+join that failed at once (an address that does not parse) or a crash with another host no longer beats the token a clean
+leave kept for this host (BUG-1498, NET-2 of the 0.7.15.5 audit, `net.rejoin_slot_pair`). A slot an older version wrote
+(the token alone) counts for any join, as before. Nothing on the wire changes.
