@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.15.2
 fixed_in:
 branch: fix/w73-fleet
-commits: 17f9fcaa
+commits: 17f9fcaa b03eefdc
 tests: tools/tests/coop_space_fleet_leader.py, tools/tests/coop_space_fleet_host_leaves.py, tests/space_tests.cpp (test_fleet_leads), tests/wire_tests.cpp (test_space_ufo), tests/fuzz_decoders.cpp
 signature:
 docs: mods/coop/squadron.cpp, mods/coop/squadron_logic.h, mods/coop/wire/space_ufo.h, docs/re/space.md#space-guest-leaders, docs/04-netcode.md#netcode-ufo-lead
