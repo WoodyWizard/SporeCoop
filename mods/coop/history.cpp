@@ -154,7 +154,7 @@ static void book_save(pstore::Store& s, int64_t now)
     if (!g_own_fix || !is_host())
         return;
     for (auto& [k, r] : g_book.recs) {
-        if (k.rfind("s:", 0) != 0)
+        if (k.rfind("s:", 0) != 0 || r == Record{})
             continue;
         std::string name;
         for (auto& p : S->players())
