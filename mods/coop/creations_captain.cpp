@@ -154,7 +154,22 @@ static bool list_bundle(const Key& cap, std::vector<uint8_t>& out, uint32_t& has
 
 static void lists_tick(double now)
 {
-    if (!g_captain_props_fix || !is_host())
+    if (!g_captain_props_fix) {
+        if (!g_lists.empty()) {
+            for (auto& [k, l] : g_lists) {
+                if (l.db)
+                    drop_package(l.db);
+                prop_evict(l.prop);
+            }
+            g_lists.clear();
+        }
+        g_list_sent.clear();
+        g_list_captain = {};
+        g_list_bundle.clear();
+        g_list_hash = 0;
+        return;
+    }
+    if (!is_host())
         return;
     uint32_t m = game::mode_id();
     bool back = m == modes::kSpace && g_list_mode != modes::kSpace; // (an outfitter or an adventure may have changed it)
