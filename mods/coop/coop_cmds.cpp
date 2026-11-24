@@ -567,6 +567,10 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", npc::debug_pushback((uint16_t)atoi(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])).c_str());
         return 0;
     }
+    if (argc > 3 && !strcmp(argv[1], "replace")) { // host (tests, BUG-1388): replace <id> <dist_m>
+        SAY("%s", npc::debug_replace((uint16_t)atoi(argv[2]), (float)atof(argv[3])).c_str());
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "raised")) { // tests (BUG-0440): raised <r> [x y z]
         net::Vec3 at{argc > 5 ? (float)atof(argv[3]) : 0.f, argc > 5 ? (float)atof(argv[4]) : 0.f, argc > 5 ? (float)atof(argv[5]) : 0.f};
         SAY("%s", npc::debug_raised((float)atof(argv[2]), argc > 5 ? &at : nullptr).c_str());

@@ -95,6 +95,14 @@ static bool g_civ_jump_fix = true;
 COOP_FIX("npc.civ_jump", "BUG-1216", g_civ_jump_fix, "civ: a wild creature the game moves elsewhere is shown there at once, not flying there through the air");
 constexpr float kCivJumpM = 10.f; // m of the target in one frame (a lead jump up to smooth_max 8 m is smoothed before)
 static uint32_t g_civ_jumps;
+// BUG-1388: after an evolution editor in Creature stage, the host's game re-places standing nest members 5-6 m in
+// one step (host speed 0). Without this fix the guest smoothed / walked the remade proxy after the host NPC (5-7 m
+// off for 2-3 s, triggering the proxies gate). With the fix, a > 3 m standing re-placement snaps the buffer and
+// teleports the proxy onto the host's position without entering walk_place. `coop.fix npc.creature_replace_snap off`: 0.7.17.1.
+static bool g_creature_replace_fix = true;
+COOP_FIX("npc.creature_replace_snap", "BUG-1388", g_creature_replace_fix,
+         "creature: a standing NPC re-placed over 3 m by the host's game (post-editor nest) is teleported there on the guest instead of walked");
+static uint32_t g_creature_replaces;
 // BUG-1228: a guest's copy of a host creature that stands, on steep ground of the guest (a slope the host's creature
 // does not stand on: the final check's guest ground lay 10 m higher there), was slid down by its game (velocity
 // 19-26 m/s), pulled back up by the nudge and trail-teleported onto its target every ~2.5 s: a player saw it slide and
@@ -367,6 +375,7 @@ struct Proxy {
     double last_rx = 0; // local time of its last spawn / state from the host
     net::SnapshotBuffer buf;
     drive::State drv;
+    npc_logic::ReplaceTrack rep_track; // BUG-1388: standing re-placement detector (Creature)
     float walk_sp = 0;      // BUG-0361: the host NPC's speed while it last moved
     net::Vec3 diag_want{};  // BUG-0363 (coop.bodyrec diag): the target of the last driving
     bool diag_have = false;
@@ -1345,6 +1354,33 @@ std::string debug_pushback(uint16_t id, float mps, float secs)
     it->data.push_mps = mps;
     char b[96];
     snprintf(b, sizeof b, "proxy %u pushed back at %.1f m/s for %.0f s in its game's updates", id, mps, secs);
+    return b;
+}
+// tests (BUG-1388): `coop.npc replace <id> <dist_m>` (host): teleport standing NPC #id by dist_m along the planet
+// tangent onto the ground with zero velocity (simulates post-editor nest re-placement)
+std::string debug_replace(uint16_t id, float dist_m)
+{
+    void* c = hn_obj(id);
+    if (!is_host() || !c || !g_seen_now.count(c))
+        return "no such host npc";
+    net::Vec3 p = game::position(c);
+    float r = drive::speed(p);
+    if (r < 1.f)
+        return "bad position";
+    net::Vec3 up{p.x / r, p.y / r, p.z / r};
+    net::Vec3 ax = std::fabs(up.z) < 0.9f ? net::Vec3{0, 0, 1} : net::Vec3{1, 0, 0};
+    net::Vec3 t{up.y * ax.z - up.z * ax.y, up.z * ax.x - up.x * ax.z, up.x * ax.y - up.y * ax.x};
+    float tl = drive::speed(t);
+    if (tl < 1e-4f)
+        return "bad tangent";
+    net::Vec3 dst{p.x + t.x / tl * dist_m, p.y + t.y / tl * dist_m, p.z + t.z / tl * dist_m};
+    dst = drive::onto_ground(dst);
+    game::stop(c);
+    *(net::Vec3*)((uint8_t*)c + game::kVelOff) = {0, 0, 0};
+    game::teleport(c, dst, game::orientation(c));
+    char b[160];
+    snprintf(b, sizeof b, "npc %u replaced %.2f m: (%.1f %.1f %.1f) -> (%.1f %.1f %.1f)", id, net::dist(p, dst),
+             p.x, p.y, p.z, dst.x, dst.y, dst.z);
     return b;
 }
 // tests (BUG-0339): host NPC #id goes back to the game's creature pool, as the relevance pass does it
@@ -2506,6 +2542,7 @@ static void guest_tick(double now)
         check_listed();
     }
     for (auto [id, pe, px] : px_walk()) {
+        px.buf.stand_jump_max = g_creature_replace_fix && game::in_creature_stage() ? npc_logic::kReplaceJumpM : 0.f; // BUG-1388
         net::PlayerState s;
         if (!px.buf.sample(now, s))
             continue;
@@ -2522,6 +2559,7 @@ static void guest_tick(double now)
             game::puppet_unregister(pe.ref.p);
             px_detach(pe);
             px.drv = drive::State{};
+            px.rep_track = npc_logic::ReplaceTrack{};
             g_proxy_lost++;
         }
         if (!pe.ref.p && !npc_rules::remake((s.flags & net::NF_DEAD) != 0, px.ever)) // BUG-0383 (D3)
@@ -2570,6 +2608,7 @@ static void guest_tick(double now)
             px.made_at = now;
             px.made_agl = drive::over_ground(s.pos);
             px.rest_have = px.slope_held = false; // (BUG-1228: a new creature)
+            px.rep_track = npc_logic::ReplaceTrack{}; // (BUG-1388)
             // BUG-0399: on this game's ground (Tribe: the ground can lie higher than the host's)
             game::teleport(pe.ref.p, rts_stage() ? drive::out_of_ground(s.pos) : s.pos, s.rot);
         }
@@ -2615,6 +2654,29 @@ static void guest_tick(double now)
                 px.drv.last_step = now;
                 px.drv.last_cmd = now;
                 g_civ_jumps++;
+            }
+        }
+        if (game::in_creature_stage() && !px.killed && !(s.flags & (net::NF_DEAD | net::NF_AIR))) { // BUG-1388: standing re-placement
+            if (npc_logic::standing_replace(px.rep_track, {s.pos.x, s.pos.y, s.pos.z}, {s.vel.x, s.vel.y, s.vel.z},
+                                            {drawn.x, drawn.y, drawn.z}, now, g_creature_replace_fix)) {
+                if (px.air) {
+                    px.air = false;
+                    game::air_hold(pe.ref.p, false);
+                }
+                drive::walk_end(pe.ref.p, s.pos, px.drv, now);
+                net::Vec3 at = g_proxy_ground_creature ? drive::out_of_ground(s.pos) : s.pos;
+                at = proxy_on_mound(at);
+                game::teleport(pe.ref.p, at, s.rot);
+                *(net::Vec3*)((uint8_t*)pe.ref.p + game::kVelOff) = {0, 0, 0};
+                px.kinematic = false;
+                px.drv.teleports++;
+                px.drv.jumps++;
+                px.drv.path = drive::PathTrack{}; // no path velocity across the re-placement
+                slope_release(pe.ref.p, px);
+                px.drv.track = drive::Track{};
+                px.drv.last_step = now;
+                px.drv.last_cmd = now;
+                g_creature_replaces++;
             }
         }
         drive::path_update(px.drv, s.pos, now);
@@ -3691,12 +3753,12 @@ std::string status()
             spawned += pe.ref.p != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
                  "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u hatch_helped=%u "
-                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u thaw_kept=%u rxkeep_cut=%u mound_lifts=%u mound_targets=%u max_hp_applied=%u proxy_holds=%u air_catches=%u civ_jumps=%u slope_slides=%u still_kept=%u\n",
+                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u thaw_kept=%u rxkeep_cut=%u mound_lifts=%u mound_targets=%u max_hp_applied=%u proxy_holds=%u air_catches=%u civ_jumps=%u creature_replaces=%u slope_slides=%u still_kept=%u\n",
                  (unsigned)px_count(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
                  g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size(), g_away_locals, g_proxy_unlisted,
                  g_proxy_nospecies, g_leave_locals, g_thaw_kept, g_rxkeep_cut, g_mound_lifts, g_mound_targets, g_max_hp_applied,
-                 game::place_holds_kept(), g_air_catches, g_civ_jumps, g_slope_slides, game::still_holds_kept());
+                 game::place_holds_kept(), g_air_catches, g_civ_jumps, g_creature_replaces, g_slope_slides, game::still_holds_kept());
     }
     char b3[128]; // F3 (BUG-0768)
     snprintf(b3, sizeof b3, "npc friendly fire: on=%d pvp_out=%u pvp_in=%u pvp_relayed=%u\n", (int)friendly_fire(), g_pvp_out,

@@ -102,6 +102,7 @@ std::string debug_sink(uint16_t id, float m, bool mark = false); // guest (tests
 std::string debug_pwalk(uint16_t id, const net::Vec3& p, float speed, float secs, int mode = 0); // guest (tests, BUG-0281)
 std::string debug_bhv(uint16_t id, uint32_t anim); // host (tests, BUG-0440): NPC #id plays a behaviour animation, relayed
 std::string debug_pushback(uint16_t id, float mps, float secs); // guest (tests, BUG-0440): the proxy moved back in its updates
+std::string debug_replace(uint16_t id, float dist_m); // host (tests, BUG-1388): re-place standing Creature NPC #id by dist_m m
 std::string debug_raised(float r, const net::Vec3* at = nullptr); // tests (BUG-0440): nests near the avatar and the raised ground there
 std::string debug_dash(uint16_t id, float len, float speed, float secs, float width, uint16_t mate = 0, float off = 0,
                        const net::Vec3* to = nullptr, float vel_k = 1.f); // host (tests, BUG-0305): NPC #id dashes back and forth
