@@ -1865,3 +1865,21 @@ an older server sends one page. Server option `--list-page <n>` (tests: n entrie
   2)" on one and 3 on the other (each page asked in turn); `coop.party online` listed both players on both.
 * no-fail-run: a feature (no switch: an older server is the old behaviour).
 
+## The galaxy menu's gaps (5Z B, 2026-11-23, feat/lineages-alpha)
+<a id="server-menu-gaps"></a>
+
+The owner's answer 5ZB: the menu's gaps before the owner's own alpha copy (docs/12 #server-galaxy-menu-built's "not
+checked yet" list). Leaving the galaxy from the Co-op window was done already ("Leave Galaxy").
+* Creature pictures (BUG-9355, switch `galaxy.menu_pictures`): the server keeps whose creature a stored world shows and
+  lists it; the host's upload puts that creature into the creation store; the menu takes another player's creature
+  from the store only. ✔ The MSI, a fresh profile: "?" off, the creature on (images/bug9355_menu_picture_off_on.png).
+* Pages (BUG-9356, `galaxy.menu_pages`): more planets than stars: the last star "More planets (k/n)", its Play turns
+  the page. ✔ The MSI, 15 planets in 9 stars. ~ The page star shows "Cell Stage" and a date (the panel's own lines).
+* Delete my creature here (BUG-9357, `galaxy.delete_creature`, `creations.delete_mark`): the native bin on a server
+  planet's panel opens our box; Delete forgets this player's creature on that planet, its next entry makes a new one.
+  ✔ The MSI by real clicks: the box, the notice, the creature editor on the next Play.
+* Found on the way: BUG-9358 (Play could enter another planet when the list changed, fixed), BUG-9359 (a host
+  arriving in Samuth's stored world dies at once, open).
+* Tests: `coop.gmenu open <planet>` (a planet's panel without a click: Spore's galaxy view drifts at 10 FPS and clicks
+  on stars miss), `page`, `delete <planet>`, `deletepick 1|0`, `worlds <planet>`.
+

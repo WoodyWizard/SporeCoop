@@ -1467,4 +1467,9 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9351](BUG-9351-galaxy-a-space-era-ship-at-another-planet-shows.md) | fixed | bug | space | 2026-11-23 | unreleased | Galaxy: a Space era ship at another planet shows over its home planet's other eras |
 | [BUG-9352](BUG-9352-coop-space-land-crashes-in-the-terrain-when-the.md) | fixed | tooling | space | 2026-11-23 | unreleased | coop.space land crashes in the terrain when the ship still flies to a planet never visited |
 | [BUG-9353](BUG-9353-galaxy-a-civ-era-s-building-in-a-tribe-game-is-s.md) | wontfix | bug | tribe | 2026-11-23 |  | Galaxy: a Civ era's building in a Tribe game is solid only 1 m wide |
-| [BUG-9354](BUG-9354-galaxy-a-second-stage-start-in-one-game-session.md) | open | bug | space | 2026-11-23 |  | Galaxy: a second stage start in one game session never arrives as the planet's new era |
+| [BUG-9354](BUG-9354-galaxy-a-second-stage-start-in-one-game-session.md) | fixed | bug | space | 2026-11-23 | unreleased | Galaxy: a second stage start in one game session never arrives as the planet's new era |
+| [BUG-9355](BUG-9355-galaxy-menu-a-server-planet-whose-creature-this.md) | fixed | bug | galaxy | 2026-11-23 | unreleased | Galaxy menu: a server planet whose creature this game lacks shows no creature |
+| [BUG-9356](BUG-9356-galaxy-menu-planets-past-the-menu-s-stars-are-no.md) | fixed | bug | galaxy | 2026-11-23 | unreleased | Galaxy menu: planets past the menu's stars are not shown |
+| [BUG-9357](BUG-9357-galaxy-menu-delete-my-creature-here-on-a-server.md) | fixed | feature | galaxy | 2026-11-23 | unreleased | Galaxy menu: Delete my creature here on a server planet's bin |
+| [BUG-9358](BUG-9358-galaxy-menu-play-on-a-server-planet-can-enter-an.md) | fixed | bug | galaxy | 2026-11-23 | unreleased | Galaxy menu: Play on a server planet can enter another planet when the list changes during Play |
+| [BUG-9359](BUG-9359-galaxy-the-host-of-a-stored-creature-world-is-ki.md) | open | bug | galaxy | 2026-11-23 |  | Galaxy: the host of a stored Creature world is killed on arrival |

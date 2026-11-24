@@ -4026,3 +4026,11 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   presses Play on that planet (the ring opens, then the rejoin card), then enters an era of it from the menu. Its X
   closes it.
   Fixed on feat/lineages-alpha (2026-11-23, ee08d149): the screen is closed before the load.
+
+## BUG-9359: the host of a stored Creature world is killed on arrival (2026-11-23, feat/lineages-alpha)
+<a id="known-galaxy-host-killed-on-arrival"></a>
+
+Seen twice on the MSI with TITAN's galaxy server: entering Samuth's stored Creature world (or a copy) as its host, the
+death screen "You were killed in battle!" came during the stage's intro. Reproduce: `coop.galaxy enter "Samuth|Creature"`
+on a galaxy started from out/galaxy_fixtures/worlds_base. Not analysed (docs/tickets/BUG-9359-*).
+

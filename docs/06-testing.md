@@ -9414,3 +9414,16 @@ BUG-9326 (docs/re/tribe.md#tribe-partner-pens). Follows #testing-tribe-final-qa 
 * Tribe members against a prop: select one member only (`coop.tribe select_own 0 1`; two walk in formation and stop
   apart), walk it to the prop's centre (`coop.tribe walk x y z`, the prop from `coop.visit status`).
 
+## The galaxy menu on the MSI: fresh profiles, stopping, stars (2026-11-23, feat/lineages-alpha)
+<a id="testing-msi-menu-fresh"></a>
+
+* `msi.ps1 stop` stops the profile it is given (default MSIGuest): a game started with another profile keeps running.
+  Three instance 1 games ran at once on 2026-11-23: two "Another instance of the game is already running [1000]" alerts
+  on the MSI's desktop, and the deploy failed (coop.dll in use). Stop by the profile started, check no SporeApp runs.
+* `msi.ps1 deploy` needs LLVM_MINGW (llvm-strip); without it the deploy prints nothing and the MSI keeps the old dll.
+* A fresh profile (`start -Profile <new>`) opens Spore's account box first: its X (1280x960: 997,254), then "Don't prompt
+  me again" (396,518) and OK (858,520). Nothing is typed.
+* Spore's galaxy view drifts and turns on its own: a click on a star from an older shot misses. `coop.gmenu open
+  <planet>` opens the panel the game's way; panels then stand where the star is (crop by its place).
+* A creation the creation store sent stays in that profile: a picture test's "before" needs a profile that never got it.
+

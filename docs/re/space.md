@@ -3681,3 +3681,20 @@ Adds to #space-native-stage-choice.
 * ✔ Back pressed from outside the frame while in the menu, then the load: the menu left state 4 within one frame and
   the planet loaded without the screen (BUG-9350's fix).
 
+## The galaxy menu's star count, the bin and the camera (2026-11-23, feat/lineages-alpha)
+<a id="space-menu-pages"></a>
+
+Ghidra on the Steam 3010a413 dump (GOG 2024 addresses), runtime on the MSI; for BUG-9356 and BUG-9357.
+* ✔ GGE_RebuildPlanets (read past its hook jump at 0xDF95A6): entries = the star manager's saved stars (+0xF0..+0xF4) +
+  the list 0xBA6450 returns (its empty stars); GGE_FillEmpty fills up to that many. Seen: 8 or 9 stars on QA profiles,
+  6 on a fresh profile.
+* ✔ The planets state (state 2) object is the planet set itself (ctor 0xE008B0 stores it in GGE_PlanetSet_ptr; vtable
+  0x147EF50): vt 0x58 the panel's buttons 0xDF7800, vt 0x60 0xDF7AC0 (entry, bool): opens the entry's panel (the
+  camera on it); (0, 1) closes the open one; its key handler vt 0x18 0xDF6300: Esc on a saved entry's panel calls
+  `SporeCoop::GGE_CameraToGalaxy` 0xDDE520 ([0x15A30BC] = 0, [0x15A30C4] = 2), then vt 0x60(0, 1); Esc without a panel
+  opens Options (state 6).
+* ✔ The panel's bin is window 0x3C4925E: 0xDF7800 sets [`SporeCoop::GGE_DeleteState_ptr` 0x16A11B4] +0x48 = the entry
+  (GGE +0xFC) and switches to state 0xB, whose enter 0xDE31F0 shows Spore's "Delete Game: Delete <name>?" box. Taking
+  that switch keeps the panel as it was (seen).
+* ✔ A switch from Play's state 0xC to state 2 alone left the camera zoomed in on the star (dark, no menu) until Esc.
+
