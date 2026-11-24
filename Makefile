@@ -194,6 +194,9 @@ unit-cpp: sanitizer-probe
 	@# WP-D1 of 0.7.17: the difficulty for 3-4 players (party_difficulty_logic.h, BUG-1473)
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/party_tests tests/party_tests.cpp
 	$(B)/host/party_tests
+	@# WP-A of 0.7.99: co-op Galactic Adventures (adventure_logic.h, wire/adventure.h, BUG-1474 / BUG-0793)
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/adventure_tests tests/adventure_tests.cpp
+	$(B)/host/adventure_tests
 	@# D3 of 0.7.15: the Tribe rules (tribe_logic.h, BUG-1161) and the member animations' message type (C7, BUG-1160)
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/tribe_tests tests/tribe_tests.cpp
 	$(B)/host/tribe_tests
