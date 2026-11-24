@@ -237,4 +237,21 @@ struct AdoptHold {
 constexpr double kOfferAnswerSlack = 30.0;
 inline bool offer_unanswered(double sent, double now, double offer_life) { return now - sent > offer_life + kOfferAnswerSlack; }
 
+// BUG-1539: Space colonize tutorial mission (`cMissionColonize`, initial tutorial id 0x398ACA5E). When an allied
+// partner colonizes the mission's target planet (or completes the initial colonize tutorial mission), space_allies
+// mirrors the partner's colony onto that planet so the remaining players cannot place a colony there. Advance their
+// active `cMissionColonize` (state 3, mColonizeMissionState < 2) through the game's own FinishObjective helper,
+// except in Rivals mode where players compete as separate empires.
+constexpr uint32_t kColonizeTutorialId = 0x398ACA5Eu;
+inline bool colonize_mission_done_by_partner(bool fix, bool in_space, bool connected, bool rivals, int mission_state,
+                                             uint32_t colonize_state, uint32_t mission_id, bool target_colonized_by_partner,
+                                             bool partner_finished_tutorial)
+{
+    if (!fix || !in_space || !connected || rivals)
+        return false;
+    if (mission_state != 3 || colonize_state >= 2)
+        return false;
+    return target_colonized_by_partner || (mission_id == kColonizeTutorialId && partner_finished_tutorial);
+}
+
 } // namespace spacelogic

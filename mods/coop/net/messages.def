@@ -69,6 +69,8 @@
 // reserved in net/manifest.h kReservedMsgs and creations.h.
 // WP-S1 of 0.7.17 (fix/w73-fleet, BUG-1288): space 1.3 adds MSG_UFO_LEAD 78 and wire/space_ufo.h (the NPC ships of a
 // place without the host, led by a guest the host names; a peer before space 1.3 is never sent it nor named).
+// 0.7.17.1 (BUG-1539): space 1.4 appends optional trailing u32 mission_id to wire::space_core::Mission (K_MISSION);
+// older readers stop before it, and newer readers accept old K_MISSION payloads with mission_id = 0.
 FAMILY(session,   1, 1, 3, STAGE_ALWAYS, "session", "net/protocol.h wire/history.h")
 FAMILY(world,     2, 1, 1, STAGE_ALWAYS, "world transfer", "")
 FAMILY(creature,  3, 1, 3, STAGE_CREATURE, "Creature", "")
@@ -76,7 +78,7 @@ FAMILY(npc,       4, 1, 2, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored c
 FAMILY(cell,      5, 1, 2, STAGE_CELL, "Cell", "")
 FAMILY(tribe,     6, 1, 1, STAGE_TRIBE, "Tribe", "wire/tribe_anim.h")
 FAMILY(civ,       7, 1, 2, STAGE_CIV | STAGE_SPACE, "Civilization", "")
-FAMILY(space,     8, 1, 3, STAGE_SPACE, "Space", "wire/common.h wire/space_core.h wire/space_map.h wire/space_contracts.h wire/space_diplomacy.h wire/space_finale.h wire/space_rivalry.h wire/space_allies.h wire/space_trade.h wire/space_planets.h wire/space_badges.h wire/space_eco.h wire/space_ufo.h")
+FAMILY(space,     8, 1, 4, STAGE_SPACE, "Space", "wire/common.h wire/space_core.h wire/space_map.h wire/space_contracts.h wire/space_diplomacy.h wire/space_finale.h wire/space_rivalry.h wire/space_allies.h wire/space_trade.h wire/space_planets.h wire/space_badges.h wire/space_eco.h wire/space_ufo.h")
 FAMILY(shared,    9, 1, 0, STAGE_TRIBE | STAGE_CIV | STAGE_SPACE, "shared resources", "wire/common.h wire/shared_res.h")
 FAMILY(creations, 10, 1, 2, STAGE_ALWAYS, "creations", "species_line_core.h")
 

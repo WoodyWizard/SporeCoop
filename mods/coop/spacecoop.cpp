@@ -1085,6 +1085,7 @@ static void SK_THISCALL h_SetState(void* m, int s)
         }
         wire::space_core::Mission msg;
         msg.reward = F<float>(m, 0xA0);
+        msg.mission_id = F<uint32_t>(m, 0x78); // BUG-1539: optional tail for tutorial mission completion
         for (auto& kk : keys) {
             wire::Key3 k3;
             memcpy(k3.v, kk.v, sizeof k3.v);
@@ -1102,6 +1103,51 @@ static void SK_THISCALL h_SetState(void* m, int s)
             }
         }
     }
+}
+
+// BUG-1539: Space colonize tutorial mission (`cMissionColonize`, vtable 0x146DF58, Cast 0x2BA2A01; initial tutorial id
+// 0x398ACA5E). Its Update (0xC4EAD0) only checks the local player empire's colonies (`GetColonyPlanets().size() > 1` for
+// 0x398ACA5E, `cPlanet_IsColonizedBy` for other targets or building phase). When an allied partner colonizes the target
+// planet, space_allies mirrors the partner's colony onto that planet so other players cannot drop a Colony Incredi-Pak
+// there without destroying the partner's colony. On: when an allied partner has colonized the target planet (or completed
+// 0x398ACA5E in this galaxy), advance the active cMissionColonize via `cMissionColonize_FinishObjective` (0xC55650).
+// Off (`coop.fix space.colonize_mission off`): unmodified Update (0.7.16/0.7.17).
+static bool g_colonize_mission_fix = true;
+COOP_FIX("space.colonize_mission", "BUG-1539", g_colonize_mission_fix,
+         "space: a partner's colony on your colonize mission's target planet (or completing the initial colonize tutorial) advances your colonize mission too");
+using ColonizeUpdate_t = int(SK_THISCALL*)(void*, float);
+static ColonizeUpdate_t o_ColonizeUpdate;
+static uintptr_t a_ColonizeFinish;
+static uint32_t g_partner_colonize_tut_epoch; // BUG-1539: world_epoch in which an allied partner completed 0x398ACA5E
+static uint32_t g_colonize_missions_partner;  // tests: cMissionColonize objectives completed via a partner
+static uint32_t mission_target_pid(void* m)
+{
+    if (!m || !skg::readable(m, 0x1F8))
+        return 0;
+    void* pl = F<void*>(m, 0x1E8);
+    void* rec = pl && skg::readable(pl, 0x140) ? F<void*>(pl, 0x13C) : nullptr;
+    return rec && skg::readable(rec, 0x188) ? F<uint32_t>(rec, 0x184) : 0;
+}
+static int SK_THISCALL h_ColonizeUpdate(void* m, float dt)
+{
+    int st = o_ColonizeUpdate(m, dt);
+    if (!m || !a_ColonizeFinish || !skg::readable(m, 0x1F8))
+        return st;
+    uint32_t col_state = F<uint32_t>(m, 0x1F0);
+    uint32_t mid = F<uint32_t>(m, 0x78);
+    uint32_t pid = mission_target_pid(m);
+    bool target_by_partner = pid && spaceext::allies_partner_colonized(pid);
+    bool tut_by_partner = g_partner_colonize_tut_epoch != 0 && g_partner_colonize_tut_epoch == spaceext::world_epoch();
+    if (spacelogic::colonize_mission_done_by_partner(g_colonize_mission_fix, in_space(), connected(), spaceext::rivals(),
+                                                     st, col_state, mid, target_by_partner, tut_by_partner)) {
+        thiscall<void>(a_ColonizeFinish, m);
+        g_colonize_missions_partner++;
+        H->log(M, SK_INFO, "space: colonize mission %08X (target %08X) objective completed by partner (BUG-1539, #%u)",
+               mid, pid, g_colonize_missions_partner);
+        if (C.notice)
+            C.notice("colonize mission objective completed with your partner");
+    }
+    return st;
 }
 
 // ---------------- terraforming ----------------
@@ -1832,6 +1878,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             break; // cut: no notice, no tools
         if (spaceext::relation(C.sess->my_id(), origin) != spaceext::Relation::Ally)
             break; // rivals mode: mission rewards are shared between allies only
+        if (msg.mission_id == spacelogic::kColonizeTutorialId && !spaceext::rivals())
+            g_partner_colonize_tut_epoch = spaceext::world_epoch(); // BUG-1539
         void* inv = inventory();
         int got = 0, owed = 0;
         for (auto& k3 : msg.tools) {
@@ -2078,6 +2126,7 @@ void on_session_end()
     g_gifts_out.clear(); // unanswered gifts most likely arrived (only a failure is answered); g_gifts_owed stays
     g_gifts_held.clear();
     g_gift_hold = g_gift_noroom = false;
+    g_partner_colonize_tut_epoch = 0; // BUG-1539
     spaceext::session_end_all();
 }
 LIFECYCLE_HOOK("spacecoop.session", lifecycle::kSessionEnd, -40, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session (the Space features: spaceext::session_end_all)
@@ -2119,6 +2168,9 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     g_ok = a_PlayerUFOGet && a_Context && a_ActivePlanet;
     if (a_SetState)
         H->hook_create(M, (void*)a_SetState, (void*)h_SetState, (void**)&o_SetState);
+    a_ColonizeFinish = S("SporeCoop::cMissionColonize_FinishObjective");
+    if (uintptr_t cu = S("SporeCoop::cMissionColonize_Update"); cu && a_ColonizeFinish)
+        H->hook_create(M, (void*)cu, (void*)h_ColonizeUpdate, (void**)&o_ColonizeUpdate);
     if (uintptr_t ge = S("SporeCoop::cAppModeSpace_OnGalaxyEntered"))
         H->hook_create(M, (void*)ge, (void*)h_GalaxyEntered, (void**)&o_GalaxyEntered);
     a_Rng = S("Math::RandomNumberGenerator::global_ptr");
@@ -2787,6 +2839,60 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "tutorial first_comm=%d flight_school=%d m201=%d mission201=%p state=%d", mm[0x16], mm[0x17],
                  mm[0x18], m201, m201 && skg::readable((uint8_t*)m201 + 0x84, 4) ? *(int*)((uint8_t*)m201 + 0x84) : -1);
         return b;
+    }
+    if (a[0] == "colonize_mission") { // tests (BUG-1539, docs/re/space.md#space-colonize-tutorial)
+        uintptr_t get = H->sym("Simulator::cMissionManager::Get"),
+                  create = H->sym("SporeCoop::cMissionManager_CreateMission"),
+                  set_target = H->sym("SporeCoop::cMission_SetTargetPlanet"),
+                  accept = H->sym("SporeCoop::cMission_Accept"),
+                  home_fn = H->sym("SporeCoop::GetPlayerHomePlanetRecord"),
+                  req_pl = H->sym("Simulator::cStarManager::RequirePlanetsForStar"),
+                  get_pl = H->sym("Simulator::cStarRecord::GetPlanetRecords");
+        void* mm = get ? cdecl_call<void*>(get) : nullptr;
+        void* emp = a_PlayerEmpire ? cdecl_call<void*>(a_PlayerEmpire) : nullptr;
+        if (a.size() >= 3 && a[1] == "create" && mm && emp && create && set_target && accept && home_fn) {
+            uint32_t pid = (uint32_t)strtoul(a[2].c_str(), nullptr, 16);
+            void* star = star_record(pid & 0xFFFFFFu);
+            void* sm = a_StarMgr ? cdecl_call<void*>(a_StarMgr) : nullptr;
+            void* target_rec = nullptr;
+            if (star && sm) {
+                if (!F<uint8_t>(star, 0xAC) && req_pl)
+                    thiscall<void>(req_pl, sm, star, 0);
+                void* vec = get_pl ? thiscall<void*>(get_pl, star) : (uint8_t*)star + 0x84;
+                if (skg::readable(vec, 8)) {
+                    void** beg = F<void**>(vec, 0);
+                    void** end = F<void**>(vec, 4);
+                    uint32_t idx = pid >> 24;
+                    if (beg && end > beg && idx < (uint32_t)(end - beg) && skg::readable(beg + idx, 4) &&
+                        beg[idx] && skg::readable(beg[idx], 0x1A4) && F<uint32_t>(beg[idx], 0x184) == pid)
+                        target_rec = beg[idx];
+                }
+            }
+            void* home_rec = cdecl_call<void*>(home_fn);
+            if (!target_rec || !home_rec)
+                return "colonize_mission: target or home planet record not found";
+            void* m = thiscall<void*>(create, mm, spacelogic::kColonizeTutorialId, home_rec, emp, 0);
+            if (!m)
+                return "colonize_mission: CreateMission returned null";
+            thiscall<void>(set_target, m, target_rec);
+            thiscall<void>(accept, m);
+        }
+        std::string out;
+        int n = 0;
+        for (void* m : spaceext::game_missions()) {
+            if (!m || !skg::readable(m, 0x1F8))
+                continue;
+            if (!vcall<void*>(m, 0x0C / 4, 0x02BA2A01u)) // Cast(cMissionColonize)
+                continue;
+            n++;
+            snprintf(b, sizeof b, "mission id=%08X state=%d col_state=%u target=%08X partner_col=%d\n",
+                     F<uint32_t>(m, 0x78), F<int>(m, 0x84), F<uint32_t>(m, 0x1F0), mission_target_pid(m),
+                     (int)spaceext::allies_partner_colonized(mission_target_pid(m)));
+            out += b;
+        }
+        snprintf(b, sizeof b, "colonize_mission: count=%d fix=%d partner_done=%u tut_epoch=%u\n", n,
+                 (int)g_colonize_mission_fix, g_colonize_missions_partner, g_partner_colonize_tut_epoch);
+        return out + b;
     }
     if (a[0] == "terra" && a.size() > 3) { // as if the own tool changed the planet
         void* tm = a_TerraMgr ? cdecl_call<void*>(a_TerraMgr) : nullptr;

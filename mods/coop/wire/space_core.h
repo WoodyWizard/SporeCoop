@@ -41,27 +41,34 @@ struct Raid {
     }
 };
 
-// K_MISSION 3 (any): f32 the mission's money reward, u8 n, n x key: its reward tools. Refused (as before): fewer bytes
-// than the n keys need.
+// K_MISSION 3 (any): f32 the mission's money reward, u8 n, n x key: its reward tools, optional trailing u32 mission_id
+// (BUG-1539; older readers stop after the tools, older senders read as 0). Refused (as before): fewer bytes than the n
+// keys need.
 struct Mission {
     float reward = 0;
     std::vector<Key3> tools;
+    uint32_t mission_id = 0;
     void write(net::Writer& w) const
     {
         w.f32(reward);
         w.u8((uint8_t)tools.size());
         for (auto& k : tools)
             put_key(w, k);
+        if (mission_id)
+            w.u32(mission_id);
     }
     bool read(net::Reader& r)
     {
         reward = r.f32();
         uint8_t n = r.u8();
         tools.clear();
+        mission_id = 0;
         if (!r.ok() || r.left() < (size_t)n * 12)
             return false; // cut: no notice, no tools
         for (int i = 0; i < n; i++)
             tools.push_back(get_key(r));
+        if (r.ok() && r.left() >= 4)
+            mission_id = r.u32();
         return r.ok();
     }
 };

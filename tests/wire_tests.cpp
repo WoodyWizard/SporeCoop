@@ -525,7 +525,11 @@ static void test_space_core()
         rejects<c::Mission>("core K_MISSION fewer bytes than its keys", cut(w.data, 1));
         rejects<c::Mission>("core K_MISSION no count", {0, 0, 0xc0, 0x3f});
         auto t = accepts<c::Mission>("core K_MISSION no tools", {0, 0, 0xc0, 0x3f, 0});
-        CHECK(t.tools.empty(), "no tools");
+        CHECK(t.tools.empty() && t.mission_id == 0, "no tools, old peer omits mission_id");
+        c::Mission mid = m;
+        mid.mission_id = 0x398ACA5Eu;
+        auto m2 = accepts<c::Mission>("core K_MISSION with mission_id", enc(mid));
+        CHECK(m2.mission_id == 0x398ACA5Eu && m2.tools.size() == 2, "optional trailing mission_id");
     }
     {
         c::Terra t{0x01000009, {0.5f, -3.f, 10.f}};

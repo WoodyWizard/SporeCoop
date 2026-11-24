@@ -3766,3 +3766,15 @@ BUG-1475 (#217 a, the idea of PR #217 by IltonBJSilva). GOG 2024, Ghidra (static
   left to "Name Your Captain"; a captain the game sets later (named, outfitted) is the player's own, kept and noted per
   world (worlds.ini [captain]). Saves: savestrip's save hooks write the world's captain into +0xC4 for the save and ours
   after it; the session's end puts the world's back. `coop.owncaptain [save]`.
+
+## Colonize tutorial mission (`cMissionColonize`) blocked by a partner's colony (2026-11-24, rel/0.7.17.1)
+<a id="space-colonize-tutorial"></a>
+
+BUG-1539. GOG 2024, objdump of `cMissionColonize` (vtable `0x0146DF58`, Cast `0x02BA2A01`).
+
+* ✔ (objdump) `cMissionColonize::Update` (`0x00C4EAD0`, `vt+0x7C`): when `cMission::Update` returns `3` (active), switches on `mColonizeMissionState` (`+0x1F0`):
+  * State `0` (place colony): for the initial tutorial mission `0x398ACA5E` (`+0x78`), calls `cEmpire::GetColonyPlanets` (`0x00C34650`) on `GetPlayerEmpire()` (`0x010211B0`) and checks `count > 1`; for all other colonize missions, calls `cPlanet::IsColonizedBy(targetPlanet, playerEmpire, 0)` (`0x00C70CC0` -> `0x00C702F0`). When true, sets state `1` (`0x00C4E190`) if `mNeedOneFullRow` (`+0x1F5`) is set, else calls `cMissionColonize_FinishObjective` (`0x00C55650`).
+  * State `1` (buildings): calls `cPlanet::IsColonizedBy(targetPlanet, playerEmpire, 1)` (checks `cCityData` buildings `size - popcount(turrets) > 1` via `0x00FF0720`), then calls `0x00C55650`.
+* ✔ (objdump) `cMissionColonize_FinishObjective` (`0x00C55650`, identical to `vt+0x15C` `0x00C4E360`): idempotent when `+0x1F0 == 2`; calls `vt+0x6C`, sets `+0x1F0 = 2`, refreshes mission UI (`0x00C47EE0`), updates beacon (`0x00C47440`), and calls `0x00C47320` (triggers turn-in comm or immediate completion).
+* ✔ (code) When Player A colonizes the tutorial target planet `P`, `space_allies.cpp` mirrors `P` into Player B's galaxy under `<Partner>'s empire` (`m.pol != my_pol()`), preventing Player B from placing a Colony Incredi-Pak on `P` while `cMissionColonize::Update` checks only `playerEmpire`.
+* Fix `space.colonize_mission` (`spacecoop.cpp`, `space_allies.cpp`, `space_logic.h`): hooks `cMissionColonize::Update`; when an allied partner (non-Rivals, non-War) has colonized the mission's target planet `P` (or completed `0x398ACA5E` in this galaxy epoch, sent via optional trailing `mission_id` on `K_MISSION`), calls `cMissionColonize_FinishObjective` (`0x00C55650`). `coop.space colonize_mission [create [planet_hex]]` inspects or spawns `0x398ACA5E` for lab tests.

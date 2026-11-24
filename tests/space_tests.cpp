@@ -598,6 +598,25 @@ static void test_audit_0717()
     CHECK(offer_unanswered(10, 10 + 120 + kOfferAnswerSlack + 1, 120));
 }
 
+static void test_colonize_mission()
+{
+    printf("space colonize tutorial mission (BUG-1539)\n");
+    using namespace spacelogic;
+    // Target planet colonized by an allied partner advances state 0 and state 1
+    CHECK(colonize_mission_done_by_partner(true, true, true, false, 3, 0, kColonizeTutorialId, true, false));
+    CHECK(colonize_mission_done_by_partner(true, true, true, false, 3, 1, 0x12345678u, true, false));
+    // Initial tutorial completed by partner advances 0x398ACA5E even on another planet, not arbitrary missions
+    CHECK(colonize_mission_done_by_partner(true, true, true, false, 3, 0, kColonizeTutorialId, false, true));
+    CHECK(!colonize_mission_done_by_partner(true, true, true, false, 3, 0, 0x12345678u, false, true));
+    // Guards: fix off, rivals mode, not active, or already at objective state 2
+    CHECK(!colonize_mission_done_by_partner(false, true, true, false, 3, 0, kColonizeTutorialId, true, true));
+    CHECK(!colonize_mission_done_by_partner(true, true, true, true, 3, 0, kColonizeTutorialId, true, true));
+    CHECK(!colonize_mission_done_by_partner(true, true, true, false, 5, 0, kColonizeTutorialId, true, true));
+    CHECK(!colonize_mission_done_by_partner(true, true, true, false, 3, 2, kColonizeTutorialId, true, true));
+    CHECK(!colonize_mission_done_by_partner(true, false, true, false, 3, 0, kColonizeTutorialId, true, true));
+    CHECK(!colonize_mission_done_by_partner(true, true, false, false, 3, 0, kColonizeTutorialId, true, true));
+}
+
 int main()
 {
     test_jump_target();
@@ -612,6 +631,7 @@ int main()
     test_rejoin_slot_pair();
     test_fleet_leads();
     test_audit_0717();
+    test_colonize_mission();
     printf(g_fail ? "space_tests: %d FAILED\n" : "space_tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

@@ -902,9 +902,26 @@ static bool own_mirror(uint32_t planet)
     return false;
 }
 
+// BUG-1539: an allied partner has `planet` in its colony roster (whether mirrored under a partner empire or under
+// add_planet_own): true only when the session is not in Rivals mode and the partner is not at war with us.
+static bool partner_colonized(uint32_t planet)
+{
+    if (!planet || spaceext::rivals())
+        return false;
+    for (auto& [n, m] : g_m) {
+        if (m.rel == spaceext::Relation::War)
+            continue;
+        for (uint32_t p : m.wanted)
+            if (p == planet)
+                return true;
+    }
+    return false;
+}
+
 } // namespace spaceallies
 bool spaceext::allies_mirror_pol(uint32_t pol) { return spaceallies::mirror_pol(pol); }
 bool spaceext::allies_own_mirror(uint32_t planet) { return spaceallies::own_mirror(planet); }
+bool spaceext::allies_partner_colonized(uint32_t planet) { return spaceallies::partner_colonized(planet); }
 std::vector<void*> spaceext::game_missions() { return spaceallies::missions(); }
 namespace spaceallies {
 
