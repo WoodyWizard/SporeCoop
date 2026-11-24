@@ -317,6 +317,16 @@ typedef void(SK_THISCALL* RelEvent_t)(void*, int, void*, void*);
 static RelEvent_t o_RelEvent;
 static uint32_t g_events_dropped = 0;
 
+// BUG-1540: when a guest wipes a naturally hostile species undiscovered by the host, discovery (0xBA5130) never
+// materialized rec[0] on the host, so rec[0] stayed 0 while GetRelationship(mgr, key, creature, nullptr) returned 5.
+// ApplyEvent (0xBA4A00) compared new_rel == old_rel (5 == 5) and skipped writing rec[0], so SpeciesGoal_Update and
+// goal_outcome (creature == nullptr) read 0 != 5 and skipped the extinction goal DNA. Materialize rec[0] on the host
+// before o_RelEvent so rec[0] matches what discovery would have stored. `coop.fix social.undiscovered_rel off`: 0.7.17.1.
+static bool g_undiscovered_rel_fix = true;
+COOP_FIX("social.undiscovered_rel", "BUG-1540", g_undiscovered_rel_fix,
+         "creature: host materializes a species' default relation on a relationship event so an undiscovered hostile nest pays its extinction goal DNA");
+static uint32_t g_rel_materialized = 0;
+
 static void SK_THISCALL h_RelEvent(void* mgr, int event, void* key, void* creature)
 {
     if (creature && C.sess && C.sess->role() == net::Role::Client &&
@@ -329,6 +339,14 @@ static void SK_THISCALL h_RelEvent(void* mgr, int event, void* key, void* creatu
     uint32_t* rec = (a_RelRecord && key && mgr) ? thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, key) : nullptr;
     int32_t r0 = rec ? (int32_t)rec[0] : -99;
     uint32_t i0 = rec ? rec[2] : 0, k0 = rec ? rec[3] : 0;
+    if (rec && rec[0] == 0 && creature && a_RelGet) {
+        int resolved = thiscall<int>(a_RelGet, mgr, key, creature, (void*)nullptr);
+        if (social_logic::should_materialize_rel(g_undiscovered_rel_fix, is_host(), game::in_creature_stage(),
+                                                 true, (int32_t)rec[0], resolved)) {
+            rec[0] = (uint32_t)resolved;
+            g_rel_materialized++;
+        }
+    }
     o_RelEvent(mgr, event, key, creature);
     // BUG-1527: the guest's own game's event while the host is away (a mirror's was dropped above)
     if (key && social_logic::keep_own(g_solo_fix, is_guest(), host_away(), false) && g_solo.add((const uint32_t*)key, event))
@@ -1505,10 +1523,10 @@ std::string status()
         snprintf(b, sizeof b,
                  "social(host): acts_in=%u impressed=%u refused=%u games=%u species_tx=%u goal_dna_paid=%u "
                  "goal_dna_dropped=%u goal_owed=%u goal_owed_paid=%u prompts_sent=%u answers=%u answers_wrong=%u "
-                 "answers_early=%u prompt_fails=%u games_forgotten=%u\n",
+                 "answers_early=%u prompt_fails=%u games_forgotten=%u rel_mat=%u\n",
                  g_acts_in, g_impressed, g_refused, (unsigned)g_games.size(), g_table_tx, g_goal_dna_paid,
                  g_goal_dna_dropped, (unsigned)g_goal_owed.size(), g_goal_owed_paid, g_prompts_sent, g_answers,
-                 g_answers_wrong, g_answers_early, g_prompt_fails, g_games_forgotten);
+                 g_answers_wrong, g_answers_early, g_prompt_fails, g_games_forgotten, g_rel_materialized);
     else
         snprintf(b, sizeof b,
                  "social(guest): engaged=%d engages=%u acts_sent=%u results_in=%u species_rx=%u species_fixed=%u "
@@ -1611,6 +1629,20 @@ bool debug_set_record(uint32_t inst, int relation, uint32_t impressed)
     rec[0] = (uint32_t)relation;
     rec[2] = impressed;
     return true;
+}
+
+// tests (BUG-1540): override [tuning+0x390] default relation of host NPC #id; returns old value or -1
+int debug_set_default(uint16_t id, int rel)
+{
+    void* c = npc::host_npc(id);
+    if (!c || !skg::readable((uint8_t*)c + 0xE84, 4))
+        return -1;
+    uint8_t* t = *(uint8_t**)((uint8_t*)c + 0xE84);
+    if (!t || !skg::readable(t + 0x390, 4))
+        return -1;
+    int old = *(int*)(t + 0x390);
+    *(int*)(t + 0x390) = rel;
+    return old;
 }
 
 bool debug_event(uint32_t inst, int event)

@@ -86,4 +86,15 @@ inline bool meter_close_due(bool fix, double won_at, double now, double hold)
     return !fix || won_at < 0 || now - won_at >= hold;
 }
 
+// BUG-1540: on the host in Creature stage, when ApplyEvent runs for a creature whose species record still has
+// relation 0 (undiscovered by the host), materialize rec[0] from GetRelationship(mgr, key, creature, nullptr)
+// if it resolves to a wild species relation (1..5; 6 is player species / allied, 0 is unknown). Without this,
+// naturally hostile predators (default 5) hit old_rel == new_rel (5 == 5) in ApplyEvent (0xBA4CDB), skip
+// writing rec[0], and leave rec[0] == 0 so SpeciesGoal_Update and goal_outcome (creature == nullptr) see 0 != 5.
+inline bool should_materialize_rel(bool fix, bool host, bool creature_stage, bool has_creature, int32_t rec_rel,
+                                   int resolved_rel)
+{
+    return fix && host && creature_stage && has_creature && rec_rel == 0 && resolved_rel >= 1 && resolved_rel <= 5;
+}
+
 } // namespace social_logic

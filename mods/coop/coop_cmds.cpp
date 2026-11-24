@@ -991,6 +991,15 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
         SAY(ok ? "record set" : "no relationship manager");
         return ok ? 0 : 1;
     }
+    if (argc > 3 && !strcmp(argv[1], "setdefault")) { // tests (BUG-1540): setdefault <npc id> <rel>
+        int old = social::debug_set_default((uint16_t)atoi(argv[2]), atoi(argv[3]));
+        if (old < 0) {
+            SAY("no such NPC or tuning");
+            return 1;
+        }
+        SAY("default %d -> %d", old, atoi(argv[3]));
+        return 0;
+    }
     if (argc > 3 && !strcmp(argv[1], "event")) { // tests (BUG-0168): event <hex crt> <n>, the game's ApplyEvent
         bool ok = social::debug_event(strtoul(argv[2], nullptr, 16), atoi(argv[3]));
         SAY(ok ? "event applied" : "no relationship manager or event out of 0..7");

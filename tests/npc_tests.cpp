@@ -919,6 +919,16 @@ static void test_social_logic()
     // BUG-1515: a won meter closes after the hold
     CHECK(!meter_close_due(true, 10.0, 10.5, 1.5) && meter_close_due(true, 10.0, 11.6, 1.5));
     CHECK(meter_close_due(false, 10.0, 10.1, 1.5) && meter_close_due(true, -1, 10.1, 1.5));
+    // BUG-1540: host materializes undiscovered wild species default relation (1..5) before ApplyEvent
+    CHECK(should_materialize_rel(true, true, true, true, 0, 5));
+    CHECK(should_materialize_rel(true, true, true, true, 0, 3));
+    CHECK(!should_materialize_rel(false, true, true, true, 0, 5));  // fix off
+    CHECK(!should_materialize_rel(true, false, true, true, 0, 5));  // guest
+    CHECK(!should_materialize_rel(true, true, false, true, 0, 5));  // not Creature stage
+    CHECK(!should_materialize_rel(true, true, true, false, 0, 5));  // null creature
+    CHECK(!should_materialize_rel(true, true, true, true, 5, 5));   // already materialized
+    CHECK(!should_materialize_rel(true, true, true, true, 0, 0));   // unknown default
+    CHECK(!should_materialize_rel(true, true, true, true, 0, 6));   // player species / allied
 }
 
 int main(int argc, char** argv)
