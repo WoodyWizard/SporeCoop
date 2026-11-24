@@ -62,7 +62,7 @@ def mission_state(con):
 
 
 def main():
-    host, guest = start('space_free')
+    host, guest = start('space')
     ck = Checks()
     for c in (host, guest):
         no_movie(c, esc=True)
