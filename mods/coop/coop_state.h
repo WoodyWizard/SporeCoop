@@ -31,6 +31,7 @@
 #include <string>
 
 #include "adapters.h"
+#include "adventure.h"
 #include "coop_ui.h"
 #include "driver.h"
 #include "game.h"

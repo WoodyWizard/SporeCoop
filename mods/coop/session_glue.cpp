@@ -11,6 +11,7 @@
 #define COOP_VERSION SC_VER_STR
 #endif
 #include "lifecycle.h"
+#include "adventure.h"
 #include "civ_wallet.h"
 #include "coop_state.h"
 #include "store.h"
@@ -1266,6 +1267,9 @@ void setup_callbacks()
         }
         case net::Route::Rescue: // WP-R1 of 0.7.17 (BUG-1472): a downed creature and its revive
             revive::on_message(from, r);
+            return;
+        case net::Route::Adventure: // WP-A of 0.7.99 (BUG-1474, BUG-0793): co-op Galactic Adventures
+            adventure::on_message(from, r);
             return;
         case net::Route::History: // WP-H1 (BUG-1470): every player's own stage history
             history::on_message(from, r);

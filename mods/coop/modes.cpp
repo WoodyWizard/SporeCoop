@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "adventure_logic.h"
 #include "cell_logic.h"
 #include "creations.h"
 #include "creature_hp.h"
@@ -443,6 +444,11 @@ static void creature_despawn(void* p)
 static bool g_adventure_puppet_fix = true;
 COOP_FIX("adventure.puppet_captain", "BUG-1254", g_adventure_puppet_fix,
          "adventure: a partner in the same adventure is shown as its captain at the captain's size (its old creature in a herd of its own crashed the adventure's start)");
+// BUG-0793: render partner captain puppets in Galactic Adventures at their true per-captain scale (1.0x PlayerState.body)
+// instead of the legacy 1.15x Creature puppet factor. Off: 1.15x (BUG-1254).
+static bool g_captain_scale_fix = true;
+COOP_FIX("adventure.captain_scale", "BUG-0793", g_captain_scale_fix,
+         "adventure: partner captain puppets render at their true per-captain scale (1.0x) instead of the 1.15x Creature puppet factor");
 static void* scenario_spawn(const net::PlayerState& s, void* av)
 {
     if (!g_adventure_puppet_fix)
@@ -461,13 +467,13 @@ static void* scenario_spawn(const net::PlayerState& s, void* av)
         return nullptr;
     game::puppet_register(p);
     game::teleport(p, s.pos, s.rot);
-    float body = s.body > 0.05f && s.body < 50.f ? s.body : game::scale(av);
-    game::set_scale(p, body * kPuppetBodyK);
+    float want = adventure::captain_puppet_scale(s.body, game::scale(av), g_captain_scale_fix);
+    game::set_scale(p, want);
     puppet_alive_note(p);
     if (g_host_for_modes)
         g_host_for_modes->log(g_mod_for_modes, SK_INFO, "adventure: the partner (its captain %08X there) shown as %s, in the avatar's herd, "
                               "size %.2f (%s)", s.species, cap ? "its own captain" : "this game's captain",
-                              body * kPuppetBodyK, cap ? "BUG-1262" : "BUG-1254");
+                              want, cap ? "BUG-1262" : "BUG-1254");
     return p;
 }
 static void scenario_drive(void* p, const net::PlayerState& s, drive::State& ds, double now)
@@ -475,7 +481,8 @@ static void scenario_drive(void* p, const net::PlayerState& s, drive::State& ds,
     creature_drive(p, s, ds, now);
     if (!g_adventure_puppet_fix || !(s.body > 0.05f && s.body < 50.f))
         return;
-    float want = s.body * kPuppetBodyK, have = game::scale(p);
+    float want = adventure::captain_puppet_scale(s.body, game::scale(p), g_captain_scale_fix);
+    float have = game::scale(p);
     if (!(have > 0 && std::fabs(have - want) <= 0.01f * want))
         game::set_scale(p, want);
 }
@@ -572,6 +579,37 @@ bool adventure_key(uint32_t& inst, uint32_t& group)
         return false;
     inst = *(uint32_t*)(res + 8), group = *(uint32_t*)(res + 16);
     return true;
+}
+bool adventure_mission_key(uint32_t out[3])
+{
+    uintptr_t p = S2("App::cScenarioMode::ptr");
+    uint8_t* sm = p ? *(uint8_t**)p : nullptr;
+    if (!sm || !skg::readable(sm, 0xD0))
+        return false;
+    uint8_t* data = *(uint8_t**)(sm + 0x74);
+    uint8_t* res = data && skg::readable(data, 0x14) ? *(uint8_t**)(data + 0x10) : nullptr;
+    if (!res || !skg::readable(res, 0x14))
+        return false;
+    if (g_adventure_forced) {
+        out[0] = g_adventure_forced;
+        out[1] = 0;
+        out[2] = 0;
+        return true;
+    }
+    out[0] = *(uint32_t*)(res + 8);
+    out[1] = *(uint32_t*)(res + 12);
+    out[2] = *(uint32_t*)(res + 16);
+    return true;
+}
+void* adventure_play_mode()
+{
+    if (game::mode_id() != kScenario)
+        return nullptr;
+    uintptr_t p = S2("App::cScenarioMode::ptr");
+    uint8_t* sm = p ? *(uint8_t**)p : nullptr;
+    if (!sm || !skg::readable(sm, 0x7C))
+        return nullptr;
+    return *(void**)(sm + 0x78);
 }
 static uint32_t adventure_place()
 {

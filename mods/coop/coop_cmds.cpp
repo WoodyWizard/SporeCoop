@@ -1651,45 +1651,18 @@ void register_commands_core()
                        return 0;
                    },
                    nullptr, MT);
-    H->command_add(M, "coop.adventure", "coop.adventure [act <n> | place <hex>] - tests (BUG-0845): the adventure's play mode (state, act, resource key, place id); act: the game's JumpToAct; place: one place id for every adventure (0 off)",
-                   [](void*, int argc, const char* const* argv, SkOut* out) {
-                       static uintptr_t smp = H->sym("App::cScenarioMode::ptr"), jump = H->sym("SporeCoop::ScenarioPlay_JumpToAct");
-                       void* sm = smp && game::mode_id() == modes::kScenario ? *(void**)smp : nullptr;
-                       void* pm = sm && skg::readable(sm, 0x7C) ? skg::field<void*>(sm, 0x78) : nullptr; // cScenarioPlayMode
-                       if (argc > 2 && !strcmp(argv[1], "place") && !pm) { // (also before the adventure starts)
-                           modes::adventure_force_place((uint32_t)strtoul(argv[2], nullptr, 16));
-                           SAY("adventure place forced to %s\n", argv[2]);
-                           return 0;
-                       }
-                       if (!pm || !skg::readable(pm, 0xBC)) {
-                           SAY("no adventure");
-                           return 1;
-                       }
-                       uint32_t ki = 0, kg = 0;
-                       modes::adventure_key(ki, kg);
-                       SAY("adventure playmode=%p state=%d act=%d key=%08X/%08X place=%08X\n", pm, skg::field<int>(pm, 0x90),
-                           skg::field<int>(pm, 0xB8), ki, kg, modes::current_place(modes::for_mode(modes::kScenario)));
-                       if (argc > 2 && !strcmp(argv[1], "place")) { // tests: one place id for every adventure (0: off)
-                           modes::adventure_force_place((uint32_t)strtoul(argv[2], nullptr, 16));
-                           SAY("adventure place forced to %s\n", argv[2]);
-                       }
-                       if (argc > 2 && !strcmp(argv[1], "act") && jump) {
-                           static int s_act;
-                           s_act = atoi(argv[2]);
-                           // (the act's change rebuilds the cast, the goals' UI and the camera: outside the frame)
-                           H->run_outside_frame(
-                               [](void*) {
-                                   void* sm2 = game::mode_id() == modes::kScenario ? *(void**)smp : nullptr;
-                                   void* pm2 = sm2 ? skg::field<void*>(sm2, 0x78) : nullptr;
-                                   if (pm2)
-                                       skg::thiscall<void>(jump, pm2, s_act);
-                               },
-                               nullptr);
-                           SAY("jump to act %d queued", s_act);
-                       }
-                       return 0;
-                   },
-                   nullptr, MT);
+    auto adv_cmd = [](void*, int argc, const char* const* argv, SkOut* out) {
+        std::vector<std::string> a;
+        for (int i = 1; i < argc; i++)
+            a.emplace_back(argv[i]);
+        std::string s = adventure::command(a);
+        SAY("%s", s.c_str());
+        return s == "no adventure" ? 1 : 0;
+    };
+    const char* adv_help =
+        "coop.adventure [status|goals|actors|bodies|act <n>|place <hex>|credit <slot>|state <5|6>|hit <id> <dmg>|kill <id>|spawn_extra] - co-op Galactic Adventures status and test controls (BUG-0845, BUG-1474, BUG-0793)";
+    H->command_add(M, "coop.adventure", adv_help, adv_cmd, nullptr, MT);
+    H->command_add(M, "coop.adv", adv_help, adv_cmd, nullptr, MT);
     H->command_add(M, "coop.awaytest", "coop.awaytest 1|0 - tests (BUG-1084, a guest): the host counts as in an editor (away after 4 s) until 0",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1)
