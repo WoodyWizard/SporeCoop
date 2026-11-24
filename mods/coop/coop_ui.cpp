@@ -1170,10 +1170,10 @@ static void build_dialog()
     for (int i = 0; i < kSetRows; i++) {
         float y = 160.f + i * 27;
         char nm[16];
-        D.set_label[i] = add_label(G, {40, y + 1, 470, y + 25}, "", kWhite);
+        D.set_label[i] = add_label(G, {40, y + 1, 464, y + 25}, "", kWhite);
         snprintf(nm, sizeof nm, "set%d", i);
-        D.set_btn[i] = add_button(G, nm, {480, y, 590, y + 25}, "", [i] { do_set_click(i); });
-        D.set_tag[i] = add_label(G, {600, y + 1, 720, y + 25}, "", kDim);
+        D.set_btn[i] = add_button(G, nm, {466, y, 634, y + 25}, "", [i] { do_set_click(i); });
+        D.set_tag[i] = add_label(G, {640, y + 1, 740, y + 25}, "", kDim);
         D.set_id[i] = -1;
     }
     D.set_line = add_label(G, {40, 514, 720, 538}, "", kDim);
