@@ -46,6 +46,7 @@
 #include "civ.h"
 #include "civ_wallet.h"
 #include "civ_editors.h"
+#include "editor_depth.h"
 #include "autoupdate.h"
 #include "gamefixes.h"
 #include "spacecoop.h"
@@ -1031,6 +1032,7 @@ static void frame_observe(double now)
     own_captain::tick(now); // WP-K1 (BUG-1475): a guest's own captain in Space
     designs::tick(now); // BUG-1272: a guest's own outfit to its species line
     civedit::tick(now); // WP-C3 (BUG-1275): a guest's own Civ editors' results into its line
+    editor_depth::tick(); // WP-Q2 (BUG-0871): Creature editor depth handle
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
         avatar_change_check();
     monitor_frame_start(now); // the puppets as drawn, before any driving (docs/06-testing.md#testing-monitor)
@@ -1691,6 +1693,8 @@ void on_overlay(void*, int, void*)
         }
         draw_downed_tags(); // BUG-1472
     }
+    if (!coop_ui::is_open())
+        editor_depth::draw(); // WP-Q2 (BUG-0871)
     { // F2: arrows to the partners off screen; the minimap takes the same positions (outside the frame)
         float me[3] = {0, 0, 0};
         bool has_me = false;
@@ -2366,6 +2370,8 @@ void init_ui()
 
 void on_unload()
 {
+    editor_depth::shutdown();
+    creations::library_shutdown();
     support::on_unload();
     gamefixes::shutdown();
     mouse::shutdown(); // its message hook lives in this DLL
@@ -2982,6 +2988,7 @@ static void init_tribe_and_creations()
     history::init(H, M, &g_sess); // WP-H1 (BUG-1470, BUG-1471)
     own_captain::init(H, M, &g_sess); // WP-K1 (BUG-1475)
     civedit::init(H, M, &g_sess); // WP-C3 (BUG-1275)
+    editor_depth::init(H, M);     // WP-Q2 (BUG-0871)
     civ_arrival_init();           // WP-X1 (BUG-1276)
     modes::g_species_for_player = [](uint8_t id) { return creations::player_species(id); };
     modes::g_model_for_player = [](uint8_t id, int kind, uint32_t key[3]) {

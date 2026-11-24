@@ -29,6 +29,8 @@ enum ModelKind : uint8_t { kMkCreature = 0, kMkCell, kMkUfo, kMkVehicle, kMkBuil
 constexpr uint8_t kKindHostProps = 10;   // WP-K1 (feat/w74-captain): the host captain's property lists (BUG-1279)
 constexpr uint8_t kKindCaptain = 11;     // WP-K1: a player's own captain (#217 a, BUG-1262)
 constexpr uint8_t kKindLineageCell = 12; // WP-L2 (feat/w81-cell): a player's old cell as an NPC species (#211)
+constexpr uint8_t kKindLibList = 13;     // WP-Q2 (BUG-0873, creations 1.3): shared creations library Have/Want hash list
+constexpr uint8_t kKindLibPng = 14;      // WP-Q2 (BUG-0873, creations 1.3): shared creations library PNG card transfer
 using Key = dbpf::Key;
 
 struct Option {
@@ -138,6 +140,8 @@ std::string status();
 // support trace (trace.h): the own creation of the stage, where the choice came from, what the avatar has
 std::string trace_line(Kind k);
 std::string debug(const std::vector<std::string>& args);
+std::string library_debug(const std::vector<std::string>& args);
+void library_shutdown();
 
 // WP-0 (BUG-1270, species_line.cpp): a creation of the species line (an outfit, a Civ design) between the games.
 // line_pack: the owner's bundle of `own` (model, metadata, pictures; from its own My Creations file when the creation is
