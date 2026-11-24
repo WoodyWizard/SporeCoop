@@ -2060,6 +2060,107 @@ static int c_cine(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// BUG-1536: on Cell shutdown (0xE82060..0xE82079) the game unregisters static Cell fluid-field object 0x15A839C
+// (surface id 0x01010003) and frees cCellGame (+0x4108 fluid/particle pool) WITHOUT clearing [0x16B3C04] (cCellGame::_ptr)
+// or the static bounds 0x16B3C88..0x16B3C9C. Any Swarm particle effect created in Cell keeps its cached pointer
+// [esi+0x1b0] = 0x15A839C; on the first Swarm update in Creature, vtable+0x18 (CellFluid_Contains 0xE5CA60) checks the
+// stale static bounds and returns 1, and vtable+0x24/+0x28 (CellFluid_Sample 0xE51850) dereferences freed [0x16B3C04]+0x4108
+// and faults at 0xE4E454 (host crash 146 ms after Cell -> Creature). Track cCellGame lifetime via ctor/dtor (do NOT null
+// [0x16B3C04], because Cell_GetConsequenceTrait 0xE5C9D0 reads +0x5190 after Cell) and guard the three vtable methods
+// that read the bounds or [0x16B3C04]+0x4108. Off (`coop.fix game.cell_fluid_dtor off`): the unguarded game methods.
+using CellGameCtorFn = void*(__thiscall*)(void*);
+using CellGameDtorFn = void(__thiscall*)(void*);
+using CellFluidContainsFn = int(__thiscall*)(void*, const float*);
+using CellFluidApplyFn = void(__thiscall*)(void*, const float*);
+using CellFluidSampleFn = float*(__thiscall*)(void*, float*, const float*);
+static CellGameCtorFn g_cell_ctor_orig;
+static CellGameDtorFn g_cell_dtor_orig;
+static CellFluidContainsFn g_cell_fluid_contains_orig;
+static CellFluidApplyFn g_cell_fluid_apply_orig;
+static CellFluidSampleFn g_cell_fluid_sample_orig;
+static uintptr_t g_cell_fluid_obj, g_cell_fluid_bounds;
+static std::atomic<bool> g_cell_fluid_alive{false};
+static std::atomic<unsigned> g_cell_fluid_guarded{0};
+static bool g_cell_fluid_fix = true;
+COOP_FIX_UNSAFE("game.cell_fluid_dtor", "BUG-1536", g_cell_fluid_fix,
+                "cell: Swarm effects lingering past Cell shutdown no longer sample the freed Cell fluid/particle pool (crash at 0x00E4E454)");
+
+static void* __fastcall cell_game_ctor_guard(void* self, void*)
+{
+    void* r = g_cell_ctor_orig(self);
+    g_cell_fluid_alive.store(true, std::memory_order_release);
+    return r;
+}
+
+static void __fastcall cell_game_dtor_guard(void* self, void*)
+{
+    g_cell_fluid_alive.store(false, std::memory_order_release);
+    g_cell_dtor_orig(self);
+}
+
+static int __fastcall cell_fluid_contains_guard(void* self, void*, const float* pos)
+{
+    if (g_cell_fluid_fix && !g_cell_fluid_alive.load(std::memory_order_acquire)) {
+        unsigned n = ++g_cell_fluid_guarded;
+        if (n <= 4)
+            H->log(M, SK_INFO, "game fixes: skipped Swarm CellFluid_Contains after Cell shutdown (BUG-1536, #%u)", n);
+        return 0;
+    }
+    return g_cell_fluid_contains_orig(self, pos);
+}
+
+static void __fastcall cell_fluid_apply_guard(void* self, void*, const float* pos)
+{
+    if (g_cell_fluid_fix && !g_cell_fluid_alive.load(std::memory_order_acquire)) {
+        unsigned n = ++g_cell_fluid_guarded;
+        if (n <= 4)
+            H->log(M, SK_INFO, "game fixes: skipped Swarm CellFluid_Apply after Cell shutdown (BUG-1536, #%u)", n);
+        return;
+    }
+    g_cell_fluid_apply_orig(self, pos);
+}
+
+static float* __fastcall cell_fluid_sample_guard(void* self, void*, float* out, const float* pos)
+{
+    if (g_cell_fluid_fix && !g_cell_fluid_alive.load(std::memory_order_acquire)) {
+        unsigned n = ++g_cell_fluid_guarded;
+        if (n <= 4)
+            H->log(M, SK_INFO, "game fixes: skipped Swarm CellFluid_Sample after Cell shutdown (BUG-1536, #%u)", n);
+        if (out)
+            out[0] = out[1] = out[2] = 0.f;
+        return out;
+    }
+    return g_cell_fluid_sample_orig(self, out, pos);
+}
+
+// tests (BUG-1536): `coop.cellfluid` status; `coop.cellfluid probe` exercises the exact Swarm call sequence
+// (vtable+0x18 CellFluid_Contains -> vtable+0x24 CellFluid_Sample) on the static fluid-field object at its bounds centre
+static int c_cellfluid(void*, int argc, const char* const* argv, SkOut* out)
+{
+    bool hooked = g_cell_ctor_orig && g_cell_dtor_orig && g_cell_fluid_contains_orig && g_cell_fluid_apply_orig &&
+                  g_cell_fluid_sample_orig;
+    if (argc > 1 && !strcmp(argv[1], "probe")) {
+        if (!hooked || !g_cell_fluid_obj || !g_cell_fluid_bounds || !readable((void*)g_cell_fluid_obj, 4) ||
+            !readable((void*)g_cell_fluid_bounds, 24)) {
+            H->out_printf(out, "cellfluid: symbols unavailable\n");
+            return 1;
+        }
+        const float* b = (const float*)g_cell_fluid_bounds;
+        float pos[3] = {0.5f * (b[0] + b[3]), 0.5f * (b[1] + b[4]), 0.f};
+        float vel[3] = {1.f, 2.f, 3.f};
+        void* obj = (void*)g_cell_fluid_obj;
+        int contains = skg::vcall<int>(obj, 0x18 / 4, pos);
+        float* res = skg::vcall<float*>(obj, 0x24 / 4, vel, pos);
+        H->out_printf(out, "cellfluid probe: alive=%d fix=%d contains=%d vel=(%.3f %.3f %.3f) res=%d guarded=%u\n",
+                      (int)g_cell_fluid_alive.load(), (int)g_cell_fluid_fix, contains, vel[0], vel[1], vel[2],
+                      res == vel ? 1 : 0, g_cell_fluid_guarded.load());
+        return 0;
+    }
+    H->out_printf(out, "cellfluid: hooked=%d alive=%d fix=%d guarded=%u\n", (int)hooked, (int)g_cell_fluid_alive.load(),
+                  (int)g_cell_fluid_fix, g_cell_fluid_guarded.load());
+    return 0;
+}
+
 void frame()
 {
     fxcut_frame();
@@ -2244,6 +2345,28 @@ void init(const SkHost* host, SkMod* mod)
                    c_fxcut, nullptr, SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.fruitpool", "coop.fruitpool - the plants' free and loose fruit: references, flags, state (BUG-0584)",
                    c_fruitpool, nullptr, SK_CMD_MAIN_THREAD);
+    uintptr_t cc = H->sym("SporeCoop::cCellGame_ctor"), cd = H->sym("SporeCoop::cCellGame_dtor"),
+              fc = H->sym("SporeCoop::CellFluid_Contains"), fa = H->sym("SporeCoop::CellFluid_Apply"),
+              fs_ = H->sym("SporeCoop::CellFluid_Sample");
+    g_cell_fluid_obj = H->sym("SporeCoop::CellFluid_obj");
+    g_cell_fluid_bounds = H->sym("SporeCoop::CellFluid_bounds");
+    g_cell_fluid_alive.store(game::mode_id() == modes::kCell, std::memory_order_release);
+    bool cell_fluid = cc && cd && fc && fa && fs_ &&
+                      H->hook_create(M, (void*)cc, (void*)&cell_game_ctor_guard, (void**)&g_cell_ctor_orig) == 0 &&
+                      H->hook_create(M, (void*)cd, (void*)&cell_game_dtor_guard, (void**)&g_cell_dtor_orig) == 0 &&
+                      H->hook_create(M, (void*)fc, (void*)&cell_fluid_contains_guard, (void**)&g_cell_fluid_contains_orig) == 0 &&
+                      H->hook_create(M, (void*)fa, (void*)&cell_fluid_apply_guard, (void**)&g_cell_fluid_apply_orig) == 0 &&
+                      H->hook_create(M, (void*)fs_, (void*)&cell_fluid_sample_guard, (void**)&g_cell_fluid_sample_orig) == 0;
+    if (!cell_fluid) {
+        g_cell_ctor_orig = nullptr;
+        g_cell_dtor_orig = nullptr;
+        g_cell_fluid_contains_orig = nullptr;
+        g_cell_fluid_apply_orig = nullptr;
+        g_cell_fluid_sample_orig = nullptr;
+    }
+    H->log(M, SK_INFO, "game fixes: Cell fluid-field lifetime guard %s (BUG-1536)", cell_fluid ? "on" : "off");
+    H->command_add(M, "coop.cellfluid", "coop.cellfluid [probe] - Cell fluid-field lifetime guard status / probe (BUG-1536)",
+                   c_cellfluid, nullptr, SK_CMD_MAIN_THREAD);
 }
 
 void shutdown()
@@ -2282,7 +2405,8 @@ std::string status()
            std::to_string(g_model_fx_dropped.load()) + " (tests: planted " + std::to_string(g_fxcut_planted) + ", dropped " + std::to_string(g_fxcut_done) + ")" +
            ", freed fruit taken out of the pool " + std::to_string(g_fruit_dropped.load()) +
            ", galaxy menu rollovers rolled out before a rebuild " + std::to_string(g_menu_rollouts.load()) + " (stale dropped " +
-           std::to_string(g_menu_dropped.load()) + ")" + ", " + reset_status() + "\n";
+           std::to_string(g_menu_dropped.load()) + "), Cell fluid calls guarded " +
+           std::to_string(g_cell_fluid_guarded.load()) + ", " + reset_status() + "\n";
 }
 
 } // namespace gamefixes

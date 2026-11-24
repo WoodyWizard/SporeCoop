@@ -2974,3 +2974,25 @@ BUG-1408. GOG 2024, objdump of `SporeApp.exe`, the guest logs of labs 20261122-1
   host's return purges them as strays, as every own cell. A host away in the host's world with mirrors released keeps
   the old way (the mirrors are those tiles' cells). `coop.pool`'s `cell_away` line: `solo_refill=<tiles>/<starts> due=
   refused= fix=`. Lab: own_cell_steady (the first read filled, no trough) and its twin own_cell_steady_refill_off.
+
+## Lingering Cell Swarm effects sample the freed fluid pool after Cell shutdown (2026-11-24, rel/0.7.17.1)
+<a id="cell-fluid-dtor"></a>
+
+BUG-1536. GOG 2024 / Steam (`3010a413`), objdump of `SporeApp.exe` and Windows minidump (`0xC0000005` read at VA `0x00E4E454`, symbolised `j_mem_free+0x7F4`, 146 ms after `Cell -> Creature`).
+
+* ✔ (objdump) On Cell init (`0x00E81D5E..0x00E81E0B`), the game constructs `cCellGame` (`0x00E646D0`, stored in `[0x016B3C04]`) and registers static Cell fluid-field object `0x015A839C` (vtable `0x014852B8`) with `Swarm::cEffectsManager` under surface ID `0x01010003`.
+* ✔ (objdump) On Cell shutdown (`0x00E82014..0x00E82079`), the game unregisters `0x01010003`, calls `~cCellGame` (`0x00E63F90`) and `delete` (`0x00F47220`), freeing `cCellGame+0x4108` (the soft-body particle pool and fluid velocity grid). It does NOT clear `[0x016B3C04]` (`Cell_GetConsequenceTrait` `0x00E5C9D0` reads `[0x016B3C04]+0x5190` after Cell) and does NOT clear static Cell bounds `0x016B3C88..0x016B3C9C`.
+* ✔ (objdump + minidump) Any already-running Swarm particle effect created in Cell keeps its cached pointer `[esi+0x1b0] = 0x015A839C`. On the next Swarm update in Creature (`0x00AA90EA` -> `0x00AA912x`), `vt+0x18` (`CellFluid_Contains` `0x00E5CA60`) checks only the stale static bounds `0x016B3C88..0x016B3C9C` and returns `1`; then `vt+0x24`/`+0x28` (`CellFluid_Sample` `0x00E51850`, and likewise `vt+0x20` `CellFluid_Apply` `0x00E51800`) dereferences stale `[0x016B3C04]+0x4108` and calls `0x00E4E3A0` (faulting at `0x00E4E454` `movss xmm2, [ecx + edx*4 + 0x1c210]` on freed memory).
+* Fix `game.cell_fluid_dtor` (gamefixes.cpp): hooks `cCellGame_ctor` / `cCellGame_dtor` to track `g_cell_fluid_alive` (leaving `[0x016B3C04]` intact), and guards `CellFluid_Contains`, `CellFluid_Apply`, and `CellFluid_Sample` so they return `0` / no-op / `(0,0,0)` once `cCellGame` is destroyed. `coop.cellfluid [probe]` prints status and exercises `vt+0x18` + `vt+0x24`.
+
+## Cell DNA can go negative after editor updates (2026-11-24, rel/0.7.17.1)
+<a id="cell-dna-nonneg"></a>
+
+BUG-1538. GOG 2024, code + objdump of `Cell_EditorResult` (`0x00E809A0`) and `DNAForFood` (`0x00E51410`).
+
+* ✔ (objdump) `Cell_EditorResult` (`0x00E809EC..0x00E80A10`) writes `S+0x2C = DNAForFood(S+0x1C) - remaining`. Because single-player food only increases and `remaining >= 0`, Spore's Cell UI displays `DNAForFood(S+0x1C) - S+0x2C` directly without clamping to `>= 0`.
+* ✔ (code) In co-op, three paths broke `S+0x2C <= DNAForFood(S+0x1C)`:
+  1. Shared pool (`all.shared_dna = 1`): `spend_in` and `spend_tick` in `cellsync.cpp` added a guest's editor spend onto the host's `S+0x2C` without capping at `DNAForFood(food)` (two concurrent first Cell editors spending 20 each out of 25 DNA yielded `spent = 40`, `DNA = -15` on both games).
+  2. Own wallet (`all.shared_dna = 0`, default): `spent_guest_want` expired `g_own_spent_heard` at 5.0 s while `wsync` cached `cell_spent` (`host_spent`) for 6.0 s (`kForget`), so a 5-6 s gap (host in editor) added `g_spend_pending` onto `host_spent` (`host_spent + guest_spent > DNAForFood(food)`).
+  3. Guest food rollback (`MSG_CELL_FOOD` `o_AddFood(diff < 0)` when a late meal was refused) lowered `DNAForFood(S+0x1C)` below `S+0x2C`.
+* Fix `cell.dna_nonneg` (`cell_logic.h`, `dna_own.h`, `cellsync.cpp`): caps the upper bound `spent <= DNAForFood(food)` on all co-op writes (preserving negative `spent` from selling starting parts), keeps `g_own_spent_heard` valid past `wsync`'s 6 s cache (`7.0 s`), clamps `spent` on guest food drops, and clamps `editor_budget()` to `>= 0`.
