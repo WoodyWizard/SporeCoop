@@ -137,6 +137,12 @@ def case_main(ck, host, guest, setting_on):
     if total is None:
         return
     # 2. the cities' own income, 20 s without a command; then an income of the test command
+    hc0, _ = civ(host)
+    for k, v in hc0.items():
+        if v['player']:
+            for kind in ('house', 'factory', 'factory'):
+                host.call(f'coop.civ build {k} {kind} nopay')
+    time.sleep(2)
     g0, h0 = money(guest), money(host)
     samples = []
     for _ in range(10):

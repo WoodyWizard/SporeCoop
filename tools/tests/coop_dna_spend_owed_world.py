@@ -80,12 +80,16 @@ def main():
             host.call('coop.dna add 50')
         wait(lambda: (dna(guest) or 0) >= 40, 15)
         time.sleep(2)
-        # 2. the owed spend
+        # 2. the owed spend: keep reporting Creature mode briefly while host enters the menu so the guest sends its
+        # spend immediately (simulating a spend in flight as the host leaves to an editor/menu/load) and it lands in
+        # the host's owed spend buffer while the host has no creature.
+        host.call('coop.hoststate mode 01654C01 35')
         if not ck(to_menu(host), 'the host is in the galaxy menu'):
             return ck.result()
-        time.sleep(3)
+        time.sleep(2)
         print('  guest:', guest.call('coop.dna spend 30')['out'].strip()[:100], flush=True)
         ck(wait(lambda: (owed(host) or 0) <= -29, 20), f"the host keeps the guest's spend as owed ({owed(host)})")
+        host.call('coop.hoststate off')
         # 3. another Creature world
         if not ck(load(host, f'Game{SLOT}', other), f'the host loads {other}'):
             return ck.result()

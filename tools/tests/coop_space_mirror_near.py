@@ -43,8 +43,8 @@ def main():
         return ck.result()
     (p1, s1), (p2, s2) = stars[0], stars[1]
 
-    # 1. Zed's colony in S1
-    print('  fake 1:', sp(guest, 'allies fake Zed', p1).splitlines()[0], flush=True)
+    # 1. Zed's colonies in S1 and S2 (having S2 already means dropping S1 later does not call AddStar for a new star)
+    print('  fake 1:', sp(guest, 'allies fake Zed', p1, p2).splitlines()[0], flush=True)
     gi = star_info(guest, s1)
     ck(gi is not None and gi[1] == "Zed's empire", f'star {s1} is Zed\'s in the guest\'s game ({gi and gi[1]})')
     if not gi:

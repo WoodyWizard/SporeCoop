@@ -22,15 +22,47 @@ is unit-tested (tests/cell_tests.cpp lineage(), host_swaps); the lab has no 0.7.
   SPORE_LANE=2 python3 tools/tests/coop_lineage_cells.py [--ui]
 """
 import argparse
+import os
 import re
 import time
 
+import twoinst
 from twoinst import Checks, keyframe, start  # (first: it puts tools/ on the path)
 import lane
 import settings_lib as sl
 from coop_cell_kin_species import keys_in_save
 from coop_cell_puppet_scale import playing, wait
+from coop_nest_species import fixtures_dir, read_pkg, write_pkg
 from harness import field
+
+CLL_TYPE, CLL_GROUP = 0x3D97A8E4, 0x40616200
+HOST_CELLS = (0x0625A974, 0x0625A976)
+GUEST_CELLS = (0x0625A978, 0x0625A97A)
+_ORIG_RESTORE = twoinst.restore_creations
+
+
+def _seed_cells():
+    """Extract real .cll cell creations from Spore_Game.package into host and guest EditorSaves.package."""
+    game_pkg = os.path.join(lane.GAME, 'Data', 'Spore_Game.package')
+    want = set(HOST_CELLS) | set(GUEST_CELLS)
+    by_inst = {r[2]: r for r in read_pkg(game_pkg) if r[0] == CLL_TYPE and r[1] == CLL_GROUP and r[2] in want}
+    if len(by_inst) < len(want):
+        raise RuntimeError(f'missing .cll creations in {game_pkg}: got {sorted(by_inst)}')
+
+    def restore_with_cells(guest=True):
+        _ORIG_RESTORE(guest)
+        targets = [(lane.HOST_DIR, 'creations-host.package', HOST_CELLS)]
+        if guest:
+            targets.append((lane.GUEST_DIR, 'creations-guest.package', GUEST_CELLS))
+        for d, base_name, insts in targets:
+            p = os.path.join(d, 'EditorSaves.package')
+            base = os.path.join(fixtures_dir(), base_name)
+            recs = [r for r in read_pkg(p if os.path.exists(p) else base) if not (r[0] == CLL_TYPE and r[2] in want)]
+            for inst in insts:
+                recs.append(by_inst[inst])
+            write_pkg(p, recs)
+
+    twoinst.restore_creations = restore_with_cells
 
 
 def lineage(con):
@@ -50,7 +82,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--ui', action='store_true')
     a = ap.parse_args()
-    host, guest = start('cell')
+    _seed_cells()
+    try:
+        host, guest = start('cell')
+    finally:
+        twoinst.restore_creations = _ORIG_RESTORE
     ck = Checks()
     ck(wait(lambda: playing(host) and playing(guest), 40), 'both games play (the hatch is over)')
     gid = int((re.search(r'client id=(\d+)', guest.call('coop.status')['out']) or [None, '1'])[1])

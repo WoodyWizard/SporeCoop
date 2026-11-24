@@ -17,6 +17,7 @@ Twin: SPORE_FIX_OFF=civ.income_cause: 1. sees 3 or more cards (one every 6 s): m
 import re
 import time
 
+from coop_civ import civ
 from harness import shared_money as money
 from twoinst import Checks, keyframe, start
 
@@ -26,10 +27,21 @@ def card_texts(con, pat):
             if ln.startswith('toast ') and re.search(pat, ln)}
 
 
+def ensure_income(host):
+    """Ensure the host's starting city has factories so Spore's 6 s passive city income ticks."""
+    hc, _ = civ(host)
+    p = [k for k, v in hc.items() if v['player']]
+    if p:
+        for kind in ('house', 'factory', 'factory'):
+            host.call(f'coop.civ build {p[0]} {kind} nopay')
+        time.sleep(2)
+
+
 def main():
     host, guest = start('civ')
     ck = Checks()
     time.sleep(4)
+    ensure_income(host)
     host_name = 'Alice'
     earned = rf'{host_name} earned \d+ money \(shared\)'
     m0, seen, cards, prev = money(host), [], 0, set()
