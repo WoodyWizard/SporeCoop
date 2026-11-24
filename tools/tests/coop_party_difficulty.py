@@ -38,7 +38,8 @@ from twoinst import Checks, keyframe, start
 KEY = 'all.party_difficulty'
 VALUES = {'100': 0, '125': 1, '150': 2, '200': 3, 'auto': 4}
 OFF_KEYS = ('creature.joint_hunt', 'creature.pack_heal', 'creature.pack_rescue')
-HIT = 20.0
+# Keep below Spore's per-hit player damage cap (~52% of 10 max HP), otherwise both 100% and 150% clamp to the same ~5.25 drop.
+HIT = 2.0
 
 
 def percent(value, players):

@@ -86,7 +86,11 @@ def main():
     ck(m0 is not None and m0 != mg, f'the own save keeps its own money, not the co-op budget ({m0} vs {mg})')
     ck(field(guest, 'pending') == 1, 'the offer is still on its way')
 
-    # 4. the host accepts now
+    # 4. the host accepts now (ensure the host has enough money for the offer so it buys instead of declining)
+    hm = money(host) or 0
+    if hm < total + 10000:
+        host.call(f'coop.res add money {int(total + 20000 - hm)}')
+        time.sleep(2)
     print('  host accept:', sp(host, 'trade accept', oid), flush=True)
     seen = set()
     t0 = time.time()

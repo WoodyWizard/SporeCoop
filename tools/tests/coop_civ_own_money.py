@@ -120,7 +120,8 @@ def join_split(ck, host, guest, on):
     if not ck(wait_guest_in(host, guest), 'the guest joined with the setting ' + ('on' if on else 'off')):
         return None
     ck(wait(lambda: has_wallet(guest), 60, 2), "the guest's game has its own money (its wallet came)")
-    time.sleep(4)
+    wait(lambda: money(guest) is not None, 20, 1)
+    time.sleep(2)
     h, g = money(host), money(guest)
     print(f'  the host had {total}; now host {h}, guest {g}', flush=True)
     # an equal part; the cities' income of the seconds between may add a little (never more than the whole)

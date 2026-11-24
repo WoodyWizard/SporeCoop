@@ -112,6 +112,9 @@ def run(host, guest, ck, back):
         print('  host:', host.call('coop.store hold')['out'].strip(), flush=True)
     out, refused, _ = save_taken(host, 30, 'host save')
     if '--fresh-store' in sys.argv:
+        # Spore writes the save asynchronously (~1-2 s after coop.save returns): wait for after_save() to open the store.
+        wait(lambda: any('opened_by_save=' in ln and 'opened_by_save=0' not in ln
+                         for ln in (host.call('coop.store')['out'] or '').splitlines()[:1]), 15)
         st = (host.call('coop.store')['out'] or '').strip().splitlines()
         print('  host store after the save:', ' | '.join(st[:4]), flush=True)
         ck(any('opened_by_save=' in ln and 'opened_by_save=0' not in ln for ln in st[:1]),

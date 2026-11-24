@@ -30,7 +30,8 @@ from twoinst import Checks, keyframe, start, wait_guest_in
 
 wait = waiter(step=1.0)
 KEYS = ('all.late_join', 'all.friendly_fire')
-CANCEL = (1383, 1062)  # the editor's red cross (coop_editor_now.py)
+DONE = (1416, 1062)    # the creature editor's green check (coop_editor_now.py)
+CANCEL = (1383, 1062)  # the red cross
 
 
 def in_editor(con):
@@ -78,8 +79,10 @@ def main():
 
         # 5. back
         guest.call('coop.leave')
-        host.call('click %d %d' % CANCEL)
-        ck(wait(lambda: mode(host) == m0 and host.call('coop.avatar')['ok'], 90),
+        host.call('click %d %d' % DONE)
+        if not wait(lambda: mode(host) == m0 and host.call('coop.avatar')['ok'], 20):
+            host.call('click %d %d' % CANCEL)
+        ck(wait(lambda: mode(host) == m0 and host.call('coop.avatar')['ok'], 70),
            f"the host leaves its editor and plays again ({mode(host).strip()})")
         guest.call(lane.JOIN)
         ck(wait_guest_in(host, guest, 200), 'the guest comes back as Bob (a player who was in the session)')

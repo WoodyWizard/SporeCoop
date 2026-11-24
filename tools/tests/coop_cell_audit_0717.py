@@ -187,7 +187,7 @@ def part_shadow(ck):
     print('  host: ' + host.call('coop.pool budget').strip(), flush=True)
     time.sleep(15)
     st = host.call('coop.pool tilestat')
-    print('  host: ' + st.strip()[:300] + ' | ' + audit(host), flush=True)
+    print('  host: ' + st.strip()[:300] + ' | ' + audit(host.con), flush=True)
     for g in (carol, dave):
         n = g.call('coop.pool mirrors').count('mirror_local')
         ck(n >= 10, f'{g.name}\'s game shows the host\'s cells round it ({n} mirrors)')

@@ -140,9 +140,9 @@ def main():
         twoinst.keyframe('fleet_leader_b', 'Bob and Carol at the free star B: the same three pirate ships next to Carol\'s '
                          'ship on both screens', players={'bob': bob.con, 'carol': carol.con})
 
-        # 3. Bob's hit on a mirror lands on Carol's ship
+        # 3. Bob's hit on a mirror lands on Carol's ship (pirate ships spawn at 50 hp)
         c = npc_ids(carol.con)
-        target = next((i for i in sorted(c) if c[i]['hp'] > 60 and i in npc_ids(bob.con)), None)
+        target = next((i for i in sorted(c) if c[i]['hp'] > 40 and i in npc_ids(bob.con)), None)
         if ck(target is not None, f'[hit] a ship with hit points to lose ({c})'):
             hp0 = c[target]['hp']
             print(f'  Bob shoot #{target}:', bob.call(f'coop.fleet shoot {target} 40').strip(), flush=True)

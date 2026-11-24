@@ -266,7 +266,12 @@ def creature_part(host, guest, ck):
             caption_ok(guest)
         time.sleep(3)
     ck(int(progress(guest)[0].get('level', -1)) >= 4, "the guest's brain is fully grown too")
-    time.sleep(3)
+    # Dismiss any remaining brain-upgrade caption on the guest so its ready click is unobstructed.
+    for _ in range(3):
+        if 'movie=1' in guest.call('coop.status')['out']:
+            caption_ok(guest)
+        time.sleep(1)
+    wait(lambda: 'all_full=1' in (host.call('coop.progress')['out'] or ''), 15)
     t0 = time.time()
     while time.time() - t0 < 90 and not vote_active(host) and in_creature(host):
         if 'movie=1' in host.call('coop.status')['out']:
