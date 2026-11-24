@@ -12,6 +12,8 @@ No game: fake consoles and a fake clock.
   lint      test_lint.py flags a test that copies a harness helper again
   codemod   harness_codemod.py --self-test (plan, rewrite, verify)
   ini       lane.ini_section replaces or removes a section of the lane's coop.ini (BUG-1190)
+  stand     twoinst.stand: the freeze monitor reports no freeze, silent console or resume inside a stand the test
+            declared, and still reports one that goes on past it or one that was not declared (lab 20261123-104630)
 """
 import contextlib
 import io
@@ -326,6 +328,83 @@ def check_ini_section():
         ck(lane.ini_section(q, 'update') is None and not os.path.exists(q), 'ini: removing from a missing file makes none')
 
 
+class _Done(Exception):
+    pass
+
+
+def run_monitor(script, end, declare=None):
+    """twoinst.Monitor over a fake console and clock: script(t) -> a frame number, or None (the console times out
+    after 10 s); declare = (at, secs): twoinst.stand('host', secs) at that time. The events it reports."""
+    import twoinst
+    clock = [1000.0]
+    t0 = clock[0]
+    said = [False]
+
+    def now():
+        if declare and not said[0] and clock[0] - t0 >= declare[0]:
+            said[0] = True
+            with contextlib.redirect_stdout(io.StringIO()):
+                twoinst.stand('host', declare[1], 'selftest')
+        return clock[0]
+
+    def sleep(x):
+        clock[0] += x
+        if clock[0] - t0 > end:
+            raise _Done()
+
+    class FakeConsole:
+        def __init__(self, inst, timeout=10):
+            self.timeout = timeout
+
+        def call(self, cmd):
+            f = script(now() - t0)
+            if f is None:
+                clock[0] += self.timeout
+                raise TimeoutError('timed out')
+            return {'ok': True, 'out': f'frame={f}'}
+
+    fake_time = types.SimpleNamespace(time=now, sleep=sleep)
+    old = twoinst.time, twoinst.Console
+    twoinst.time, twoinst.Console = fake_time, FakeConsole
+    twoinst.Monitor.events.clear()
+    twoinst.Monitor.stands.clear()
+    try:
+        m = twoinst.Monitor(1, 'host')
+        m.loading = lambda: False
+        with contextlib.redirect_stdout(io.StringIO()):
+            try:
+                m.run()
+            except _Done:
+                pass
+        return list(twoinst.Monitor.events)
+    finally:
+        twoinst.time, twoinst.Console = old
+        twoinst.Monitor.stands.clear()
+
+
+def check_stand():
+    def frozen(a, b):  # frames stop from a to b s
+        return lambda t: int(t) if t < a else int(a) if t < b else int(t)
+
+    def silent(a, b):  # the console is held from a to b s, the frames go on after it
+        return lambda t: None if a <= t < b else int(t)
+
+    ev = run_monitor(frozen(5, 50), 80)
+    ck(any('FROZE' in e for e in ev) and any('resumed' in e for e in ev),
+       f'stand: a 45 s freeze nobody declared is reported ({ev})')
+    ev = run_monitor(frozen(5, 50), 80, declare=(5, 45))
+    ck(ev == [], f'stand: a 45 s freeze the test declared (twoinst.stand) is not ({ev})')
+    ev = run_monitor(frozen(5, 120), 150, declare=(5, 45))
+    ck(any('FROZE' in e for e in ev), f'stand: a freeze that goes on past the declared stand is reported ({ev})')
+    ev = run_monitor(silent(5, 55), 90)
+    ck(any('console stopped answering' in e for e in ev), f'stand: a 50 s silent console nobody declared is reported ({ev})')
+    ev = run_monitor(silent(5, 55), 90, declare=(4, 50))
+    ck(ev == [], f'stand: a 50 s silent console in a declared stand is not ({ev})')
+    ev = run_monitor(silent(5, 200), 230, declare=(4, 50))
+    ck(any('console stopped answering' in e for e in ev),
+       f'stand: a console still silent long after the declared stand is reported ({ev})')
+
+
 def main():
     with tempfile.TemporaryDirectory() as d:
         logs = {}
@@ -361,6 +440,7 @@ def main():
     r, text = captured(harness_codemod.self_test)
     ck(r == 0, 'codemod: harness_codemod.py --self-test' + ('' if r == 0 else '\n' + text))
     check_ini_section()
+    check_stand()
     print('RESULT:', 'OK' if OK else 'FAIL')
     return 0 if OK else 1
 

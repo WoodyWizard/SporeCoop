@@ -318,6 +318,18 @@ class Campaign:
         with open(path, 'w') as f:
             f.write('\n'.join(tail) + '\n')
         out.append(f'{p.name} log tail: {os.path.relpath(path, lane.ROOT)}')
+        # the mod's counters at the finding (coop.status): the game logs none of them (BUG-1460's makeway_null skipped=,
+        # the tribe mirrors' bodies_detached=, ...); the triage of a stuck 0.7.16.1 Tribe end could not count them
+        try:
+            st = Console(p.inst, timeout=15).call('coop.status').get('out', '')
+            spath = os.path.join(self.run_dir, f'{tag}_{p.name}.status.txt')
+            with open(spath, 'w') as f:
+                f.write(st)
+            out.append(f'{p.name} coop.status: {os.path.relpath(spath, lane.ROOT)}')
+            for ln in re.findall(r'^tribe bodies: .*$', st, re.M):
+                print(f'  {p.name}: {ln}', flush=True)
+        except (OSError, ValueError, AttributeError) as e:
+            out.append(f'{p.name} coop.status failed: {e!r}')
         try:
             src = shot(Console(p.inst, timeout=15), f'campaign_{tag}_{p.name}.png')
             if os.path.exists(src):

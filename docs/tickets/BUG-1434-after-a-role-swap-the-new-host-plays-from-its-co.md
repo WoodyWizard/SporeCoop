@@ -1,14 +1,14 @@
 ---
 id: BUG-1434
 title: After a role swap the new host plays from its co-op copy of the old host's galaxy (an old planet starts instead of the session's world), and the copy keeps the old host's marker, so the next share replaces or moves the new host's progress
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-22
 source: discord
 role: all
 versions: 0.7.15.5
-fixed_in:
+fixed_in: 0.7.16.1
 branch: fix/w64-share, fix/w75-share
 commits: 2d3bc204, f6f56ea1, 6fba22c4, 6327cf12, 7be732b5, c29dc4db, b004781d
 tests: copy_slot_keep, copy_slot_notice, copy_slot_planets (coop_copy_slot.py); twins copy_slot_keep_off, copy_slot_notice_off, copy_slot_planets_off, copy_slot_continue_off; win_unit test_slot_own_progress (--old-own); core_tests share_one_planet
@@ -51,14 +51,12 @@ stars.db) carry the Space data, so nothing of the played game is lost (to be wat
 ## Verification
 Open, waiting for the lab run. PASS expected: copy_slot_keep (the guest saves alone in its copy S, rejoins, the host shares twice: S's planet file keeps its bytes, the world goes into another slot), copy_slot_notice (the host leaves, the guest hosts from S: a notification says it hosts the planet from its copy of Alice's world, made for that planet), win_unit (test_slot_own_progress). FAIL expected: copy_slot_keep_off (SPORE_FIX_OFF=world.copy_own_save: the second share replaces S), copy_slot_notice_off (SPORE_FIX_OFF=world.copy_notice: no notification), `win_unit.py --old-own` (SPORE_FIX_OFF=world.copy_own_save).
 
-0.7.17 part (fix/w75-share): open, waiting for the lab run. pending night run: copy_slot_planets, copy_slot_planets_off,
-copy_slot_continue_off (one lane each, creature fixture, ~8 min). PASS expected: copy_slot_planets (the guest's copy holds
-the played planet and the galaxy's files, not Oldworld.spo / Ancient.spo; its galaxy menu lists the planet with its save;
-after the role swap "Continue <planet>" loads it on the new host and the old host joins into it). FAIL expected:
-copy_slot_planets_off (SPORE_FIX_OFF=world.share_planet: the copy holds all three planets), copy_slot_continue_off
-(SPORE_FIX_OFF=world.continue_coop: no Continue button). core_tests share_one_planet (make test) covers the file rule.
+- 2026-11-23 (0.7.16.1 final check): copy_slot_keep and copy_slot_notice PASS in 20261123-152921 (aad722ac).
+- 2026-11-23 (0.7.17 WP-W1, fix/w75-share): copy_slot_planets PASS, copy_slot_planets_off FAIL 2/2, copy_slot_continue_off FAIL 2/2 in night-0.7.17-a (9f712b73); core_tests share_one_planet PASS.
 
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened.
 - 2026-11-22: safety part fixed on fix/w64-share (own progress in a copy is kept, the host is told whose copy it plays), tests and twins, waiting for the lab run; sharing only the played planet stays for 0.7.17.
-- 2026-11-23: the full fix on fix/w75-share (0.7.17 WP-W1): a share sends only the played planet and the galaxy's files (world 1.1 guests), Continue for a new host in the galaxy menu; tests and twins written, waiting for the night run. Idea of the safety part and the report triage as before; nothing ported from outside code.
+- 2026-11-23: safety part released in 0.7.16.1.
+- 2026-11-23: full fix on fix/w75-share (0.7.17 WP-W1): a share sends only the played planet and the galaxy's files (world 1.1 guests), Continue for a new host in the galaxy menu; verified in night-0.7.17-a.

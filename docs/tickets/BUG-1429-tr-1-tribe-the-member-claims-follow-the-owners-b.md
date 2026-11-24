@@ -1,14 +1,14 @@
 ---
 id: BUG-1429
 title: TR-1: Tribe: the member claims follow the owners before the members are adopted: who owns which member is lost on a reload, a join or coop.store adopt
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-22
 source: audit
 role: host
 versions: 0.7.16.1
-fixed_in:
+fixed_in: 0.7.16.1
 branch: fix/w63-life
 commits: 0e1f881a, 39f2f060
 tests: tribe_owners_reload (coop_tribe_owners_reload.py), tribe_owners_reload_shared; twin tribe_owners_reload_off
@@ -29,8 +29,12 @@ The follow (`member_claims_follow`) runs after the adopt loop, the resplit and t
 ## Verification
 Open, waiting for the lab run. PASS expected: tribe_owners_reload and tribe_owners_reload_shared (the host gives all but one member to the guest, saves, `coop.menu`, `coop.load` of the same slot with the guest in the session: the same owners on the host and in the guest's game). FAIL expected: tribe_owners_reload_off (SPORE_FIX_OFF=tribe.claims_order: dealt in turns after the load). Not covered by a lab test: the join case (b) (a 1-in-17 tick window) and (c) (`coop.store adopt` needs a player with a new token); both are the same order fix. Owners do not depend on all.shared_dna (checked by the _shared run).
 
+- 2026-11-23 (0.7.16.1 final check): tribe_owners_reload and tribe_owners_reload_shared PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened (audit item); fixed on fix/w63-life with its test and twin, waiting for the lab run.
 
 - 2026-11-22: renumbered from BUG-9314 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9314.
 - 2026-11-23: the join case (b) now has a lab test (BUG-1450, fix/w67-chief): tribe_owners_rejoin with `coop.tribe claims_at_join 1` (PASS x3, out/lab/20261123-095717) and the twin tribe_owners_rejoin_off (SPORE_FIX_OFF=tribe.claims_order, FAIL x3, same run).
+- 2026-11-23: released in 0.7.16.1.

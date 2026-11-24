@@ -2,10 +2,14 @@
 
 ## [Unreleased]
 
+## [0.7.16.1] - 2026-11-23
+
 Thanks to IltonBJSilva, whose fork PRs #208, #212 and #216 found three of these bugs and whose notes gave twelve
 game addresses.
 
 ### Fixed
+- Civ: selling back a building a guest placed in its city planner before closing it now refunds the guest's money
+  correctly. (BUG-1532)
 - A guest no longer drops out of the session when the host's editor takes more than 30 s to load on a slow PC; the
   guest now waits up to 2 minutes for a host in an editor or a load (ported from PR #216). (BUG-1419)
 - A guest whose game hangs for 30 s, for example while its own editor loads, no longer holds up the host's vote: the

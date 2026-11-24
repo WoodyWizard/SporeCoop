@@ -300,7 +300,14 @@ class Monitor(threading.Thread):
     so it works while the main thread hangs. Checks.faults() fails the test on any event."""
     FREEZE = 10.0
     LOAD_FREEZE = 60.0  # a world load blocks the main thread: civ planets took 14 s with 16 games running
+    STAND_GRACE = 15.0  # after a stand the test made (stand()): the game's frames and console come back within this
     events = []
+    stands = {}  # name -> (until, why): the test stands this game on purpose (stand())
+
+    def standing(self, now=None):
+        """the why of the stand the test declared for this game while it lasts (+ STAND_GRACE), else None"""
+        until, why = Monitor.stands.get(self.name, (0.0, None))
+        return why if (now or time.time()) <= until + self.STAND_GRACE else None
 
     def game_log(self):
         """the game log of this instance (lane.game_log: right from a worktree too, BUG-0068)"""
@@ -349,7 +356,17 @@ class Monitor(threading.Thread):
                 # on). A console that answers a fresh connection again is no crash; the frame check
                 # below still catches a freeze. SPORE_MONITOR_STRICT=1: the old verdict (tests).
                 t0 = time.time()
-                back = self.answers_again(30)
+                why = self.standing()
+                if why:  # a stand the test made: its console may be held all along (kit.test.dialog, coop.stalltest)
+                    left = Monitor.stands[self.name][0] + self.STAND_GRACE - t0
+                    back = self.answers_again(max(30.0, left))
+                    if back is not None:
+                        print(f'  ({self.name}: the console was held {time.time() - t0 + 10:.0f} s by the stand the '
+                              f'test made ({why}): it answers again)', flush=True)
+                        con = Console(self.inst, timeout=10)
+                        continue
+                else:
+                    back = self.answers_again(30)
                 if back is not None and not os.environ.get('SPORE_MONITOR_STRICT'):
                     print(f'  ({self.name}: the console did not answer for 10 s ({e!r}) and answered a new '
                           f'connection {back:.1f} s later: busy, not a crash)', flush=True)
@@ -366,15 +383,27 @@ class Monitor(threading.Thread):
                 if reported:
                     Monitor.events.append(f'{self.name}: frames resumed after {now - since:.0f} s')
                 elif now - since > self.FREEZE:
-                    print(f'  ({self.name}: no frames for {now - since:.0f} s while loading a world)', flush=True)
+                    why = self.standing(now)
+                    print(f'  ({self.name}: no frames for {now - since:.0f} s '
+                          + (f'in the stand the test made: {why})' if why else 'while loading a world)'), flush=True)
                 last, since, reported = f, now, False
-            elif not reported and now - since > (self.LOAD_FREEZE if self.loading() else self.FREEZE):
+            elif not reported and not self.standing(now) and \
+                    now - since > (self.LOAD_FREEZE if self.loading() else self.FREEZE):
                 reported = True
                 # no stack from here: suspending the main thread under Wine can hang the console too;
                 # the SporeKit watchdog writes it into the game log after 30 s (lab.py keeps that log)
                 Monitor.events.append(f'{self.name}: FROZE (no frame for {self.FREEZE:.0f} s; main thread stack: '
                                       f'watchdog "no frames" in the {self.name} game log)')
             time.sleep(1)
+
+
+def stand(name, secs, why):
+    """the test stands game `name` ('host', 'guest') on purpose for about secs from now (kit.test.hang, a box, a
+    message loop of its own): its Monitor reports no freeze, no silent console and no resumed frames for it then (and
+    STAND_GRACE after); a game still frozen or silent after that is reported as always. Call it right before the
+    command that stands the game. The log gates (hitch) and the invariant monitor (link) are allowed in suite.py."""
+    Monitor.stands[name] = (time.time() + secs, why)
+    print(f'  ({name}: stands {secs:.0f} s on purpose: {why})', flush=True)
 
 
 _monitors = []
@@ -436,6 +465,7 @@ def watch(host_inst, guest_inst):
         m.stop = True
     _monitors.clear()
     Monitor.events.clear()
+    Monitor.stands.clear()
     for inst, name in ((host_inst, 'host'), (guest_inst, 'guest')):
         m = Monitor(inst, name)
         m.start()

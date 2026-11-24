@@ -1,16 +1,16 @@
 ---
 id: BUG-1419
 title: A guest's session times out while the host's editor loads for more than 30 s on a slow PC (port of PR #216)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-22
 source: PR #216 (IltonBJSilva)
 role: guest
 versions: 0.7.16.1
-fixed_in:
+fixed_in: 0.7.16.1
 branch: fix/w63-editor
-commits: 35163c73, 2a454d1e
+commits: 35163c73, 2a454d1e, 2bb64f64
 tests: editor_stand_host, twin editor_stand_host_off; unit busy_long_wait (core_tests)
 signature: "guest: connection to host lost (timeout)" while the host loads an editor (hang in App::cJob::Wait < cTextureManager < Palettes::PalettePageUI::Load)
 docs: docs/04-netcode.md#netcode-editor-long-wait
@@ -51,8 +51,13 @@ Open, waiting for the lab run (no lab runs during the 0.7.16 final check).
 * Wanted FAIL: `python3 tools/lab.py run editor_stand_host_off --lanes N` (SPORE_FIX_OFF=core.editor_long_wait: the
   guest's session times out after 30 s).
 
+- 2026-11-23 (0.7.16.1 final check): editor_stand_host PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened (port of PR #216 by IltonBJSilva, 0.7.16.1 scope).
 - 2026-11-22: fixed on fix/w63-editor (35163c73), tests 2a454d1e.
 
 - 2026-11-22: renumbered from BUG-9304 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9304.
+- 2026-11-23: first lab run (final check 20261123-104630): editor_stand_host FAIL only on the test's own stand: every check passed (the guest stayed in the session the 45 s, the host kept 2 players), but the freeze monitor reported the 45 s kit.test.hang made on purpose (FROZE, frames resumed after 45 s) and the invariant monitor the guest's view of the stood host (link: state 10.6/20.6/30.6 s old). A test bug: fix/w68-triage 2bb64f64 declares the stand (twoinst.stand, docs/06-testing.md#testing-stand) and allows the link invariant on the guest. No mod change for this part. Verify: `python3 tools/lab.py run editor_stand_host editor_stand_host_off --lanes 2`.
+- 2026-11-23: released in 0.7.16.1.

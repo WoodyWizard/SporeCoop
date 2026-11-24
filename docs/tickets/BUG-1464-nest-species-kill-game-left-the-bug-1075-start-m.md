@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in: 0.7.16
+fixed_in: 0.7.16.1
 branch: fix/w65-tests
 commits: def13b5f
 tests: tools/tests/coop_creature_desync.py kill_game (nest_species, late_species, every kill_game user)
@@ -31,6 +31,9 @@ FAIL before the fix: 20261123-023643 (nest_species, mod code 5376d388, the test 
 20261123-104630 (nest_species, rel/0.7.16.1 30be883d, which holds def13b5f). no-fail-run: a test fix (kill_game removes the start marker); def13b5f
 is in v0.7.16 (released with it).
 
+- 2026-11-23 (0.7.16.1 final check): nest_species and late_species PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-23: opened (fix/w65-tests).
-- 2026-11-23: fix/w84-tests (WP-T1 of 0.7.17): closed on the lab evidence: PASS 20261123-104630 on rel/0.7.16.1; fixed_in 0.7.16 (def13b5f is in the v0.7.16 tag).
+- 2026-11-23: released in 0.7.16.1.

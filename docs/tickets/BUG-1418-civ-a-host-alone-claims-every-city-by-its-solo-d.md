@@ -1,16 +1,16 @@
 ---
 id: BUG-1418
 title: Civ: a host alone claims every city by its solo deal, so a joiner gets no city of its own (CIV-6)
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-22
 source: audit
 role: host
 versions: 0.7.15 and later (since E1, BUG-1153)
-fixed_in:
+fixed_in: 0.7.16.1
 branch: fix/w63-civ
-commits:
+commits: 9578bf3b
 tests: civ_solo_deal, civ_solo_deal_off, civ_owners_session
 signature:
 docs: docs/06-testing.md#testing-civ-audit-w63
@@ -50,8 +50,13 @@ the joiner's on both games, B still the host's. Twin `civ_solo_deal_off` (SPORE_
 host's, must FAIL. Regression: civ_owners_session, civ_owners_reload. (B) has no lab test (needs a guest with a new
 token; the rule is in tests/civ_tests.cpp).
 
+- 2026-11-23 (0.7.16.1 final check): civ_solo_deal and civ_owners_session PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened.
 - 2026-11-22: fix on fix/w63-civ (switches civ.solo_claims, civ.adopt_owners; test civ_solo_deal and its twin); lab run pending.
 
 - 2026-11-22: renumbered from BUG-9303 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9303.
+- 2026-11-23: first lab run (final check 20261123-104630, rel/0.7.16.1 30be883d): civ_solo_deal FAIL "city B is the player civilization's and the host's": a test bug, not the fix. Alone, city A's purchase caption waited for the host's OK (civ.caption closes it only with guests; host trace `busy=cinematic,input_lock,paused` from s 20), so the game held city B's owner change for the whole 20 s wait (detector: the player owns 2 cities on the host); after the join closed the caption B was the host's (0) and A the joiner's on both games, as the fix wants. fix/w68-triage 9578bf3b: the test OKs each caption (Enter, else EndCinematic). Verify: `python3 tools/lab.py run civ_solo_deal civ_solo_deal_off --lanes 2`.
+- 2026-11-23: released in 0.7.16.1.

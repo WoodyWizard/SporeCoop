@@ -61,4 +61,5 @@ the old twin needs ~12 repeats to mean anything.
 - 2026-11-23: opened; fix/w65-tests: the claim corrected, a runners case added.
 - 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.
 - 2026-11-23: validation 20261123-023643: space_planet_runners INCONCLUSIVE "0 runner samples" both ways (2 + 2). Inferred from the timing (60 rounds, the wobj read and the fault checks in ~18 s): the 3 reads of a round ran back to back, the two host reads under the 0.05 s guard, every round dropped (not measured: no per-read times). fix/w65-tests: the reads of a round 0.15 s apart, and the wait prints what the rounds saw (reads apart, matched by serial, moving, fastest), so the next INCONCLUSIVE says whether the citizens stand.
-- 2026-11-23: fix/w84-tests (WP-T1 of 0.7.17): on arm measured (20261123-111347), RUN_SHARE 5 %, share table printed (60a851e9); off arm pending.
+- 2026-11-23: fix/w84-tests (WP-T1 of 0.7.17): on arm measured (20261123-111347), RUN_SHARE 5 %, share table printed (60a851e9).
+- 2026-11-23: fix/w69-triage2 (merged from v0.7.16.1): both arms measured (on <= 1.4 % / p90 <= 1.28 m, off 6.1-9.9 % / p90 2.03-2.48 m); limits tightened to RUN_SHARE 0.035 and RUN_P90 1.6 m with twin space_planet_runners_lead_off.
