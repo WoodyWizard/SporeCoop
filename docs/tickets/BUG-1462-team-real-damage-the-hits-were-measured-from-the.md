@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w65-tests
 commits: def13b5f
 tests: tools/tests/coop_team_real_damage.py (team_real_damage)
@@ -34,3 +34,4 @@ Open, waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run team_
 ## History
 - 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-23: opened (fix/w65-tests).
+- 2026-11-23: released in 0.7.16.1.

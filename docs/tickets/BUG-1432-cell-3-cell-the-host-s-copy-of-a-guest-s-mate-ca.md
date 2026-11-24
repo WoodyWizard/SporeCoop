@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: audit
 role: host
 versions: 0.7.16.1
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w63-life
 commits: 75d69f4a, 39f2f060
 tests: cell_mate_copy (coop_cell_mate_copy.py); twin cell_mate_copy_off
@@ -36,3 +36,4 @@ Open, waiting for the lab run. PASS expected: cell_mate_copy (the guest's mating
 - 2026-11-22: opened (audit item); fixed on fix/w63-life with its test and twin, waiting for the lab run.
 
 - 2026-11-22: renumbered from BUG-9317 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9317.
+- 2026-11-23: released in 0.7.16.1.

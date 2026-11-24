@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: audit
 role: guest
 versions: 0.7.16.1
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w63-life
 commits: 75d69f4a, 39f2f060
 tests: cell_away_guest_editor (coop_cell_away.py --guest-editor), cell_away_guest_editor_shared; twin cell_away_guest_editor_off
@@ -36,3 +36,4 @@ Open, waiting for the lab run. PASS expected: cell_away_guest_editor and cell_aw
 - 2026-11-22: opened (audit item); fixed on fix/w63-life with its test and twin, waiting for the lab run.
 
 - 2026-11-22: renumbered from BUG-9318 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9318.
+- 2026-11-23: released in 0.7.16.1.

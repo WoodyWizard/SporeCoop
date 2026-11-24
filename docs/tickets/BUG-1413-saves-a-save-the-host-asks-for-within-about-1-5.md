@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: found on the way: BUG-1398 (lab 20261121-003202)
 role: host
 versions: 0.7.16, 0.7.16.1
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w63-net
 commits: 0b6e70d2
 tests: saved_box_player, saved_box_player_off, saved_box_twice_off (still FAILs: the mod's own dropped posts are not made again while world.save_allowed is off)
@@ -56,3 +56,4 @@ Open, waiting for the lab run:
 - 2026-11-21: opened.
 - 2026-11-22 (fix/w63-net): the dropped Save is seen in the game's handler (hooked) and made again once the game takes
   one (world.save_retry); lab case saved_box_player and its twin.
+- 2026-11-23: released in 0.7.16.1.

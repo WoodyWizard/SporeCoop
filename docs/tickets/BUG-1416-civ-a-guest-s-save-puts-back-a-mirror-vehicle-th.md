@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: audit
 role: guest
 versions: 0.7.16 and earlier (since BUG-0470, 0.7.3)
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w63-civ
 commits: 3e8a6ef4
 tests: civ_save_took, civ_save_took_off
@@ -56,3 +56,4 @@ must FAIL.
 - 2026-11-22: fix on fix/w63-civ (switch civ.save_took_listed, test civ_save_took and its twin); lab run pending.
 
 - 2026-11-22: renumbered from BUG-9301 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9301.
+- 2026-11-23: released in 0.7.16.1.

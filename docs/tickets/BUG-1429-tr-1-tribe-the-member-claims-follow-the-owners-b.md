@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: audit
 role: host
 versions: 0.7.16.1
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w63-life
 commits: 0e1f881a, 39f2f060
 tests: tribe_owners_reload (coop_tribe_owners_reload.py), tribe_owners_reload_shared; twin tribe_owners_reload_off
@@ -37,3 +37,4 @@ Open, waiting for the lab run. PASS expected: tribe_owners_reload and tribe_owne
 
 - 2026-11-22: renumbered from BUG-9314 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9314.
 - 2026-11-23: the join case (b) now has a lab test (BUG-1450, fix/w67-chief): tribe_owners_rejoin with `coop.tribe claims_at_join 1` (PASS x3, out/lab/20261123-095717) and the twin tribe_owners_rejoin_off (SPORE_FIX_OFF=tribe.claims_order, FAIL x3, same run).
+- 2026-11-23: released in 0.7.16.1.

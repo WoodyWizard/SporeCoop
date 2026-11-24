@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: audit
 role: host
 versions: 0.7.15 and later (since E1, BUG-1153)
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w63-civ
 commits: 9578bf3b
 tests: civ_solo_deal, civ_solo_deal_off, civ_owners_session
@@ -59,3 +59,4 @@ token; the rule is in tests/civ_tests.cpp).
 
 - 2026-11-22: renumbered from BUG-9303 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9303.
 - 2026-11-23: first lab run (final check 20261123-104630, rel/0.7.16.1 30be883d): civ_solo_deal FAIL "city B is the player civilization's and the host's": a test bug, not the fix. Alone, city A's purchase caption waited for the host's OK (civ.caption closes it only with guests; host trace `busy=cinematic,input_lock,paused` from s 20), so the game held city B's owner change for the whole 20 s wait (detector: the player owns 2 cities on the host); after the join closed the caption B was the host's (0) and A the joiner's on both games, as the fix wants. fix/w68-triage 9578bf3b: the test OKs each caption (Enter, else EndCinematic). Verify: `python3 tools/lab.py run civ_solo_deal civ_solo_deal_off --lanes 2`.
+- 2026-11-23: released in 0.7.16.1.

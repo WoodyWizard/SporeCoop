@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: audit
 role: host
 versions: 0.7.16.1
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w63-net
 commits: 6c6df173, 4eef1efd
 tests: store_salt_held, store_salt_held_off, store_tests (test_unreadable)
@@ -53,3 +53,4 @@ Lab: `tools/lab.py run store_salt_held store_salt_held_off`: store_salt_held mus
 - 2026-11-22: opened.
 
 - 2026-11-22: renumbered from BUG-9309 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9309.
+- 2026-11-23: released in 0.7.16.1.

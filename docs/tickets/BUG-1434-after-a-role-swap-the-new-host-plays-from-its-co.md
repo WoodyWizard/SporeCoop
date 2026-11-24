@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: discord
 role: all
 versions: 0.7.15.5
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w64-share
 commits: 2d3bc204, f6f56ea1
 tests: copy_slot_keep, copy_slot_notice (coop_copy_slot.py); twins copy_slot_keep_off, copy_slot_notice_off; win_unit test_slot_own_progress (--old-own)
@@ -38,3 +38,4 @@ Open, waiting for the lab run. PASS expected: copy_slot_keep (the guest saves al
 - 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened.
 - 2026-11-22: safety part fixed on fix/w64-share (own progress in a copy is kept, the host is told whose copy it plays), tests and twins, waiting for the lab run; sharing only the played planet stays for 0.7.17.
+- 2026-11-23: released in 0.7.16.1.

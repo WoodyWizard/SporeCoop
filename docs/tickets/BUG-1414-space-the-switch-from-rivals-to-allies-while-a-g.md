@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: audit 0.7.15.5 SPC-2 (out/research/ext-audit-verify-civ-spc.md)
 role: guest
 versions: 0.7.16.1
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w63-space
 commits: 0d07ae00
 tests: space_merge_away, space_merge_away_off
@@ -57,3 +57,4 @@ Expected: PASS with the fix; FAIL with SPORE_FIX_OFF=space.merge_hold_totals (ho
 - 2026-11-22: fix and test on fix/w63-space (no lab run yet: lanes busy with the 0.7.16 final check).
 
 - 2026-11-22: renumbered from BUG-9299 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9299.
+- 2026-11-23: released in 0.7.16.1.

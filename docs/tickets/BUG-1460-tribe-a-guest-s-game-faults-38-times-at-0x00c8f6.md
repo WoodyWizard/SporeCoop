@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: lab
 role: 
 versions: 0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch:
 commits: 1a8e910f
 tests: campaign_tribe_noclick (tools/tests/coop_campaign.py)
@@ -81,3 +81,4 @@ with --nofix).
 - 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-23: opened (fix/w65-tests triage).
 - 2026-11-23: fix/w69-triage2 (0.7.16.1 final check triage): campaign_tribe_noclick#2 of 20261123-111750 stuck at goal bar 1/5 is not this fault: no exception line in any of its 12 game logs (no 0x00C8F6D3, faults 0); the host's raid click failed (BUG-1535, the BUG-1091 driver class, also before 0.7.16.1). The makeway_null skipped= count is only in coop.status, not logged: unknown for that run; the campaign now keeps coop.status with each finding.
+- 2026-11-23: released in 0.7.16.1.

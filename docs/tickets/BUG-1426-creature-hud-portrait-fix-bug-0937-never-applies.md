@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: audit
 role: both
 versions: 0.7.16.1
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w63-net
 commits: 0f231d0d
 tests: hud_portrait (regression)
@@ -51,3 +51,4 @@ symbol equals the vtable the game uses under Wine).
 - 2026-11-22: opened.
 
 - 2026-11-22: renumbered from BUG-9311 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9311.
+- 2026-11-23: released in 0.7.16.1.

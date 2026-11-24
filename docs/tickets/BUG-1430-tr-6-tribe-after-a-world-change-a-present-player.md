@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: audit
 role: guest
 versions: 0.7.16.1
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w63-life
 commits: 0e1f881a, 8b8ed93c, 39f2f060
 tests: tribe_owners_reload_back (coop_tribe_owners_reload.py --back); twin tribe_owners_reload_back_off
@@ -36,3 +36,4 @@ Open, waiting for the lab run. PASS expected: tribe_owners_reload_back (the gues
 - 2026-11-22: opened (audit item); fixed on fix/w63-life with its test and twin, waiting for the lab run.
 
 - 2026-11-22: renumbered from BUG-9315 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9315.
+- 2026-11-23: released in 0.7.16.1.

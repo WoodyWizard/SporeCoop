@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: discord
 role: all
 versions: 0.7.15.5
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w64-share
 commits: aa1d7d26, f6f56ea1
 tests: share_menu_pass (coop_share_menu_pass.py); twin share_menu_pass_off
@@ -35,3 +35,4 @@ Open, waiting for the lab run. PASS expected: share_menu_pass (the guest rejoins
 - 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened.
 - 2026-11-22: fixed on fix/w64-share (wait for the guest's load of the world sent last), test and twin, waiting for the lab run.
+- 2026-11-23: released in 0.7.16.1.

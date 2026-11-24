@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: audit
 role: guest
 versions: 0.7.16 and earlier (since BUG-0189)
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w63-civ
 commits: a3c27944
 tests: civ_planner_miss, civ_planner_miss_off, civ_planner_build
@@ -58,3 +58,4 @@ Twin `civ_planner_miss_off` (SPORE_FIX_OFF=civ.planner_closed): the host builds 
   and the guest's planner sold the house back, whose refund the guest's income block dropped (0.7.16 hid it: the host
   built the house sent at AddBuilding). Corrected inside civ.planner_closed: the sell refund of an unsent planner
   building passes; the test drops on an offered plot. civ_planner_miss PASS x3, civ_planner_miss_off FAIL x2.
+- 2026-11-23: released in 0.7.16.1.

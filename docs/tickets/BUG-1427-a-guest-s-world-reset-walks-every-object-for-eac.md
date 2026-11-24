@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: pr
 role: guest
 versions: 0.7.16.1
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w63-net
 commits: e06a10c7
 tests: reset_stall, reset_stall_off
@@ -55,3 +55,4 @@ teardown runs outside GalaxyMenu_SimReset in our flow: stop and record it (the f
 - 2026-11-22: opened.
 
 - 2026-11-22: renumbered from BUG-9312 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9312.
+- 2026-11-23: released in 0.7.16.1.

@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: audit
 role: guest
 versions: 0.7.16.1
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w63-editor
 commits: 35163c73, 2a454d1e
 tests: dna_own_away_editor, twin dna_own_away_editor_off
@@ -47,3 +47,4 @@ Open, waiting for the lab run.
 - 2026-11-22: fixed on fix/w63-editor (35163c73), tests 2a454d1e.
 
 - 2026-11-22: renumbered from BUG-9307 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9307.
+- 2026-11-23: released in 0.7.16.1.

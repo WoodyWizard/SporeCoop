@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: audit
 role: guest
 versions: 0.7.16.1
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w63-life
 commits: 75d69f4a, 39f2f060
 tests: cell_food_ack (coop_cell_food_ack.py), cell_food_ack_shared; twin cell_food_ack_off
@@ -36,3 +36,4 @@ Open, waiting for the lab run. PASS expected: cell_food_ack and cell_food_ack_sh
 - 2026-11-22: opened (audit item); fixed on fix/w63-life with its test and twin, waiting for the lab run.
 
 - 2026-11-22: renumbered from BUG-9316 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9316.
+- 2026-11-23: released in 0.7.16.1.

@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: PR #216 (IltonBJSilva)
 role: guest
 versions: 0.7.16.1
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w63-editor
 commits: 35163c73, 2a454d1e, 2bb64f64
 tests: editor_stand_host, twin editor_stand_host_off; unit busy_long_wait (core_tests)
@@ -60,3 +60,4 @@ Open, waiting for the lab run (no lab runs during the 0.7.16 final check).
 
 - 2026-11-22: renumbered from BUG-9304 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9304.
 - 2026-11-23: first lab run (final check 20261123-104630): editor_stand_host FAIL only on the test's own stand: every check passed (the guest stayed in the session the 45 s, the host kept 2 players), but the freeze monitor reported the 45 s kit.test.hang made on purpose (FROZE, frames resumed after 45 s) and the invariant monitor the guest's view of the stood host (link: state 10.6/20.6/30.6 s old). A test bug: fix/w68-triage 2bb64f64 declares the stand (twoinst.stand, docs/06-testing.md#testing-stand) and allows the link invariant on the guest. No mod change for this part. Verify: `python3 tools/lab.py run editor_stand_host editor_stand_host_off --lanes 2`.
+- 2026-11-23: released in 0.7.16.1.
