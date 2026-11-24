@@ -858,9 +858,9 @@ static int SK_THISCALL h_WalkSelected(void* self, const float* pos)
 }
 
 static void coop_init();
-using ChooseAction_t = int(SK_CDECL*)(void*, bool);
+using ChooseAction_t = int(SK_CDECL*)(void*, const void*);
 static ChooseAction_t o_ChooseAction;
-static int SK_CDECL h_ChooseAction(void* obj, bool flag);
+static int SK_CDECL h_ChooseAction(void* obj, const void* pos);
 
 // BUG-0475: a member's size is its own game's pick (cCreatureCitizen GetDesiredScale vt 0x80: a random
 // size per member, the chief's bigger): the guest's mirror (bound to a local member or spawned) kept a
@@ -3779,9 +3779,9 @@ COOP_FIX("tribe.friendly_fire", "BUG-0899", g_ff_fix,
 static uint32_t g_ff_hits, g_ff_blocked;
 bool ff_on() { return g_ff_fix && settings::on(settings::kFriendlyFire); }
 
-static int SK_CDECL h_ChooseAction(void* obj, bool flag)
+static int SK_CDECL h_ChooseAction(void* obj, const void* pos)
 {
-    int r = o_ChooseAction(obj, flag);
+    int r = o_ChooseAction(obj, pos);
     if (r != 0 || !obj || !active() || !ff_on() || IsBadReadPtr(obj, 4))
         return r;
     void* gd = vcall<void*>(obj, 0xC / 4, (uint32_t)0x17F243Bu);
@@ -3802,7 +3802,7 @@ static int SK_CDECL h_ChooseAction(void* obj, bool flag)
         }
     return have_sel ? 0x0A : r;
 }
-int choose_action_for(void* obj) { return o_ChooseAction ? h_ChooseAction(obj, false) : -1; }
+int choose_action_for(void* obj) { return o_ChooseAction ? h_ChooseAction(obj, nullptr) : -1; }
 
 static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type, const void* pos, void* att)
 {

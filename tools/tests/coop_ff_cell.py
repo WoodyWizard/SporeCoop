@@ -55,13 +55,11 @@ def main():
         # Disable cell.regen so partner proximity healing does not mask small hits
         sl.force(host, [guest], 'cell.regen', 'off')
         sl.force(host, [guest], 'all.friendly_fire', 'off')
-        # Give both players a spike part (part type 7) so they can stab each other on contact even when
-        # sharing the fixture's cell species (electric cells are immune to electricity in Spore).
+        # Give host a spike part (part type 7) first so only one player attacks at a time (preventing simultaneous
+        # knockout races before the other side's hit lands).
         hb = host.call('coop.pool borrow spike graft')['out'].strip()
-        gb = guest.call('coop.pool borrow spike graft')['out'].strip()
-        print('  borrow host:', hb, '| guest:', gb, flush=True)
-        ck(hb.startswith('borrowed') and gb.startswith('borrowed'),
-           f'both players borrowed spike part (host={hb[:32]}, guest={gb[:32]})')
+        print('  borrow host:', hb, flush=True)
+        ck(hb.startswith('borrowed'), f'host borrowed spike part ({hb[:40]})')
 
         # 1. Friendly fire OFF: contact deals no PvP hits in either direction
         h0, g0 = pool_stats(host), pool_stats(guest)
@@ -72,31 +70,47 @@ def main():
         ck(h1['pvp_out'] == h0['pvp_out'] and g1['pvp_out'] == g0['pvp_out'],
            f'friendly fire off: no PvP hits sent (host +{h1["pvp_out"] - h0["pvp_out"]}, guest +{g1["pvp_out"] - g0["pvp_out"]})')
 
-        # 2. Friendly fire ON: both players ram each other with spikes and deal real PvP damage
+        # 2. Friendly fire ON: host -> guest spike attack
         ck(sl.force(host, [guest], 'all.friendly_fire', 'on'), 'guest received all.friendly_fire on')
         time.sleep(1.0)
         h2, g2 = pool_stats(host), pool_stats(guest)
         t0 = time.time()
-        while time.time() - t0 < 14.0:
+        while time.time() - t0 < 12.0:
             host.call('coop.pool swimto partner tp')
-            guest.call('coop.pool swimto partner tp')
-            time.sleep(0.8)
+            time.sleep(0.5)
             hc, gc = pool_stats(host), pool_stats(guest)
-            if (hc['pvp_out'] > h2['pvp_out'] and gc['pvp_in'] > g2['pvp_in'] and
-                    gc['pvp_out'] > g2['pvp_out'] and hc['pvp_in'] > h2['pvp_in'] and
-                    hc['dmg'] > h2['dmg'] and gc['dmg'] > g2['dmg']):
+            if hc['pvp_out'] > h2['pvp_out'] and gc['pvp_in'] > g2['pvp_in'] and gc['dmg'] > g2['dmg']:
                 break
         h3, g3 = pool_stats(host), pool_stats(guest)
-        print(f'  FF on: host pvp_out +{h3["pvp_out"] - h2["pvp_out"]} pvp_in +{h3["pvp_in"] - h2["pvp_in"]} dmg +{h3["dmg"] - h2["dmg"]} | '
-              f'guest pvp_out +{g3["pvp_out"] - g2["pvp_out"]} pvp_in +{g3["pvp_in"] - g2["pvp_in"]} dmg +{g3["dmg"] - g2["dmg"]}', flush=True)
+        print(f'  FF on (host->guest): host pvp_out +{h3["pvp_out"] - h2["pvp_out"]} | '
+              f'guest pvp_in +{g3["pvp_in"] - g2["pvp_in"]} dmg +{g3["dmg"] - g2["dmg"]}', flush=True)
         ck(h3['pvp_out'] > h2['pvp_out'] and g3['pvp_in'] > g2['pvp_in'],
            f'friendly fire on: host attack hurt guest (host pvp_out +{h3["pvp_out"] - h2["pvp_out"]}, '
            f'guest pvp_in +{g3["pvp_in"] - g2["pvp_in"]})')
-        ck(g3['pvp_out'] > g2['pvp_out'] and h3['pvp_in'] > h2['pvp_in'],
-           f'friendly fire on: guest attack hurt host (guest pvp_out +{g3["pvp_out"] - g2["pvp_out"]}, '
-           f'host pvp_in +{h3["pvp_in"] - h2["pvp_in"]})')
-        ck(g3['dmg'] > g2['dmg'] and h3['dmg'] > h2['dmg'],
-           f'friendly fire on: both players took real damage in their own games (host +{h3["dmg"] - h2["dmg"]}, '
+
+        # 3. Swap spike to guest only: guest -> host spike attack
+        host.call('coop.pool borrow off')
+        gb = guest.call('coop.pool borrow spike graft')['out'].strip()
+        print('  borrow guest:', gb, flush=True)
+        ck(gb.startswith('borrowed'), f'guest borrowed spike part ({gb[:40]})')
+        # Wait briefly if guest got knocked out on the final host hit (revive/stand-up)
+        time.sleep(1.0)
+        h4, g4 = pool_stats(host), pool_stats(guest)
+        t0 = time.time()
+        while time.time() - t0 < 16.0:
+            guest.call('coop.pool swimto partner tp')
+            time.sleep(0.5)
+            hc, gc = pool_stats(host), pool_stats(guest)
+            if gc['pvp_out'] > g4['pvp_out'] and hc['pvp_in'] > h4['pvp_in'] and hc['dmg'] > h4['dmg']:
+                break
+        h5, g5 = pool_stats(host), pool_stats(guest)
+        print(f'  FF on (guest->host): guest pvp_out +{g5["pvp_out"] - g4["pvp_out"]} | '
+              f'host pvp_in +{h5["pvp_in"] - h4["pvp_in"]} dmg +{h5["dmg"] - h4["dmg"]}', flush=True)
+        ck(g5['pvp_out'] > g4['pvp_out'] and h5['pvp_in'] > h4['pvp_in'],
+           f'friendly fire on: guest attack hurt host (guest pvp_out +{g5["pvp_out"] - g4["pvp_out"]}, '
+           f'host pvp_in +{h5["pvp_in"] - h4["pvp_in"]})')
+        ck(g3['dmg'] > g2['dmg'] and h5['dmg'] > h4['dmg'],
+           f'friendly fire on: both players took real damage in their own games (host +{h5["dmg"] - h4["dmg"]}, '
            f'guest +{g3["dmg"] - g2["dmg"]})')
     finally:
         for con in (host, guest):
