@@ -1011,6 +1011,10 @@ std::string debug(const std::vector<std::string>& a)
     if (!a.empty() && a[0] == "spend") { // tests (BUG-1249): the guest's own editor spends, the DNA this game shows
         if (a.size() >= 3 && a[1] == "fake") // tests (BUG-1507): as if our own editor had just spent <n>
             spend_fake(atoi(a[2].c_str()));
+        if (a.size() >= 3 && a[1] == "set") { // tests (BUG-1538): set local S+0x2C directly (simulates an editor spend)
+            if (uint8_t* s = S())
+                F<int32_t>(s, 0x2C) = atoi(a[2].c_str());
+        }
         uint8_t* s = S();
         char b[320];
         snprintf(b, sizeof b, "%s spent=%d dna=%d food=%d", spend_status().c_str(), s ? F<int32_t>(s, 0x2C) : -1,

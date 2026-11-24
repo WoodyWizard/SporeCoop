@@ -146,11 +146,12 @@ public:
             *made = m;
         return (int)p.value;
     }
-    int spend_cell(const std::string& key, uint32_t world, int d, int host_spent)
+    int spend_cell(const std::string& key, uint32_t world, int d, int host_spent, int max_spent = -1)
     {
         spent(key, world, host_spent);
         Purse& p = w[key].cell;
-        p.value = std::clamp(p.value + (float)d, 0.f, kMaxValue);
+        float hi = max_spent >= 0 ? std::min(kMaxValue, (float)max_spent) : kMaxValue;
+        p.value = std::clamp(p.value + (float)d, 0.f, hi);
         return (int)p.value;
     }
 

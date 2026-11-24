@@ -6,7 +6,7 @@
 namespace coop_core { // dna.cpp (WP-D, BUG-1291)
 bool dna_own_wallet(uint8_t id, net::Family fam);
 int dna_own_cell_spent(uint8_t id, int host_spent);
-int dna_own_cell_spend(uint8_t id, int spent, int host_spent);
+int dna_own_cell_spend(uint8_t id, int spent, int host_spent, int max_spent);
 }
 
 namespace cellsync {
@@ -1133,6 +1133,26 @@ static float cell_sphere(uint8_t* c, float* ctr)
 static bool g_fix_guest_spend = true;
 COOP_FIX("cell.guest_spend", "BUG-1249", g_fix_guest_spend,
          "cell: what a guest's own cell editor spent comes off the party's DNA and stays off in the guest's game (the host's count put the old DNA back)");
+// BUG-1538: Cell DNA is DNAForFood(S+0x1C) - S+0x2C (spent); the game never clamps it to >= 0 because single-player
+// food only rises and 0xE809A0 always writes S+0x2C <= DNAForFood(food). In co-op, concurrent shared-pool Cell editors
+// added host + guest spends without capping at DNAForFood(food), `spent_guest_want` expired `g_own_spent_heard` at 5 s
+// while wsync cached `cell_spent` for 6 s (adding pending onto host_spent), and a guest food rollback could drop
+// DNAForFood(food) below S+0x2C. On: every co-op write to spent caps at DNAForFood(food) (preserving negative spent from
+// selling starting parts), `g_own_spent_heard` outlives wsync's cache, and `editor_budget` never returns negative.
+// Off (`coop.fix cell.dna_nonneg off`): unclamped (0.7.16/0.7.17).
+static bool g_fix_dna_nonneg = true;
+COOP_FIX("cell.dna_nonneg", "BUG-1538", g_fix_dna_nonneg,
+         "cell: a player's Cell DNA never goes negative after editor updates (caps concurrent spends and food drops, and keeps the guest's own spent count aligned with wsync)");
+static unsigned g_dna_clamped; // tests (BUG-1538): times S+0x2C was capped at DNAForFood(food)
+static int dna_for_food_now()
+{
+    uint8_t* s = in_cell() ? S() : nullptr;
+    if (!s || !a_DnaFor)
+        return -1;
+    int food = F<int32_t>(s, 0x1C);
+    using DnaFor_t = int(__fastcall*)(int);
+    return food >= 0 && food <= 1000 ? ((DnaFor_t)a_DnaFor)(food) : -1;
+}
 static int g_spent_seen = 0;           // guest: S+0x2C in the last tick in Cell
 static bool g_spent_seen_ok = false;
 static bool g_own_ed_due = false;      // guest: back from its own cell editor, its spend not measured yet
@@ -1188,7 +1208,8 @@ static void spend_in(int from, int spent, uint32_t meal, bool cell)
     g_spends_got++;
     if (coop_core::dna_own_wallet((uint8_t)from, net::Family::npc)) { // WP-D: its own count, the host's untouched
         uint8_t* hs = cell ? S() : nullptr;
-        coop_core::dna_own_cell_spend((uint8_t)from, spent, hs ? F<int32_t>(hs, 0x2C) : g_host_spent_last);
+        int max_sp = g_fix_dna_nonneg && hs ? dna_for_food_now() : -1;
+        coop_core::dna_own_cell_spend((uint8_t)from, spent, hs ? F<int32_t>(hs, 0x2C) : g_host_spent_last, max_sp);
         g_spend_acked[from] = meal; // (the next row cell_spent_own holds it)
         return;
     }
@@ -1202,9 +1223,14 @@ static void spend_in(int from, int spent, uint32_t meal, bool cell)
         return;
     }
     int before = F<int32_t>(s, 0x2C);
-    F<int32_t>(s, 0x2C) = before + spent;
+    int raw = before + spent;
+    int next = cell_logic::clamp_spent(raw, dna_for_food_now(), g_fix_dna_nonneg);
+    if (next != raw)
+        g_dna_clamped++;
+    F<int32_t>(s, 0x2C) = next;
     g_spend_acked[from] = meal;
-    H->log(M, SK_INFO, "cell: player %d's own editor spent %d DNA: spent %d -> %d (BUG-1249)", from, spent, before, before + spent);
+    H->log(M, SK_INFO, "cell: player %d's own editor spent %d DNA: spent %d -> %d%s (BUG-1249)", from, spent, before, next,
+           next != raw ? " (capped at DNAForFood, BUG-1538)" : "");
 }
 
 static void spend_tick(bool cell, bool was_in_cell)
@@ -1232,13 +1258,18 @@ static void spend_tick(bool cell, bool was_in_cell)
         }
         uint8_t* s = cell && avatar() && now - g_cell_entered_at > 1.0 ? S() : nullptr;
         if (s && !g_spend_owed.empty()) {
+            int max_sp = dna_for_food_now();
             for (auto& [id, o] : g_spend_owed) {
                 int before = F<int32_t>(s, 0x2C);
-                F<int32_t>(s, 0x2C) = before + o.spent;
+                int raw = before + o.spent;
+                int next = cell_logic::clamp_spent(raw, max_sp, g_fix_dna_nonneg);
+                if (next != raw)
+                    g_dna_clamped++;
+                F<int32_t>(s, 0x2C) = next;
                 g_spend_acked[id] = o.meal;
                 g_spends_owed_paid++;
-                H->log(M, SK_INFO, "cell: player %d's own editor spend of %d DNA taken now: spent %d -> %d (BUG-1249)", id,
-                       o.spent, before, before + o.spent);
+                H->log(M, SK_INFO, "cell: player %d's own editor spend of %d DNA taken now: spent %d -> %d%s (BUG-1249)", id,
+                       o.spent, before, next, next != raw ? " (capped at DNAForFood, BUG-1538)" : "");
             }
             g_spend_owed.clear();
         }
@@ -1306,9 +1337,14 @@ void spend_fake(int n)
 int spent_guest_want(int host_spent)
 {
     spend_measure();
-    if (is_guest() && g_own_spent_heard >= 0 && H->time_seconds() - g_own_spent_at < 5.0) // WP-D: our own count
-        host_spent = g_own_spent_heard;
-    return g_fix_guest_spend && is_guest() ? host_spent + g_spend_pending : host_spent;
+    if (!is_guest())
+        return host_spent;
+    bool clamped = false;
+    int w = cell_logic::guest_want_spent(host_spent, g_own_spent_heard, H->time_seconds() - g_own_spent_at,
+                                         g_spend_pending, g_fix_guest_spend, g_fix_dna_nonneg, dna_for_food_now(), &clamped);
+    if (clamped)
+        g_dna_clamped++;
+    return w;
 }
 
 // guest: the host's row cell_spent_own (from the message, before cell_spent of the same message is applied)
@@ -1367,10 +1403,11 @@ static void spend_reset()
 }
 std::string spend_status()
 {
-    char b[200];
-    snprintf(b, sizeof b, "spend: sent=%u got=%u owed_paid=%u acked=%u pending=%d owed=%d due=%d own_heard=%d own_rows=%u",
+    char b[240];
+    snprintf(b, sizeof b,
+             "spend: sent=%u got=%u owed_paid=%u acked=%u pending=%d owed=%d due=%d own_heard=%d own_rows=%u clamped=%u",
              g_spends_sent, g_spends_got, g_spends_owed_paid, g_spends_acked, g_spend_pending, (int)g_spend_owed.size(),
-             g_own_ed_due ? 1 : 0, g_own_spent_heard, g_own_spent_rows);
+             g_own_ed_due ? 1 : 0, g_own_spent_heard, g_own_spent_rows, g_dna_clamped);
     return b;
 }
 
@@ -1759,6 +1796,16 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                     }
                     if (C.food_cause)
                         C.food_cause(0xFF, before, diff);
+                    if (g_fix_dna_nonneg && diff < 0) { // BUG-1538: food rollback cannot push DNA below 0
+                        int max_sp = dna_for_food_now();
+                        int cur_sp = F<int32_t>(s, 0x2C);
+                        int next_sp = cell_logic::clamp_spent(cur_sp, max_sp, true);
+                        if (next_sp != cur_sp) {
+                            F<int32_t>(s, 0x2C) = next_sp;
+                            g_dna_clamped++;
+                            H->log(M, SK_INFO, "cell: food drop (%+d) capped spent %d -> %d (BUG-1538)", diff, cur_sp, next_sp);
+                        }
+                    }
                 }
                 F<int32_t>(s, 0x20) = plant;
             });
@@ -2116,8 +2163,12 @@ bool spent_dna(int& v)
 
 void set_spent_dna(int v)
 {
-    if (uint8_t* s = in_cell() ? S() : nullptr)
-        *(int32_t*)(s + 0x2C) = v; // the game's own writer is the editor's result (0xE809A0): no setter
+    if (uint8_t* s = in_cell() ? S() : nullptr) {
+        int next = cell_logic::clamp_spent(v, dna_for_food_now(), g_fix_dna_nonneg);
+        if (next != v)
+            g_dna_clamped++;
+        *(int32_t*)(s + 0x2C) = next; // the game's own writer is the editor's result (0xE809A0): no setter
+    }
 }
 
 int editor_budget()
@@ -2127,7 +2178,10 @@ int editor_budget()
         return -1;
     int food = F<int32_t>(s, 0x1C), spent = F<int32_t>(s, 0x2C);
     using DnaFor_t = int(__fastcall*)(int);
-    return food >= 0 && food <= 1000 ? ((DnaFor_t)a_DnaFor)(food) - spent : -1;
+    if (food < 0 || food > 1000)
+        return -1;
+    int b = ((DnaFor_t)a_DnaFor)(food) - spent;
+    return g_fix_dna_nonneg ? std::max(0, b) : b;
 }
 
 void join_partner()

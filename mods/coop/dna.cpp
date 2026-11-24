@@ -404,10 +404,10 @@ int dna_own_cell_spent(uint8_t id, int host_spent)
     }
     return v;
 }
-int dna_own_cell_spend(uint8_t id, int spent, int host_spent)
+int dna_own_cell_spend(uint8_t id, int spent, int host_spent, int max_spent)
 {
     int before = dna_own_cell_spent(id, host_spent);
-    int after = g_book.spend_cell(dna_wallet_key(id), wallet_world(), spent, host_spent);
+    int after = g_book.spend_cell(dna_wallet_key(id), wallet_world(), spent, host_spent, max_spent);
     g_own_spends++;
     LOG("dna: %s's own cell editor spent %d: its spent count %d -> %d (the host's stays %d)", g_sess.name_of(id).c_str(),
         spent, before, after, host_spent);

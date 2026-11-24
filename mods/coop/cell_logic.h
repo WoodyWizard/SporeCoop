@@ -579,4 +579,31 @@ inline uint32_t solo_refill_take(uint32_t pending, uint32_t per_pass, uint32_t l
     return std::min(pending, per_pass);
 }
 
+// BUG-1538: Cell DNA is DNAForFood(food) - spent (S+0x2C). Clamping the upper bound `spent <= dna_for_food` guarantees
+// DNA never goes negative (concurrent shared-pool editor spends, own-wallet expiry fallback, or a guest food drop after
+// an un-acked meal is refused), while preserving negative `spent` from selling starting parts in the Cell editor.
+inline int clamp_spent(int spent, int dna_for_food, bool fix)
+{
+    if (!fix || dna_for_food < 0)
+        return spent;
+    return std::min(spent, dna_for_food);
+}
+
+// BUG-1538: what spent count a guest wants to show from wsync's `cell_spent` (`host_spent`), `cell_spent_own`
+// (`own_spent`, received `own_age` seconds ago; < 0 if never heard), and its own unacked editor spend (`pending`).
+// Before BUG-1538, `own_spent` expired at 5.0 s while wsync cached `host_spent` for 6.0 s (kForget), so a 5-6 s gap
+// (host in editor) added `pending` onto `host_spent` and drove DNA negative; with `fix_nonneg`, `own_spent` outlives
+// wsync's cache (`max_age = 7.0`) and the result is capped at `dna_for_food`.
+inline int guest_want_spent(int host_spent, int own_spent, double own_age, int pending, bool fix_guest_spend,
+                            bool fix_nonneg, int dna_for_food, bool* clamped = nullptr)
+{
+    const double max_age = fix_nonneg ? 7.0 : 5.0;
+    int base = (own_spent >= 0 && own_age < max_age) ? own_spent : host_spent;
+    int raw = fix_guest_spend ? base + pending : base;
+    int out = clamp_spent(raw, dna_for_food, fix_nonneg);
+    if (clamped)
+        *clamped = (out != raw);
+    return out;
+}
+
 } // namespace cell_logic

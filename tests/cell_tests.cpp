@@ -521,6 +521,29 @@ static void solo_refill()
     CHECK(solo_refill_take(40, 4, 1100, 1100) == 0);
 }
 
+static void dna_nonneg()
+{
+    // BUG-1538: Cell DNA = DNAForFood(food) - spent never goes negative, while part-sell refunds (spent < 0) survive
+    CHECK(clamp_spent(40, 25, true) == 25);   // concurrent shared-pool overspend capped at DNAForFood
+    CHECK(clamp_spent(40, 25, false) == 40);  // switch off: old negative-DNA behaviour (25 - 40 = -15)
+    CHECK(clamp_spent(15, 25, true) == 15);   // normal spend unchanged
+    CHECK(clamp_spent(-15, 25, true) == -15); // selling starting parts gives positive refund DNA
+    CHECK(clamp_spent(40, -1, true) == 40);   // unknown DNAForFood: left unchanged
+
+    // Own-wallet 5-6 s gap (host in editor): wsync caches host_spent for 6 s; own_spent must not expire at 5 s
+    bool clamped = false;
+    int old_gap = guest_want_spent(/*host*/ 20, /*own*/ 0, /*age*/ 5.5, /*pending*/ 20, true, false, 25, &clamped);
+    CHECK(old_gap == 40 && !clamped); // old 5 s timeout added pending onto host_spent -> DNA = -15
+    int fixed_gap = guest_want_spent(20, 0, 5.5, 20, true, true, 25, &clamped);
+    CHECK(fixed_gap == 20 && !clamped); // uses own_spent (0) + pending (20) = 20 -> DNA = +5
+
+    // Shared pool (no own_spent) or food drop: result capped at DNAForFood
+    int capped = guest_want_spent(20, -1, 0.0, 20, true, true, 25, &clamped);
+    CHECK(capped == 25 && clamped);
+    int food_drop = guest_want_spent(25, 25, 0.2, 0, true, true, 20, &clamped);
+    CHECK(food_drop == 20 && clamped);
+}
+
 int main(int argc, char** argv)
 {
     for (int i = 1; i < argc; i++)
@@ -545,6 +568,7 @@ int main(int argc, char** argv)
     audit_0717();
     lineage_rules();
     solo_refill();
+    dna_nonneg();
     if (g_fail) {
         printf("cell_tests: %d FAILED\n", g_fail);
         return 1;
