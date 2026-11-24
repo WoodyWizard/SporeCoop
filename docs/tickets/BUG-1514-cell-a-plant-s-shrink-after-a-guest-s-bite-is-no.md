@@ -1,14 +1,14 @@
 ---
 id: BUG-1514
 title: Cell: a plant's shrink after a guest's bite is not sent (the plant stays full for the others) (CELL-14)
-status: open
+status: fixed
 kind: desync
 stage: Cell
 reported: 2026-11-23
 source: audit
 role: guest
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w81-cell
 commits: 17bc2248, e89fe984
 tests: cell_plant_shrink (coop_cell_audit_0717.py --part shrink); twin cell_plant_shrink_off
@@ -29,8 +29,10 @@ Observed in the disassembly (objdump 2026-11-23, GOG 2024): EatFood 0xE7DF40 aft
 
 ## Verification
 Open, waiting for the lab run: pending night run: cell_plant_shrink (PASS expected: the guest's one bite shrinks a host plant on its game: within 3 s the host's plant is one level lower and smaller), cell_plant_shrink_off (FAIL expected: the host's plant stays whole). Unit test: audit_0717 (plant_shrink).
+0.7.17 release lab: PASS: cell_plant_shrink (lab 20261124-020506); FAIL (fix off): cell_plant_shrink_off (lab 20261124-013101).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-L1), branch feat/w81-cell.
 - 2026-11-23: implemented on feat/w81-cell with its lab test and twin (switch cell.plant_shrink), waiting for the night run.
+- 2026-11-24: released in 0.7.17.

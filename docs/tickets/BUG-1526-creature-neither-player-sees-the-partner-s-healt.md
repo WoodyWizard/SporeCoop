@@ -1,14 +1,14 @@
 ---
 id: BUG-1526
 title: Creature: neither player sees the partner's health, and a healing effect stays on for good
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-23
 source: discord
 role: guest
 versions: 0.7.15.5
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w82-creature
 commits: e24afb9a, 9a4c9bc3
 tests: tools/tests/coop_creature_tag_hp.py (creature_tag_hp, twin creature_tag_hp_off)
@@ -40,8 +40,10 @@ Open, waiting for the lab run (pending night run: creature_tag_hp, creature_tag_
   key frame tag_hp).
 * Wanted FAIL: `SPORE_DETECTOR=20 python3 tools/lab.py run creature_tag_hp_off --lane N --retry 0 --no-build` (the name alone).
 * The healing effect part: no-fail-run: not reproduced (no effect named in the report).
+0.7.17 release lab: PASS: creature_tag_hp (lab 20261124-020506).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 12 (WP-C1), branch fix/w82-creature.
 - 2026-11-23: the health part fixed on fix/w82-creature (e24afb9a); the healing effect not reproduced; waiting for the night lab run.
+- 2026-11-24: released in 0.7.17.

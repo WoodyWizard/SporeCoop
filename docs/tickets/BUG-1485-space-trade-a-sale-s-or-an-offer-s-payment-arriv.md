@@ -1,14 +1,14 @@
 ---
 id: BUG-1485
 title: Space trade: a sale's or an offer's payment arriving after a world change is added to the wrong world's money (SPC-6)
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-11-23
 source: audit
 role: 
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w77-space
 commits: a6fe8f9a, 37d9240d
 tests: space_own_rivals, space_own_rivals_off_sale, space_tests (make test)
@@ -41,8 +41,10 @@ open, waiting for the lab run.
 the host after the guest loaded a Space save of its own: the own save's money must stay as it was and the payment be
 owed. Expected: PASS with the fix; FAIL with SPORE_FIX_OFF=trade.sale_pay_world (+ the price in the own save).
 pending night run: space_own_rivals space_own_rivals_off_sale (1 lane, about 16 min).
+0.7.17 release lab: PASS: space_own_rivals (lab 20261124-020506); FAIL (fix off): space_own_rivals (lab 20261123-125807).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-X1), branch fix/w77-space.
 - 2026-11-23: fix, lab test and FAIL twin on fix/w77-space (WP-X1); no lab run yet (lab runs only at night).
+- 2026-11-24: released in 0.7.17.

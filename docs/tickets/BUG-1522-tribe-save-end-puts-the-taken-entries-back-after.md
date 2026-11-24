@@ -1,14 +1,14 @@
 ---
 id: BUG-1522
 title: Tribe: save_end puts the taken entries back after a save without checking that each entry is still alive (CIV-1's bug in Tribe)
-status: open
+status: fixed
 kind: crash
 stage: Tribe
 reported: 2026-11-23
 source: plan
 role: guest
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w79-tribe
 commits: 70979dc4
 tests: tribe_save_took, tribe_save_took_off
@@ -46,8 +46,10 @@ open, waiting for the lab run. pending night run: tribe_save_took, tribe_save_to
 `coop_tribe_save_took.py` (suite `tribe_save_took`, tribe, warm): the host spawns 3 members, the guest arms savekill and
 saves; PASS: killed=1, `coop.tribe tribelists` unlisted=0 and no new orphan in the guest's player tribe, no fault for
 15 s. Twin `tribe_save_took_off` (SPORE_FIX_OFF=tribe.save_took_listed): an orphan more, must FAIL.
+0.7.17 release lab: PASS: tribe_save_took (lab 20261124-020506); FAIL (fix off): tribe_save_took (lab 20261123-125538).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 12 (WP-B1), branch fix/w79-tribe.
 - 2026-11-23: fix on fix/w79-tribe (switch tribe.save_took_listed, tests tribe_save_took, tribe_save_took_off); lab run pending (no lab by day).
+- 2026-11-24: released in 0.7.17.

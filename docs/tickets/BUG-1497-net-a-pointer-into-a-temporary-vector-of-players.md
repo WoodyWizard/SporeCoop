@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: audit
 role: 
 versions: 0.7.16.1 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.17
 branch: fix/w80-net
 commits: 016fef16
 tests: make test (build); regression: evolve_inplace tests of BUG-0508
@@ -40,3 +40,4 @@ temporary. No switch: the old side is undefined behaviour with no observable eff
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-N1), branch fix/w80-net.
 - 2026-11-23: fixed on fix/w80-net (016fef16); closed with no-fail-run.
+- 2026-11-24: released in 0.7.17.

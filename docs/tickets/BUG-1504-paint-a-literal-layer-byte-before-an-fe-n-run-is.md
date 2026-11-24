@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: audit
 role: 
 versions: 0.7.16.1 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.17
 branch: fix/w80-net
 commits: 2adadbc9, ae038f10
 tests: tests/validate_tests.cpp (test_model_paint_run_after)
@@ -42,3 +42,4 @@ creation is refused as for a paint inside a run). creations.cpp passes the switc
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-N1), branch fix/w80-net.
 - 2026-11-23: fixed on fix/w80-net (2adadbc9, ae038f10); closed with no-fail-run.
+- 2026-11-24: released in 0.7.17.

@@ -1,16 +1,16 @@
 ---
 id: BUG-1527
 title: Creature: a guest's kill raises the extinction count by one, then it goes back to zero
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-23
 source: discord
 role: guest
 versions: 0.7.15.5
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w82-creature
-commits: 2649938f, 9a4c9bc3, fdf81c3f
+commits: 2649938f, 9a4c9bc3, fdf81c3f, df16a1a7
 tests: tools/tests/coop_creature_solo_kills.py (creature_solo_kills, twin creature_solo_kills_off), tests/npc_tests.cpp (test_social_logic)
 signature:
 docs: docs/re/creature.md#creature-meter-hold, docs/04-netcode.md#netcode-social-solo
@@ -42,8 +42,10 @@ Open, waiting for the lab run (pending night run: creature_solo_kills, creature_
   while the host is away; the host's game has k0 + 1 after its return; key frame solo_kill).
 * Wanted FAIL: `SPORE_DETECTOR=20 python3 tools/lab.py run creature_solo_kills_off --lane N --retry 0 --no-build` (back to k0 within 0.5 s).
 * Unit: tests/npc_tests.cpp test_social_logic.
+0.7.17 release lab: PASS: creature_solo_kills (lab 20261124-020506); FAIL (fix off): creature_solo_kills_off (lab 20261124-013101).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 12 (WP-C1), branch fix/w82-creature.
 - 2026-11-23: fix and tests on fix/w82-creature (2649938f); waiting for the night lab run.
+- 2026-11-24: released in 0.7.17.

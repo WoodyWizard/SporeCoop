@@ -1,14 +1,14 @@
 ---
 id: BUG-1511
 title: Cell: a breaking cell can die twice (a second loot drop) (CELL-9)
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-11-23
 source: audit
 role: 
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w81-cell
 commits: 17bc2248, e89fe984
 tests: cell_breaking_kill (coop_cell_audit_0717.py --part breaking); twin cell_breaking_kill_off
@@ -29,8 +29,10 @@ Static reading (CELL-9), confirmed in cellsync.cpp: BreakOrSwallow sets the brea
 
 ## Verification
 Open, waiting for the lab run: pending night run: cell_breaking_kill (PASS expected: the host breaks one creature alone (control), then another one with the guest's kill sent at once: no more meat than the control and the creature gone), cell_breaking_kill_off (FAIL expected when the second KillCell drops a second loot; the audit saw no runtime effect: if the twin passes, its run closes the ticket as `no-fail-run:`). Unit test: audit_0717 (breaking_state).
+0.7.17 release lab: PASS: cell_breaking_kill (lab 20261124-020506); FAIL (fix off): cell_breaking_kill (lab 20261123-131931).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-L1), branch feat/w81-cell.
 - 2026-11-23: implemented on feat/w81-cell with its lab test and twin (switch cell.breaking_dying), waiting for the night run.
+- 2026-11-24: released in 0.7.17.

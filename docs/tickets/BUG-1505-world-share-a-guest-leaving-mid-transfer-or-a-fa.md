@@ -1,14 +1,14 @@
 ---
 id: BUG-1505
 title: World share: a guest leaving mid-transfer or a failed share leaves the ground reload due (CORE-13)
-status: open
+status: fixed
 kind: desync
 stage: All
 reported: 2026-11-23
 source: audit
 role: guest
 versions: 0.7.16.1 and earlier
-fixed_in: 
+fixed_in: 0.7.17
 branch: fix/w80-net
 commits: afef55d1
 tests: tools/tests/coop_tribe_reload_any.py (tribe_reload_any, twin tribe_reload_any_off; 3 players)
@@ -39,8 +39,10 @@ Open, waiting for the lab run (pending night run: tribe_reload_any, tribe_reload
   host's game loads its share save and plays Tribe again).
 * Wanted FAIL: `SPORE_DETECTOR=20 python3 tools/lab.py run tribe_reload_any_off --lane N --retry 0 --no-build` (no reload).
 * Regressions near it: tribe_host_reload_reset, tribe_village_ground.
+0.7.17 release lab: PASS: tribe_reload_any (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-N1), branch fix/w80-net.
 - 2026-11-23: fix and tests on fix/w80-net (afef55d1); waiting for the night lab run.
+- 2026-11-24: released in 0.7.17.

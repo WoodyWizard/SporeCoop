@@ -1,14 +1,14 @@
 ---
 id: BUG-1507
 title: Cell: a guest that is not in the host's world still sends its editor spend and its mate (CELL-4)
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-11-23
 source: audit
 role: guest
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w81-cell
 commits: 17bc2248, e89fe984
 tests: cell_elsewhere_spend (coop_cell_elsewhere_spend.py); twin cell_elsewhere_spend_off
@@ -29,8 +29,10 @@ Static reading (out/research/ext-audit-verify-uifx-cell.md, CELL-4), confirmed i
 
 ## Verification
 Open, waiting for the lab run: pending night run: cell_elsewhere_spend (PASS expected: shared DNA, the guest in its own Cell world, a fake editor spend of 7 and its mating call: the host's S+0x2C unchanged for 10 s and no mate copy in the host's game), cell_elsewhere_spend_off (SPORE_FIX_OFF=cell.elsewhere_spend: FAIL expected). Unit test: tests/cell_tests.cpp audit_0717 (owed_drop).
+0.7.17 release lab: PASS: cell_elsewhere_spend (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-L1), branch feat/w81-cell.
 - 2026-11-23: implemented on feat/w81-cell with its lab test and twin (switch cell.elsewhere_spend), waiting for the night run.
+- 2026-11-24: released in 0.7.17.

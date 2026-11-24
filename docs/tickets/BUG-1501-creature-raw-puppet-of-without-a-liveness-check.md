@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: audit
 role: host
 versions: 0.7.16.1 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.17
 branch: fix/w80-net
 commits: d21c3bea
 tests: regression: creature_roar, creature_carry, carry_holder, flock_relay
@@ -42,3 +42,4 @@ Switch `creature.rules_live_puppet` (COOP_FIX_UNSAFE: the off side may use freed
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-N1), branch fix/w80-net.
 - 2026-11-23: fixed on fix/w80-net (d21c3bea); closed with no-fail-run.
+- 2026-11-24: released in 0.7.17.

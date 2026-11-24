@@ -1,14 +1,14 @@
 ---
 id: BUG-1468
 title: Civ: every player has its own money (session setting civ.own_money; idea and RE from PR #205 by IltonBJSilva)
-status: open
+status: fixed
 kind: feature
 stage: Civ
 reported: 2026-11-23
 source: plan, PR #205
 role: 
 versions: 0.7.17
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w68-wallet
 commits: 162b29f0 ebe0e45a 86ef0e48
 tests: tests/civ_tests.cpp (wallets), tests/validate_tests.cpp (manifest 74, settings row), tools/tests/coop_civ_own_money.py (civ_own_money, civ_own_money_merge, civ_own_money_old, twins civ_own_money_setting_off, civ_own_money_row_off), coop_campaign.py segment civ_own_money_space
@@ -65,8 +65,10 @@ civ_own_money_setting_off and civ_own_money_row_off (must FAIL), civ_own_money_s
 regressions civ_coop, civ_money_short, civ_build_refund, civ_buy_city, civ_sw_vote, civ_other_world, space_rivals*.
 Status open until the night run's dirs are here. no-fail-run for the feature itself: a new feature (on rel/0.7.17
 before it `coop.wallet` does not exist); the twins are the FAIL side.
+0.7.17 release lab: PASS: settings (lab 20261124-020506), civ_own_money (lab 20261124-020506), civ_own_money_merge (lab 20261124-020506), civ_own_money_old (lab 20261124-020506); FAIL (fix off): civ_own_money_row_off (lab 20261124-013101).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 1 (WP-M1), branch feat/w68-wallet.
 - 2026-11-23: implemented on feat/w68-wallet (commits 162b29f0, ebe0e45a and after); unit tests pass; lab tests and twins written for the night run.
+- 2026-11-24: released in 0.7.17.

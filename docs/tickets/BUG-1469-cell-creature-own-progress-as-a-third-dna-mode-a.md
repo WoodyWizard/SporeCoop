@@ -1,14 +1,14 @@
 ---
 id: BUG-1469
 title: Cell, Creature: own progress as a third DNA mode (all.shared_dna 2: own DNA and evolution bar, the stage moves on when every bar is full; idea from PR #209 by IltonBJSilva)
-status: open
+status: fixed
 kind: feature
 stage: Cell, Creature
 reported: 2026-11-23
 source: plan, PR #209
 role: host, guest
 versions: 0.7.17
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w69-progress
 commits: 02127826, ffb010e2, 37a2dd5c, 4fc580f1
 tests: own_progress_cell, own_progress_cell_guest, own_progress_afk, own_progress_levels, own_progress_creature, own_progress_deeds, own_progress_rejoin, own_progress_store
@@ -63,8 +63,10 @@ own_progress_cell_off, own_progress_white_off, own_progress_levels_off, own_prog
 own_progress_deeds_off, own_progress_rejoin_off, own_progress_store_off (each must FAIL); regressions near it:
 dna_own*, evo_screens_switch, stage_end_guest, cell_food_ack, dna_notice. Old-peer run against 0.7.16.1 in the final
 check (value 2 refused at the start with a notice, a late 0.7.16.1 joiner not let in).
+0.7.17 release lab: PASS: own_progress_cell (lab 20261124-020506), own_progress_cell_guest (lab 20261124-020506), own_progress_afk (lab 20261124-020506), own_progress_levels (lab 20261124-020506); FAIL (fix off): own_progress_cell (lab 20261123-124715).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 2 (WP-P1, WP-P2), branch feat/w69-progress.
 - 2026-11-23: implemented on feat/w69-progress (02127826, ffb010e2); lab tests and twins written, waiting for the night run.
+- 2026-11-24: released in 0.7.17.

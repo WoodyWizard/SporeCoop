@@ -1,14 +1,14 @@
 ---
 id: BUG-1448
 title: space_planner_miss: the guest's real click on its city did not open the planner (ship steady over the city, no load, no dialog); cause not found
-status: open
+status: fixed
 kind: test
 stage: Space
 reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w84-tests
 commits: 8fff6369 74980a90
 tests: tools/tests/coop_space_planner_build.py (space_planner_miss)
@@ -48,8 +48,10 @@ Open, waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run space
   with the per-click lines and space_planner_try<N>.png); twin `SPORE_LAB_FIXOFF="space_planner_miss=civ.space_planner_closed"
   SPORE_DETECTOR=20 python3 tools/lab.py run space_planner_miss --lane M --retry 0 --no-build` FAILS; `SPORE_DETECTOR=20 python3 tools/lab.py run space_planner_build space_planner_host --lane M
   --retry 0 --no-build` PASS.
+0.7.17 release lab: PASS: space_planner_miss (lab 20261124-020506).
 
 ## History
 - 2026-11-23: opened; fix/w65-night: evidence collected, diagnostics added.
 - 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.
 - 2026-11-23: fix/w84-tests (WP-T1 of 0.7.17): clicks beside the city point after a fresh hover; no planner in the miss case is INCONCLUSIVE (74980a90).
+- 2026-11-24: released in 0.7.17.

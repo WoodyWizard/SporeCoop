@@ -1,14 +1,14 @@
 ---
 id: BUG-1502
 title: Settings: the settings of one world can be written into another during an editor or a load (NET-8)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-23
 source: audit
 role: host
 versions: 0.7.16.1 and earlier
-fixed_in: 
+fixed_in: 0.7.17
 branch: fix/w80-net
 commits: 4649f447
 tests: tools/tests/coop_settings_editor_lock.py (settings_editor_lock, twin settings_editor_lock_off)
@@ -39,8 +39,10 @@ Open, waiting for the lab run (pending night run: settings_editor_lock, settings
   `coop.settings set all.friendly_fire on` is refused; after the editor Bob comes back).
 * Wanted FAIL: `SPORE_DETECTOR=20 python3 tools/lab.py run settings_editor_lock_off --lane N --retry 0 --no-build` (Carol joins during the editor, the setting is taken).
 * Regressions near it: settings_creature, one_creature, editor_now.
+0.7.17 release lab: PASS: settings_editor_lock (lab 20261124-020506); FAIL (fix off): settings_editor_lock (lab 20261124-003319).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-N1), branch fix/w80-net.
 - 2026-11-23: fix and tests on fix/w80-net (4649f447); waiting for the night lab run.
+- 2026-11-24: released in 0.7.17.

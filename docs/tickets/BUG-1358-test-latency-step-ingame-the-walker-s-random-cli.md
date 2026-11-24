@@ -1,14 +1,14 @@
 ---
 id: BUG-1358
 title: Test latency_step_ingame: the walker's random click on its own nest opens the evolution editor, the second walk has no partner
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-20
 source: final-check-20261120-041304
 role: 
 versions: 0.7.15.5, unreleased
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w84-tests
 commits: ff36cb71 79281a0a
 tests: latency_step_ingame, puppet_walk, puppet_walk_novel, puppet_stops
@@ -59,8 +59,10 @@ no-fail-run: test-only change (the walker's input). Lab tonight: latency_step_in
   never "back 505m (not found)"); `SPORE_DETECTOR=20 python3 tools/lab.py run puppet_walk puppet_walk_novel puppet_stops --lane M --retry 0 --no-build` PASS
   (the same walk); twin `SPORE_LAB_FIXOFF="latency_step_ingame=net.offset_window" SPORE_DETECTOR=20 python3 tools/lab.py run latency_step_ingame --lane M
   --retry 0 --no-build` FAILS. FAIL before: 20261123-023643, 20261123-071312.
+0.7.17 release lab: PASS: latency_step_ingame (lab 20261124-020506), puppet_walk (lab 20261124-020506), puppet_walk_novel (lab 20261124-020506), puppet_stops (lab 20261124-020506).
 
 ## History
 - 2026-11-20: opened from the 0.7.16 final check; fixed in coop_puppet_walk.py on fix/w60-misc.
 - 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.
 - 2026-11-23: fix/w84-tests (WP-T1 of 0.7.17): the way back to the partner does not click the nest; an editor makes the run INCONCLUSIVE (79281a0a).
+- 2026-11-24: released in 0.7.17.

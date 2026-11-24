@@ -1,14 +1,14 @@
 ---
 id: BUG-1478
 title: Civ: the guest's income and purchase hooks ignore "guest elsewhere" (they gate on the Civ mode only, not on local play) (CIV-5)
-status: open
+status: fixed
 kind: desync
 stage: Civ
 reported: 2026-11-23
 source: audit
 role: guest
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w68-wallet
 commits: 162b29f0 ebe0e45a 86ef0e48
 tests: tests/civ_tests.cpp (local_play_gate), tools/tests/coop_civ_other_world.py --income (civ_other_world_income, twin civ_other_world_income_off)
@@ -39,8 +39,10 @@ guest `own_world::peer_elsewhere(from)` (civlogic::host_takes_world_cmd; `coop.c
 Unit: tests/civ_tests.cpp `local_play_gate`. Lab: pending night run: civ_other_world_income (PASS: the guest's own
 world earns its cities' income in the session), twin civ_other_world_income_off (SPORE_FIX_OFF=civ.local_play_gate:
 income dropped, must FAIL); regressions civ_other_world, civ_away, civ_away_capture, civ_away_buy, civ_ai_spawn.
+0.7.17 release lab: PASS: civ_other_world_income (lab 20261124-020506); FAIL (fix off): civ_other_world_income (lab 20261124-005839).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-M1), branch feat/w68-wallet.
 - 2026-11-23: implemented on feat/w68-wallet (commits 162b29f0, ebe0e45a and after); unit tests pass; lab tests and twins written for the night run.
+- 2026-11-24: released in 0.7.17.

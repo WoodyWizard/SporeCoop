@@ -1,14 +1,14 @@
 ---
 id: BUG-1481
 title: Civ: the guest's orphan sweep removes a local candidate that still waits for its design answer (part a) (CIV-15)
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-23
 source: audit
 role: guest
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w78-civ
 commits: 9b9fdf4a, 9479fa44
 tests: civ_design_kept, civ_design_kept_off (tools/tests/coop_civ_host_design.py --kept); unit tests/civ_tests.cpp test_audit_v1
@@ -44,8 +44,10 @@ each, one lane). `coop_civ_host_design.py --kept`: after the BUG-0647 part the g
 again. PASS: the guest's mirror of the host's vehicle is the loaded game object (address and object serial). Twin
 `civ_design_kept_off` (SPORE_FIX_OFF=civ.wait_design_kept) must FAIL at "the guest's mirror is the vehicle its game
 loaded".
+0.7.17 release lab: PASS: civ_design_kept (lab 20261124-020506), unit (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-V1), branch fix/w78-civ.
 - 2026-11-23: fixed on fix/w78-civ (9b9fdf4a), switch civ.wait_design_kept; lab test and twin written, night run pending.
+- 2026-11-24: released in 0.7.17.

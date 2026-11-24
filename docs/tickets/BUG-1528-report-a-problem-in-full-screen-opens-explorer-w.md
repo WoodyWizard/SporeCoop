@@ -1,14 +1,14 @@
 ---
 id: BUG-1528
 title: Report a problem in full screen opens Explorer, which minimizes Spore (the report's own log then shows a 20-30 s stop)
-status: open
+status: fixed
 kind: bug
 stage: UI
 reported: 2026-11-23
 source: discord
 role: 
 versions: 0.7.16.1 and earlier
-fixed_in: 
+fixed_in: 0.7.17
 branch: fix/w80-net
 commits: a81c9717
 tests: tools/tests/coop_report_fullscreen.py (report_fullscreen, twin report_fullscreen_off)
@@ -41,8 +41,10 @@ Open, waiting for the lab run (pending night run: report_fullscreen, report_full
 * Wanted FAIL: `SPORE_DETECTOR=20 python3 tools/lab.py run report_fullscreen_off --lane N --retry 0 --no-build`.
 * Not verifiable in the lab: the real full-screen detection (the lab plays windowed); the rule is GetWindowRect against
   GetMonitorInfo and WS_CAPTION.
+0.7.17 release lab: PASS: report_fullscreen (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 12 (WP-N1), branch fix/w80-net.
 - 2026-11-23: fix and tests on fix/w80-net (a81c9717); waiting for the night lab run.
+- 2026-11-24: released in 0.7.17.

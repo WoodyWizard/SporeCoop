@@ -1,14 +1,14 @@
 ---
 id: BUG-1261
 title: Creature: the guest sees bones the host does not have and cannot click them (players' video, split from BUG-1251)
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-11-18
 source: owner: players' video, second analysis (split from BUG-1251)
 role: guest
 versions: <0.7.17
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w82-creature
 commits: f447d4f0, 9a4c9bc3
 tests: tools/tests/coop_ornament_fade.py (ornament_fade_dig, ornament_fade_gone, ornament_fade_settle; twins ornament_fade_dig_off, ornament_fade_gone_off), tests/core_tests.cpp (ornament_fade_rules)
@@ -50,7 +50,9 @@ ornament_fade_gone_off, ornament_fade_settle; regression wobj_ornament, wobj_orn
 * Wanted PASS: `SPORE_DETECTOR=20 python3 tools/lab.py run ornament_fade_dig ornament_fade_gone ornament_fade_settle --lane N --retry 0 --no-build`.
 * Wanted FAIL: `SPORE_DETECTOR=20 python3 tools/lab.py run ornament_fade_dig_off ornament_fade_gone_off --lane N --retry 0 --no-build` (the guest's bone stays).
 * Unit: tests/core_tests.cpp ornament_fade_rules (the outside agent's cases plus gone_trusted and the old-host gate).
+0.7.17 release lab: PASS: ornament_fade_dig (lab 20261124-020506), ornament_fade_gone (lab 20261124-020506), ornament_fade_settle (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-18: opened (split from BUG-1251 on fix/w53-advorn; that ticket fixed the dug-up model).
 - 2026-11-23: fix (port of fix/agy-open-bugs 576df657 with the review's fixes) and tests on fix/w82-creature (f447d4f0); waiting for the night lab run.
+- 2026-11-24: released in 0.7.17.

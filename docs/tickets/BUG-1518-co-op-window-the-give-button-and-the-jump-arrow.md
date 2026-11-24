@@ -1,14 +1,14 @@
 ---
 id: BUG-1518
 title: Co-op window: the give button and the jump arrow run over the creation label with long names (UIFX-8)
-status: open
+status: fixed
 kind: bug
 stage: UI
 reported: 2026-11-23
 source: audit
 role: 
 versions: 0.7.16.1 and earlier
-fixed_in: 
+fixed_in: 0.7.17
 branch: fix/w80-net
 commits: d23e5cf0
 tests: tools/tests/coop_ui_give_long_name.py (ui_give_long_name, twin ui_give_long_name_off)
@@ -38,8 +38,10 @@ Open, waiting for the lab run (pending night run: ui_give_long_name, ui_give_lon
   button fits its cut caption and overlaps no label; key frame).
 * Wanted FAIL: `SPORE_DETECTOR=20 python3 tools/lab.py run ui_give_long_name_off --lane N --retry 0 --no-build` (the button over the label).
 * Regressions near it: space_give_pick, ui_golden.
+0.7.17 release lab: PASS: ui_give_long_name (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-N1), branch fix/w80-net.
 - 2026-11-23: fix and tests on fix/w80-net (d23e5cf0); waiting for the night lab run.
+- 2026-11-24: released in 0.7.17.

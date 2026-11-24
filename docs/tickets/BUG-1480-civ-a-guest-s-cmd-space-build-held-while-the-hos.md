@@ -1,14 +1,14 @@
 ---
 id: BUG-1480
 title: Civ: a guest's CMD_SPACE_BUILD held while the host is in an editor or loading is never applied (a paid colony building missing) (CIV-11)
-status: open
+status: fixed
 kind: desync
 stage: Civ, Space
 reported: 2026-11-23
 source: audit
 role: host
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w78-civ
 commits: 9b9fdf4a, 9479fa44
 tests: space_planner_menu, space_planner_menu_off (tools/tests/coop_space_planner_build.py --menu); unit tests/civ_tests.cpp test_audit_v1
@@ -47,8 +47,10 @@ building list). Twin `space_planner_menu_off` (SPORE_FIX_OFF=civ.space_build_rou
 the guest's new house". Not covered by a run: the captain's outfitter (it did not open in the lab saves,
 docs/re/space.md#space-captain-screen-fault); the galaxy menu and the load are the same route (a mode other than Space
 and Civ).
+0.7.17 release lab: PASS: space_planner_menu (lab 20261124-020506), unit (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-V1), branch fix/w78-civ.
 - 2026-11-23: fixed on fix/w78-civ (9b9fdf4a), switch civ.space_build_route; lab test and twin written, night run pending.
+- 2026-11-24: released in 0.7.17.

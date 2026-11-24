@@ -1,14 +1,14 @@
 ---
 id: BUG-1529
 title: Diagnostics: a stop while the game window is minimized or not in the foreground is logged as a hitch and counted in min fps and the longest frame
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-23
 source: discord
 role: 
 versions: 0.7.16.1 and earlier
-fixed_in: 
+fixed_in: 0.7.17
 branch: fix/w80-net
 commits: 68fe88fe, eb6cb148
 tests: tools/tests/coop_perf_pause.py (perf_pause, twin perf_pause_off)
@@ -40,8 +40,10 @@ Open, waiting for the lab run (pending night run: perf_pause, perf_pause_off).
 * Wanted PASS: `SPORE_DETECTOR=20 python3 tools/lab.py run perf_pause --lane N --retry 0 --no-build` (a 4 s stop while marked unfocused is a pause, the keepalive says
   foreground 0, the longest frame leaves it out; unmarked it is a hitch).
 * Wanted FAIL: `SPORE_DETECTOR=20 python3 tools/lab.py run perf_pause_off --lane N --retry 0 --no-build`.
+0.7.17 release lab: PASS: perf_pause (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 12 (WP-N1), branch fix/w80-net.
 - 2026-11-23: fix and tests on fix/w80-net (68fe88fe, eb6cb148); waiting for the night lab run.
+- 2026-11-24: released in 0.7.17.

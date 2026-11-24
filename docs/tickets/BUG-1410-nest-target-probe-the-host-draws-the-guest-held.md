@@ -1,14 +1,14 @@
 ---
 id: BUG-1410
 title: nest_target_probe: the host draws the guest, held in the air in its paused game 565 m away, 6.3 m lower than the guest's game has it (monitor drawn)
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-11-21
 source: lab rel/0.7.16 20261121-003202 nest_target_probe
 role: 
 versions: 0.7.13, unreleased
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w84-tests
 commits: 91754ef4 dc685a9b
 tests: nest_target_probe
@@ -64,9 +64,11 @@ spots. Open: waiting for that run, then the fix.
 - Pending night run (fix/w84-tests): `SPORE_DETECTOR=20 python3 tools/lab.py run nest_target_probe --repeat 4 --lane N --retry 0 --no-build` PASS 4 of 4 with no monitor `drawn`
   gate (the "ground under the guest" lines: the point 0.3 m over the ground on both games). FAIL before: 20261121-003202,
   20261122-194210, 20261122-193406.
+0.7.17 release lab: PASS: nest_target_probe (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-21: opened from the third final check of 0.7.16 (fix/w62-flake-cc); diagnostics added to the test.
 - 2026-11-23: again in lab 20261122-194210 (nest_target_probe, lane 7, gate monitor drawn 6.3 m, the test RESULT OK): the same numbers (agl 15.48 / 21.82 at s 120, 29.76 / 36.10 at s 130, d=565), and the new ground lines show both games read the same ground there (dir 1 483.55 / 483.55, dir 3 469.27 / 469.27): the 6.3 m is in the host's drawn placement, not in GetHeightAt. Still open, 0.7.16.1.
 - 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.
 - 2026-11-23: fix/w84-tests (WP-T1 of 0.7.17): cause found in the guest's state flags (a grounded byte kept in its paused game); the probe puts the guest on its ground (dc685a9b).
+- 2026-11-24: released in 0.7.17.

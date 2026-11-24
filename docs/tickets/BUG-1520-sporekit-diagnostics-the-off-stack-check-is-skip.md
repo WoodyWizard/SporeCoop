@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: audit
 role: 
 versions: 0.7.16.1 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.17
 branch: fix/w80-net
 commits: a0024f85
 tests: regression: kit_crash, report_shot
@@ -41,3 +41,4 @@ return. Switch `kit.fix offstackcap 0` (0.7.16.1).
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-N1), branch fix/w80-net.
 - 2026-11-23: fixed on fix/w80-net (a0024f85); closed with no-fail-run.
+- 2026-11-24: released in 0.7.17.

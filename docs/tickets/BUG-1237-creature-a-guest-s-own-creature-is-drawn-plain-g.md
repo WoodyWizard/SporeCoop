@@ -1,14 +1,14 @@
 ---
 id: BUG-1237
 title: Creature: a guest's own creature is drawn plain green for about 2 s after a change (model not baked yet?), candidate from key frame S/050
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-18
 source: key-frame review of final check 20261117-154911
 role: 
 versions: unreleased
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w74-captain
 commits: 596a872b, 6ac83cfb, 0bd01c0d
 tests: own_prebake, own_prebake_off
@@ -39,7 +39,9 @@ open, waiting for the lab run (no game run on this branch by day). Built, `make 
 baked, chosen in a running Creature world: swap_bake=1; key frame of the painted creature) and own_prebake_off
 (SPORE_FIX_OFF=creations.own_prebake, must FAIL: swap_bake 0 or -2). Regressions near it: own_creature, creature_brain_hp,
 editor_after_swap, npc_swap.
+0.7.17 release lab: PASS: own_prebake (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-18: opened from the key-frame review (candidate); next release.
 - 2026-11-23: feat/w74-captain (WP-K1): fix with a bounded wait for the bake, unit tests, lab test and twin written.
+- 2026-11-24: released in 0.7.17.

@@ -1,14 +1,14 @@
 ---
 id: BUG-1234
 title: Creature: after a caption thaw a host NPC's proxy on the guest runs 16-18 m off for a few seconds (npc_frozen_thaw, old: 0.7.14.1 too)
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-11-18
 source: final check 20261117-154911
 role: 
 versions: 0.7.14.1, unreleased
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w61-creature-b, fix/w76-motion
 commits: 14aa9dc9 c7438cb1
 tests: npc_frozen_thaw, npc_frozen_thaw_lead_gap_off (twin), net_tests test_lead_gap_thaw
@@ -63,7 +63,9 @@ PASS with the fix (rel/0.7.16, drive.lead_gap on): 20261120-041304, 20261120-133
 npc_frozen_thaw_lead_gap_off): `SPORE_DETECTOR=20 python3 tools/lab.py run npc_frozen_thaw --repeat 3 --lane N --retry 0
 --no-build` must PASS (a FAIL naming "(50 m from the guest)" is BUG-1534); `SPORE_DETECTOR=20 python3 tools/lab.py run
 npc_frozen_thaw_lead_gap_off --repeat 3 --lane M --retry 0 --no-build` must FAIL with "N m off on the guest" (3-4 of 6 before).
+0.7.17 release lab: PASS: npc_frozen_thaw (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-18: opened in the second 0.7.15 final-check triage; old (0.7.14.1 the same), left for the next release.
 - 2026-11-23 (fix/w76-motion): the cause is BUG-1376's (fixed in 0.7.16); unit test with this test's numbers, lab twin; agy's 1 s gap and extra condition not taken (review finding 3), kLateGap stays 2 s (checked); BUG-1534 opened for the 50 m edge read.
+- 2026-11-24: released in 0.7.17.

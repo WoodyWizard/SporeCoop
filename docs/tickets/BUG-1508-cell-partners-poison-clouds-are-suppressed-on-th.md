@@ -1,14 +1,14 @@
 ---
 id: BUG-1508
 title: Cell: partners' poison clouds are suppressed on the host while the host is knocked out (CELL-6)
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-11-23
 source: audit
 role: host
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w81-cell
 commits: 17bc2248, e89fe984
 tests: cell_ko_partner_clouds (coop_cell_ko_partner_clouds.py); twin cell_ko_partner_clouds_off
@@ -29,8 +29,10 @@ Static reading (CELL-6), confirmed in cellsync_combat.cpp: puppet_poison lends a
 
 ## Verification
 Open, waiting for the lab run: pending night run: cell_ko_partner_clouds (PASS expected: the guest's puppet grafted with a poison part in the host's game, the host knocked out: the game's cloud maker still makes the guest's clouds over 8 s), cell_ko_partner_clouds_off (FAIL expected: none while the host is out). No unit test (one condition in a hook).
+0.7.17 release lab: PASS: cell_ko_partner_clouds (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-L1), branch feat/w81-cell.
 - 2026-11-23: implemented on feat/w81-cell with its lab test and twin (switch cell.ko_partner_clouds), waiting for the night run.
+- 2026-11-24: released in 0.7.17.

@@ -1,14 +1,14 @@
 ---
 id: BUG-1493
 title: Tribe: a guest's member mirror hangs in the air after the host went away or the snapshots stopped (TR-7)
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-23
 source: audit
 role: guest
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w79-tribe
 commits: 01e1e6c0
 tests: tribe_air_release, tribe_air_release_off
@@ -41,8 +41,10 @@ open, waiting for the lab run. pending night run: tribe_air_release, tribe_air_r
 hang`), the guest stops taking tribe states (`coop.tribe statehold 1`); 7 s later the guest's mirror is under 2 m over
 the guest's ground, and up again within 6 s of `statehold 0`. Twin `tribe_air_release_off`: it hangs at 12 m, must
 FAIL. The host-away half shares the code (unit test only).
+0.7.17 release lab: PASS: tribe_air_release (lab 20261124-020506); FAIL (fix off): tribe_air_release (lab 20261123-125538).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-B1), branch fix/w79-tribe.
 - 2026-11-23: fix on fix/w79-tribe (switch tribe.air_release, tests tribe_air_release, tribe_air_release_off); lab run pending (no lab by day).
+- 2026-11-24: released in 0.7.17.

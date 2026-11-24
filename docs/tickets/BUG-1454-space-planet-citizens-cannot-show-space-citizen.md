@@ -1,14 +1,14 @@
 ---
 id: BUG-1454
 title: space_planet_citizens cannot show space.citizen_lead: it reads 19 mostly standing citizens 3 times, the switch acts only on runners; the twin passed 4 of 4
-status: open
+status: fixed
 kind: test
 stage: Space
 reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w84-tests
 commits: 15a93727 647e2cf9 60a851e9
 tests: tools/tests/coop_space_planet.py (space_planet_citizens, new space_planet_runners)
@@ -56,6 +56,7 @@ the old twin needs ~12 repeats to mean anything.
   SPORE_DETECTOR=20 python3 tools/lab.py run space_planet_runners --repeat 4 --lane N --retry 0 --no-build` FAIL expected (read the "runner samples over" lines; if the off arm stays
   under 5 % over 2.5 m, pick the limit between the arms from those lines), and `SPORE_DETECTOR=20 python3 tools/lab.py run space_planet_runners --repeat 2
   --lane M --retry 0 --no-build` PASS with the new 5 %.
+0.7.17 release lab: PASS: space_planet_citizens (lab 20261124-020506), space_planet_runners (lab 20261124-020506); FAIL (fix off): space_planet_runners (lab 20261124-014247).
 
 ## History
 - 2026-11-23: opened; fix/w65-tests: the claim corrected, a runners case added.
@@ -63,3 +64,4 @@ the old twin needs ~12 repeats to mean anything.
 - 2026-11-23: validation 20261123-023643: space_planet_runners INCONCLUSIVE "0 runner samples" both ways (2 + 2). Inferred from the timing (60 rounds, the wobj read and the fault checks in ~18 s): the 3 reads of a round ran back to back, the two host reads under the 0.05 s guard, every round dropped (not measured: no per-read times). fix/w65-tests: the reads of a round 0.15 s apart, and the wait prints what the rounds saw (reads apart, matched by serial, moving, fastest), so the next INCONCLUSIVE says whether the citizens stand.
 - 2026-11-23: fix/w84-tests (WP-T1 of 0.7.17): on arm measured (20261123-111347), RUN_SHARE 5 %, share table printed (60a851e9).
 - 2026-11-23: fix/w69-triage2 (merged from v0.7.16.1): both arms measured (on <= 1.4 % / p90 <= 1.28 m, off 6.1-9.9 % / p90 2.03-2.48 m); limits tightened to RUN_SHARE 0.035 and RUN_P90 1.6 m with twin space_planet_runners_lead_off.
+- 2026-11-24: released in 0.7.17.
