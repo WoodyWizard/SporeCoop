@@ -1,14 +1,14 @@
 ---
 id: BUG-1498
 title: Net: a stale rejoin slot token is used before the kept one after a crash (NET-2)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-23
 source: audit
 role: guest
 versions: 0.7.16.1 and earlier
-fixed_in: 
+fixed_in: 0.7.17
 branch: fix/w80-net
 commits: 0ff638f2
 tests: tools/tests/coop_dna_own.py --case rejoin_failed (dna_own_rejoin_failed, twin dna_own_rejoin_failed_off), tests/space_tests.cpp (test_rejoin_slot_pair)
@@ -43,8 +43,10 @@ Open, waiting for the lab run (pending night run: dna_own_rejoin_failed, dna_own
 * Wanted FAIL: `SPORE_DETECTOR=20 python3 tools/lab.py run dna_own_rejoin_failed_off --lane N --retry 0 --no-build` (SPORE_FIX_OFF=net.rejoin_slot_pair: the failed join's
   token is sent, the host sees a new player, the guest's DNA is the host's).
 * Unit: tests/space_tests.cpp test_rejoin_slot_pair (pair match, another host, the switch off, an old slot, damaged slots).
+0.7.17 release lab: PASS: dna_own_rejoin_failed (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-N1), branch fix/w80-net.
 - 2026-11-23: fix and tests on fix/w80-net (0ff638f2); waiting for the night lab run.
+- 2026-11-24: released in 0.7.17.

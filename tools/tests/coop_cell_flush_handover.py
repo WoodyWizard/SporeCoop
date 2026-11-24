@@ -36,9 +36,12 @@ def main():
     time.sleep(3)
     for pl in party.all:
         pl.call('coop.pool invulnfor 600')
-    bob.call('coop.pool tp 30 0')
-    carol.call('coop.pool tp 30 0')  # one place: one list holds the tiles, the other their shadows
-    time.sleep(10)
+    # Bob arrives first and populates the real tiles (id=1); Carol arrives after and gets shadows (id=2), so flushing
+    # g_ptiles in id order deletes Bob's real tiles while Carol's shadows are still in the list to be flushed next.
+    bob.call('coop.pool tp 45 0')
+    time.sleep(4)
+    carol.call('coop.pool tp 45 0')
+    time.sleep(8)
     s0, out = stat(host)
     print('  host before: ' + out, flush=True)
     for i in range(4):

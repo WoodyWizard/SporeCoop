@@ -1,14 +1,14 @@
 ---
 id: BUG-1512
 title: Cell: partner positions in the partner's own world scale for revive, regeneration and respawn during a rescale (CELL-11)
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-11-23
 source: audit
 role: 
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w81-cell
 commits: 17bc2248, e89fe984
 tests: cell_partner_scale (coop_cell_audit_0717.py --part scale); twin cell_partner_scale_off
@@ -29,8 +29,10 @@ Static reading (CELL-11), confirmed in coop.cpp partners(): it returned the part
 
 ## Verification
 Open, waiting for the lab run: pending night run: cell_partner_scale (PASS expected: the guest 8 m away, the host's level change: for 5 s the host's partner_dist (nearest_partner) agrees with the drawn partner within 25 %), cell_partner_scale_off (FAIL expected by the scale ratio). Unit test: audit_0717 (partner_scale_k).
+0.7.17 release lab: PASS: cell_partner_scale (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-L1), branch feat/w81-cell.
 - 2026-11-23: implemented on feat/w81-cell with its lab test and twin (switch cell.partner_scale), waiting for the night run.
+- 2026-11-24: released in 0.7.17.

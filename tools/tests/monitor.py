@@ -488,11 +488,15 @@ class Totals(Invariant):
                     hv = [x['res'][k] for x in hs if k in x['res']]
                     if hv and all(self.differ(x, v) for x in hv) and (v > max(hv) or v < min(hv)):
                         diffs.append(f'{k}: host {h["res"].get(k, hv[-1]):.0f}, {who} {v:.0f}')
+                own_prog = 'own_progress=1' in g.get('rest', '') or 'own_progress=1' in h.get('rest', '')
                 hd = [x['dna'] for x in hs if x['dna'] >= 0]
                 # BUG-1310: a guest with its own DNA (WP-D: the host's line lists its wallet) has the host's record of
-                # it, the bar stays the party's; a guest the host does not list plays the shared pool (as before)
+                # it, the bar stays the party's; a guest the host does not list plays the shared pool (as before).
+                # BUG-1469: under own progress (all.shared_dna 2) both DNA and bars differ per player on purpose.
                 ow = [x['dna_own'][g['id']] for x in hs if g['id'] in x.get('dna_own', {})]
-                if g['stage'] == 'Creature' and ow and g['dna'] >= 0:
+                if own_prog:
+                    pass
+                elif g['stage'] == 'Creature' and ow and g['dna'] >= 0:
                     if all(self.differ(x, g['dna']) for x in ow):
                         diffs.append(f'own dna: the host\'s record of {who}\'s wallet '
                                      f'{h.get("dna_own", {}).get(g["id"], ow[-1]):.0f}, {who} {g["dna"]:.0f}')

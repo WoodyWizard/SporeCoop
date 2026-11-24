@@ -1,14 +1,14 @@
 ---
 id: BUG-1487
 title: Space: false raid notices for own-star mirrors (and extra raids with 3-4 players) (SPC-13)
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-11-23
 source: audit
 role: 
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w77-space
 commits: e9c0dd3d, 37d9240d
 tests: space_own_mirror, space_own_mirror_off_raid
@@ -41,8 +41,10 @@ system is an own-star mirror in the host's game; a raid starts on it there (`all
 helper's): over 8 s the guest gets no "the host's colony is raided" (raids_told), the host counts no raid on its colony.
 Expected: PASS with the fix; FAIL with SPORE_FIX_OFF=space.own_mirror_raids.
 pending night run: space_own_mirror space_own_mirror_off_raid (1 lane, about 10 min).
+0.7.17 release lab: PASS: space_own_mirror (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-X1), branch fix/w77-space.
 - 2026-11-23: fix, lab test and FAIL twin on fix/w77-space (WP-X1); no lab run yet (lab runs only at night).
+- 2026-11-24: released in 0.7.17.

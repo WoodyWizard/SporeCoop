@@ -1,16 +1,16 @@
 ---
 id: BUG-1416
 title: Civ: a guest's save puts back a mirror vehicle the host's state removed during the save (dangling pointer in the civilization's vehicle lists, CIV-1)
-status: open
+status: fixed
 kind: crash
 stage: Civ
 reported: 2026-11-22
 source: audit
 role: guest
 versions: 0.7.16 and earlier (since BUG-0470, 0.7.3)
-fixed_in:
+fixed_in: 0.7.16.1
 branch: fix/w63-civ
-commits:
+commits: 3e8a6ef4
 tests: civ_save_took, civ_save_took_off
 signature:
 docs: docs/re/civ.md#civ-mirror-vehicle-reuse
@@ -48,8 +48,12 @@ vehicles, the guest arms savekill and saves; PASS: the save's end ran with the r
 guest, no fault for 15 s. Twin `civ_save_took_off` (SPORE_FIX_OFF=civ.save_took_listed): unlisted >= 1 or a fault,
 must FAIL.
 
+- 2026-11-23 (0.7.16.1 final check): civ_save_took PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened.
 - 2026-11-22: fix on fix/w63-civ (switch civ.save_took_listed, test civ_save_took and its twin); lab run pending.
 
 - 2026-11-22: renumbered from BUG-9301 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9301.
+- 2026-11-23: released in 0.7.16.1.

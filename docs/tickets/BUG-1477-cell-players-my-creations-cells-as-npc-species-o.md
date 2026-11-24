@@ -1,14 +1,14 @@
 ---
 id: BUG-1477
 title: Cell: players' My Creations cells as NPC species (off-by-default cell.lineage_cells, a guest's cells only with its consent; idea from PR #211 by IltonBJSilva)
-status: open
+status: fixed
 kind: feature
 stage: Cell
 reported: 2026-11-23
 source: plan, PR #211
 role: 
 versions: 0.7.17
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w81-cell
 commits: e89fe984, edc53a14
 tests: lineage_cells (coop_lineage_cells.py); lineage_cells_ui; twin lineage_cells_off
@@ -29,8 +29,10 @@ Session setting `cell.lineage_cells` (Cell, off: settings::kLineageCellsDefault)
 
 ## Verification
 Open, waiting for the lab run: pending night run: lineage_cells (PASS expected: both players' old cells in the host's pool, the guest registered them, after a rebuild >= 3 wild old cells live on each game, consent off withdraws the guest's, a fresh host save holds no 0x7B key; key frame), lineage_cells_ui (the box in the co-op window), lineage_cells_off (FAIL expected). Old peer: unit test lineage_rules (host_swaps, offers); no lab lane has a 0.7.16.1 build.
+0.7.17 release lab: PASS: lineage_cells (lab 20261124-020506), lineage_cells_ui (lab 20261124-020506); FAIL (fix off): lineage_cells_off (lab 20261124-013101).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 9 (WP-L2), branch feat/w81-cell.
 - 2026-11-23: implemented on feat/w81-cell with its lab test and twin (switch cell.lineage_cells), waiting for the night run.
+- 2026-11-24: released in 0.7.17.

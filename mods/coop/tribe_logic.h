@@ -240,6 +240,68 @@ inline float mirror_lead_speed(bool keep_fix, bool smooth_bound_fix, float lead_
     return v;
 }
 
+// BUG-1451, second step (`coop.fix tribe.smooth_catch`): the first step's lead_speed floor alone had no proven effect
+// (lab 20261123-111347 on 2/4 FAIL vs 20261123-121417 off 3/4 FAIL; 20261123-123958 with `coop.bodyrec diag` 4/4 FAIL).
+// Three bottlenecks showed up in the diagnostic tracks:
+// 1. walk_place holds placing to (2 x lead_speed + catch_up - walk_sp) x dt, assuming the game walks at walk_sp = sp.
+//    During a late walk start at 2x catch-up, sp is 12-17 m/s while the game walks 0-0.8 m/s (walk start / keep_lost
+//    teleports), starving placing to 1.5-6.7 m/s even when lag < 1 m (125053 t1: 0.7 m/s stall at lag 0.95 m).
+// 2. When lagging >= 1 m behind the aim with game walk ~0 m/s, reserving walk_sp = 9 m/s leaves only 12 m/s placing
+//    (+3 m/s net vs a 9 m/s host), taking > 0.8 s after a 0.35 s network spike. Lowering walk_speed towards kLagWalkCap
+//    (5 m/s at lag >= 1.5 m) keeps walk gait active, hard-caps any one-frame game walk spike to <= 5 m/s, and shifts
+//    up to 16 m/s into deterministic placing while keeping walk + placing <= 2 x v + 3 = 21 m/s (0.67 m at 32 ms, well
+//    below tribe_walk_player's 0.864 m jump threshold).
+// 3. During a second loss burst while lagging, extrapolation decay drops sp to 1-4 m/s and driver.h's (sp + catch_up)
+//    clamped placing to 4.5-6 m/s (125710 t1, 125859 t7). Raising WalkPlace::catch_up to cover want_place - sp lets the
+//    copy close at up to budget - walk (<= 18 m/s placing, <= 21 m/s total) even when sp decayed.
+// Off: mirror_lead_speed's bound only, walk_speed -1, base catch_up unchanged (0.7.16).
+constexpr float kLagCatchMin = 1.f;    // m behind its aim: start lag catch-up boost
+constexpr float kLagWalkFull = 1.5f;   // m behind its aim: walk_speed cap reaches kLagWalkCap
+constexpr float kLagWalkCap = 5.f;     // m/s: game walk cap while lagging >= 1.5 m (5 + 16 = 21 m/s ceiling)
+constexpr float kLagCloseTime = 0.35f; // s: lag-based speed floor when target slowed/decayed (lag / 0.35 s, max 9 m/s)
+constexpr float kLagCatchBase = 3.f;   // m/s: BUG-0619's base catch_up in the frame budget
+struct CatchBound {
+    float lead_speed; // WalkPlace::lead_speed (0: no bound)
+    float walk_speed; // WalkPlace::walk_speed (-1: the target's speed)
+    float catch_up;   // WalkPlace::catch_up (>= base_catch)
+};
+// `lead_speed` mirror_lead_speed's, `lead_sp` / `sp` / `late_rate` as there, `base_catch` / `catch_prop` / `lead_fix`
+// WalkPlace's catch-up inputs, `lag` the mirror's distance to its aim.
+inline CatchBound mirror_catch_bound(float lead_speed, bool catch_fix, float lead_sp, float sp, float late_rate,
+                                     float base_catch, bool catch_prop, bool lead_fix, float lag)
+{
+    if (!catch_fix || !(sp > 0.f))
+        return {lead_speed, -1.f, base_catch};
+    const float rate = late_rate > 1.f ? late_rate : 1.f;
+    const float body = lead_sp >= 0.f ? lead_sp / rate : sp;
+    const float body_walk = std::min(sp, std::max(body, 0.5f));
+    if (!(lag >= kLagCatchMin)) {
+        if (lead_speed > 0.f && body_walk < sp)
+            return {lead_speed, body_walk, base_catch};
+        return {lead_speed, -1.f, base_catch};
+    }
+    const float max_v = std::max(body, kLagCatchMax);
+    const float v = std::min(std::max(body, lag / kLagCloseTime), max_v);
+    const float budget = 2.f * v + kLagCatchBase;
+    const float t = std::min(1.f, (lag - kLagCatchMin) / (kLagWalkFull - kLagCatchMin));
+    const float walk_cap = kLagCatchMax + t * (kLagWalkCap - kLagCatchMax);
+    const float walk = std::min(body_walk, walk_cap);
+    const float want_place = std::min(std::max(0.f, budget - walk), 2.f * max_v);
+    const float old_cu =
+        (catch_prop && lead_fix) ? std::max(base_catch, std::min(lag / 0.25f, sp + base_catch)) : base_catch;
+    const float old_place =
+        lead_speed > 0.f ? std::min(sp + old_cu, std::max(0.f, 2.f * lead_speed + old_cu - sp)) : (sp + old_cu);
+    if (!(want_place > old_place + 0.05f) && !(walk < sp))
+        return {lead_speed, -1.f, base_catch};
+    const float new_base = std::max(base_catch, want_place - sp);
+    float cu = new_base;
+    if (catch_prop && lead_fix)
+        cu = std::max(cu, std::min(lag / 0.25f, sp + new_base));
+    const float want_ls = std::max(0.5f, 0.5f * (want_place + walk - cu));
+    const float ls = lead_speed > 0.f ? std::max(want_ls, std::min(lead_speed, 0.5f * (budget - cu))) : want_ls;
+    return {std::max(ls, 0.5f), walk < sp ? walk : -1.f, new_base};
+}
+
 // BUG-1460: a walking citizen whose tribe pointer (+0x1014) is null makes the game's make-way step
 // (Creature_AskGroupToMakeWay 0xC28530) read that null tribe (0x00C8F6D3). `coop.fix tribe.makeway_null`: such a call
 // asks nobody (the hook returns false without calling the game); everything else calls the game's function

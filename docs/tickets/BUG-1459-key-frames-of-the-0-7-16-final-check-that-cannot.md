@@ -1,14 +1,14 @@
 ---
 id: BUG-1459
 title: key frames of the 0.7.16 final check that cannot be judged: baby views behind the hut, an NPC offer over line_stages_outfit, species_line next_session before the guest's swap, cameras in walls
-status: open
+status: fixed
 kind: test
 stage: All
 reported: 2026-11-23
 source: lab
 role: test
 versions: 0.7.16
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w84-tests
 commits: f8cbe143
 tests: tribe_birth_ask, tribe_birth_species, tribe_kid_species, line_stages_outfit, species_line, civ_citizen_trail, tribe_own_species, tribe_own_outfitter, own_editor_civdrop
@@ -77,7 +77,9 @@ host's member in the picture with no wall, bush or head in front; no nation's ta
 species_line next_session with the guest in its own creature; civdrop 01 / 02 with the guest's city in the middle;
 every close-up's manifest line `view: ...` (a `NO clear line of sight` line names what blocked it).
 no-fail-run: key frame cameras and timing only (no check changed).
+0.7.17 release lab: PASS: tribe_birth_ask (lab 20261124-020506), tribe_birth_species (lab 20261124-020506), tribe_kid_species (lab 20261124-020506), line_stages_outfit (lab 20261124-020506).
 
 ## History
 - 2026-11-23: opened (fix/w66-frames, key frame review of the 0.7.16 final check, lab 20261122-194210 on 5376d388).
 - 2026-11-23: fix/w84-frames (WP-T1): clear-view cameras, nation talk answered, avatar swap waited, civdrop test camera; waits for the night run and the frame review.
+- 2026-11-24: released in 0.7.17.

@@ -1,14 +1,14 @@
 ---
 id: BUG-1235
 title: Tribe: member mirrors on the guest jump once or stop-and-go 12-14% of frames at 30 fps over the player network (tribe_walk_player, old: 0.7.14.1 4 of 4)
-status: open
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-11-18
 source: final check 20261117-154911
 role: 
 versions: 0.7.14.1, unreleased
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w62-flake-tcs, fix/w76-motion
 commits: fbdd2510 46863dd0
 tests: tribe_walk_player, tribe_walk_player_lead_cap_off (twin), body_trail_tribe_player, tests/tribe_tests.cpp lead_cap
@@ -92,6 +92,7 @@ tribe_tests smooth_bound (PASS with the rule, FAIL with `--nofix`).
   timing of the network: 4 of 4 on fd28f88f); regression `body_trail_tribe_player --repeat 4` (longest member stretch
   over 2 m under 1.0 s), body_trail_tribe, body_trail_tribe_hold, tribe_walk_mobile, tribe_coop.
 - Still open (2026-11-23). On 5376d388 no jump: tribe_walk_player PASS in 20261122-194210 and 3 of 4 in 20261122-193406 (no jump in any of the 5; #1 FAIL on the speed part, "at its speed in 83% >= 85%"). On fd28f88f (the same mod code) every run FAILs on jumps of 0.85-0.93 m in one ~32 ms frame, on the host's members and the guest's own: 20261123-023643 (3 jumps, and the stop-and-go part 20%), 20261123-071312 (3), 20261123-075458 #1 and #2 (2 each). Those are the catch-up frames of a late walk start (BUG-1451, tribe.smooth_catch, for 0.7.16.1), so the jump this ticket is about is not proven gone; the speed / stop-and-go part is open too. The CHANGELOG line was removed; the known issue stays.
+0.7.17 release lab: PASS: tribe_walk_player (lab 20261124-020506), body_trail_tribe_player (lab 20261124-020506).
 
 ## History
 - 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.
@@ -100,3 +101,4 @@ tribe_tests smooth_bound (PASS with the rule, FAIL with `--nofix`).
 - 2026-11-18: opened in the second 0.7.15 final-check triage; old (0.7.14.1 fails it too), left for the next release.
 - 2026-11-23: fix/w65-night: smooth_bound held a late walk start to the host's current speed (BUG-1451, body_trail_tribe_player 1.16 s over 2 m); tribe.smooth_catch lets the bound grow with the lag, capped at the 9 m/s this ticket's case keeps (its frames still at most 0.67 m).
 - 2026-11-23 (fix/w76-motion): the remaining jumps are the raw lead's catch-up frames (tracks of the 0.7.16 final check); drive.lead_cap bounds them and the slow surges; waiting for the lab.
+- 2026-11-24: released in 0.7.17.

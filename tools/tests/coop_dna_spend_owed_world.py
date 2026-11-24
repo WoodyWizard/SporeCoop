@@ -74,12 +74,18 @@ def main():
         if not ck(to_menu(host) and load(host, home_slot, home), f'the host plays {home} again'):
             return ck.result()
         ck(twoinst.wait_guest_in(host, guest, 200), "the guest is in the host's world again")
-        time.sleep(4)
-        # 2. the owed spend
+        # Loading the other world reset all.shared_dna to default: re-apply shared DNA and ensure enough DNA to spend 30.
+        ck(sl.force(host, [guest], 'all.shared_dna', 'on'), 'both play with all.shared_dna on again')
+        if (dna(host) or 0) < 50:
+            host.call('coop.dna add 50')
+        wait(lambda: (dna(guest) or 0) >= 40, 15)
+        time.sleep(2)
+        # 2. the owed spend: send the guest's spend while the host is in the galaxy menu (no avatar) so it arrives
+        # as an in-flight spend and lands in the host's owed spend buffer (BUG-1506).
         if not ck(to_menu(host), 'the host is in the galaxy menu'):
             return ck.result()
-        time.sleep(3)
-        print('  guest:', guest.call('coop.dna spend 30')['out'].strip()[:100], flush=True)
+        time.sleep(2)
+        print('  guest:', guest.call('coop.dna sendspend 30')['out'].strip()[:100], flush=True)
         ck(wait(lambda: (owed(host) or 0) <= -29, 20), f"the host keeps the guest's spend as owed ({owed(host)})")
         # 3. another Creature world
         if not ck(load(host, f'Game{SLOT}', other), f'the host loads {other}'):

@@ -1,16 +1,16 @@
 ---
 id: BUG-1426
 title: Creature HUD portrait fix (BUG-0937) never applies when Windows relocates the exe: raw vtable address (UIFX-3)
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-22
 source: audit
 role: both
 versions: 0.7.16.1
-fixed_in:
+fixed_in: 0.7.16.1
 branch: fix/w63-net
-commits:
+commits: 0f231d0d
 tests: hud_portrait (regression)
 signature:
 docs: docs/re/creature.md#creature-portrait-vtable-symbol
@@ -44,7 +44,11 @@ no-fail-run: Wine never relocates SporeApp.exe, so the lab cannot run the reloca
 above and PR #208's Windows run are the failing side. Regression: `tools/lab.py run hud_portrait` must PASS (the
 symbol equals the vtable the game uses under Wine).
 
+- 2026-11-23 (0.7.16.1 final check): hud_portrait PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened.
 
 - 2026-11-22: renumbered from BUG-9311 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9311.
+- 2026-11-23: released in 0.7.16.1.

@@ -1,14 +1,14 @@
 ---
 id: BUG-1244
 title: Creature: the host's sing in a social game with an animal is not shown on its creature in the guest's game (042A1CAF never on the puppet)
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-18
 source: test: social_sing (fix/w52-evoeditor)
 role: host
 versions: 
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w76-motion
 commits: de506908
 tests: social_sing, social_sing_bhv_off (twin)
@@ -54,7 +54,9 @@ Open, waiting for the lab run (pending night run: social_sing social_sing_bhv_of
 `SPORE_DETECTOR=20 python3 tools/lab.py run social_sing_bhv_off --repeat 2 --lane M --retry 0 --no-build` must FAIL
 on "the guest's game shows the host singing on its creature". Equivalent evidence already on disk: the 13 / 26 logs
 of the Root cause.
+0.7.17 release lab: PASS: social_sing (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-18: opened.
 - 2026-11-23 (fix/w76-motion): the check is an assertion now (idea from fix/agy-open-bugs fc420dcb); twin social_sing_bhv_off.
+- 2026-11-24: released in 0.7.17.

@@ -1,14 +1,14 @@
 ---
 id: BUG-1494
 title: Tribe: the host reads two masks as one u64 for a guest's gather order (the members go to an empty tree) (TR-8)
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-23
 source: audit
 role: guest
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w79-tribe
 commits: 2b2171fa
 tests: tribe_fruit_empty_tree, tribe_fruit_empty_tree_off
@@ -38,8 +38,10 @@ open, waiting for the lab run. pending night run: tribe_fruit_empty_tree, tribe_
 host tree within 12.5 m of the fruit emptied; the order's target (the host's last order line, the member's order
 record) is not one of them. Twin `tribe_fruit_empty_tree_off` (SPORE_FIX_OFF=tribe.tree_mask): the nearest empty tree,
 must FAIL.
+0.7.17 release lab: PASS: tribe_fruit_empty_tree (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-B1), branch fix/w79-tribe.
 - 2026-11-23: fix on fix/w79-tribe (switch tribe.tree_mask, tests tribe_fruit_empty_tree, tribe_fruit_empty_tree_off); lab run pending (no lab by day).
+- 2026-11-24: released in 0.7.17.

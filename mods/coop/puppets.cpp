@@ -6,6 +6,7 @@
 #include "lifecycle.h"
 #include "coop_state.h"
 #include "cocoon.h"
+#include "own_progress.h"
 
 namespace coop_core {
 
@@ -1032,7 +1033,9 @@ static std::string monitor_own_fields(bool have)
             snprintf(b, sizeof b, " bar=%.0f", bar);
             out += b;
         }
-        if (g_sess.role() == net::Role::Host)
+        if (own_progress::active())
+            out += " own_progress=1";
+        else if (g_sess.role() == net::Role::Host)
             out += dna_own_field();
     }
     if (g_mode == modes::kTribe || g_mode == modes::kCiv) {

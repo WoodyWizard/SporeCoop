@@ -2,10 +2,94 @@
 
 ## [Unreleased]
 
+## [0.7.17] - 2026-11-24
+
+Thanks to IltonBJSilva, whose fork PRs #205, #207, #209, #210, #211, #214 and #217 contributed ideas and
+reverse-engineering notes for this release.
+
+### Added
+- Cell, Creature: own progress mode (`all.shared_dna`: `own progress`, alongside `own wallet` and `shared`): each
+  player earns its own DNA and fills its own evolution bar, and the stage moves on once every player's bar is full
+  and the vote agrees (idea from PR #209). (BUG-1469)
+- Own stage history per player: consequence cards, trait progress (kills and social wins credited to the player who
+  earned them rather than only the host), and Space archetype are each player's own (ideas from PRs #207 and #217).
+  (BUG-1470, BUG-1471)
+- Creature: partner revive (`creature.revive`): a lethal hit not caught by pack rescue downs a creature for 60 s so a
+  partner can revive it nearby; on timeout the downed player pays its own DNA cost (idea from PR #214). (BUG-1472)
+- Civ: optional separate money per player (`civ.own_money`), splitting starting funds and city income across players
+  (idea and RE from PR #205). (BUG-1468)
+- Difficulty scaling for 3-4 players (`all.party_difficulty`): scales NPC challenge (`100 %`, `125 %`, `150 %`,
+  `200 %`, or `auto`) for larger parties. (BUG-1473)
+- Cell: players' saved My Creations cells can appear as wild Cell NPC species (`cell.lineage_cells`, off by default,
+  with per-guest consent in the co-op window; idea and RE from PR #211). (BUG-1477)
+- Cell: a guest without saved cells gets the three diet premades in the "My cell" picker (idea from PR #210). (BUG-1476)
+- Space, Adventure: guests play their own captain species in Space (idea from PR #217), and partner puppets in
+  Adventures now show each partner's own captain instead of a copy of the local captain. (BUG-1475, BUG-1262)
+- Space: when guests fly together in a star system without the host, a guest fleet leader drives that system's NPC
+  ships so every player there sees the same fleet. (BUG-1288)
+- Creature: a partner's name tag now shows its current health. (BUG-1526)
+
+### Fixed
+- Cell: a guest's own Cell world pool now populates tiles that were created while mirroring the host instead of
+  dropping near zero (BUG-1408); a guest's bite on a multi-bite plant shrinks the plant on the host too (BUG-1514);
+  a guest's own poison clouds no longer hurt it with friendly fire or Rivals on (BUG-1513); breaking NPCs no longer
+  drop loot twice (BUG-1511); partner distance uses the drawn scale during level-up rescales (BUG-1512); starved
+  shadow tiles no longer stay empty with 3-4 players (BUG-1510); world-scale tile flush no longer hands partner tiles
+  over mid-rescale (BUG-1509); partners' poison clouds are no longer suppressed while the host is knocked out
+  (BUG-1508); a guest playing another Cell world no longer sends its editor spend or mate to the host (BUG-1507);
+  leaving Cell to load the host's Creature world no longer crashes in the galaxy menu sim reset (BUG-1436).
+- Creature: a guest's kills and impressions while the host is away now stay counted and replay on the host when it
+  returns (BUG-1527); dug or removed bones now fade out on the other game too instead of staying as unclickable ghost
+  bones (BUG-1261); a guest's own creature is pre-baked before swapping so it no longer appears plain green for 2 s
+  (BUG-1237); walked NPC proxies no longer fall into standing idle at 30 fps (BUG-1360) or drift after a caption thaw
+  (BUG-1234); the host's social sing animation plays on its puppet on the guest (BUG-1244); a guest's social meter
+  stays up briefly on win before hiding (BUG-1515); `creature.mode host` keeps stage-end and vote checks before
+  opening the host's editor (BUG-1503); a guest's owed DNA spend stays bound to its Creature world (BUG-1506); pool-3
+  one-shot effects still relay to other guests when the host has no puppet of the sender (BUG-1517); mirror FX stop
+  messages are no longer dropped by the rate limit (BUG-1516).
+- Tribe: bounded catch-up for member mirrors on laggy connections (BUG-1235); a village a guest conquers while the
+  host is away counts toward the stage goal (BUG-1492); a guest's member mirror no longer hangs in the air when host
+  snapshots stop (BUG-1493); a guest's gather order no longer goes to an empty tree (BUG-1494); a guest in another
+  Tribe world is no longer paused by the host's game-over caption or music (BUG-1495); host music themes stop cleanly
+  when the session ends (BUG-1496); post-save restoration checks that taken entries are still alive (BUG-1522); host
+  Tribe ground reload resets cleanly after a mid-transfer leave or failed share (BUG-1505).
+- Civ: passive city income ticks no longer spam "earned money (shared)" notifications every 6 s (BUG-1236); guest NPC
+  nations keep the host's synced money while the host's world stands on a capture caption (BUG-1461); guest income and
+  purchase hooks now respect local play in another world (BUG-1478); city specialty answers are no longer lost on the
+  guest (BUG-1479); held `CMD_SPACE_BUILD` orders apply after a host editor or load (BUG-1480); local building
+  candidates waiting for a design answer are no longer swept as orphans (BUG-1481).
+- Space: a guest in the host's world receives the host's captain item list so the captain screen shows proper item
+  limits (BUG-1279); Space Rivals `coop.store adopt` delivers the adopted budget to the player (BUG-1482); a guest
+  playing its own Space save keeps its own money untouched by Rivals traffic (BUG-1483) and kept colony restores
+  (BUG-1488); restoring an ally star rebuilds the near list cleanly (BUG-1484); Space trade payments wait for their
+  world (BUG-1485) and over-limit offers return promptly (BUG-1491); co-op contracts target only host empire colonies
+  (BUG-1486); no false raid notices for own-star mirrors (BUG-1487); non-finite terraforming values from peers are
+  rejected (BUG-1489); disabled ships can no longer jump away (BUG-1490).
+- UI, Net, Saves & Diagnostics: widened settings value buttons so multi-word values (`own wallet`, `own progress`) fit
+  on one line; give and jump buttons no longer overlap creation labels with long partner names (BUG-1518); "Report a
+  problem" in exclusive full screen no longer opens Explorer and minimizes Spore (BUG-1528); stops while minimized or
+  unfocused are no longer logged as hitches or counted in min fps (BUG-1529); peer names from an earlier session no
+  longer persist into the next hosted session (BUG-1519); crash report zips no longer collide within one second
+  (BUG-1521); SporeKit off-stack checks run for repeated fault sites too (BUG-1520); fixed peer version pointer
+  lifetime (BUG-1497), puppet liveness checks in roar/carry/flock relays (BUG-1501), paint byte-run substitution
+  (BUG-1504), rejoin slot token scoping by host and name (BUG-1498), store saves opening the world before feature
+  collection (BUG-1499), `coop.store adopt` for Tribe/Civ world-record-only owners (BUG-1500), settings staying locked
+  during host editor or load (BUG-1502), and firing `kPlayerJoin`/`kPlayerLeave` lifecycle hooks (BUG-1533).
+
+### Development
+- Lab tests and key frames stabilized for 0.7.17 (`BUG-1358`, `BUG-1410`, `BUG-1448`, `BUG-1452`, `BUG-1454`,
+  `BUG-1459`, `BUG-1466`, `BUG-1467`, `BUG-1530`, `BUG-1534`); full release check on `rel/0.7.17` passed `smoke`
+  (14/14), `nightly` (1167/1167 after targeted reruns), `campaign_short --repeat 3` (3/3), and `fixcheck` (376
+  confirmed, 0 contradicted).
+
+## [0.7.16.1] - 2026-11-23
+
 Thanks to IltonBJSilva, whose fork PRs #208, #212 and #216 found three of these bugs and whose notes gave twelve
 game addresses.
 
 ### Fixed
+- Civ: selling back a building a guest placed in its city planner before closing it now refunds the guest's money
+  correctly. (BUG-1532)
 - A guest no longer drops out of the session when the host's editor takes more than 30 s to load on a slow PC; the
   guest now waits up to 2 minutes for a host in an editor or a load (ported from PR #216). (BUG-1419)
 - A guest whose game hangs for 30 s, for example while its own editor loads, no longer holds up the host's vote: the

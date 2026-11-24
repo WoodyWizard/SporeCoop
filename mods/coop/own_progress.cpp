@@ -514,13 +514,13 @@ static void guest_tick(double now)
     if (g_stage_since < 0)
         g_stage_since = now;
     Values v;
-    if (!local_values(v) || now - g_stage_since < 2 || world::cinematic_playing() || own_world::elsewhere())
+    if (!local_values(v) || now - g_stage_since < 2 || own_world::elsewhere())
         return; // (another world of ours is not the host's record)
     const uint32_t epoch = game::stage_epoch(m), w = modes::current_world();
     if (g_synced && (g_synced_mode != m || g_synced_epoch != epoch || g_synced_world != w))
         g_synced = false; // a load, a received world, another stage: what the host keeps of this one, if anything
     if (!g_synced) {
-        if (now - g_ask_at < 3)
+        if (world::cinematic_playing() || now - g_ask_at < 3)
             return;
         g_ask_at = now;
         net::Writer o;
@@ -530,7 +530,7 @@ static void guest_tick(double now)
         g_asks++;
         return;
     }
-    if (g_gain_owed > 0 && m == modes::kCreature && game::avatar()) {
+    if (g_gain_owed > 0 && !world::cinematic_playing() && m == modes::kCreature && game::avatar()) {
         game::dna_add_raw(g_gain_owed);
         H->log(M, SK_INFO, "own progress: +%.0f DNA of our deeds paid while we had no creature", g_gain_owed);
         g_gain_owed = 0;

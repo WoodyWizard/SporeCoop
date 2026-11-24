@@ -1,14 +1,14 @@
 ---
 id: BUG-1479
 title: Civ: a city's specialty answer is lost on the guest when the first city listener clears the open question (CIV-10)
-status: open
+status: fixed
 kind: desync
 stage: Civ
 reported: 2026-11-23
 source: audit
 role: guest
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w78-civ
 commits: 9b9fdf4a, 9479fa44
 tests: civ_specialty_once, civ_specialty_once_off (tools/tests/coop_civ_specialty_once.py); unit tests/civ_tests.cpp test_audit_v1
@@ -47,8 +47,10 @@ NPC city and answers Economic (a click). PASS: X's specialty (`spec=`, the game'
 host's, the bought city is Economic in both, the guest's game time runs. Twin `civ_specialty_once_off`
 (SPORE_FIX_OFF=civ.specialty_once) must FAIL at "city X keeps its specialty"; INCONCLUSIVE when X's own listener took
 the answer.
+0.7.17 release lab: PASS: civ_specialty_once (lab 20261124-020506), unit (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-V1), branch fix/w78-civ.
 - 2026-11-23: fixed on fix/w78-civ (9b9fdf4a), switch civ.specialty_once; lab test and twin written, night run pending.
+- 2026-11-24: released in 0.7.17.

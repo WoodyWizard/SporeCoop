@@ -1503,10 +1503,12 @@ static void rec_own(uint32_t e)
 }
 
 // guest: a world loaded from the host whose hold may still be replaced by the kept one (no answer yet to its
-// fresh hold); at most 20 s after it went (a host without the fix never answers)
+// fresh hold); at most 20 s after it went (a host without the fix never answers). In a guest's own Space save
+// (inv_own_save(), BUG-0816 / BUG-1415) inv_tick never sends a fresh hold and K_INV_KEPT is never applied, so no
+// restore is pending (without this check g_win.pending saw world != fresh forever and hold_grants blocked every grant).
 static bool inv_restore_pending()
 {
-    if (!g_keep_items_fix || !spaceext::connected() || spaceext::is_host() || !spaceext::in_space())
+    if (!g_keep_items_fix || !spaceext::connected() || spaceext::is_host() || !spaceext::in_space() || inv_own_save())
         return false;
     uint32_t e = spaceext::world_epoch();
     if (!g_win.open(e))

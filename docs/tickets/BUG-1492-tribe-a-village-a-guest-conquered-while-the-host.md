@@ -1,14 +1,14 @@
 ---
 id: BUG-1492
 title: Tribe: a village a guest conquered while the host was away does not count for the stage goal (TR-5)
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-23
 source: audit
 role: guest
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w79-tribe
 commits: 70979dc4
 tests: tribe_away_goal, tribe_away_goal_off
@@ -46,8 +46,10 @@ open, waiting for the lab run. pending night run: tribe_away_goal, tribe_away_go
 the main menu, then the host's goal progress (cPlayer +0x10F0, `coop.wsync dump tribe_goal`) one village above the
 save's within 30 s of its conquest. Twin `tribe_away_goal_off` (SPORE_FIX_OFF=tribe.away_goal): the progress stays,
 must FAIL.
+0.7.17 release lab: PASS: tribe_away_goal (lab 20261124-112022); FAIL (fix off): tribe_away_goal (lab 20261124-020506).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-B1), branch fix/w79-tribe.
 - 2026-11-23: fix on fix/w79-tribe (switch tribe.away_goal, tests tribe_away_goal, tribe_away_goal_off); lab run pending (no lab by day).
+- 2026-11-24: released in 0.7.17.

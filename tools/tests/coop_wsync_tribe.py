@@ -125,29 +125,37 @@ def t_goal(host, guest, ck):
 
 
 def t_stages(host, guest, ck):
-    h = dump(host, 'stages')
-    ck(bool(h.get('stages')), 'the host has a cPlayer')
-    if not h.get('stages'):
-        return
-    print(f'  before: host {h["stages"][0]["traits"]} guest {dump(guest, "stages").get("stages")}', flush=True)
-    # a played Cell and Creature stage: their consequence trait ids (any non-zero id marks the stage done)
-    print('  host: ' + host.call('coop.wsync stage 0 0BB2D2A7')['out'].strip(), flush=True)
-    print('  host: ' + host.call('coop.wsync stage 1 0D6F2C7B')['out'].strip(), flush=True)
-    want = dump(host, 'stages')['stages'][0]['traits']
+    # BUG-1470 (core.own_history) gives guests their own stage cards and intentionally disables wsync's stages row;
+    # test wsync's fallback stages row with core.own_history off.
+    host.call('coop.fix core.own_history off')
+    guest.call('coop.fix core.own_history off')
+    try:
+        h = dump(host, 'stages')
+        ck(bool(h.get('stages')), 'the host has a cPlayer')
+        if not h.get('stages'):
+            return
+        print(f'  before: host {h["stages"][0]["traits"]} guest {dump(guest, "stages").get("stages")}', flush=True)
+        # a played Cell and Creature stage: their consequence trait ids (any non-zero id marks the stage done)
+        print('  host: ' + host.call('coop.wsync stage 0 0BB2D2A7')['out'].strip(), flush=True)
+        print('  host: ' + host.call('coop.wsync stage 1 0D6F2C7B')['out'].strip(), flush=True)
+        want = dump(host, 'stages')['stages'][0]['traits']
 
-    def same(con):
-        g = dump(con, 'stages').get('stages')
-        return g and g[0]['traits'] == want
-    ck(wait(lambda: same(guest), 10), f'within 10 s the guest\'s game has the host\'s stages done ({want} / '
-       f'{dump(guest, "stages").get("stages")})')
-    print('  guest rejoins', flush=True)
-    print('  guest: ' + guest.call('coop.leave')['out'].strip()[:80], flush=True)
-    time.sleep(2)
-    guest.call(lane.JOIN)
-    ck(twoinst.wait_guest_in(host, guest, 120), 'the guest is back in the host\'s world after its rejoin')
-    got = wait(lambda: same(guest), 30)
-    print(f'  after the rejoin: guest {dump(guest, "stages").get("stages")}', flush=True)
-    ck(bool(got), 'after its rejoin the guest\'s game has the host\'s stages done again')
+        def same(con):
+            g = dump(con, 'stages').get('stages')
+            return g and g[0]['traits'] == want
+        ck(wait(lambda: same(guest), 10), f'within 10 s the guest\'s game has the host\'s stages done ({want} / '
+           f'{dump(guest, "stages").get("stages")})')
+        print('  guest rejoins', flush=True)
+        print('  guest: ' + guest.call('coop.leave')['out'].strip()[:80], flush=True)
+        time.sleep(2)
+        guest.call(lane.JOIN)
+        ck(twoinst.wait_guest_in(host, guest, 120), 'the guest is back in the host\'s world after its rejoin')
+        got = wait(lambda: same(guest), 30)
+        print(f'  after the rejoin: guest {dump(guest, "stages").get("stages")}', flush=True)
+        ck(bool(got), 'after its rejoin the guest\'s game has the host\'s stages done again')
+    finally:
+        host.call('coop.fix core.own_history on')
+        guest.call('coop.fix core.own_history on')
 
 
 def t_villages(host, guest, ck):

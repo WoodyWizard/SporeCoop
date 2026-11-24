@@ -33,6 +33,7 @@ import time
 
 import settings_lib as sl
 from coop_cell_ko_food import plants, pool
+from coop_cell_ko_poison import maker_pos, pos
 from coop_cell_mate_copy import loot_near
 from coop_cell_partner_poison import clouds_near
 from coop_cell_puppet_scale import playing, wait
@@ -59,8 +60,15 @@ def audit(con):
 def part_breaking(ck, host, guest):
     host.call('coop.pool invulnfor 120')
     guest.call('coop.pool tp 2 0')
-    time.sleep(3)
-    cands = [m.group(1) for m in re.finditer(r'^see (c\d+) creature ', host.call('coop.pool see 40')['out'], re.M)][:6]
+    cands = []
+    t0 = time.time()
+    while time.time() - t0 < 20:
+        cands = [m.group(1) for m in re.finditer(r'^see (c\d+) creature ', host.call('coop.pool see 80')['out'], re.M)][:6]
+        if len(cands) >= 2:
+            break
+        if time.time() - t0 > 8 and len(cands) < 2:
+            host.call('coop.pool food 60')
+        time.sleep(2)
     if not ck(len(cands) >= 2, f'two NPC creatures near the host ({cands})'):
         return
     a, b = cands[0], cands[1]
@@ -115,7 +123,10 @@ def part_own_cloud(ck, host, guest):
     if not ck(sl.force(host, [guest], 'all.friendly_fire', 'on'), 'friendly fire on for both'):
         return
     try:
-        host.call('coop.pool tp 60 0')
+        # Keep the host 8 m away (well inside the host's view so the puppet's poison step emits clouds steadily,
+        # while far enough that the host's own clouds stay > 4.5 m away from the guest).
+        host.call('coop.pool invulnfor 120')
+        host.call('coop.pool tp 8 0')
         got = host.call(f'coop.pool borrow poison graft p{gid}')['out'].strip()
         print('  host: ' + got, flush=True)
         if not ck(got.startswith('borrowed'), 'the guest\'s puppet has the poison part in the host\'s game'):
@@ -124,12 +135,23 @@ def part_own_cloud(ck, host, guest):
         hp0 = pool(guest)['hp']
         hp_min, downed, onto, used, t0 = hp0, 0, 0, set(), time.time()
         while time.time() - t0 < 40 and onto < 10:
-            keys = [k for k in clouds_near(guest) if k not in used]
+            # On guest, 'host' reads me=() (guest's own cell) and '0' reads p0=() (host's puppet).
+            own_p = maker_pos(guest, 'host')
+            host_p = maker_pos(guest, '0')
+            if own_p and host_p and not (6.0 <= math.dist(own_p, host_p) <= 11.0):
+                host.call('coop.pool tp 8 0')
+            keys = []
+            for k in clouds_near(guest):
+                if k in used:
+                    continue
+                cp = pos(guest, k)
+                if cp and (own_p is None or math.dist(cp, own_p) < 4.5) and (host_p is None or math.dist(cp, host_p) > 4.5):
+                    keys.append(k)
             if keys:
                 used.add(keys[0])
                 if 'moved' in guest.call(f'coop.pool swimto {keys[0]} tp 0.2')['out']:
                     onto += 1
-            for _ in range(4):
+            for _ in range(2):
                 time.sleep(0.25)
                 p = pool(guest)
                 if p['hp'] is not None and hp_min is not None:
@@ -145,13 +167,25 @@ def part_own_cloud(ck, host, guest):
 
 
 def part_shrink(ck, host, guest):
+    host.call('coop.pool invulnfor 120')
     guest.call('coop.pool invulnfor 120')
-    keys = plants(guest, n=8)
+    keys = plants(guest, n=12)
+    lvs = [(k, cell_line(host, k)[0]) for k in keys]
+    print(f'  host plant levels={lvs[:8]}', flush=True)
     if not ck(keys, f'plants on the guest\'s screen ({keys})'):
         return
+    # EatFood shrinks a plant one level in place only when (plant_level - 1) is inside the current view's level range
+    # (level >= 1 at starting food=0). Starter tile plants are level 0, so promote a candidate to level 2 on both sides
+    # if no multi-bite plant is already present.
     done = None
     for k in keys:
         lv0, sz0, _, out0 = cell_line(host, k)
+        if lv0 is None:
+            continue
+        if lv0 < 1:
+            host.call(f'coop.pool celllevel {k} 2')
+            guest.call(f'coop.pool celllevel {k} 2')
+            lv0, sz0, _, out0 = cell_line(host, k)
         if lv0 is None or lv0 < 1:
             continue
         print('  guest: ' + guest.call(f'coop.pool eat {k}')['out'].strip(), flush=True)
@@ -187,7 +221,7 @@ def part_shadow(ck):
     print('  host: ' + host.call('coop.pool budget').strip(), flush=True)
     time.sleep(15)
     st = host.call('coop.pool tilestat')
-    print('  host: ' + st.strip()[:300] + ' | ' + audit(host), flush=True)
+    print('  host: ' + st.strip()[:300] + ' | ' + audit(host.con), flush=True)
     for g in (carol, dave):
         n = g.call('coop.pool mirrors').count('mirror_local')
         ck(n >= 10, f'{g.name}\'s game shows the host\'s cells round it ({n} mirrors)')

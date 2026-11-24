@@ -1,14 +1,14 @@
 ---
 id: BUG-1408
 title: own_cell: the pool of a guest's own Cell world falls from ~170 cells to 0-25 within 5 s and fills again 15-25 s later; the check's last 25 s catch the trough
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-11-21
 source: lab rel/0.7.16 20261121-003202 own_cell
 role: 
 versions: 0.7.15.1, unreleased
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w84-tests, fix/w85-cell-pool
 commits: 9cebc645 454c040a 9a6f66d1
 tests: own_cell, own_cell_steady, own_cell_steady_refill_off, cell_tests solo_refill
@@ -93,9 +93,11 @@ Lab (shows the cause): `SPORE_DETECTOR=20 python3 tools/lab.py run own_cell --re
   `SPORE_DETECTOR=20 python3 tools/lab.py run own_cell_steady --repeat 3 --lane N --retry 0 --no-build` must PASS 3 of 3;
   twin `SPORE_DETECTOR=20 python3 tools/lab.py run own_cell_steady_refill_off --repeat 2 --lane M --retry 0 --no-build`
   must FAIL 2 of 2 (the first read 0); `own_cell` PASS. Unit: cell_tests solo_refill (make test).
+0.7.17 release lab: PASS: own_cell (lab 20261124-020506), own_cell_steady (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-21: opened from the third final check of 0.7.16 (fix/w62-flake-cc); diagnostics added to the test.
 - 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.
 - 2026-11-23: fix/w84-tests (WP-T1 of 0.7.17): own_cell judges the populate on any read; the defect gets own_cell_steady (454c040a). Kind stays bug: a real defect.
 - 2026-11-23: fix/w85-cell-pool: cause found (the tiles of entering the own world populated while refused), fix cell.solo_refill; waiting for the night run.
+- 2026-11-24: released in 0.7.17.

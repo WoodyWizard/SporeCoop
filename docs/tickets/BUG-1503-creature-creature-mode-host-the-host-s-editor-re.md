@@ -1,14 +1,14 @@
 ---
 id: BUG-1503
 title: Creature (creature.mode host): the host's editor request opens before the stage-end and vote checks (CORE-4)
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-23
 source: audit
 role: host
 versions: 0.7.16.1 and earlier
-fixed_in: 
+fixed_in: 0.7.17
 branch: fix/w80-net
 commits: eb739ff7
 tests: tools/tests/coop_stage_end_vote.py --host-mode (stage_end_vote_host_mode, twin stage_end_vote_host_mode_off)
@@ -38,8 +38,10 @@ Open, waiting for the lab run (pending night run: stage_end_vote_host_mode, stag
   vote, the guest's window asks for I'm ready, the editor opens after the ready).
 * Wanted FAIL: `SPORE_DETECTOR=20 python3 tools/lab.py run stage_end_vote_host_mode_off --lane N --retry 0 --no-build` (the host's editor opens at once).
 * Regressions near it: one_creature, stage_end_vote, editor_now, evo_screens_cell_one.
+0.7.17 release lab: PASS: stage_end_vote_host_mode (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-N1), branch fix/w80-net.
 - 2026-11-23: fix and tests on fix/w80-net (eb739ff7); waiting for the night lab run.
+- 2026-11-24: released in 0.7.17.

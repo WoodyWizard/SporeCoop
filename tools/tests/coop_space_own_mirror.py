@@ -82,7 +82,8 @@ def main():
     keyframe('own_mirror_raid', 'the guest after a raid started on its colony in the host\'s game: no "colony is raided" '
              'notice of the host on its screen', players={'host': host, 'guest': guest})
 
-    # 3. armada targets
+    # 3. armada targets (wait if autosave briefly unmirrored the guest's colony)
+    wait(lambda: tech(planet_line(host, pid)) == 5, 30)
     out = offer(host, '0x' + pid)
     ck(not out.startswith('offered'), f'no armada against the guest\'s colony {pid} ({out})')
     npc = re.search(r'npccolony ([0-9A-F]{8}) (\d+) ([0-9A-F]+)', sp(host, 'allies npccolony'))

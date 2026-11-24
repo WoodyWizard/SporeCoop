@@ -38,7 +38,8 @@ from twoinst import Checks, keyframe, start
 KEY = 'all.party_difficulty'
 VALUES = {'100': 0, '125': 1, '150': 2, '200': 3, 'auto': 4}
 OFF_KEYS = ('creature.joint_hunt', 'creature.pack_heal', 'creature.pack_rescue')
-HIT = 20.0
+# Keep below Spore's per-hit player damage cap (~52% of 10 max HP), so 100% (3.0), 125% (3.75), and 150% (4.5) are not clamped.
+HIT = 3.0
 
 
 def percent(value, players):
@@ -95,9 +96,18 @@ def npc_hit_drops(ck, host, players):
         r = (host.call(f'coop.hp npchit {pid} {HIT}')['out'] or '').strip()
         if not ck('hit' in r and 'no puppet' not in r, f'{name}: an animal of the host\'s world hits it ({r})'):
             continue
-        time.sleep(2.5)
-        own1 = own_hp(con)[0]
-        pup1 = puppet_hp(host, pid)[0] if pid else None
+        # Poll the minimum health right after the hit before passive Creature regeneration heals it back.
+        own1, pup1 = own0, pup0
+        t0 = time.time()
+        while time.time() - t0 < 2.0:
+            h_now = own_hp(con)[0]
+            if h_now is not None and (own1 is None or h_now < own1):
+                own1 = h_now
+            if pid:
+                p_now = puppet_hp(host, pid)[0]
+                if p_now is not None and (pup1 is None or p_now < pup1):
+                    pup1 = p_now
+            time.sleep(0.15)
         d_own = own0 - own1 if own0 is not None and own1 is not None else None
         d_pup = pup0 - pup1 if pup0 is not None and pup1 is not None else None
         print(f'  {name}: own {own0} -> {own1}' + (f', on the host {pup0} -> {pup1}' if pid else ''), flush=True)

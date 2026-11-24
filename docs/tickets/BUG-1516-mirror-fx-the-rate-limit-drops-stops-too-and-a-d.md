@@ -1,14 +1,14 @@
 ---
 id: BUG-1516
 title: Mirror FX: the rate limit drops stops too, and a dropped stop is never sent again (a stuck effect on a mirror) (UIFX-4)
-status: open
+status: fixed
 kind: bug
 stage: Creature, Tribe
 reported: 2026-11-23
 source: audit
 role: guest
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w82-creature
 commits: e44b4ff0, 9a4c9bc3
 tests: tools/tests/coop_mirror_fx_keys.py --burst (mirror_fx_burst, twin mirror_fx_burst_off)
@@ -41,8 +41,10 @@ Open, waiting for the lab run (pending night run: mirror_fx_burst, mirror_fx_bur
   keyed effect sent inside a 4 s empty limit; key frame fx_burst_stop).
 * Wanted FAIL: `SPORE_DETECTOR=20 python3 tools/lab.py run mirror_fx_burst_off --lane N --retry 0 --no-build` (the stop dropped, never sent).
 * Regression: mirror_fx_keys, tribe_fight_sounds.
+0.7.17 release lab: PASS: mirror_fx_burst (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-C1), branch fix/w82-creature.
 - 2026-11-23: fix and tests on fix/w82-creature (e44b4ff0); waiting for the night lab run.
+- 2026-11-24: released in 0.7.17.

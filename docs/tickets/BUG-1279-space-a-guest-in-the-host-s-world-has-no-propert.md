@@ -1,14 +1,14 @@
 ---
 id: BUG-1279
 title: Space: a guest in the host's world has no property list of the host's captain (its item list), the captain screen shows no item limits
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-11-18
 source: static RE for GitHub issue #203
 role: guest
 versions: 0.7.15.1
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w74-captain
 commits: 596a872b, 6ac83cfb, 0bd01c0d
 tests: space_captain_items, space_captain_items_off, space_captain
@@ -51,7 +51,9 @@ list: BUG-0304's "items: none" unchanged) and its twin space_captain_items_off (
 must FAIL); regressions near it: space_captain, space_captain_none, space_coop. Old-peer run against 0.7.16.1 in the
 final check (creations 1.1: no kind 10 sent). ~ Not known yet: whether the galaxy menu's template 0x15A44C0 that `coop.captain
 plant` copies holds the item config (the test says so on the host's line).
+0.7.17 release lab: PASS: space_captain_items (lab 20261124-020506), space_captain (lab 20261124-020506); FAIL (fix off): space_captain_items_off (lab 20261124-005839).
 
 ## History
 - 2026-11-18: opened while fixing BUG-0304 (GitHub #203), for 0.7.16 or later.
 - 2026-11-23: feat/w74-captain (WP-K1): fix, unit tests, lab test and twin written; waits for the night run.
+- 2026-11-24: released in 0.7.17.

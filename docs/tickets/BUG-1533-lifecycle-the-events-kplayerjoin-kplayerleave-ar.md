@@ -1,14 +1,14 @@
 ---
 id: BUG-1533
 title: lifecycle: the events kPlayerJoin / kPlayerLeave are declared and listed by coop.lifecycle but never fired (a LIFECYCLE_HOOK on them is never called)
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-11-23
 source: feat/w69-progress code read 2026-11-23
 role: host,guest
 versions: 0.7.16.1
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w85-cell-pool
 commits: 7a81dbc3
 tests: lifecycle_player, lifecycle_player_off, core_tests lifecycle_hooks
@@ -50,7 +50,9 @@ Open, waiting for the lab run (pending night run: lifecycle_player, lifecycle_pl
 `SPORE_DETECTOR=20 python3 tools/lab.py run lifecycle_player_off --lane N --retry 0 --no-build` must FAIL (join=0,
 leave=0). Unit: core_tests lifecycle_hooks (fire_player fires both events with the player id, queues a needs_game hook
 until pump_game, fires nothing with the switch off) passes in make test.
+0.7.17 release lab: PASS: lifecycle_player (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: fix/w85-cell-pool: the events fired from the player callbacks (core.player_events), own_progress and revive on hooks; waiting for the night run.
+- 2026-11-24: released in 0.7.17.

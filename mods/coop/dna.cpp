@@ -574,6 +574,16 @@ std::string dna_own_field()
     return o;
 }
 
+void dna_send_spend(float amount)
+{
+    if (g_sess.role() != net::Role::Client || !g_sess.connected() || amount <= 0)
+        return;
+    net::Writer w;
+    w.f32(-amount);
+    g_sess.send_reliable_to(0, net::MSG_DNA_ADD, w);
+    g_dna_spends_sent++;
+}
+
 std::string own_dna_status()
 {
     std::string o;

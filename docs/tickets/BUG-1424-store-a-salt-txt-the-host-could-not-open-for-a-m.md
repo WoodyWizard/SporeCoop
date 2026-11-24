@@ -1,16 +1,16 @@
 ---
 id: BUG-1424
 title: Store: a salt.txt the host could not open for a moment was replaced by a new salt: every stored player of the host lost (NET-12)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-22
 source: audit
 role: host
 versions: 0.7.16.1
-fixed_in:
+fixed_in: 0.7.16.1
 branch: fix/w63-net
-commits:
+commits: 6c6df173, 4eef1efd
 tests: store_salt_held, store_salt_held_off, store_tests (test_unreadable)
 signature:
 docs:
@@ -46,7 +46,11 @@ Open, waiting for the lab run. Unit: store_tests test_unreadable (in `make test`
 Lab: `tools/lab.py run store_salt_held store_salt_held_off`: store_salt_held must PASS, the twin store_salt_held_off
 (SPORE_FIX_OFF=store.unreadable_kept) must FAIL at checks 2 and 3 (a new salt, salt.txt replaced).
 
+- 2026-11-23 (0.7.16.1 final check): store_salt_held PASS in 20261123-222910 (aad722ac, cold); store_tests unit test PASS.
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened.
 
 - 2026-11-22: renumbered from BUG-9309 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9309.
+- 2026-11-23: released in 0.7.16.1.

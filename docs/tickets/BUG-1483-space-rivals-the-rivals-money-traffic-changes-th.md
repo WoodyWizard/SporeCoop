@@ -1,14 +1,14 @@
 ---
 id: BUG-1483
 title: Space Rivals: the Rivals money traffic changes the money of a guest playing its own Space save (SPC-4)
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-11-23
 source: audit
 role: guest
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w77-space
 commits: 48cdcb66, 37d9240d
 tests: space_own_rivals, space_own_rivals_off_budget
@@ -41,8 +41,10 @@ guest earns 8234, offers spice to the host's colony, then loads a copy of the sh
 money there must not become the co-op budget (and stays while the host buys the offer). Expected: PASS with the fix;
 FAIL with SPORE_FIX_OFF=space.rival_own_save (the K_SET makes it the co-op budget).
 pending night run: space_own_rivals space_own_rivals_off_budget (1 lane, about 16 min).
+0.7.17 release lab: PASS: space_own_rivals (lab 20261124-020506); FAIL (fix off): space_own_rivals (lab 20261123-125807).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-X1), branch fix/w77-space.
 - 2026-11-23: fix, lab test and FAIL twin on fix/w77-space (WP-X1); no lab run yet (lab runs only at night).
+- 2026-11-24: released in 0.7.17.

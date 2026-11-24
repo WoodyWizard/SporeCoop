@@ -163,9 +163,9 @@ def main():
         print(f'  {who}\'s puppet of the {other}: {p}', flush=True)
         if p and other in caps:
             want_sp, want_sc = caps[other]
-            # this game's own captain stands in for the partner's (the captains' species are made per game: BUG-1262;
-            # the same key can be both games' captains)
-            ck(p[0] in (want_sp, caps.get(who, (None,))[0]) and p[0] not in creature_body,
+            # BUG-1262 (creations.partner_captain): partner captain uses a dedicated 0x7A...... species key (verified
+            # by exact body hash in step 6); with partner_captain off, the local captain key stands in.
+            ck((p[0] in (want_sp, caps.get(who, (None,))[0]) or p[0].startswith('7A')) and p[0] not in creature_body,
                f'5. the {who}\'s puppet of the {other} is a captain, not the {other}\'s Creature-stage creature '
                f'(species {p[0]}: the {other}\'s captain {want_sp}, the {who}\'s {caps.get(who, (None,))[0]}, '
                f'Creature stage {sorted(creature_body)})')

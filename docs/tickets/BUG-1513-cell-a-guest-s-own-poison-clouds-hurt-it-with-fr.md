@@ -1,14 +1,14 @@
 ---
 id: BUG-1513
 title: Cell: a guest's own poison clouds hurt it with friendly fire or Rivals on (CELL-13)
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-11-23
 source: audit
 role: guest
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w81-cell
 commits: 17bc2248, e89fe984
 tests: cell_own_cloud (coop_cell_audit_0717.py --part own_cloud); twin cell_own_cloud_off
@@ -29,8 +29,10 @@ Static reading (CELL-13), confirmed in cellsync_host.cpp / cellsync_combat.cpp: 
 
 ## Verification
 Open, waiting for the lab run: pending night run: cell_own_cloud (PASS expected: friendly fire on, the guest's puppet grafted with poison in the host's game, the guest put onto its own clouds' mirrors 6+ times: hp never lower, never knocked out), cell_own_cloud_off (FAIL expected). Unit test: audit_0717 (state_flags).
+0.7.17 release lab: PASS: cell_own_cloud (lab 20261124-020506); FAIL (fix off): cell_own_cloud_off (lab 20261124-013553).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-L1), branch feat/w81-cell.
 - 2026-11-23: implemented on feat/w81-cell with its lab test and twin (switch cell.own_cloud), waiting for the night run.
+- 2026-11-24: released in 0.7.17.

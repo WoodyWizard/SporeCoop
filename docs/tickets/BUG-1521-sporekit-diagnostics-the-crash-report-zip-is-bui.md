@@ -1,14 +1,14 @@
 ---
 id: BUG-1521
 title: SporeKit diagnostics: the crash report zip is built twice within one second under the same name (KIT-21)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-23
 source: audit
 role: 
 versions: 0.7.16.1 and earlier
-fixed_in: 
+fixed_in: 0.7.17
 branch: fix/w80-net
 commits: 9b194edd
 tests: tools/tests/kit_crash.py --case zipfail2 (kit_crash_zipfail2, twin kit_crash_zipfail2_off)
@@ -39,8 +39,10 @@ Open, waiting for the lab run (pending night run: kit_crash_zipfail2, kit_crash_
 * Wanted PASS: `SPORE_DETECTOR=20 python3 tools/lab.py run kit_crash_zipfail2 --lane N --retry 0 --no-build` (the archive last-problem.txt names is a whole zip).
 * Wanted FAIL: `SPORE_DETECTOR=20 python3 tools/lab.py run kit_crash_zipfail2_off --lane N --retry 0 --no-build` (`kit_crash.py --old`: the second write destroyed it).
 * Regressions near it: kit_crash (oom, prune), report_shot.
+0.7.17 release lab: PASS: kit_crash (lab 20261124-020506), kit_crash_zipfail2 (lab 20261124-020506); FAIL (fix off): kit_crash (lab 20261123-150925).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-N1), branch fix/w80-net.
 - 2026-11-23: fix and tests on fix/w80-net (9b194edd); waiting for the night lab run.
+- 2026-11-24: released in 0.7.17.

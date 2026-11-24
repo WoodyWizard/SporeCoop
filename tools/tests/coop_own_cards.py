@@ -203,6 +203,16 @@ def store_case(host, guest, ck):
 
 def space_case(host, guest, ck):
     h0, g0 = ready(host, guest, ck)
+    # Space-start fixtures (e.g. Madas.spo) have 00000000 for stages 0..3: seed a full stage history on the host so
+    # both players have four stage cards and distinct Space archetypes can be derived from Cell/Creature cards.
+    if len(h0[0]) == 5 and any(c == '00000000' for c in h0[0][:4]):
+        defaults = ('CFB01B93', '17E5EF84', '0CAC124D', '0A35D0F5')
+        for stage, v in enumerate(defaults):
+            if h0[0][stage] == '00000000':
+                host.call(f'coop.history set 0 {stage} {v}')
+        wait(lambda: all(c != '00000000' for c in (game(host)[0] or ['00000000'] * 5)[:4]), 10)
+        time.sleep(2)
+        h0, g0 = show('seeded host cards', host, guest)
     ck(len(h0[0]) == 5 and all(c != '00000000' for c in h0[0]), f"the host's Space save has all five cards ({h0[0]})")
     if not h0[0]:
         return

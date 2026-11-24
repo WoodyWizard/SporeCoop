@@ -1,14 +1,14 @@
 ---
 id: BUG-1472
 title: Creature: a partner revives a downed player; the cost is the downed player's own (session setting creature.revive; idea from PR #214 by IltonBJSilva)
-status: open
+status: fixed
 kind: feature
 stage: Creature
 reported: 2026-11-23
 source: plan, PR #214
 role: both
 versions: 0.7.17
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w71-revive
 commits: 32d709bf, b6834a2e
 tests: creature_revive, creature_revive_price_wallet, creature_revive_price_progress, creature_revive_price_shared, creature_revive_first_line, creature_revive_wipe, creature_revive_paths, creature_revive_old, creature_respawn
@@ -53,8 +53,10 @@ creature_revive_price_progress, creature_revive_price_shared, creature_revive_fi
 creature_revive_paths, creature_revive_old, creature_respawn (adapted: gives up after the second lethal hit),
 team_real_damage; twins that must FAIL: creature_revive_setting_off, creature_revive_hold_off, creature_revive_debt_off.
 Unit tests: tests/revive_tests.cpp (make test, PASS), validate_tests (the settings row, MSG 77).
+0.7.17 release lab: PASS: creature_revive (lab 20261124-020506), creature_revive_price_wallet (lab 20261124-020506), creature_revive_price_progress (lab 20261124-020506), creature_revive_price_shared (lab 20261124-020506); FAIL (fix off): creature_revive_price_wallet (lab 20261123-130804).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 4 (WP-R1), branch feat/w71-revive.
 - 2026-11-23: implemented on feat/w71-revive (credit IltonBJSilva, PR #214); lab tests and twins written, night run pending.
+- 2026-11-24: released in 0.7.17.

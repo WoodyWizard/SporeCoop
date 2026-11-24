@@ -201,7 +201,8 @@ def monitor_cases(tmp):
                              ('own_dna_bar', (' bar=150 dna_own=1:120', 120, ' bar=180'), {'totals'}),
                              ('own_dna_other_guest', (' bar=150 dna_own=2:120', 120, ' bar=150'), {'totals'}),
                              ('own_dna_shared', (' bar=150', 120, ' bar=150'), {'totals'}),
-                             ('own_dna_two', (' bar=150 dna_own=2:90,1:120', 120, ' bar=150'), set())):
+                             ('own_dna_two', (' bar=150 dna_own=2:90,1:120', 120, ' bar=150'), set()),
+                             ('own_progress_ok', (' bar=3030 own_progress=1', 20, ' bar=20 own_progress=1'), set())):
         got = scenario(tmp, name, *own_pair(*args))
         check(got == want, f'monitor: totals: {name} ({got})')
     got = scenario(tmp, 'totals_ok', *clean_pair(host_own=dict(res='food=40'), guest_own=dict(res='food=40(unsynced)')))

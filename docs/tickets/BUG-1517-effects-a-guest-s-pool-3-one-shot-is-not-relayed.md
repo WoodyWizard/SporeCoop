@@ -1,14 +1,14 @@
 ---
 id: BUG-1517
 title: Effects: a guest's pool-3 one-shot is not relayed when the host has no live puppet of that guest (3-4 players) (UIFX-6)
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-23
 source: audit
 role: 
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w82-creature
 commits: e44b4ff0, 9a4c9bc3
 tests: tools/tests/coop_effects_party.py --oneshot (effects_party_oneshot, twin effects_party_oneshot_off; 3 players)
@@ -42,8 +42,10 @@ run each).
   E1B24DDB on its puppet of guest 1: `pool=3 game=1`; key frame oneshot_relayed).
 * Wanted FAIL: `SPORE_DETECTOR=20 python3 tools/lab.py run effects_party_oneshot_off --lane N --retry 0 --no-build` (nothing reaches guest 2).
 * Regression: effects_party, creature_effects.
+0.7.17 release lab: PASS: effects_party_oneshot (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-C1), branch fix/w82-creature.
 - 2026-11-23: fix and tests on fix/w82-creature (e44b4ff0); waiting for the night lab run.
+- 2026-11-24: released in 0.7.17.

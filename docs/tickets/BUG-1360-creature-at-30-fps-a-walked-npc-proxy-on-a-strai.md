@@ -1,14 +1,14 @@
 ---
 id: BUG-1360
 title: Creature: at 30 fps a walked NPC proxy on a straight run plays the standing idle 02481DE5 for 1-6 s (npc_walk_novel gait 79-80%)
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-20
 source: final-check-20261120-041304
 role: 
 versions: 0.7.15.5, unreleased
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w76-motion
 commits: 22385d59
 tests: npc_walk_novel, npc_walk_novel_stale, npc_walk_novel_stale_gait_off (twin), npc_walk_novel_gait_off (twin), npc_walk_fps30, npc_walk_player, tests/npc_tests.cpp test_walk_gait
@@ -86,6 +86,7 @@ npc_walk_novel_stale_gait_off npc_walk_novel_gait_off):
 `SPORE_DETECTOR=20 python3 tools/lab.py run npc_walk_novel_stale_gait_off --repeat 2 --lane M --retry 0 --no-build` must
 FAIL on the walk gait; `npc_walk_novel_gait_off --repeat 4` FAILs in some runs (the old 2-3 of 9). Regression:
 npc_walk, creature_npc_dash, npc_nest_backoff, puppet_mound_view.
+0.7.17 release lab: PASS: npc_walk_novel (lab 20261124-020506), npc_walk_novel_stale (lab 20261124-020506), npc_walk_fps30 (lab 20261124-020506), npc_walk_player (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-20: opened from the 0.7.16 final check (fix/w60-misc): analysis of the two failing runs' tracks; frame-rate
@@ -96,3 +97,4 @@ npc_walk, creature_npc_dash, npc_nest_backoff, puppet_mound_view.
   (`SPORE_DETECTOR=20 python3 tools/lab.py run npc_walk_novel npc_walk_fps30 --lane N --retry 0 --no-build`). Still
   open; not a 0.7.16 regression (orchestrator: 0.7.17).
 - 2026-11-23 (fix/w76-motion): cause found in the track (the stale walk_sp clamp), npc.walk_gait, unit test, lab test + twins; the mound half of fc420dcb not taken.
+- 2026-11-24: released in 0.7.17.

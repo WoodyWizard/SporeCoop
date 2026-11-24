@@ -1,14 +1,14 @@
 ---
 id: BUG-1476
 title: Cell: a guest without own cells gets the three diet premades in the "My cell" picker (#210 small part by IltonBJSilva)
-status: open
+status: fixed
 kind: feature
 stage: Cell
 reported: 2026-11-23
 source: plan, PR #210
 role: guest
 versions: 0.7.17
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w81-cell
 commits: e89fe984
 tests: cell_diet_premade (coop_cell_diet_premade.py); twin cell_diet_premade_off
@@ -29,8 +29,10 @@ Feature (PR #210 by IltonBJSilva, its small part): a guest without cells in My C
 
 ## Verification
 Open, waiting for the lab run: pending night run: cell_diet_premade (PASS expected: the guest's own cells hidden; its row offers game cells with arrows; ">" picks 252A132F; the guest's avatar model and the host's puppet of it are 252A132F; key frame), cell_diet_premade_off (FAIL expected: no arrows, no choice).
+0.7.17 release lab: PASS: cell_diet_premade (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 9 (WP-L1), branch feat/w81-cell.
 - 2026-11-23: implemented on feat/w81-cell with its lab test and twin (switch cell.diet_premades), waiting for the night run.
+- 2026-11-24: released in 0.7.17.

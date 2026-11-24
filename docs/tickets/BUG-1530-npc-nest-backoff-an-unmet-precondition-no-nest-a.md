@@ -1,14 +1,14 @@
 ---
 id: BUG-1530
 title: npc_nest_backoff: an unmet precondition (no nest animal backs off in time) fails the test instead of giving INCONCLUSIVE
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-23
 source: plan
 role: test
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w76-motion
 commits: a08dfd8b
 tests: npc_nest_backoff, npc_nest_backoff_near
@@ -43,8 +43,10 @@ no-fail-run: test-only change (a precondition now gives INCONCLUSIVE instead of 
 Open, waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run npc_nest_backoff npc_nest_backoff_near
 --repeat 3 --lane N --retry 0 --no-build` must show no FAIL on a precondition line (PASS, or INCONCLUSIVE naming the
 unmet precondition); pending night run.
+0.7.17 release lab: PASS: npc_nest_backoff (lab 20261124-020506), npc_nest_backoff_near (lab 20261124-020506).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 12 (WP-F1), branch fix/w76-motion.
 - 2026-11-23 (fix/w76-motion): preconditions give INCONCLUSIVE; root cause from lab 20261123-023643 / -071312.
+- 2026-11-24: released in 0.7.17.

@@ -1,14 +1,14 @@
 ---
 id: BUG-1262
 title: Adventure: the partner's puppet has this game's own captain's look, not the partner's captain (the captain's species is made per game)
-status: open
+status: fixed
 kind: bug
 stage: Adventure
 reported: 2026-11-18
 source: fix/w53-advorn: found while fixing BUG-1254
 role: both
 versions: <=0.7.15
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w74-captain
 commits: 596a872b, 6ac83cfb, 0bd01c0d
 tests: adventure_tutorial, adventure_tutorial_partner_off
@@ -50,7 +50,9 @@ puppet's body (modelhash of its species here) is the partner's own captain's bod
 adventure_tutorial_partner_off (SPORE_FIX_OFF=adventure.partner_captain, must FAIL: this game's captain stands in; when
 both games play captains of the same body the twin cannot fail, the test prints it); the BUG-1254 twin (puppet_captain off)
 must still FAIL.
+0.7.17 release lab: PASS: adventure_tutorial (lab 20261124-112022); FAIL (fix off): adventure_tutorial (lab 20261124-020506).
 
 ## History
 - 2026-11-18: opened (fix/w53-advorn, found while fixing BUG-1254).
 - 2026-11-23: feat/w74-captain (WP-K1): redone after the review (only on a real bake, rebuilt in the frame, kScenario only, receive path gated, the copy has its property list, adventure captains shown to be in EditorSaves); lab test and twin written.
+- 2026-11-24: released in 0.7.17.

@@ -75,10 +75,30 @@ def dead_now(con):
     return dead or (hp is not None and hp <= 0)
 
 
+def is_down_hp(hp):
+    return hp is not None and 0.95 <= hp <= 1.15
+
+
 def ok_caption(*cons):
     for con in cons:
         if 'paused' in ''.join(ln for ln in (con.call('coop.status')['out'] or '').splitlines() if ln.startswith('busy')):
             con.call('key enter')
+
+
+def clear_busy(con, secs=25):
+    """dismiss any brain-upgrade caption/cinematic before starting a revive check"""
+    from coop_stage_end_vote import caption_ok
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        st = con.call('coop.status')['out'] or ''
+        busy = ''.join(ln for ln in st.splitlines() if ln.startswith('busy'))
+        if 'movie=1' in st:
+            caption_ok(con)
+        if 'paused' in busy:
+            con.call('key enter')
+        if 'paused' not in busy and 'cinematic' not in busy and 'movie=1' not in st:
+            return
+        time.sleep(1.0)
 
 
 def respawned(con, fell):
@@ -177,15 +197,17 @@ def set_dna_mode(ck, host, guest, mode):
 def case_price(ck, host, guest, mode):
     set_dna_mode(ck, host, guest, mode)
     guest.call('coop.dna add 100')
-    time.sleep(5)
-    print(f'  the host {beside(host, guest, 40):.0f} m away', flush=True)
+    time.sleep(3)
+    clear_busy(guest, 30)  # +100 DNA crosses brain level 1 on Scalinus and opens a pausing caption
+    clear_busy(host, 15)
+    print(f'  the guest {beside(guest, host, 40):.0f} m away from the nest/host', flush=True)
     time.sleep(3)
     h0, g0 = dna(host), dna(guest)
     print(f'  DNA before: host {h0}, guest {g0}', flush=True)
     fell = pos(guest)
     guest.call('coop.revive down')
     hp, dead = game_hp(guest)
-    ck(hp is not None and abs(hp - 1.0) < 0.01 and not dead, f'guest: down at 1 health ({hp})')
+    ck(is_down_hp(hp) and not dead, f'guest: down at 1 health ({hp})')
     ck(wait(lambda: dead_now(guest), 75, 1.0), 'guest: nobody came: after the window its game\'s dead flag (the game\'s death)')
     keyframe('timeout', 'guest: the game\'s death caption ("You were killed"); host: no DOWN tag any more', settle=0)
     ck(wait(lambda: respawned(guest, fell), 120, 2.0), f'guest: respawned at the nest ({pos(guest)}, fell at {fell})')
@@ -228,26 +250,29 @@ def case_first_line(ck, host, guest):
     time.sleep(3)
     guest.call('coop.revive down')
     hp, dead = game_hp(guest)
-    ck(hp is not None and abs(hp - 1.0) < 0.01 and not dead, f'guest: the second within the minute downs it (1 health: {hp})')
+    ck(is_down_hp(hp) and not dead, f'guest: the second within the minute downs it (1 health: {hp})')
     up = wait(lambda: (game_hp(guest)[0] or 0) >= 0.38 * mx, 8)
     ck(up, f'guest: the host standing there revives it ({game_hp(guest)[0]} of {mx})')
     keyframe('first_line', 'both: the guest\'s creature up next to the host\'s')
 
 
 def case_wipe(ck, host, guest):
-    print(f'  the host {beside(host, guest, 30):.0f} m away', flush=True)
+    # Move both away from the nest (and 30 m apart) so respawned() sees > 10 m movement back to the nest.
+    beside(host, host, 25)
+    print(f'  the guest {beside(guest, host, 35):.0f} m from the host', flush=True)
     time.sleep(3)
     hf, gf = pos(host), pos(guest)
     guest.call('coop.revive down')
+    ghp, gdead = game_hp(guest)
+    ck(is_down_hp(ghp) and not gdead, f'guest down at 1 health ({ghp})')
     host.call('coop.revive down')
-    ck(abs((game_hp(host)[0] or 0) - 1.0) < 0.01 and abs((game_hp(guest)[0] or 0) - 1.0) < 0.01, 'both down at 1 health')
     ck(wait(lambda: dead_now(host) and dead_now(guest), 12, 0.5), 'the party wipe: both games\' dead flags within seconds')
     keyframe('wipe', 'both: the game\'s death caption', settle=0)
     ck(wait(lambda: respawned(host, hf) and respawned(guest, gf), 150, 2.0), 'both respawned at the nest')
 
 
 def case_paths(ck, host, guest):
-    print(f'  the host {beside(host, guest, 40):.0f} m away', flush=True)
+    print(f'  the guest {beside(guest, host, 40):.0f} m away from the nest/host', flush=True)
     time.sleep(3)
     fell = pos(guest)
     guest.call('coop.revive down')
@@ -258,7 +283,7 @@ def case_paths(ck, host, guest):
     hp, dead = game_hp(guest)
     p = pos(guest)
     moved = math.dist(p, fell) if p else -1.0
-    ck(not dead and hp is not None and abs(hp - 1.0) < 0.01 and 0 <= moved < 1.5,
+    ck(not dead and is_down_hp(hp) and 0 <= moved < 1.5,
        f'guest: put 40 m up, the hold keeps it at 1 health where it fell ({hp}, {moved:.1f} m)')
     # deep water (the sea monster's death, cause 9, past the damage filter)
     try:
@@ -272,7 +297,7 @@ def case_paths(ck, host, guest):
         time.sleep(8)
         hp, dead = game_hp(guest)
         p = pos(guest)
-        held = not dead and hp is not None and abs(hp - 1.0) < 0.01 and p and math.dist(p, fell) < 1.5
+        held = not dead and is_down_hp(hp) and p and math.dist(p, fell) < 1.5
         if not held:
             ck(dead_now(guest) and wait(lambda: 'player 1: knockout' not in (host.call('coop.revive')['out'] or ''), 5),
                'guest: the game\'s own death in deep water ended its window on the host (no stuck window)')

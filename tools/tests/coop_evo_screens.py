@@ -712,6 +712,7 @@ def part_cell_dna(host, guest, ck, ready, scr):
         ck(paid > 0 and hs == h0[1], f"own DNA: the host's spent count does not take the guest's price ({h0[1]} -> {hs})")
     keyframe('guest_back_dna', "Cell: the guest back in the pool: its DNA counter shows the part's price taken off" +
              ("" if shared else "; the host's counter does not (own DNA)"), calm=3)
+    g_sp1 = cell_dna(guest)[1]  # guest's own spent count right after its editor (unaffected if food grew during editor)
     # the host's own editor afterwards (the players' video: the guest's DNA changed only when the host left its editor)
     sp1 = cell_dna(host)[1]  # the game's spent count with the guest's price in it
     host_vote = lambda: 'vote active' in host.call('coop.vote')['out'] or 'Editor' in mode(host)
@@ -734,8 +735,8 @@ def part_cell_dna(host, guest, ck, ready, scr):
                    f"(DNA {h2[0]} / {g2[0]}, spent {h2[1]} / {g2[1]}, before the host's editor {sp1}, the price {paid})")
             else:
                 gs = cell_dna(guest)[1]
-                ck(g2[1] is not None and gs == g0[1] + paid and h2[1] is not None and h2[1] >= (sp1 or 0),
-                   f"own DNA: after the host's editor the guest's spent count is still its own ({g0[1]} + {paid} = {gs}; "
+                ck(g2[1] is not None and g_sp1 is not None and g_sp1 > g0[1] and gs == g_sp1 and h2[1] is not None and h2[1] >= (sp1 or 0),
+                   f"own DNA: after the host's editor the guest's spent count is still its own ({g_sp1} -> {gs}; "
                    f"the host's {sp1} -> {h2[1]})")
     keyframe('host_back_dna', 'Cell: both back in the pool' + (', the same DNA on both' if shared else
              ': each DNA counter its own (the guest\'s without the host\'s price, the host\'s without the guest\'s)'))

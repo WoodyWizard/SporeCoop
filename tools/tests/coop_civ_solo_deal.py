@@ -9,7 +9,10 @@ the store, a capture, a gift or a purchase: those claim at the event), but a dea
 claim, so the unclaimed cities are dealt at the join.
 
 1. Two games on civ_npc. The guest leaves; the host, alone, buys the two NPC cities nearest its capital
-   (`coop.civ buycity`, a purchase: claimed by the host at the event).
+   (`coop.civ buycity`, a purchase: claimed by the host at the event). After each purchase the host's player OKs its
+   caption (Enter, else the game's EndCinematic): alone, nothing closes it by itself (civ.caption closes it only with
+   guests in the session), and the game holds the next purchase's owner change until it ends (lab 20261123-104630:
+   city B stayed the NPC's for 20 s behind city A's caption, `busy=cinematic,input_lock,paused`).
 2. Test setup: city A as a Civ save played without co-op leaves it: no claim, no capture mark
    (`coop.civ claims forget <A>`); city B keeps its purchase claim. The host plays alone 7 s (3 claim refreshes).
 3. The guest joins again.
@@ -19,6 +22,7 @@ SPORE_FIX_OFF=civ.solo_claims must FAIL (city A was claimed by the host's solo d
 
   SPORE_LANE=3 python3 tools/tests/coop_civ_solo_deal.py
 """
+import re
 import time
 
 import lane
@@ -44,6 +48,22 @@ def index_at(con, pos):
     return min(near)[1] if near else None
 
 
+def ok_caption(con, secs=20):
+    """the host alone OKs the caption of its purchase as a player (Enter, after 6 s the game's EndCinematic, the call
+    the caption's OK makes); True when no cinematic plays any more"""
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        if 'movie=1' not in (con.call('coop.status')['out'] or ''):
+            return True
+        con.call('key enter')
+        if time.time() - t0 > 6:
+            m = re.search(r'eax=(0x[0-9A-Fa-f]+)', con.call('call Simulator::cCinematicManager::Get cdecl')['out'] or '')
+            if m:
+                con.call(f'call SporeCoop::cCinematicManager_EndCinematic thiscall {m.group(1)}')
+        time.sleep(1.5)
+    return 'movie=1' not in (con.call('coop.status')['out'] or '')
+
+
 def line(con, head):
     return next((ln for ln in con.call('coop.civ tables')['out'].splitlines() if ln.startswith(head)), '-')
 
@@ -66,6 +86,7 @@ def main():
         print(f'  host alone buys city {name} ({ci}):', host.call(f'coop.civ buycity {ci} 500')['out'].strip(), flush=True)
         got = wait(lambda: (c := by_pos(civ(host)[0], pos)) is not None and c['player'] and c['owner'] == 0, 20)
         ck(got, f'city {name} is the player civilization\'s and the host\'s')
+        print(f'  host alone: the caption of city {name} {"ended" if ok_caption(host) else "still plays"}', flush=True)
     ia = index_at(host, pa)
     print('  host:', host.call(f'coop.civ claims forget {ia}')['out'].strip(), flush=True)
     time.sleep(7)

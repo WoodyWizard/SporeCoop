@@ -183,7 +183,9 @@ def cell_part(host, guest, ck):
 
 def afk_part(host, guest, ck):
     turn_on(host, guest, ck)
-    ck(set_food(host, 1000) and set_food(guest, 200), 'the host full, the guest at 200')
+    # Keep guest on the same Cell level (level 10, 900/1000) as host, matching cell.level_together in normal play,
+    # while still not full so the host's first stage-end click is held and the second starts the AFK vote.
+    ck(set_food(host, 1000) and set_food(guest, 900), 'the host full, the guest at 900 (90 %)')
     time.sleep(3)
     p0 = int(progress(host)[0].get('holds', 0))
     click_check(host, lambda: int(progress(host)[0].get('holds', 0)) > p0 or vote_active(host), 60)
@@ -266,7 +268,12 @@ def creature_part(host, guest, ck):
             caption_ok(guest)
         time.sleep(3)
     ck(int(progress(guest)[0].get('level', -1)) >= 4, "the guest's brain is fully grown too")
-    time.sleep(3)
+    # Dismiss any remaining brain-upgrade caption on the guest so its ready click is unobstructed.
+    for _ in range(3):
+        if 'movie=1' in guest.call('coop.status')['out']:
+            caption_ok(guest)
+        time.sleep(1)
+    wait(lambda: 'all_full=1' in (host.call('coop.progress')['out'] or ''), 15)
     t0 = time.time()
     while time.time() - t0 < 90 and not vote_active(host) and in_creature(host):
         if 'movie=1' in host.call('coop.status')['out']:

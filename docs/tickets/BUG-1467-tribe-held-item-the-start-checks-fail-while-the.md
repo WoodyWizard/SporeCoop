@@ -1,14 +1,14 @@
 ---
 id: BUG-1467
 title: tribe_held_item: the start checks fail while the host's chief holds its staff gesture (hold=1) for the whole sampling window
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-23
 source: lab
 role: 
 versions: 0.7.16.1
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w84-tests
 commits: 77531ae2
 tests: tribe_held_item (coop_tribe_looks.py --part item)
@@ -47,7 +47,9 @@ Open, pending night run: `SPORE_DETECTOR=20 python3 tools/lab.py run tribe_held_
 FAIL of a host-held staff); the twins still FAIL: `SPORE_LAB_FIXOFF="tribe_held_item=tribe.held_item" SPORE_DETECTOR=20 python3 tools/lab.py run tribe_held_item
 --lane M --retry 0 --no-build` and `SPORE_LAB_FIXOFF="tribe_held_item=tribe.item_scale" ...`. FAIL before: lab
 20261123-095115 tribe_held_item#1 (fix/w67-chief).
+0.7.17 release lab: PASS: tribe_held_item (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened (fix/w67-chief, seen while verifying BUG-1450; not fixed there).
 - 2026-11-23: fix/w84-tests (WP-T1 of 0.7.17): host-held samples skipped, nothing judged is INCONCLUSIVE (77531ae2). The ticket file came from fix/w67-chief (e47f50a5, rel/0.7.16.1) and was added to rel/0.7.17 by this branch as is.
+- 2026-11-24: released in 0.7.17.

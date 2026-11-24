@@ -1,14 +1,14 @@
 ---
 id: BUG-1500
 title: Store: `coop.store adopt` cannot find players that have only world records (Tribe and Civ owners) (NET-4)
-status: open
+status: fixed
 kind: bug
 stage: Tribe, Civ
 reported: 2026-11-23
 source: audit
 role: host
 versions: 0.7.16.1 and earlier
-fixed_in: 
+fixed_in: 0.7.17
 branch: fix/w80-net
 commits: 95e8a495
 tests: tools/tests/coop_tribe_owners_session.py --adopt (tribe_owners_adopt, twin tribe_owners_adopt_off), tests/store_tests.cpp (test_owner_markers)
@@ -40,8 +40,10 @@ Open, waiting for the lab run (pending night run: tribe_owners_adopt, tribe_owne
   adopt Bob` finds the stored Bob, the guest owns its members again on both games).
 * Wanted FAIL: `SPORE_DETECTOR=20 python3 tools/lab.py run tribe_owners_adopt_off --lane N --retry 0 --no-build` ("0 stored players named 'Bob'").
 * Unit: tests/store_tests.cpp test_owner_markers.
+0.7.17 release lab: PASS: tribe_owners_adopt (lab 20261124-020506); FAIL (fix off): tribe_owners_adopt_off (lab 20261124-013101).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-N1), branch fix/w80-net.
 - 2026-11-23: fix and tests on fix/w80-net (95e8a495); waiting for the night lab run.
+- 2026-11-24: released in 0.7.17.

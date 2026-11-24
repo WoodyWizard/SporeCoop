@@ -1,14 +1,14 @@
 ---
 id: BUG-1496
 title: Tribe: a host theme the relay started keeps playing on the guest after the session ends (TR-11)
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-23
 source: audit
 role: guest
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w79-tribe
 commits: 70979dc4
 tests: tribe_theme_end, tribe_theme_end_off
@@ -41,8 +41,10 @@ list` has a theme track (caller 0xBC2414) with no stop; the guest leaves; within
 stop command. Twin `tribe_theme_end_off`: no stop, must FAIL. If the twin passes (a theme ends by itself) the
 session-end half is not reachable: then close it with `no-fail-run:` and that run dir; the editor half stays covered by
 the unit test.
+0.7.17 release lab: PASS: tribe_theme_end (lab 20261124-020506).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-B1), branch fix/w79-tribe.
 - 2026-11-23: fix on fix/w79-tribe (switch tribe.theme_end, tests tribe_theme_end, tribe_theme_end_off); lab run pending (no lab by day).
+- 2026-11-24: released in 0.7.17.

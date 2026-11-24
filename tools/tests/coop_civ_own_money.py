@@ -120,7 +120,8 @@ def join_split(ck, host, guest, on):
     if not ck(wait_guest_in(host, guest), 'the guest joined with the setting ' + ('on' if on else 'off')):
         return None
     ck(wait(lambda: has_wallet(guest), 60, 2), "the guest's game has its own money (its wallet came)")
-    time.sleep(4)
+    wait(lambda: money(guest) is not None, 20, 1)
+    time.sleep(2)
     h, g = money(host), money(guest)
     print(f'  the host had {total}; now host {h}, guest {g}', flush=True)
     # an equal part; the cities' income of the seconds between may add a little (never more than the whole)
@@ -136,6 +137,15 @@ def case_main(ck, host, guest, setting_on):
     if total is None:
         return
     # 2. the cities' own income, 20 s without a command; then an income of the test command
+    hc0, _ = civ(host)
+    for k, v in hc0.items():
+        if v['player']:
+            for kind in ('house', 'fun', 'factory', 'house', 'fun', 'factory'):
+                host.call(f'coop.civ build {k} {kind} nopay')
+    # Give host and guest distinct starting balances so separate wallets stay visibly distinct while both earn income.
+    write_money(host, 1500)
+    time.sleep(2)
+    wait(lambda: money(guest) is not None and money(host) is not None, 15, 0.5)
     g0, h0 = money(guest), money(host)
     samples = []
     for _ in range(10):

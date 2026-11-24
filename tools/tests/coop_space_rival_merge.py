@@ -101,19 +101,24 @@ def main():
     time.sleep(4)
     guest.call('coop.leave')
     time.sleep(3)
-    carol = lane.JOIN.replace(' Bob', ' Carol')
-    print('  a newcomer joins:', guest.call(carol)['out'].strip()[:120], flush=True)
-    ck(wait_guest_in(host, guest, 240), 'the newcomer is in the host\'s world')
-    wait(lambda: in_space(guest) and money(guest) is not None, 120, 2)
-    ok = wait(lambda: money(guest) == 0, 30, 1)
-    mh2, mn = money(host), money(guest)
-    print(f'  newcomer\'s money {mn}, host {mh2} | guest: {sp(guest, "rivalry").splitlines()[-1]}', flush=True)
-    ck(ok, f'the newcomer\'s own empire starts with 0 ({mn}), not with the host\'s save money')
-    out = sp(host, 'rivalry mode allies')
-    ok = wait(lambda: money(host) == money(guest) == mh2 + (mn or 0), 30, 1)
-    ck(out == 'ok' and ok, f'merged: host {mh2} + newcomer {mn}: host {money(host)}, guest {money(guest)}')
-    if rivals(host):
-        sp(host, 'rivalry mode allies')
+    # BUG-1498: give Carol a distinct kept rejoin key on this same guest instance so it does not reuse Bob's token.
+    guest.call('coop.space keptkey other on')
+    try:
+        carol = lane.JOIN.replace(' Bob', ' Carol')
+        print('  a newcomer joins:', guest.call(carol)['out'].strip()[:120], flush=True)
+        ck(wait_guest_in(host, guest, 240), 'the newcomer is in the host\'s world')
+        wait(lambda: in_space(guest) and money(guest) is not None, 120, 2)
+        ok = wait(lambda: money(guest) == 0, 30, 1)
+        mh2, mn = money(host), money(guest)
+        print(f'  newcomer\'s money {mn}, host {mh2} | guest: {sp(guest, "rivalry").splitlines()[-1]}', flush=True)
+        ck(ok, f'the newcomer\'s own empire starts with 0 ({mn}), not with the host\'s save money')
+        out = sp(host, 'rivalry mode allies')
+        ok = wait(lambda: money(host) == money(guest) == mh2 + (mn or 0), 30, 1)
+        ck(out == 'ok' and ok, f'merged: host {mh2} + newcomer {mn}: host {money(host)}, guest {money(guest)}')
+    finally:
+        guest.call('coop.space keptkey other off')
+        if rivals(host):
+            sp(host, 'rivalry mode allies')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

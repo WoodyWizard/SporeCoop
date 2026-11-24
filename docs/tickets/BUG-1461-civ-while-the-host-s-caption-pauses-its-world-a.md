@@ -1,16 +1,16 @@
 ---
 id: BUG-1461
 title: Civ: while the host's caption pauses its world, a guest's NPC nation AI spends the money the civ_money row copied; the row puts it back every 0.5 s (wsync_civ read 0 at 3 s)
-status: open
+status: fixed
 kind: desync
 stage: Civ
 reported: 2026-11-23
 source: lab
 role: 
 versions: 0.7.15, 0.7.16
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w68-wallet
-commits: 162b29f0 ebe0e45a 86ef0e48
+commits: 162b29f0 ebe0e45a 86ef0e48, 9d338ab2
 tests: wsync_civ (tools/tests/coop_wsync_civ.py), tools/tests/coop_civ_money_pause.py (civ_money_pause, twin civ_money_pause_off)
 signature:
 docs: docs/re/civ.md#civ-own-money
@@ -41,7 +41,9 @@ npc_money_held=).
 Lab: pending night run: civ_money_pause (a capture caption on the host, 1500 to a nation: 8 reads in 4 s, every
 guest read the host's) and twin civ_money_pause_off (SPORE_FIX_OFF=civ.npc_money_hold: reads of 0, must FAIL);
 regressions wsync_civ (repeat 3), civ_caption, civ_ai_spawn.
+0.7.17 release lab: PASS: wsync_civ (lab 20261124-020506), civ_money_pause (lab 20261124-113119); FAIL (fix off): civ_money_pause_off (lab 20261124-113355).
 
 ## History
 - 2026-11-23: opened (fix/w65-tests triage).
 - 2026-11-23: implemented on feat/w68-wallet (commits 162b29f0, ebe0e45a and after); unit tests pass; lab tests and twins written for the night run.
+- 2026-11-24: released in 0.7.17.

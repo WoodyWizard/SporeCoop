@@ -1,14 +1,14 @@
 ---
 id: BUG-1515
 title: Creature: the social meter is queued again a frame after a social win (hidden at the finish) (CR-13)
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-23
 source: audit
 role: 
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w82-creature
 commits: e44b4ff0, 9a4c9bc3
 tests: tools/tests/coop_creature_social_meter.py (creature_social_meter, twin creature_social_meter_hold_off)
@@ -41,8 +41,10 @@ Open, waiting for the lab run (pending night run: creature_social_meter, creatur
   meter_finish: the full arc with the face on the guest's screen).
 * Wanted FAIL: `SPORE_DETECTOR=20 python3 tools/lab.py run creature_social_meter_hold_off --lane N --retry 0 --no-build` (`visible_after_win=0`).
 * Regression: social_meter_retry, social_leave_meter.
+0.7.17 release lab: PASS: creature_social_meter (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-C1), branch fix/w82-creature.
 - 2026-11-23: fix and tests on fix/w82-creature (e44b4ff0); waiting for the night lab run.
+- 2026-11-24: released in 0.7.17.

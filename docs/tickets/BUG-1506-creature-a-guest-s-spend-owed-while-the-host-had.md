@@ -1,14 +1,14 @@
 ---
 id: BUG-1506
 title: Creature: a guest's spend owed while the host had no avatar is applied in another Creature world (CORE-14)
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-23
 source: audit
 role: host
 versions: 0.7.16.1 and earlier
-fixed_in: 
+fixed_in: 0.7.17
 branch: fix/w80-net
 commits: fa48934a
 tests: tools/tests/coop_dna_spend_owed_world.py (dna_spend_owed_world, twin dna_spend_owed_world_off)
@@ -38,8 +38,10 @@ Open, waiting for the lab run (pending night run: dna_spend_owed_world, dna_spen
   host loads Cadian: its DNA there is the save's).
 * Wanted FAIL: `SPORE_DETECTOR=20 python3 tools/lab.py run dna_spend_owed_world_off --lane N --retry 0 --no-build` (30 less in Cadian).
 * Regressions near it: dna_own_shared, dna_own_spend.
+0.7.17 release lab: PASS: dna_spend_owed_world (lab 20261124-020506); FAIL (fix off): dna_spend_owed_world_off (lab 20261124-011255).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-N1), branch fix/w80-net.
 - 2026-11-23: fix and tests on fix/w80-net (fa48934a); waiting for the night lab run.
+- 2026-11-24: released in 0.7.17.

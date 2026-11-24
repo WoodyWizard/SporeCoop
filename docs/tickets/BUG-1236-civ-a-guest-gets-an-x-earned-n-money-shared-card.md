@@ -1,14 +1,14 @@
 ---
 id: BUG-1236
 title: Civ: a guest gets an 'X earned N money (shared)' card every 6 s through the whole stage (the cities' income ticks of 40-380 pass kCauseMin 25)
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-18
 source: key-frame review of final check 20261117-154911
 role: 
 versions: 0.7.10, 0.7.14.1, unreleased
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w68-wallet
 commits: 162b29f0 ebe0e45a 86ef0e48
 tests: tests/civ_tests.cpp (passive_income_cause), tools/tests/coop_civ_income_cause.py (civ_income_cause, twin civ_income_cause_off)
@@ -41,7 +41,9 @@ Unit: tests/civ_tests.cpp `passive_income_cause` (net::host_own_cause with a pas
 a sale, a guest's change, two ticks, own money's split, the cap). Lab: pending night run: civ_income_cause (24 s idle:
 no "earned" card on the guest; the host's -300 still gives "spent 300") and twin civ_income_cause_off (a card every
 6 s: must FAIL); regressions res_cause, res_cause_floor, civ_coop.
+0.7.17 release lab: PASS: civ_income_cause (lab 20261124-020506); FAIL (fix off): civ_income_cause_off (lab 20261124-011255).
 
 ## History
 - 2026-11-18: opened from the key-frame review; old class, left for the next release.
 - 2026-11-23: implemented on feat/w68-wallet (commits 162b29f0, ebe0e45a and after); unit tests pass; lab tests and twins written for the night run.
+- 2026-11-24: released in 0.7.17.

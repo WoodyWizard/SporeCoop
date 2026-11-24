@@ -1,14 +1,14 @@
 ---
 id: BUG-1452
 title: tribe_npc_dash: the running copy -0.051 s along the path (limit -0.043) on a loaded night (6 lanes, 8 games), inputs and frame pacing normal
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w84-tests
 commits: 15dd0538
 tests: tools/tests/coop_tribe_npc_dash.py (tribe_npc_dash)
@@ -44,7 +44,9 @@ no INCONCLUSIVE: the mod can make the copy late. Test only, no mod change.
 Open, pending night run: `SPORE_DETECTOR=20 python3 tools/lab.py run tribe_npc_dash --repeat 4 --lane N --retry 0 --no-build` PASS 4 of 4 (a "second dash" line when the first was
 close); twin `SPORE_LAB_FIXOFF="tribe_npc_dash=npc.place_now" SPORE_DETECTOR=20 python3 tools/lab.py run tribe_npc_dash --repeat 2 --lane M --retry 0
 --no-build` FAILS 2 of 2. FAIL before: 20261122-194210 (rel/0.7.16 5376d388, median -0.051 s on a 6-lane night).
+0.7.17 release lab: PASS: tribe_npc_dash (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened (fix/w65-night triage).
 - 2026-11-23: fix/w84-tests (WP-T1 of 0.7.17): a second dash when the median is near the limit, judged on both (15dd0538).
+- 2026-11-24: released in 0.7.17.

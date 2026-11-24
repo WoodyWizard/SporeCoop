@@ -154,7 +154,7 @@ static void book_save(pstore::Store& s, int64_t now)
     if (!g_own_fix || !is_host())
         return;
     for (auto& [k, r] : g_book.recs) {
-        if (k.rfind("s:", 0) != 0)
+        if (k.rfind("s:", 0) != 0 || r == Record{})
             continue;
         std::string name;
         for (auto& p : S->players())
@@ -546,12 +546,22 @@ static int command(int argc, const char* const* argv, std::string& out)
         out = b;
         return 0;
     }
-    // tests (host): `set <player> <stage 0..4> <hex>` one card of a guest's record (0: decided again)
+    // tests (host): `set <player> <stage 0..4> <hex>` one card of a player's record (0: host's cPlayer card; guest: 0 = decided again)
     if (!strcmp(a, "set") && argc >= 5) {
+        uint8_t who = (uint8_t)atoi(argv[2]);
         int i = atoi(argv[3]);
         uint32_t v = (uint32_t)strtoul(argv[4], nullptr, 16);
-        Record* r = is_host() && i >= 0 && i < kStages && card_ok(i, v) ? record_of((uint8_t)atoi(argv[2]), cplayer())
-                                                                       : nullptr;
+        if (who == 0) {
+            void* p = cplayer();
+            if (!is_host() || !p || !a_SetCard || i < 0 || i >= kStages || !card_ok(i, v)) {
+                out = "not set (host only, in a stage, a card of the stage)\n";
+                return 0;
+            }
+            skg::thiscall<void>(a_SetCard, p, kStageId[i], v);
+            out = "set\n";
+            return 0;
+        }
+        Record* r = is_host() && i >= 0 && i < kStages && card_ok(i, v) ? record_of(who, cplayer()) : nullptr;
         if (!r) {
             out = "not set (host only, a present guest, a card of the stage)\n";
             return 0;

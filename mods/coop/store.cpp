@@ -349,8 +349,10 @@ static void write_now(bool force)
 
 void mark_owners(pstore::Store& s, const char* marker, const std::vector<std::string>& keys, int64_t now)
 {
-    if (!g_owner_names_fix)
+    if (!g_owner_names_fix) {
+        s.mark_owners(marker, {}, now);
         return;
+    }
     std::map<std::string, std::string> owners;
     for (auto& k : keys)
         if (pstore::key_ok(k) && k != "host")

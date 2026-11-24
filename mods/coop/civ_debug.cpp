@@ -586,11 +586,16 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 3 && a[0] == "build") { // build <host city index> <house|factory|fun>
         int ci = atoi(a[1].c_str());
         void* city = ci >= 0 && ci < (int)g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        if (!city && (!is_guest() || local_play())) {
+            auto all = all_cities();
+            if (ci >= 0 && ci < (int)all.size())
+                city = all[ci];
+        }
         if (!city)
             return "no such city";
         uint32_t noun = a[2] == "factory" ? 0x18EA2CC : a[2] == "fun" ? 0x1A56ABA : 0x18EB106;
         net::Vec3 p = city_pos(city);
-        if (is_guest()) {
+        if (is_guest() && !local_play()) {
             float paid = 0;
             auto send = [&] {
                 net::Writer w;

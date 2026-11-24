@@ -1,16 +1,16 @@
 ---
 id: BUG-1420
 title: A guest whose game stands in its own editor is dropped silently, or kept for good through the keepalive: kick it after 30 s, told, so it can join again
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-22
 source: PR #216 review (reverse case)
 role: host
 versions: 0.7.16.1
-fixed_in:
+fixed_in: 0.7.16.1
 branch: fix/w63-editor
-commits: 35163c73, 2a454d1e
+commits: 35163c73, 2a454d1e, 2bb64f64, 1718b4c2
 tests: editor_stand_guest, twins editor_stand_vote_off, editor_stand_told_off; unit test_timeout_told (net_tests)
 signature: host: "player N (...) disconnected (reason 1)" while the guest loads its own editor; the guest plays on a dead link
 docs: docs/04-netcode.md#netcode-editor-long-wait
@@ -62,8 +62,13 @@ Open, waiting for the lab run.
 * Wanted FAIL: `editor_stand_vote_off` (SPORE_FIX_OFF=core.vote_stuck_kick: the vote runs its 60 s, the guest is not
   removed) and `editor_stand_told_off` (SPORE_FIX_OFF=net.timeout_told: the guest stays "connected" after its hang).
 
+- 2026-11-23 (0.7.16.1 final check): editor_stand_guest PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened (the reverse case of PR #216).
 - 2026-11-22: fixed on fix/w63-editor (35163c73), tests 2a454d1e.
 
 - 2026-11-22: renumbered from BUG-9305 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9305.
+- 2026-11-23: first lab run (final check 20261123-104630): editor_stand_guest FAIL "the guest is told why (its game stood while the vote waited)", link (resends/sent on the host), "guest: the console stopped answering". A test bug: kit.test.dialog shows its box from the frame's pump inside Present (watchdog chain), where the keepalive waits for the frame's end, so the guest sent nothing for 50 s; the host's session timeout dropped it ("timed out (no packets) ... last heard 29752 ms") and net.timeout_told told it ("rejected: the host heard nothing from this game for 30 s ...: join again"), 0.4 s after its game went on in part 2 as well. The guest did not crash: faults 0, it rejoined, left its editor and was back in the host's world; its console was held by the 50 s box command. fix/w68-triage 2bb64f64: the stall is `coop.stalltest 50` (outside the frame, the keepalive runs: the vote's kick is what removes it), the stands are declared (twoinst.stand), the link invariant allowed on the host; 1718b4c2 (MOD CODE, test command only): coop.stalltest's cap 20 -> 60 s. Verify: `python3 tools/lab.py run editor_stand_guest editor_stand_vote_off editor_stand_told_off --lanes 3` (the twins must FAIL).
+- 2026-11-23: released in 0.7.16.1.

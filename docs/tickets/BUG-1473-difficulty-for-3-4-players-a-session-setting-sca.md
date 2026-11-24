@@ -1,14 +1,14 @@
 ---
 id: BUG-1473
 title: Difficulty for 3-4 players: a session setting scales the NPCs' challenge (all.party_difficulty; RE of the difficulty tunings first)
-status: open
+status: fixed
 kind: feature
 stage: Creature, Tribe, Civ, Space
 reported: 2026-11-23
 source: plan
 role: host
 versions: 0.7.17
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w72-difficulty
 commits: 01d85cdd, b9fb8384, 386a67ce
 tests: party_difficulty, party_difficulty_auto, party_difficulty_off
@@ -48,8 +48,10 @@ Open, waiting for the lab run. pending night run: party_difficulty, party_diffic
 party_difficulty_off (SPORE_FIX_OFF=core.party_tuning, must FAIL); each takes two lanes (A: host + Bob, B: Carol).
 Unit tests: tests/party_tests.cpp (percent, auto by players, scale by sides, hits to kill, the setting row) and
 validate_tests test_settings pass in make test.
+0.7.17 release lab: PASS: party_difficulty (lab 20261124-020506), party_difficulty_auto (lab 20261124-020506); FAIL (fix off): party_difficulty (lab 20261124-003319).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 5 (WP-D1), branch feat/w72-difficulty.
 - 2026-11-23: RE (01d85cdd), the setting and the scaling (b9fb8384), lab test and twin written on feat/w72-difficulty; waits for the night run.
+- 2026-11-24: released in 0.7.17.

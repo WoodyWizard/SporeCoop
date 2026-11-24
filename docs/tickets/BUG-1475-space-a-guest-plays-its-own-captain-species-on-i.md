@@ -1,14 +1,14 @@
 ---
 id: BUG-1475
 title: Space: a guest plays its own captain species on its own game (#217 a by IltonBJSilva)
-status: open
+status: fixed
 kind: feature
 stage: Space
 reported: 2026-11-23
 source: plan, PR #217
 role: guest
 versions: 0.7.17
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w74-captain
 commits: 596a872b, 6ac83cfb, 0bd01c0d
 tests: space_own_captain, space_own_captain_off
@@ -45,8 +45,10 @@ frame of the portrait, the guest's save names the host's captain only) and space
 (SPORE_FIX_OFF=space.own_captain, must FAIL). Regressions near it: space_captain, space_captain_none, own_cards_space,
 space_coop. ~ Not known: what the captain outfitter (0xFE7A10) does with a creation that never was a captain (a creature
 without a captain property list).
+0.7.17 release lab: PASS: space_own_captain (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 7 (WP-K1), branch feat/w74-captain.
 - 2026-11-23: feat/w74-captain (WP-K1): feature written (own captain, save write back), unit tests, lab test and twin; waits for the night run.
+- 2026-11-24: released in 0.7.17.

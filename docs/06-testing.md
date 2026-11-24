@@ -10364,3 +10364,25 @@ Test-only changes (no mod code) for flakes of the 0.7.16 final checks; each name
   bound to it, `coop.wobj list citizen`) within 15 m, in one sample of 20 s (the position rule alone: a crowd in the
   plaza paired by chance, 3 of 19 unpaired in a twin run). Twin `civ_own_species_pointer_off`
   (`SPORE_FIX_OFF=civ.pointer_view`): FAILs (7-14 of 19 unpaired, 19 of 19 without their copy).
+
+## A game the test stands on purpose (2026-11-23, fix/w68-triage)
+<a id="testing-stand"></a>
+
+A test that stands a game on purpose (`kit.test.hang`, a message loop, a box) declares it right before the command:
+`twoinst.stand('host'|'guest', secs, why)`. The freeze monitor (twoinst.Monitor) then reports no FROZE, no "frames
+resumed" and no "the console stopped answering" for that game during the stand and 15 s after it (STAND_GRACE); a game
+still frozen or silent after that is reported as always. `harness_selftest.py` (make test) checks both ways on a fake
+console and clock. The invariant monitor's `link` (state N s old on the other game, resends/sent on the host) is
+allowed per test in suite.py (`allow('monitor', ..., kind='link', who=...)`), and the hitch gate as before.
+
+* Pitfalls seen in lab 20261123-104630 (editor_stand_*):
+  * `kit.test.dialog` runs its MessageBox through `run_on_main`, and the frame's pump (inside Present) usually takes
+    it: the box is up inside the frame, where the outside-frame tasks wait for the frame's end, the keepalive
+    (BUG-0687) too. The game sends nothing at all for the whole box (the host's `last heard 29752 ms`, its session
+    timeout dropped the guest). A test that needs "no frames, but the keepalive answers" (a modal dialog of the game
+    outside the frame) uses `coop.stalltest <s>` (max 60 s since 0.7.16.1, an outside-frame command).
+  * Both hold the console thread for the whole stand (`kit.test.dialog` sleeps on it, an outside-frame command is
+    waited for): every console call to that game, the monitors' and the detector's too, times out meanwhile.
+* A host alone in Civ: its purchase / capture caption waits for the player's OK (civ.caption closes it only with
+  guests in the session), and the game holds the next purchase's owner change behind it (civ_solo_deal, BUG-1418):
+  a test that buys twice alone OKs the caption in between (Enter, else `SporeCoop::cCinematicManager_EndCinematic`).

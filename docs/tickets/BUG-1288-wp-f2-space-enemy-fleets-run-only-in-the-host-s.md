@@ -1,14 +1,14 @@
 ---
 id: BUG-1288
 title: WP-F2: Space enemy fleets run only in the host's system, two guests elsewhere see their own (fork BUG-9197)
-status: open
+status: fixed
 kind: desync
 stage: Space
 reported: 2026-11-19
 source: found by the Lineages fork (PR #196), its BUG-9197
 role: guest
 versions: 0.7.15.2
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w73-fleet
 commits: 17f9fcaa b03eefdc
 tests: tools/tests/coop_space_fleet_leader.py, tools/tests/coop_space_fleet_host_leaves.py, tests/space_tests.cpp (test_fleet_leads), tests/wire_tests.cpp (test_space_ufo), tests/fuzz_decoders.cpp
@@ -95,6 +95,7 @@ expected), space_fleet_leader_off (`SPORE_FIX_OFF=fleet.leader`, must FAIL at [l
 space_fleet_host_leaves (PASS; a regression guard for the agy branch's promotion, 0.7.16.1 passes it too). Unit tests
 pass (make test, 2026-11-23): space_tests test_fleet_leads, wire_tests test_space_ufo, fuzz_decoders (ufo Lead*).
 Old-peer run against 0.7.16.1 (space 1.2): part of the final check.
+0.7.17 release lab: .
 
 ## History
 - 2026-11-19: opened.
@@ -102,3 +103,4 @@ Old-peer run against 0.7.16.1 (space 1.2): part of the final check.
 - 2026-11-20: implemented on fix/agy-open-bugs (3b126046, outside agent; review: merge after fixes).
 - 2026-11-23: redone on fix/w73-fleet (WP-S1 of 0.7.17) per the review: the host names sticky leaders, no promotion,
   editor and session end as 0.7.16.1, 2-player sessions unchanged, MSG 78; lab tests written, waiting for the night run.
+- 2026-11-24: released in 0.7.17.

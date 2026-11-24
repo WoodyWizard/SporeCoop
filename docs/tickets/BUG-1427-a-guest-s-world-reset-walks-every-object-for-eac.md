@@ -1,16 +1,16 @@
 ---
 id: BUG-1427
 title: A guest's world reset walks every object for each creature it destroys: seconds of stall leaving a world (BUG-9272 analogue)
-status: open
+status: fixed
 kind: freeze
 stage: All
 reported: 2026-11-22
 source: pr
 role: guest
 versions: 0.7.16.1
-fixed_in:
+fixed_in: 0.7.16.1
 branch: fix/w63-net
-commits:
+commits: e06a10c7
 tests: reset_stall, reset_stall_off
 signature:
 docs: docs/re/tribe.md#tribe-reset-walks
@@ -48,7 +48,11 @@ reset_stall must PASS (at least 30 creatures destroyed in the reset, the walks u
 reset_stall_off must FAIL (the walks take seconds). If reset_stall finds fewer than 30 creatures in the reset, the
 teardown runs outside GalaxyMenu_SimReset in our flow: stop and record it (the fix would not apply).
 
+- 2026-11-23 (0.7.16.1 final check): reset_stall PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened.
 
 - 2026-11-22: renumbered from BUG-9312 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9312.
+- 2026-11-23: released in 0.7.16.1.

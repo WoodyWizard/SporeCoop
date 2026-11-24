@@ -286,6 +286,114 @@ static void smooth_bound()
     }
 }
 
+// BUG-1451 (tribe.smooth_catch, second step): what walk_place lets a frame draw at most, m/s (the placing's bound with its
+// walk speed + the game's walk of the next frame at that walk speed), and what it draws when the game walks `game` m/s
+static float frame_speed(float lead_speed, float sp, float walk_speed, float catch_up, float game = -1.f)
+{
+    const float walk = walk_speed > 0 ? std::min(walk_speed, sp) : sp;
+    float place = sp + catch_up;
+    if (lead_speed > 0)
+        place = std::min(place, std::max(0.f, 2.f * lead_speed + catch_up - walk));
+    return place + (game >= 0 ? std::min(game, walk) : walk);
+}
+
+static float eff_catch(float sp, float lag, float base_catch, bool catch_prop)
+{
+    return catch_prop ? std::max(base_catch, std::min(lag / 0.25f, sp + base_catch)) : base_catch;
+}
+
+// The lab's cases (`body_trail_tribe_player`, `coop.bodyrec diag` tracks):
+// 1. 20261123-124134 t9 & 125713 t1: late walk start at 2x catch-up, game walks 0-3.3 m/s while aim runs 15-17 m/s.
+// 2. 20261123-125053 t1: lag 0.95 m (< 1 m) behind an aim racing at 10.9 m/s (body 4.3 m/s), stalled at 0.7 m/s.
+// 3. 20261123-125859 t7: raw lead (lead_speed 0) with sp decayed to 1.5 m/s during a burst while 3.3 m behind.
+// FAILS with `--nofix`.
+static void late_catch()
+{
+    printf("member mirror catch-up after a late walk start: bounded walk + placing budget (BUG-1451)\n");
+    const bool fix = !g_nofix;
+    const float budget = 2.f * 9.f + 3.f; // BUG-0619 / BUG-1235: 21 m/s = 0.672 m at 32 ms (< 27 m/s jump limit)
+    // (1a) 124134 t9 26.04 s: smoothed target, lead_sp 18 (2x9), sp 14.96, lag 2.16 m, game walked 3.3 m/s
+    {
+        float ls = mirror_lead_speed(true, true, 18.f, 14.96f, true, 2.f, fix, 2.16f);
+        CHECK(ls > 8.9f && ls < 9.1f);
+        CatchBound cb = mirror_catch_bound(ls, fix, 18.f, 14.96f, 2.f, 3.f, false, true, 2.16f);
+        float cu = eff_catch(14.96f, 2.16f, cb.catch_up, false);
+        CHECK(frame_speed(cb.lead_speed, 14.96f, cb.walk_speed, cu, 0.f) >= 15.9f);   // even at game walk 0 (held=1)
+        CHECK(frame_speed(cb.lead_speed, 14.96f, cb.walk_speed, cu, 3.3f) >= 19.f);   // 9.3 m/s without the fix
+        CHECK(frame_speed(cb.lead_speed, 14.96f, cb.walk_speed, cu) <= budget + 1e-3f);
+    }
+    // (1b) 124134 t9 25.976 s: raw lead catching up at 2x, sp 9 (body's own), lag 1.90 m, catch_prop on, game 3.1 m/s
+    {
+        float ls = mirror_lead_speed(true, true, -1.f, 9.f, true, 2.f, fix, 1.9f);
+        CHECK(ls == 4.5f);
+        CatchBound cb = mirror_catch_bound(ls, fix, -1.f, 9.f, 2.f, 3.f, true, true, 1.9f);
+        float cu = eff_catch(9.f, 1.9f, cb.catch_up, true);
+        CHECK(frame_speed(cb.lead_speed, 9.f, cb.walk_speed, cu, 0.f) >= 15.9f);
+        CHECK(frame_speed(cb.lead_speed, 9.f, cb.walk_speed, cu, 3.1f) >= 19.f); // 10.7 m/s without the fix
+        CHECK(frame_speed(cb.lead_speed, 9.f, cb.walk_speed, cu) <= budget + 1e-3f);
+    }
+    // (2) 125053 t1 17.463 s: lag 0.95 m (< 1 m), aimSp 10.9, lead_sp 8.3, rate 1.92 (body 4.32), game 0 m/s
+    {
+        float ls = mirror_lead_speed(true, true, 8.3f, 10.9f, true, 1.92f, fix, 0.95f);
+        CatchBound cb = mirror_catch_bound(ls, fix, 8.3f, 10.9f, 1.92f, 3.f, false, true, 0.95f);
+        float cu = eff_catch(10.9f, 0.95f, cb.catch_up, false);
+        CHECK(frame_speed(cb.lead_speed, 10.9f, cb.walk_speed, cu, 0.f) >= 7.0f); // was 0.7 m/s without the fix
+        CHECK(frame_speed(cb.lead_speed, 10.9f, cb.walk_speed, cu) <= 2.f * ls + 3.f + 1e-3f);
+    }
+    // (3) 125859 t7 34.668 s: raw lead, not late_catching (ls=0), sp decayed to 1.5 m/s while lag 3.3 m
+    {
+        float ls = mirror_lead_speed(true, true, -1.f, 1.5f, false, 1.f, fix, 3.3f);
+        CHECK(ls == 0.f);
+        CatchBound cb = mirror_catch_bound(ls, fix, -1.f, 1.5f, 1.f, 3.f, true, true, 3.3f);
+        float cu = eff_catch(1.5f, 3.3f, cb.catch_up, true);
+        CHECK(frame_speed(cb.lead_speed, 1.5f, cb.walk_speed, cu, 0.f) >= 17.9f); // was 6.0 m/s without the fix
+        CHECK(frame_speed(cb.lead_speed, 1.5f, cb.walk_speed, cu) <= budget + 1e-3f);
+    }
+    // (4) first step's case (20261122-194210 t1): host slowed to 2 m/s, copy 3.3 m behind, sp 6
+    {
+        float ls = mirror_lead_speed(true, true, 2.f, 6.f, false, 1.f, fix, 3.3f);
+        CatchBound cb = mirror_catch_bound(ls, fix, 2.f, 6.f, 1.f, 3.f, false, true, 3.3f);
+        float cu = eff_catch(6.f, 3.3f, cb.catch_up, false);
+        CHECK(frame_speed(cb.lead_speed, 6.f, cb.walk_speed, cu, 0.f) >= 15.9f);
+        CHECK(frame_speed(cb.lead_speed, 6.f, cb.walk_speed, cu) <= budget + 1e-3f);
+    }
+    // Grid invariant: never exceeds max(before, 2 * max(body, 9) + 3), switch off is identity, and normal
+    // steady/slow frames (lag < 1 m, sp <= body) are untouched.
+    for (float lag : {0.f, 0.5f, 0.99f, 1.f, 1.5f, 2.f, 4.f, 8.f})
+        for (float sp : {0.5f, 2.f, 6.f, 9.f, 12.f, 13.6f, 16.f, 18.f})
+            for (float lsp : {-1.f, 0.f, 2.f, 9.f, 13.6f, 18.f})
+                for (float rate : {1.f, 1.5f, 2.f})
+                    for (bool cp : {false, true}) {
+                        if (lsp >= 0.f && cp)
+                            continue; // mirror_drive sets catch_prop only for raw lead (lead_sp < 0)
+                        float ls = mirror_lead_speed(true, true, lsp, sp, rate > 1.f, rate, true, lag);
+                        CatchBound cb = mirror_catch_bound(ls, true, lsp, sp, rate, 3.f, cp, true, lag);
+                        float old_cu = eff_catch(sp, lag, 3.f, cp);
+                        float new_cu = eff_catch(sp, lag, cb.catch_up, cp);
+                        float before = frame_speed(ls, sp, -1.f, old_cu);
+                        float after = frame_speed(cb.lead_speed, sp, cb.walk_speed, new_cu);
+                        float body = lsp >= 0.f ? lsp / rate : sp;
+                        float cap = 2.f * std::max(body, kLagCatchMax) + kLagCatchBase;
+                        CHECK(after <= std::max(before, cap) + 1e-3f);
+                        if (body <= 9.f)
+                            CHECK(after <= std::max(before, budget) + 1e-3f);
+                        if (body <= 9.f && (ls > 0.f || lag >= kLagWalkFull))
+                            CHECK(after <= budget + 1e-3f);
+                        if (lag < kLagCatchMin && sp <= std::max(body, 0.5f))
+                            CHECK(cb.lead_speed == ls && cb.walk_speed < 0 && cb.catch_up == 3.f);
+                        CatchBound off = mirror_catch_bound(ls, false, lsp, sp, rate, 3.f, cp, true, lag);
+                        CHECK(off.lead_speed == ls && off.walk_speed < 0 && off.catch_up == 3.f);
+                    }
+    // BUG-1235's case (13.4-13.7 m/s, 1-2 m behind): still strictly under 0.864 m per 32 ms frame
+    for (float raw : {13.4f, 13.7f})
+        for (float lag : {1.f, 2.f}) {
+            float ls = mirror_lead_speed(true, true, raw, raw, true, raw / 9.f, true, lag);
+            CatchBound cb = mirror_catch_bound(ls, true, raw, raw, raw / 9.f, 3.f, false, true, lag);
+            float cu = eff_catch(raw, lag, cb.catch_up, false);
+            CHECK(frame_speed(cb.lead_speed, raw, cb.walk_speed, cu) * 0.032f < 0.864f);
+        }
+}
+
 // BUG-1460: the make-way hook leaves out only a citizen without a tribe; a dead mirror stands still only when it was a
 // host body taken out of its tribe. With `--nofix` (the switches off) neither acts: the first checks fail
 static void body_rules()
@@ -410,6 +518,7 @@ int main(int argc, char** argv)
     end_editors();
     smooth_bound();
     lead_cap();
+    late_catch();
     body_rules();
     audit_tr();
     if (g_fail) {

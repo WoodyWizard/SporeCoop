@@ -30,7 +30,8 @@ from twoinst import Checks, keyframe, start, wait_guest_in
 
 wait = waiter(step=1.0)
 KEYS = ('all.late_join', 'all.friendly_fire')
-CANCEL = (1383, 1062)  # the editor's red cross (coop_editor_now.py)
+DONE = (1416, 1062)    # the creature editor's green check (coop_editor_now.py)
+CANCEL = (1383, 1062)  # the red cross
 
 
 def in_editor(con):
@@ -57,7 +58,8 @@ def main():
         time.sleep(5)  # (the editor's interface comes up)
         print('  host settings:', (host.call('coop.settings')['out'] or '').splitlines()[:1], flush=True)
 
-        # 3. a new player during the host's editor
+        # 3. a new player during the host's editor (fresh token so old lane kept-tokens never match Bob)
+        guest.call('coop.space keptkey other on')
         guest.call(lane.JOIN.rsplit(' ', 1)[0] + ' Carol')
         told = wait(lambda: 'does not take new players' in guest.call('coop.status')['out'], 15)
         time.sleep(4)
@@ -78,12 +80,19 @@ def main():
 
         # 5. back
         guest.call('coop.leave')
-        host.call('click %d %d' % CANCEL)
-        ck(wait(lambda: mode(host) == m0 and host.call('coop.avatar')['ok'], 90),
+        guest.call('coop.space keptkey other off')
+        host.call('click %d %d' % DONE)
+        if not wait(lambda: mode(host) == m0 and host.call('coop.avatar')['ok'], 20):
+            host.call('click %d %d' % CANCEL)
+        ck(wait(lambda: mode(host) == m0 and host.call('coop.avatar')['ok'], 70),
            f"the host leaves its editor and plays again ({mode(host).strip()})")
         guest.call(lane.JOIN)
         ck(wait_guest_in(host, guest, 200), 'the guest comes back as Bob (a player who was in the session)')
     finally:
+        try:
+            guest.call('coop.space keptkey other off')
+        except OSError:
+            pass
         sl.reset([host], KEYS)
         twoinst.forget_settings()
     ck.faults(host=host, guest=guest)

@@ -1,14 +1,14 @@
 ---
 id: BUG-1471
 title: Creature: a guest's kills and social wins that land on the host's game raise the host's trait progress (cPlayer::AddTraitProgress), not the guest's
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-23
 source: plan, PR #207 review
 role: guest
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w70-history
 commits: aecef640
 tests: own_cards_kills, own_cards_social (tools/tests/coop_own_cards.py); validate_tests test_actor_scope, test_history
@@ -43,8 +43,10 @@ core.trait_credit off`: no redirect, no social credit (0.7.16.1). Credit: IltonB
 Unit: validate_tests test_actor_scope, test_history (credit rules); `make test` passes. Lab: pending night run:
 own_cards_kills, own_cards_social (PASS wanted) and the twins own_cards_kills_off, own_cards_social_off (FAIL wanted:
 the host's combat rises / the guest's social does not).
+0.7.17 release lab: PASS: own_cards_kills (lab 20261124-020506), own_cards_social (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 3 (WP-H1), branch feat/w70-history.
 - 2026-11-23: fixed on feat/w70-history (aecef640): the scopes in npc.cpp / social.cpp, the hook in history.cpp, the frame reset; lab tests written, waiting for the night run.
+- 2026-11-24: released in 0.7.17.

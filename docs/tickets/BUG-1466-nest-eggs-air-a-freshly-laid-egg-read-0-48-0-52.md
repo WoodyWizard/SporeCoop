@@ -1,14 +1,14 @@
 ---
 id: BUG-1466
 title: nest_eggs_air: a freshly laid egg read 0.48-0.52 m over the surface before the grounding placed it (3 runs)
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w84-tests
 commits: c31b2232
 tests: tools/tests/coop_nest_eggs_air.py (nest_eggs_air)
@@ -38,7 +38,9 @@ The lift part is unchanged. Test only, no mod change.
 ## Verification
 Open, pending night run: `SPORE_DETECTOR=20 python3 tools/lab.py run nest_eggs_air --repeat 4 --lane N --retry 0 --no-build` PASS 4 of 4; the per-egg trace shows when each egg
 landed (by the game or by the grounding). FAIL before: 20261123-023643 (rel/0.7.16 fd28f88f).
+0.7.17 release lab: PASS: nest_eggs_air (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened (fix/w65-tests).
 - 2026-11-23: fix/w84-tests (WP-T1 of 0.7.17): the laid eggs are read every 0.5 s up to 30 s before they are judged (c31b2232).
+- 2026-11-24: released in 0.7.17.

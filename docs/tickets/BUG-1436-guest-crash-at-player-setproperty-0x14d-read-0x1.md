@@ -1,14 +1,14 @@
 ---
 id: BUG-1436
 title: Guest crash at Player_SetProperty+0x14D (read 0x1188) in the galaxy menu sim reset after the mod's quit to load the host's Creature world
-status: open
+status: fixed
 kind: crash
 stage: Cell
 reported: 2026-11-22
 source: discord
 role: guest
 versions: 0.7.15.5
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w75-share
 commits: 7be732b5, c29dc4db
 tests: cell_quit_switch (coop_cell_quit_switch.py); twin cell_quit_switch_off
@@ -37,7 +37,9 @@ Not done: a guard in the game's menu entry itself (skipping OnModeEnter would le
 
 ## Verification
 Open, waiting for the lab run. pending night run: cell_quit_switch, cell_quit_switch_off (one lane, cell fixture, ~4 min each). PASS expected: cell_quit_switch (the host alone in Cell, the mod's quit and the game's switch right after it: the game stays in the galaxy menu, no crash for 20 s). FAIL expected: cell_quit_switch_off (SPORE_FIX_OFF=world.quit_no_switch: Creature from the menu without a game, or the report's crash). A twin that passes means the hypothesis is wrong (then: no-fail-run is not the outcome, the ticket stays open).
+0.7.17 release lab: PASS: cell_quit_switch (lab 20261124-020506).
 
 ## History
 - 2026-11-22: opened.
 - 2026-11-23: dump analysed on fix/w75-share (the game entered Creature from the galaxy menu without a game; the App state `mode` command; not our code on the path); the game's own Creature switch is not taken while the mod leaves Cell (world.quit_no_switch), lab test and twin written, waiting for the night run.
+- 2026-11-24: released in 0.7.17.

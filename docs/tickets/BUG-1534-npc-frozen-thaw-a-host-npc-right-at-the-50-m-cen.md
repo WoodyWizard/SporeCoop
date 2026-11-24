@@ -1,14 +1,14 @@
 ---
 id: BUG-1534
 title: npc_frozen_thaw: a host NPC right at the 50 m census edge is read as missing on the guest (test boundary, not a proxy bug)
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-23
 source: lab 20261123-023643
 role: test
 versions: 0.7.16
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w84-tests
 commits: 318e3f9c
 tests: npc_frozen_thaw
@@ -49,7 +49,9 @@ drive.lead_gap twin) count as before. Used by npc_frozen_death, _caption, _live,
 Open, pending night run: `SPORE_DETECTOR=20 python3 tools/lab.py run npc_frozen_thaw --repeat 6 --lane N --retry 0 --no-build` PASS 6 of 6 (an "edge read" line may show);
 the twin `SPORE_DETECTOR=20 python3 tools/lab.py run npc_frozen_thaw_lead_gap_off --repeat 3 --lane M --retry 0 --no-build` still FAILS (its "15-18 m off"
 reads are not edge reads). FAIL before: 20261123-023643 (npc_frozen_thaw, rel/0.7.16 fd28f88f).
+0.7.17 release lab: PASS: npc_frozen_thaw (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: fix/w84-tests (WP-T1 of 0.7.17): the census notes a proxy missing in the outer 5 m of its 50 m instead of counting it (318e3f9c).
+- 2026-11-24: released in 0.7.17.

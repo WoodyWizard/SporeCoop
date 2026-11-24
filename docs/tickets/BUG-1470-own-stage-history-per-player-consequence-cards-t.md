@@ -1,14 +1,14 @@
 ---
 id: BUG-1470
 title: Own stage history per player: consequence cards, trait progress and Space archetype are each player's own (ideas from PR #207 and #217 by IltonBJSilva)
-status: open
+status: fixed
 kind: feature
 stage: Cell, Creature, Tribe, Civ, Space
 reported: 2026-11-23
 source: plan, PR #207, PR #217
 role: 
 versions: 0.7.17
-fixed_in:
+fixed_in: 0.7.17
 branch: feat/w70-history
 commits: aecef640
 tests: own_cards, own_cards_store, own_cards_space, own_cards_shared (tools/tests/coop_own_cards.py); validate_tests test_history
@@ -53,8 +53,10 @@ Unit: tests/validate_tests.cpp test_history (seed, credit, the decide rules, Tri
 clears, an empty start, the archetype gate, the peer gate, store and wire codecs), test_manifest (MSG 75), fuzz_decoders;
 `make test` passes. Lab: pending night run: own_cards, own_cards_store, own_cards_space, own_cards_shared (PASS wanted)
 and the twins own_cards_off, own_cards_store_off, own_cards_space_off (FAIL wanted). Not run yet (no lab by day).
+0.7.17 release lab: PASS: own_cards (lab 20261124-020506), own_cards_store (lab 20261124-020506), own_cards_space (lab 20261124-020506), own_cards_shared (lab 20261124-020506); FAIL (fix off): own_cards_space (lab 20261123-123518).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 3 (WP-H1), branch feat/w70-history.
 - 2026-11-23: implemented on feat/w70-history (aecef640): history.cpp, history_logic.h, MSG 75; lab tests written, waiting for the night run.
+- 2026-11-24: released in 0.7.17.

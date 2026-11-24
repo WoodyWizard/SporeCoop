@@ -1,14 +1,14 @@
 ---
 id: BUG-1499
 title: Store: after_save opens the world again before the features collect, so they skip their records (NET-3)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-23
 source: audit
 role: host
 versions: 0.7.16.1 and earlier
-fixed_in: 
+fixed_in: 0.7.17
 branch: fix/w80-net
 commits: 95e8a495
 tests: tools/tests/coop_tribe_owners_reload.py --fresh-store (tribe_owners_reload_fresh, twin tribe_owners_reload_fresh_off)
@@ -44,8 +44,10 @@ Open, waiting for the lab run (pending night run: tribe_owners_reload_fresh, tri
 * Wanted FAIL: `SPORE_DETECTOR=20 python3 tools/lab.py run tribe_owners_reload_fresh_off --lane N --retry 0 --no-build` (no tribe.owners in that save: the members are
   dealt anew).
 * Regressions near it: tribe_owners_reload, tribe_owners_session, civ store tests, space_session.
+0.7.17 release lab: PASS: tribe_owners_reload_fresh (lab 20261124-020506); FAIL (fix off): tribe_owners_reload_fresh (lab 20261123-130117).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-N1), branch fix/w80-net.
 - 2026-11-23: fix and tests on fix/w80-net (95e8a495); waiting for the night lab run.
+- 2026-11-24: released in 0.7.17.

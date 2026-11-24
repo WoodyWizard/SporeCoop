@@ -38,6 +38,8 @@ def main():
     ck = Checks()
     time.sleep(3)
     no_movie(guest)
+    # Copy the clean Space save BEFORE colonizing, since leaving to the galaxy menu auto-saves Game1/Madas.spo.
+    ck(own_world.copy_world('Madas.spo', 'Keptown', 'Game9'), 'copied the clean Space save for the guest\'s own world')
     out = sp(guest, 'allies colonize')
     m = re.match(r'colonized ([0-9A-F]+)', out or '')
     ck(m is not None, f'the guest made a colony of its empire in the home system ({(out or "-").splitlines()[0]})')
@@ -62,7 +64,11 @@ def main():
     print('  join:', guest.call(lane.JOIN)['out'].strip()[:120], flush=True)
     ck(wait(lambda: own_world.connected(guest), 60, 1), 'the guest joined from the menu')
     time.sleep(5)
-    ok = own_world.load_own(guest, 'Madas.spo', 'Keptown', 'Space')
+    guest.call('coop.worldfix autoload 0')
+    print(' ', guest.call('coop.load Game9 Keptown')['out'].strip(), flush=True)
+    ok = wait(lambda: 'Space' in guest.call('game.mode')['out'] and own_world.space_other(guest), 150, 3) is not None
+    if ok:
+        guest.call('wait.frames 200 60000')
     ck(ok, 'the guest plays a Space save of its own')
     if not ok:
         guest.call('coop.worldfix autoload 1')

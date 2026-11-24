@@ -1,14 +1,14 @@
 ---
 id: BUG-1484
 title: Space allies: a partner colony's star given back (restore_star) without rebuild_near: caught fault with the BUG-1144 signature (SPC-5)
-status: open
+status: fixed
 kind: crash
 stage: Space
 reported: 2026-11-23
 source: audit
 role: 
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w77-space
 commits: 0cad8cc8, 37d9240d
 tests: space_mirror_near, space_mirror_near_off
@@ -41,8 +41,10 @@ game lists S1), then Zed's colony moves to another star: the game's list must ho
 over 20 s, and no fault. INCONCLUSIVE when the game did not list S1 after the visit. Expected: PASS with the fix; FAIL
 with SPORE_FIX_OFF=allies.apply_near_rebuild (stale=1).
 pending night run: space_mirror_near space_mirror_near_off (1 lane, about 12 min).
+0.7.17 release lab: PASS: space_mirror_near (lab 20261124-020506); FAIL (fix off): space_mirror_near_off (lab 20261124-005839).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-X1), branch fix/w77-space.
 - 2026-11-23: fix, lab test and FAIL twin on fix/w77-space (WP-X1); no lab run yet (lab runs only at night).
+- 2026-11-24: released in 0.7.17.

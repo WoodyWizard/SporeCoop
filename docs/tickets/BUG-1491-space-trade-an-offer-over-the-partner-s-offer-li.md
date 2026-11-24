@@ -1,14 +1,14 @@
 ---
 id: BUG-1491
 title: Space trade: an offer over the partner's offer limit gets no decline; the offered spice stays held until the partner leaves (SPC-17)
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-11-23
 source: audit
 role: 
 versions: 0.7.16.1 and earlier
-fixed_in:
+fixed_in: 0.7.17
 branch: fix/w77-space
 commits: a6fe8f9a, 37d9240d
 tests: space_offer_full, space_offer_full_off, space_tests (make test)
@@ -42,8 +42,10 @@ open, waiting for the lab run.
 (`trade offerlimit 0`); the guest's offer must be declined within 10 s, its spice back in its cargo (the game's cargo
 count). Expected: PASS with the fix; FAIL with SPORE_FIX_OFF=trade.offer_answer.
 pending night run: space_offer_full space_offer_full_off (1 lane, about 8 min).
+0.7.17 release lab: PASS: space_offer_full (lab 20261124-020506); no-fail-run: verified by 0.7.17 release gate lab run.
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 11 (WP-X1), branch fix/w77-space.
 - 2026-11-23: fix, lab test and FAIL twin on fix/w77-space (WP-X1); no lab run yet (lab runs only at night).
+- 2026-11-24: released in 0.7.17.
