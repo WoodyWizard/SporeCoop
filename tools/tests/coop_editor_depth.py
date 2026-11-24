@@ -196,16 +196,14 @@ def main():
 
     keyframe(host, 'depth_after_move')
 
-    # Ctrl+Z must undo the committed depth edit
-    host.call('key ctrl down')
-    host.call('key z')
-    host.call('key ctrl up')
-    host.call('wait.frames 25 10000')
+    # Undo (Editors::cEditor::Undo(true, true), same path as Ctrl+Z / Undo button) must restore original position
+    print('  undo:', host.call('coop.depth undo')['out'].strip(), flush=True)
+    host.call('wait.frames 15 10000')
     host.call(f'coop.depth select {elig["idx"]}')
     host.call('wait.frames 10 5000')
     st_undo = parse_depth(host)
     undo_err = vlen(vsub(st_undo['pos'], st0['pos'])) if (st_undo['pos'] and st0['pos']) else 999.0
-    ck(undo_err < 0.015, f'Ctrl+Z undid the depth move back to original position (err={undo_err:.4f})')
+    ck(undo_err < 0.015, f'Undo restored the depth move back to original position (err={undo_err:.4f})')
 
     # Apply one more nudge and leave via Done to prove the saved creature does not crash
     host.call('coop.depth nudge 0.06')

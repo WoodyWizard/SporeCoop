@@ -1533,15 +1533,18 @@ std::string command(const std::vector<std::string>& args)
             if (hk)
                 paired++;
             float hp = game::health(obj), mhp = game::max_health(obj);
+            bool inv = (skg::readable((uint8_t*)obj + 0x5DC, 4) && *(uint32_t*)((uint8_t*)obj + 0x5DC) == 2u) ||
+                       (skg::readable((uint8_t*)obj + 0xB58, 4) && ((*(uint32_t*)((uint8_t*)obj + 0xB58) & 0x200u) != 0));
+            uint32_t pol = game::political_id(obj);
             double unp = -1.0;
             auto uit = g_pairing.unpaired_since.find(c.local_id);
             if (uit != g_pairing.unpaired_since.end())
                 unp = g_now - uit->second;
             char ln[256];
             snprintf(ln, sizeof ln,
-                     "  actor serial=%u marker=%08X class=%d pos=(%.2f %.2f %.2f) hp=%.1f/%.1f dead=%d host_key=%u ai_skip=%d unp=%.1f\n",
+                     "  actor serial=%u marker=%08X class=%d pos=(%.2f %.2f %.2f) hp=%.1f/%.1f dead=%d host_key=%u ai_skip=%d unp=%.1f inv=%d pol=%08X\n",
                      c.local_id, c.marker_hash, c.class_id, c.pos[0], c.pos[1], c.pos[2], hp, mhp, (int)c.dead, hk,
-                     (int)should_skip_ai(obj), unp);
+                     (int)should_skip_ai(obj), unp, (int)inv, pol);
             out += ln;
         }
         char sum[128];

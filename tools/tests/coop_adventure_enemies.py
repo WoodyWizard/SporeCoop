@@ -35,6 +35,7 @@ from twoinst import Checks, keyframe  # noqa: E402
 ACTOR_RE = re.compile(
     r'actor serial=(\d+) marker=([0-9A-F]+) class=(-?\d+) pos=\(([^ ]+) ([^ ]+) ([^)]+)\) '
     r'hp=([0-9.]+)/([0-9.]+) dead=(\d+) host_key=(\d+) ai_skip=(\d+) unp=([-\d.]+)'
+    r'(?:\s+inv=(\d+)\s+pol=([0-9A-F]+))?'
 )
 
 
@@ -52,6 +53,8 @@ def parse_actors(c):
             'host_key': int(m.group(10)),
             'ai_skip': int(m.group(11)) != 0,
             'unp': float(m.group(12)),
+            'inv': int(m.group(13)) != 0 if m.group(13) is not None else False,
+            'pol': m.group(14) or '',
         })
     return out
 
@@ -100,12 +103,17 @@ def main():
     keyframe('enemies_act1', 'WP-A Act 1 paired adventure creatures on host and guest', {'host': h, 'guest': g}, settle=3)
 
     if ga_paired:
-        # Prefer a normal killable enemy (not an invincible/51000-HP scenario NPC whose HP regens/ignores small hits).
+        # Prefer a damageable hostile enemy (not an invincible/friendly scenario NPC whose TakeDamage zeroes hits).
+        av_pol = hav[1] if hav else ''
         by_host = {a['serial']: a for a in ha_all if not a['dead']}
         candidates = [(a, by_host[a['host_key']]) for a in ga_paired if a['host_key'] in by_host]
-        normal = [(g_a, h_a) for g_a, h_a in candidates if 10.0 <= h_a['hp'] <= 5000.0]
-        if normal:
-            target, h_match = min(normal, key=lambda p: p[1]['hp'])
+        print('  paired host sample:', [(h_a['serial'], int(h_a['hp']), int(h_a['inv']), h_a['pol']) for _, h_a in candidates[:12]], flush=True)
+        hostile_dmg = [(g_a, h_a) for g_a, h_a in candidates if not h_a['inv'] and h_a['pol'] != av_pol and h_a['hp'] >= 10.0]
+        any_dmg = [(g_a, h_a) for g_a, h_a in candidates if not h_a['inv'] and h_a['hp'] >= 10.0]
+        if hostile_dmg:
+            target, h_match = min(hostile_dmg, key=lambda p: p[1]['hp'])
+        elif any_dmg:
+            target, h_match = min(any_dmg, key=lambda p: p[1]['hp'])
         elif candidates:
             target, h_match = min(candidates, key=lambda p: p[1]['hp'])
         else:

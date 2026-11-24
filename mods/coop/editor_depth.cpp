@@ -45,6 +45,7 @@ constexpr uint32_t kPropCapFoot = 0xB00F0FEFu;
 // Resolved symbols
 static uintptr_t a_EditorPtr = 0;
 static uintptr_t a_CommitHistory = 0;
+static uintptr_t a_Undo = 0;
 static uintptr_t a_GetBool = 0;
 static uintptr_t a_GetInt32 = 0;
 static uintptr_t a_WinMgrGet = 0;
@@ -423,6 +424,7 @@ bool init(const SkHost* host, SkMod* mod)
     M = mod;
     a_EditorPtr = H->sym("Editors::cEditor::ptr");
     a_CommitHistory = H->sym("Editors::cEditor::CommitEditHistory");
+    a_Undo = H->sym("Editors::cEditor::Undo");
     a_GetBool = H->sym("App::Property::GetBool");
     a_GetInt32 = H->sym("App::Property::GetInt32");
     a_WinMgrGet = H->sym("UTFWin::IWindowManager::Get");
@@ -590,6 +592,20 @@ std::string debug(const std::vector<std::string>& args)
         snprintf(buf, sizeof(buf), "editor_depth: selected [%u] part=%08X visible=%d pos=(%.4f,%.4f,%.4f)",
                  (unsigned)idx, *(uint32_t*)((uint8_t*)all[idx] + 0x1C), (int)g_cur.visible, g_cur.part_pos.x,
                  g_cur.part_pos.y, g_cur.part_pos.z);
+        return buf;
+    }
+
+    if (!args.empty() && args[0] == "undo") {
+        void* ed = current_editor();
+        if (!ed || !a_Undo)
+            return "editor_depth: no editor or Undo symbol";
+        int before = *(int*)((uint8_t*)ed + 0x188);
+        skg::thiscall<void>(a_Undo, ed, (uint32_t)1, (uint32_t)1);
+        int after = *(int*)((uint8_t*)ed + 0x188);
+        refresh_handle();
+        char buf[160];
+        snprintf(buf, sizeof(buf), "editor_depth: undo hist %d->%d pos=(%.4f,%.4f,%.4f)",
+                 before, after, g_cur.part_pos.x, g_cur.part_pos.y, g_cur.part_pos.z);
         return buf;
     }
 
