@@ -179,6 +179,9 @@ COOP_FIX("creations.choice_world", "BUG-0638", g_choice_world_fix,
 static bool g_host_own_record = true;
 COOP_FIX("creations.host_own_record", "5U A", g_host_own_record,
          "creations: the host records its own creature per world and plays it there, not the last host's creature (galaxy, alpha)");
+static bool g_delete_mark = true;
+COOP_FIX("creations.delete_mark", "BUG-9357", g_delete_mark,
+         "creations: a world where this player deleted its creature gets a new first creature, not the world's own species again");
 static unsigned g_host_records, g_host_own_played;
 static std::map<std::pair<int, uint32_t>, uint32_t> g_world_rec; // (kind, world) -> creation instance (cache)
 static std::set<std::pair<int, uint32_t>> g_world_read;           // read from the file already
@@ -202,8 +205,29 @@ static uint32_t world_record(int k, uint32_t world)
     auto it = g_world_rec.find(id);
     return it == g_world_rec.end() ? 0 : it->second;
 }
+// BUG-9357: a world where this player deleted its creature (the galaxy menu's bin): worlds.ini [deleted] "<world>" = 1.
+// Its host does not take the world's own species as its creature there (the last host's upload keeps it as the player
+// species) and makes a first creature instead; the next creature recorded there ends it
+static bool world_deleted(uint32_t world)
+{
+    if (!world || !find_paths())
+        return false;
+    wchar_t key[16];
+    swprintf(key, 16, L"%08X", world);
+    return GetPrivateProfileIntW(L"deleted", key, 0, (g_dir + L"\\worlds.ini").c_str()) == 1;
+}
+static void world_deleted_set(uint32_t world, bool on)
+{
+    if (!world || !find_paths())
+        return;
+    wchar_t key[16];
+    swprintf(key, 16, L"%08X", world);
+    WritePrivateProfileStringW(L"deleted", key, on ? L"1" : nullptr, (g_dir + L"\\worlds.ini").c_str());
+}
 static void world_record_set(int k, uint32_t world, uint32_t inst)
 {
+    if (k == kCreature && inst && world_deleted(world))
+        world_deleted_set(world, false); // BUG-9357: a new creature here
     if (!world || !find_paths() || world_record(k, world) == inst)
         return;
     g_world_rec[{k, world}] = inst;
@@ -3903,6 +3927,8 @@ bool host_needs_first_creature()
     const Key a = avatar_species_key();
     if (!world || world_record(kCreature, world) || (g_chosen[kCreature] && !g_choice[kCreature].instance))
         return false;
+    if (g_delete_mark && world_deleted(world))
+        return true; // BUG-9357: its creature here was deleted: a new one, even when the world's species is its own
     return !(a.instance && own_option(kCreature, a));
 }
 void host_first_creature_begin()
@@ -3951,6 +3977,44 @@ static void host_first_tick(double now)
         }
 }
 bool first_creature_made() { return g_first_key != 0; }
+// BUG-9357 (above world_record_set): off: the delete clears the records only (the world's host adopts its old creature
+// again when the world's species is its own: seen on the MSI 2026-11-23)
+// 5Z B (owner 2026-11-17: "Deleting their creature will let them rejoin that planet with a new one"): this player's
+// creature in world `world` is forgotten: its records there (worlds.ini, every kind) and its campaign creature for it
+// (choices.ini [landfall] "<host>-<world>", any host). The next entry of that world asks for a first creature
+// (BUG-9208 as a guest, BUG-9265 as its host). Returns the entries removed.
+int forget_world(uint32_t world)
+{
+    if (!world || !find_paths())
+        return 0;
+    int n = 0;
+    for (int k = 0; k < kKinds; k++)
+        if (world_record(k, world)) {
+            world_record_set(k, world, 0);
+            n++;
+        }
+    const std::wstring path = g_dir + L"\\choices.ini";
+    std::vector<wchar_t> keys(32768);
+    const DWORD got = GetPrivateProfileStringW(L"landfall", nullptr, L"", keys.data(), (DWORD)keys.size(), path.c_str());
+    wchar_t tail[16];
+    swprintf(tail, 16, L"-%08X", world);
+    std::vector<std::wstring> gone;
+    for (const wchar_t* k = keys.data(); k < keys.data() + got && *k; k += wcslen(k) + 1) {
+        const size_t len = wcslen(k);
+        if (len == 17 && !_wcsicmp(k + 8, tail))
+            gone.push_back(k);
+    }
+    for (auto& k : gone)
+        if (WritePrivateProfileStringW(L"landfall", k.c_str(), nullptr, path.c_str()))
+            n++;
+    if (n)
+        world_deleted_set(world, true); // (its host takes no creature from the world itself there)
+    g_campaign_place = 0;
+    g_own_told.clear();
+    g_last_check = 0;
+    H->log(M, SK_INFO, "creations: this player's creature in world %08X forgotten (%d entries, 5Z B)", world, n);
+    return n;
+}
 // BUG-9208: a guest about to enter the host's world `world` (PlayerState.world) has no creature of its own there yet:
 // none recorded (worlds.ini, BUG-0345), no campaign creature for it (choices.ini [landfall]), no first creature made
 // or being made, and it did not choose to play the world's own species
@@ -4453,7 +4517,8 @@ static void own_world_tick()
         game::avatar()) {
         const Key a = avatar_species_key();
         const uint32_t world = modes::current_world();
-        if (world && a.instance && own_option(kCreature, a) && world_record(kCreature, world) != a.instance) {
+        if (world && a.instance && own_option(kCreature, a) && world_record(kCreature, world) != a.instance &&
+            !(g_delete_mark && world_deleted(world))) { // BUG-9357: not the deleted creature again
             world_record_set(kCreature, world, a.instance);
             g_host_records++;
             H->log(M, SK_INFO, "creations: the host's own creature in world %08X is %08X (recorded, 5U A)", world, a.instance);

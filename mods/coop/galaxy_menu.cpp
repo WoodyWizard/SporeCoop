@@ -17,6 +17,9 @@
 #include <vector>
 
 #include "coop_ui.h"
+#include "creations.h"
+#include "galaxy_crt.h"
+#include "identity.h"
 #include "galaxy_client.h"
 #include "notify.h"
 #include "net/galaxy.h"
@@ -72,6 +75,7 @@ static std::vector<Row> rows()
         if (p.tech > row->shown.tech) { // the latest era's icon and creature
             row->shown.tech = p.tech;
             memcpy(row->shown.species, p.species, sizeof p.species);
+            row->shown.owner = p.owner;
         }
     }
     return v;
@@ -458,6 +462,47 @@ static void set_name(uint8_t* str, const std::u16string& v) // an eastl::wstring
     skg::thiscall<void>(a_WCopy, (void*)str, (const void*)v.data(), (const void*)(v.data() + v.size()));
 }
 
+// 5Z B (the menu's gaps before the owner's own test): a planet's creature this game lacks comes from the galaxy's
+// creation store (the server lists whose upload it is; galaxy_client puts the host's creature there, switch
+// `galaxy.menu_pictures`); the menu is built again once it is here.
+// BUG-9355: off: as before (only creatures this game has are shown)
+static bool g_pictures_on = true;
+COOP_FIX("galaxy.menu_pictures", "BUG-9355", g_pictures_on, "galaxy menu: a planet's creature this game lacks comes from the galaxy's store");
+static bool g_pictures_waiting;      // a row's creature was asked from the store and is not here yet
+static double g_pictures_next;
+static unsigned g_pictures_store;    // rows of the last build whose creature came from the store
+static unsigned g_here_built;        // the planets' creatures here from the store at the last build
+static void* picture(const galaxy::PlanetInfo& p, uint32_t out[3])
+{
+    out[0] = out[1] = out[2] = 0;
+    if (!p.species[0])
+        return nullptr;
+    // another player's creature always comes from the store: creation ids count up per profile, so the same key here
+    // can be a creature of this player's own (BUG-9290); the store installs it under a key that is free here
+    const bool store = p.owner && g_pictures_on && p.owner != identity::own();
+    uint32_t lk[3] = {p.species[0], p.species[1], p.species[2]};
+    if (store && !galaxy_crt::local_key(p.owner, p.species, lk)) {
+        g_pictures_waiting = true; // (asked from the store; the tick builds the menu again once it is here)
+        return nullptr;
+    }
+    if (store && !galaxy_crt::here(p.owner, p.species))
+        return nullptr; // (the store has none: "?", never a creature of this player's under the same key)
+    void* prof = game::species_by_key({lk[0], lk[1], lk[2]});
+    if (prof) {
+        memcpy(out, lk, sizeof lk);
+        if (store && galaxy_crt::here(p.owner, p.species))
+            g_pictures_store++;
+    }
+    return prof;
+}
+// 5Z B: more planets than the menu's stars (8 with an empty slot): the last star turns the page ("Next planets"); its
+// Play shows the next page instead of entering anything. Off: the planets past the stars are not shown (as before)
+static bool g_pages_on = true;
+COOP_FIX("galaxy.menu_pages", "BUG-9356", g_pages_on, "galaxy menu: more planets than stars: the last star turns the page");
+static size_t g_page, g_pages = 1;
+static unsigned g_page_turns;
+static std::string g_more_name; // the page star's name ("" none)
+
 static void rewrite(void* set)
 {
     uint8_t* begin = *(uint8_t**)((uint8_t*)set + 8);
@@ -466,20 +511,47 @@ static void rewrite(void* set)
         return;
     const size_t n = (size_t)(end - begin) / 0xBC;
     std::vector<Row> rs = rows();
+    const size_t all = rs.size();
+    g_more_name.clear();
+    g_pages = 1;
+    if (g_pages_on && rs.size() > n && n >= 2) {
+        const size_t per = n - 1;
+        g_pages = (rs.size() + per - 1) / per;
+        if (g_page >= g_pages)
+            g_page = 0;
+        const size_t from = g_page * per, to = std::min(rs.size(), from + per);
+        rs = std::vector<Row>(rs.begin() + from, rs.begin() + to);
+        g_more_name = "More planets (" + std::to_string((g_page + 1) % g_pages + 1) + "/" + std::to_string(g_pages) + ")";
+    } else
+        g_page = 0;
     std::vector<galaxy::PlanetInfo> ps;
     for (auto& x : rs)
         ps.push_back(x.shown);
     size_t shown = 0;
+    g_pictures_waiting = false;
+    g_pictures_store = 0;
+    g_here_built = 0;
+    for (auto& row : rows())
+        g_here_built += row.shown.species[0] && row.shown.owner && galaxy_crt::here(row.shown.owner, row.shown.species);
     for (size_t i = 0; i < n; i++) {
         uint8_t* e = begin + i * 0xBC;
         uint32_t* key = (uint32_t*)(e + 0x3C);
-        if (i < ps.size()) {
+        if (!g_more_name.empty() && i == n - 1) { // 5Z B: the page star
+            set_name(e, u16(g_more_name));
+            key[0] = key[1] = key[2] = 0;
+            *(void**)(e + 0x48) = nullptr;
+            *(uint32_t*)(e + 0x8C) = 0;
+            *(uint32_t*)(e + 0xA8) = 0;
+            e[0xAC] = 1;
+            e[0xAD] = 1;
+        } else if (i < ps.size()) {
             const galaxy::PlanetInfo& p = ps[i];
             set_name(e, u16(g_one_row ? p.name : net::galaxy::era_display(p.name))); // (BUG-9295: the planet; before, "Samuth (Tribe)")
-            void* prof = p.species[0] ? game::species_by_key({p.species[0], p.species[1], p.species[2]}) : nullptr;
-            key[0] = prof ? p.species[0] : 0;
-            key[1] = prof ? p.species[1] : 0;
-            key[2] = prof ? p.species[2] : 0;
+            uint32_t k[3];
+            void* prof = picture(p, k); // 5Z B: from the store when this game lacks it
+            key[0] = k[0];
+            key[1] = k[1];
+            key[2] = k[2];
             *(void**)(e + 0x48) = prof;
             *(uint32_t*)(e + 0x8C) = 0;      // the save is there (the server has it)
             *(uint32_t*)(e + 0xA8) = p.tech; // the stage icon
@@ -495,7 +567,9 @@ static void rewrite(void* set)
         }
     }
     g_rewrites++;
-    g_last = std::to_string(shown) + " of " + std::to_string(ps.size()) + " server planet(s) in " + std::to_string(n) + " entries";
+    g_last = std::to_string(shown) + " of " + std::to_string(all) + " server planet(s) in " + std::to_string(n) + " entries";
+    if (g_pages > 1)
+        g_last += ", page " + std::to_string(g_page + 1) + " of " + std::to_string(g_pages);
     H->log(M, SK_INFO, "galaxy menu: %s (5X B)", g_last.c_str());
 }
 
@@ -526,8 +600,23 @@ static const Row* row_of(const std::vector<Row>& rs, const std::string& planet)
 
 // entry: the menu entry, for Spore's own screen (tests: coop.gmenu play); nullptr from the Play step: our box (the
 // Play button's state switch already went to Spore's screen when it could, h_SetState)
+// BUG-9358: the Play step reads its entry's name every frame until the menu is left; an entry rewritten meanwhile (the
+// list changed: the planet entered got a player and moved up) named another planet, which was entered next (seen on the
+// MSI 2026-11-23: Testplanet01 entered, left a second later for Samuth). The menu's entries are rebuilt only on the
+// planets (state 2), and a Play takes no other planet for 30 s. Off: as before
+static bool g_play_hold = true;
+COOP_FIX("galaxy.play_hold", "BUG-9358", g_play_hold, "galaxy menu: a Play keeps its planet while the list changes");
+static unsigned g_play_held;
+static std::string g_entered;  // the planet a Play entered last
+static double g_entered_at = -100;
 static bool play(const std::string& planet, uint8_t* entry = nullptr)
 {
+    if (g_play_hold && !g_entered.empty() && planet != g_entered && H->time_seconds() - g_entered_at < 30) {
+        if (!g_play_held++ || g_play_held % 100 == 0)
+            H->log(M, SK_WARN, "galaxy menu: Play on '%s' ignored: '%s' was entered %.0f s ago (BUG-9358)", planet.c_str(),
+                   g_entered.c_str(), H->time_seconds() - g_entered_at);
+        return true;
+    }
     for (auto& row : rows())
         if ((g_one_row ? row.shown.name : net::galaxy::era_display(row.shown.name)) == planet) {
             const std::string key = era_to_enter(row);
@@ -541,6 +630,7 @@ static bool play(const std::string& planet, uint8_t* entry = nullptr)
                     return true;
                 }
                 g_plays++;
+                g_entered = planet, g_entered_at = now; // BUG-9358
                 H->log(M, SK_INFO, "galaxy menu: Play on the server planet '%s': entering it (5X B)", planet.c_str());
                 galaxy::enter(key);
             }
@@ -558,15 +648,150 @@ static bool play(const std::string& planet, uint8_t* entry = nullptr)
 // opens there. Off: as before (the box over the card)
 static bool g_box_no_card = true;
 COOP_FIX("galaxy.choice_box_no_card", "BUG-9338", g_box_no_card, "galaxy menu: our stage box opens over the planets, not over Spore's stage loading card");
+static std::string entry_name(const uint8_t* e)
+{
+    const char16_t* b = *(const char16_t* const*)e;
+    const char16_t* en = *(const char16_t* const*)(e + 4);
+    return b && en > b ? utf8(b, en) : "";
+}
+
+// 5Z B: the planets' page star
+static void turn_page()
+{
+    g_page = g_pages > 1 ? (g_page + 1) % g_pages : 0;
+    g_page_turns++;
+    g_last_version = ~0u; // (the next tick builds the menu again)
+    H->log(M, SK_INFO, "galaxy menu: the planets' page %u of %u (5Z B)", (unsigned)g_page + 1, (unsigned)g_pages);
+}
+
+// 5Z B (owner 2026-11-17: "when a player is on the Online Galaxy Menu, we should allow them to delete their creature on
+// the world still. Deleting their creature will let them rejoin that planet with a new one."): the planet panel's bin
+// on a server planet asks "Delete my creature here" instead of Spore's own box (which deletes a save file). The worlds
+// this player played the planet's eras in are remembered (coop.ini [galaxy_worlds]); the delete forgets this player's
+// creature records there (creations::forget_world), so the next entry asks for a first creature. Its old nest stays in
+// the stored world for its family and goes to a new species with the nest rotation (7F, BUG-9286).
+static bool g_delete_on = true;
+COOP_FIX("galaxy.delete_creature", "BUG-9357", g_delete_on, "galaxy menu: the planet panel's bin on a server planet deletes this player's creature there");
+static uintptr_t a_DeleteState, a_CameraBack;
+static std::string g_delete_planet;
+static unsigned g_delete_asks, g_deletes, g_delete_none;
+static std::string g_worlds_seen_for;
+static double g_worlds_since;
+static std::vector<uint32_t> worlds_of(const std::string& planet)
+{
+    char b[256] = {};
+    H->config_str(M, "galaxy_worlds", remember_key(planet).c_str(), "", b, sizeof b);
+    std::vector<uint32_t> v;
+    for (char* t = strtok(b, ","); t; t = strtok(nullptr, ","))
+        if (uint32_t w = (uint32_t)strtoul(t, nullptr, 16))
+            v.push_back(w);
+    return v;
+}
+// in a stage on a server era for 10 s: its world is one of the planet's for this player
+static void remember_world(double now)
+{
+    const std::string cur = galaxy::current_planet();
+    const uint32_t world = modes::current_world();
+    const std::string at = cur + "#" + std::to_string(world);
+    if (cur.empty() || net::galaxy::is_crossing(cur) || !world || !galaxy::era_of_mode(game::mode_id())) {
+        g_worlds_seen_for.clear();
+        return;
+    }
+    if (at != g_worlds_seen_for) {
+        g_worlds_seen_for = at;
+        g_worlds_since = now;
+        return;
+    }
+    if (now - g_worlds_since < 10 || g_worlds_since < 0)
+        return;
+    g_worlds_since = -1; // (once)
+    const std::string planet = net::galaxy::era_planet(cur);
+    std::vector<uint32_t> v = worlds_of(planet);
+    if (std::find(v.begin(), v.end(), world) != v.end())
+        return;
+    v.push_back(world);
+    if (v.size() > 8)
+        v.erase(v.begin());
+    std::string val;
+    for (uint32_t w : v) {
+        char h[12];
+        snprintf(h, sizeof h, "%08X", w);
+        val += (val.empty() ? "" : ",") + std::string(h);
+    }
+    H->config_set_str(M, "galaxy_worlds", remember_key(planet).c_str(), val.c_str());
+    H->log(M, SK_INFO, "galaxy menu: world %08X is one of '%s' for this player (5Z B)", world, planet.c_str());
+}
+static void on_delete_pick(int code)
+{
+    const std::string planet = g_delete_planet;
+    g_delete_planet.clear();
+    if (code != 1 || planet.empty())
+        return;
+    if (net::galaxy::era_planet(galaxy::current_planet()) == planet) {
+        notify::show("Leave " + planet + " first, then delete your creature there.", "info");
+        return;
+    }
+    int n = 0;
+    for (uint32_t w : worlds_of(planet))
+        n += creations::forget_world(w);
+    if (!n) {
+        g_delete_none++;
+        notify::show("You have no creature of your own on " + planet + ".", "info");
+        return;
+    }
+    g_deletes++;
+    H->log(M, SK_INFO, "galaxy menu: this player's creature on '%s' deleted (%d entries, 5Z B)", planet.c_str(), n);
+    notify::show("Your creature on " + planet + " is deleted. Next time you play there, you make a new one.", "info");
+}
+static void ask_delete(const std::string& planet)
+{
+    g_delete_planet = planet;
+    g_delete_asks++;
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    coop_ui::show_player_menu(sw * 0.5f - 112, sh * 0.3f, planet,
+                              {{"Delete my creature", 1, coop_ui::kMenuRed}, {"Cancel", 0, coop_ui::kMenuGrey}},
+                              on_delete_pick);
+    H->log(M, SK_INFO, "galaxy menu: the bin on '%s': \"Delete my creature here\" asked (5Z B)", planet.c_str());
+}
+
 static void __fastcall h_SetState(void* gge, void* edx, int state, int push)
 {
+    if (state == 0xB && g_delete_on && a_DeleteState && g_flow_hooks && active()) { // 5Z B: the panel's bin
+        uint8_t* ds = *(uint8_t**)a_DeleteState;
+        uint8_t* e = ds ? *(uint8_t**)(ds + 0x48) : nullptr;
+        if (e && e[0xAC]) {
+            const std::string planet = entry_name(e);
+            const std::vector<Row> rs = rows();
+            if (planet == g_more_name || row_of(rs, planet)) {
+                *(void**)(ds + 0x48) = nullptr; // (Spore's box does not open: no save file to delete)
+                if (planet != g_more_name)
+                    ask_delete(planet);
+                return;
+            }
+        }
+    }
+    if (state == 0xC && g_flow_hooks && active() && a_PlayState && !g_more_name.empty()) { // 5Z B: the page star's Play
+        uint8_t* ps = *(uint8_t**)a_PlayState;
+        uint8_t* e = ps ? *(uint8_t**)(ps + 0xC) : nullptr;
+        if (e && e[0xAC] && entry_name(e) == g_more_name) {
+            turn_page();
+            o_SetState(gge, edx, 2, push); // (the planets: no stage card, no Play step)
+            // the view zoomed in on the star stays there in state 2 (seen on the MSI, 2026-11-23: dark until Esc): what
+            // the planets' Esc does on a saved planet's panel (0xDF6300): the camera back to the galaxy, then the planet
+            // set's vt 0x60(nullptr, 1) (the panel closed)
+            if (a_CameraBack)
+                skg::cdecl_call<void>(a_CameraBack);
+            if (uint8_t* set = a_PlanetSet ? *(uint8_t**)a_PlanetSet : nullptr)
+                skg::vcall<void>(set, 0x60 / 4, (void*)nullptr, 1);
+            return;
+        }
+    }
     if (state == 0xC && g_flow_hooks && active() && a_PlayState) {
         uint8_t* ps = *(uint8_t**)a_PlayState;
         uint8_t* e = ps ? *(uint8_t**)(ps + 0xC) : nullptr;
         if (e && e[0xAC]) {
-            const char16_t* b = *(const char16_t* const*)e;
-            const char16_t* en = *(const char16_t* const*)(e + 4);
-            const std::string planet = b && en > b ? utf8(b, en) : "";
+            const std::string planet = entry_name(e);
             const std::vector<Row> rs = rows();
             const Row* row = row_of(rs, planet);
             if (row && galaxy::current_planet() != era_to_enter(*row) && wants_choice(*row)) {
@@ -612,6 +837,10 @@ static void __fastcall h_Step(void* self, void* edx, void* arg)
         const char16_t* b = *(const char16_t* const*)e;
         const char16_t* en = *(const char16_t* const*)(e + 4);
         const std::string planet = b && en > b ? utf8(b, en) : "";
+        if (!g_more_name.empty() && planet == g_more_name) { // 5Z B: the page star (its Play went to state 2 already)
+            turn_page();
+            return;
+        }
         if (play(planet))
             return; // (no local file: the galaxy client loads it)
     }
@@ -647,11 +876,22 @@ void tick(double now)
             native_closed();
         }
     }
+    remember_world(now); // 5Z B
     if (!g_hooks || game::mode_id() != modes::kMenu)
         return;
     const bool online = g_on && galaxy::online();
+    if (online && g_pictures_on && g_pictures_waiting && now >= g_pictures_next) { // 5Z B: a creature from the store arrived: build again
+        g_pictures_next = now + 2;
+        unsigned here = 0;
+        for (auto& row : rows())
+            here += row.shown.species[0] && row.shown.owner && galaxy_crt::here(row.shown.owner, row.shown.species);
+        if (here > g_here_built)
+            g_last_version = ~0u; // (one arrived since the build that asked: built again)
+    }
     const uint32_t ver = galaxy::planets_version();
-    if ((online != g_last_online || (online && ver != g_last_version)) && now >= g_rebuild_at) {
+    uint8_t* gge = a_Gge ? *(uint8_t**)a_Gge : nullptr;
+    const bool on_planets = !g_play_hold || !gge || *(int*)(gge + 0x108) == 2; // BUG-9358: not while Play runs
+    if ((online != g_last_online || (online && ver != g_last_version)) && now >= g_rebuild_at && on_planets) {
         g_last_online = online;
         g_last_version = ver;
         g_rebuild_at = now + 2;
@@ -685,6 +925,17 @@ bool stage_screen(StageScreen& out)
     return true;
 }
 
+// tests: the planet panel of the menu entry named `g_open_name`, as a click on its star (the planet set's vt 0x60(entry,
+// 1): the panel and the camera on it, docs/re/space.md#space-menu-entries)
+static std::string g_open_name;
+static void open_panel(void*)
+{
+    uint8_t* set = a_PlanetSet ? *(uint8_t**)a_PlanetSet : nullptr;
+    uint8_t* e = entry_of(g_open_name);
+    if (set && e && game::mode_id() == modes::kMenu)
+        skg::vcall<void>(set, 0x60 / 4, (void*)e, 1);
+}
+
 std::string command(int argc, const char* const* argv)
 {
     const std::string sub = argc > 1 ? argv[1] : "status";
@@ -693,6 +944,28 @@ std::string command(int argc, const char* const* argv)
         g_last_version = ~0u;
     } else if (sub == "rebuild")
         H->run_outside_frame(rebuild, nullptr);
+    if (sub == "open" && argc > 2) { // tests: the panel of the star named argv[2] (the game's own focus, no click)
+        g_open_name = argv[2];
+        if (!entry_of(g_open_name))
+            return "no menu entry '" + g_open_name + "'";
+        H->run_outside_frame(open_panel, nullptr);
+        return "opening the panel of '" + g_open_name + "'";
+    }
+    if (sub == "page") // tests (5Z B): as the page star's Play
+        turn_page();
+    if (sub == "delete" && argc > 2) // tests (5Z B): as the panel's bin on planet argv[2]
+        ask_delete(argv[2]);
+    if (sub == "deletepick" && argc > 2) // tests (5Z B): as a press in the delete box (1 delete, 0 cancel)
+        on_delete_pick(atoi(argv[2]));
+    if (sub == "worlds" && argc > 2) { // tests (5Z B): the worlds remembered for planet argv[2]
+        std::string v;
+        for (uint32_t w : worlds_of(argv[2])) {
+            char h[12];
+            snprintf(h, sizeof h, "%08X ", w);
+            v += h;
+        }
+        return "worlds of '" + std::string(argv[2]) + "': " + (v.empty() ? "none" : v);
+    }
     if (sub == "panel") // tests (8M A, BUG-9340): the planet details panel as shown
         return coop_ui::planet_panel_debug();
     if (sub == "forget" && argc > 2) // tests (BUG-9335): this player has played no era of planet argv[2]
@@ -702,11 +975,11 @@ std::string command(int argc, const char* const* argv)
     if (sub == "play" && argc > 2) { // tests (BUG-9335): the menu's Play on planet argv[2] (its code path, no click)
         if (!active())
             return "not in the galaxy menu while online (Play is the menu's)";
-        g_play_at = -100;
+        g_play_at = g_entered_at = -100;
         if (!play(argv[2], entry_of(argv[2])))
             return std::string("no server planet '") + argv[2] + "' in the menu";
     }
-    char b[900];
+    char b[1300];
     snprintf(b, sizeof b, "galaxy menu (5X B): %s, hooks %s, active %d, rewrites %u, plays %u, rebuilds %u, last: %s; "
              "stage choice (BUG-9335): opened %u, entered %u, refused %u, new stages started %u (BUG-9336), last: %s; reached: %d%d%d%d%d",
              g_on ? "on" : "off", g_hooks ? "on" : "missing", (int)active(), g_rewrites, g_plays, g_rebuilds,
@@ -718,6 +991,14 @@ std::string command(int argc, const char* const* argv)
              "open now %d, last: %s; closed before a load (BUG-9350, %s): %u, timeouts %u", g_native ? "on" : "off",
              g_flow_hooks ? "on" : "missing", g_native_opens, g_native_picks, g_native_closes, (int)(g_native_entry != nullptr),
              g_native_last.empty() ? "-" : g_native_last.c_str(), g_close_on_leave ? "on" : "off", g_left_closes, g_left_timeouts);
+    const size_t n2 = strlen(b);
+    snprintf(b + n2, sizeof b - n2, "\n5Z B: pages %s (page %u of %u, turned %u); pictures from the store %u (waiting %d); "
+             "delete my creature %s (asked %u, deleted %u, none there %u)", g_pages_on ? "on" : "off", (unsigned)g_page + 1,
+             (unsigned)g_pages, g_page_turns, g_pictures_store, (int)g_pictures_waiting, g_delete_on ? "on" : "off",
+             g_delete_asks, g_deletes, g_delete_none);
+    const size_t n3 = strlen(b);
+    snprintf(b + n3, sizeof b - n3, "; Play keeps its planet (BUG-9358, %s): other planets ignored %u", g_play_hold ? "on" : "off",
+             g_play_held);
     return b;
 }
 
@@ -746,6 +1027,8 @@ void init(const SkHost* host, SkMod* mod)
     a_FindWin = H->sym("UTFWin::UILayout::FindWindowByID");
     a_PlanetSet = H->sym("SporeCoop::GGE_PlanetSet_ptr");
     a_PlayState = H->sym("SporeCoop::GGE_PlayState_ptr");
+    a_DeleteState = H->sym("SporeCoop::GGE_DeleteState_ptr"); // 5Z B
+    a_CameraBack = H->sym("SporeCoop::GGE_CameraToGalaxy");    // BUG-9356
     uintptr_t fopen = H->sym("SporeCoop::NewGameFlow_Open"), fbutton = H->sym("SporeCoop::NewGameFlow_OnButton");
     g_flow_hooks = ok && a_NewGameState && a_SetState && a_FindWin && fopen && fbutton &&
                    H->hook_create(M, (void*)fopen, (void*)&h_FlowOpen, (void**)&o_FlowOpen) == 0 &&

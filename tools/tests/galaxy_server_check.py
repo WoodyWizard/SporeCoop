@@ -373,6 +373,29 @@ def main():
         mars = blob('Mars', 2500)
         d = upload(a, 70, 'Mars|Creature', mars, era=2)
         check(d is not None and d[4] == 1, 'Mars (Creature) stored')
+        if not os.environ.get('GALAXY_CHECK_OLD'):  # 5Z B: whose creature a planet shows (the menu asks the store for it)
+            b.inbox.clear()
+            b.send(LIST)
+            lst = b.take(PLANETS)
+            owners = {}
+            if lst is not None:
+                r = Reader(lst)
+                n = r.take('<B')
+                names = []
+                for _ in range(n):
+                    names.append(r.s8().decode())
+                    r.take('<HHIB')
+                    r.take('<III')
+                r.take('<HH')
+                try:
+                    for nm in names:
+                        owners[nm] = r.take('<Q')
+                except struct.error:
+                    pass  # (a server before 5Z B sends no owners)
+            check(owners.get('Mars|Creature') == a.identity, "the list names the player whose upload a planet's creature is")
+            wf = [f for f in os.listdir(worlds) if f.endswith('.world') and 'Mars' in f]
+            head = open(os.path.join(worlds, wf[0]), 'rb').read(4) if wf else b''
+            check(head == b'GWS3', 'the stored world keeps its uploader (GWS3)')
         c.send(STARTERA, s8('Mars|Creature') + bytes([4]))
         check(c.take(REFUSED) is not None, 'STARTERA two stages up (Civ from Creature) is refused')
         c.send(STARTERA, s8('Mars|Creature') + bytes([3]))

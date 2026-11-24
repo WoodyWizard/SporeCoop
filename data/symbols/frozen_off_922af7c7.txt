@@ -430,3 +430,5 @@ SporeCoop::NewGameFlow_OnButton ; BUG-9337: Spore's own Choose A Stage screen fo
 SporeCoop::GGE_IsStageUnlocked ; BUG-9335: the galaxy menu's stage choice (alpha, decision 5R A) is off on GOG 2016
 SporeCoop::AchievementsManager_HasEarned ; BUG-9335: the galaxy menu's stage choice (alpha, decision 5R A) is off on GOG 2016
 SporeCoop::GGE_PlayState_ptr ; BUG-9337: Spore's own Choose A Stage screen for server planets (alpha, decision 8L A) is off on GOG 2016
+SporeCoop::GGE_DeleteState_ptr ; BUG-9357: the bin's Delete my creature here on server planets (alpha, 5Z B) is off on GOG 2016
+SporeCoop::GGE_CameraToGalaxy ; BUG-9356: the galaxy menu's planet pages (alpha, 5Z B) are off on GOG 2016

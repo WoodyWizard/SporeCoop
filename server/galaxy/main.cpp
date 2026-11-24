@@ -111,19 +111,22 @@ struct Planet {
     std::string from;           // BUG-9336: a start crossing: the era whose stored world it plays (FETCH sends that)
 };
 
-// a stored world (the worlds folder): file = GWS2, str8 planet, u32 bytes, u32 crc, u8 tech level, u32 x3 species key,
-// the bytes (GWS1: without the tech level and species)
+// a stored world (the worlds folder): file = GWS3, str8 planet, u32 bytes, u32 crc, u8 tech level, u32 x3 species key,
+// u64 its uploader's identity, the bytes (GWS2: without the identity; GWS1: without the tech level and species)
+constexpr uint32_t kGws1 = 0x31535747u, kGws2 = 0x32535747u, kGws3 = 0x33535747u;
 struct Stored {
     std::string file;
     uint32_t size = 0, crc = 0;
     uint8_t tech = 0;
     uint32_t species[3]{};
+    uint64_t owner = 0; // 5Z B: whose creature the species key is (the creation store's owner; 0 unknown: GWS1 / GWS2)
     int64_t at = 0; // 6I A: when it was stored (time(), 0: loaded from the folder at the start: its age unknown)
     std::string save; // step 4 part 6: the save's own planet name inside the world (blob_planet): a later upload must match
 };
 struct Meta {
     uint8_t tech = 0;
     uint32_t species[3]{};
+    uint64_t owner = 0; // 5Z B: the uploader's identity
     uint8_t era = 0; // (protocol 7: the stage the uploaded world is in)
 };
 constexpr int kKeepSaves = 3; // step 4 part 6: the older saves kept beside a planet's world (<file>.1 .. .3)
@@ -510,7 +513,8 @@ static void load_stored()
         FILE* f = fopen(e.path().string().c_str(), "rb");
         if (!f)
             continue;
-        uint8_t head[4 + 1 + 255 + 8 + 1 + 12 + 5 + 255]; // (GWS2: + the tech level and the species key; a 243+ byte name
+        uint8_t head[4 + 1 + 255 + 8 + 1 + 12 + 8 + 5 + 255]; // (GWS2: + the tech level and the species key; GWS3: + the
+                                                             // owner; a 243+ byte name
                                                          // did not load; then the world's own first bytes: its save's name)
         const size_t n = fread(head, 1, sizeof head, f);
         fclose(f);
@@ -520,12 +524,14 @@ static void load_stored()
         Stored st;
         st.size = r.u32();
         st.crc = r.u32();
-        if (magic == 0x32535747u) {
+        if (magic == kGws2 || magic == kGws3) {
             st.tech = r.u8();
             for (auto& v : st.species)
                 v = r.u32();
         }
-        if (!r.ok() || (magic != 0x31535747u && magic != 0x32535747u) || planet.empty())
+        if (magic == kGws3)
+            st.owner = r.u64();
+        if (!r.ok() || (magic != kGws1 && magic != kGws2 && magic != kGws3) || planet.empty())
             continue;
         st.save = blob_planet(std::vector<uint8_t>(head + (n - r.left()), head + n));
         st.file = e.path().string();
@@ -563,13 +569,14 @@ static bool store_world(const std::string& planet, const XferIn& in, const Meta&
         return false;
     }
     Writer w;
-    w.u32(0x32535747u); // "GWS2"
+    w.u32(kGws3);
     w.str8(planet);
     w.u32(in.size);
     w.u32(in.crc);
     w.u8(meta.tech);
     for (uint32_t v : meta.species)
         w.u32(v);
+    w.u64(meta.owner);
     bool ok = fwrite(w.data.data(), 1, w.data.size(), f) == w.data.size() &&
               (in.data.empty() || fwrite(in.data.data(), 1, in.data.size(), f) == in.data.size());
     ok = fclose(f) == 0 && ok;
@@ -594,6 +601,7 @@ static bool store_world(const std::string& planet, const XferIn& in, const Meta&
     st.at = (int64_t)time(nullptr);
     st.tech = meta.tech;
     memcpy(st.species, meta.species, sizeof st.species);
+    st.owner = meta.owner;
     st.save = blob_planet(in.data);
     return true;
 }
@@ -613,8 +621,10 @@ static bool read_world(const Stored& st, std::vector<uint8_t>& out)
     const uint32_t magic = r.u32();
     r.str8();
     const uint32_t size = r.u32(), crc = r.u32();
-    if (magic == 0x32535747u)
+    if (magic == kGws2 || magic == kGws3)
         r.skip(1 + 12);
+    if (magic == kGws3)
+        r.skip(8);
     if (!r.ok() || r.left() != size)
         return false;
     out.assign(r.cur(), r.cur() + size);
@@ -909,7 +919,7 @@ static void on_control(const Endpoint& from, Reader& r)
         const size_t first = from < names.size() ? from : names.size();
         size_t n = 0, bytes = 1 + 4;
         for (; first + n < names.size() && n < g_list_page; n++) {
-            const size_t b = 1 + names[first + n].size() + 2 + 2 + 4 + 1 + 12;
+            const size_t b = 1 + names[first + n].size() + 2 + 2 + 4 + 1 + 12 + 8; // (+ 8: its owner, 5Z B)
             if (bytes + b > 1150)
                 break;
             bytes += b;
@@ -929,6 +939,10 @@ static void on_control(const Endpoint& from, Reader& r)
         }
         w.u16((uint16_t)names.size()); // S10: older players stop reading before these
         w.u16((uint16_t)first);
+        for (size_t i = first; i < first + n; i++) { // 5Z B: each planet's creature's owner (older players stop before)
+            auto st = g_stored.find(names[i]);
+            w.u64(st == g_stored.end() ? 0 : st->second.owner);
+        }
         send(*c, w);
     } else if (type == MOVEON) {
         move_on(*c);
@@ -1071,6 +1085,7 @@ static void on_control(const Endpoint& from, Reader& r)
                 v = r.u32();
             m.era = r.left() >= 1 ? r.u8() : 0;
         }
+        m.owner = c->identity; // 5Z B: the species key is this player's creature (the menu asks the store for it)
         // step 4 part 1: an era keeps worlds of its stage only (a host whose game went on to the next stage does not
         // turn the planet's Creature era into a Tribe world: its party moves to the Tribe era instead)
         const uint8_t key_era = era_of(in.planet);

@@ -45,6 +45,7 @@ struct PlanetInfo {
     uint32_t stored = 0;
     uint8_t tech = 0;          // the menu's tech level: 0 Cell, 1 Creature, 2 Tribe, 4 Civ, 5 Space
     uint32_t species[3]{};     // its creature (the planet's last host's)
+    uint64_t owner = 0;        // 5Z B: whose creature that is (the creation store's owner; 0 unknown: an older server)
 };
 
 void init(const SkHost* host, SkMod* mod, Ctx ctx);

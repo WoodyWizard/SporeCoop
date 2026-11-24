@@ -97,6 +97,12 @@ bool local_key(uint64_t owner, const uint32_t key[3], uint32_t out[3])
     return false;
 }
 
+bool here(uint64_t owner, const uint32_t key[3])
+{
+    auto it = g_want.find({owner, {key[0], key[1], key[2]}});
+    return it != g_want.end() && it->second.state == Want::kHere;
+}
+
 static Key4 read_key(net::Reader& r)
 {
     Key4 k;

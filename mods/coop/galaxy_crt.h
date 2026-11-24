@@ -20,6 +20,8 @@ void put(uint32_t instance, uint32_t type, uint32_t group);
 // another player's creation this game shows: the key to build it from here. false: not here yet (asked from the store;
 // try again later). A creation its owner never put (the game's own content): its own key.
 bool local_key(uint64_t owner, const uint32_t key[3], uint32_t out[3]);
+// BUG-9355: that creation came from the store and is installed here (local_key gives its key)
+bool here(uint64_t owner, const uint32_t key[3]);
 std::string status();
 
 } // namespace galaxy_crt

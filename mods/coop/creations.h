@@ -91,6 +91,7 @@ void cancel_first_creature();
 bool first_creature_made();    // BUG-9209: a first creature was saved and not played yet
 bool first_creature_pending(); // BUG-9209: back from the first creature's editor, its result not read yet
 bool needs_first_creature(uint32_t world); // BUG-9208: no creature of its own in the host's world yet
+int forget_world(uint32_t world);          // 5Z B: "Delete my creature here": this player's records for world `world`
 // owner 2026-11-17 (alpha test): "It didn't give me a creature creator for the first time connecting. It loaded some
 // other creature." A galaxy planet's new host with no creature of its own there (5U A) makes one first:
 // host_needs_first_creature: no record for this world, the avatar is not one of its own creations, no choice of the

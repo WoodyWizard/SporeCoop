@@ -9,6 +9,7 @@
 #include <deque>
 #include <vector>
 
+#include "galaxy_crt.h"
 #include "net/galaxy.h"
 #include "net/protocol.h"
 #include "net/transport.h"
@@ -328,6 +329,9 @@ static void on_control(net::Reader& r)
             return;
         if (r.left() >= 4) { // S10: one page of the list; the next is asked until it is whole (an older server: one)
             const uint16_t total = r.u16(), first = r.u16();
+            if (r.left() >= 8 * v.size()) // 5Z B: each planet's creature's owner (an older server: none)
+                for (auto& p : v)
+                    p.owner = r.u64();
             if (first == 0)
                 g_list_pages.clear();
             if (first != g_list_pages.size())
@@ -348,7 +352,7 @@ static void on_control(net::Reader& r)
         for (size_t i = 0; same && i < v.size(); i++)
             same = v[i].name == g_planets[i].name && v[i].players == g_planets[i].players && v[i].host == g_planets[i].host &&
                    v[i].stored == g_planets[i].stored && v[i].tech == g_planets[i].tech &&
-                   !memcmp(v[i].species, g_planets[i].species, sizeof v[i].species);
+                   !memcmp(v[i].species, g_planets[i].species, sizeof v[i].species) && v[i].owner == g_planets[i].owner;
         g_planets = v;
         const bool asked = g_list_asked;
         g_list_asked = false;
@@ -721,6 +725,8 @@ static void up_facts()
     if (void* av = game::avatar()) {
         const game::Key k = game::species_key(av);
         g_up_species[0] = k.instance, g_up_species[1] = k.type, g_up_species[2] = k.group;
+        if (k.instance) // BUG-9355: the galaxy menu of a game without this creature asks the store for it (galaxy_menu.cpp)
+            galaxy_crt::put(k.instance, k.type, k.group);
     }
 }
 
