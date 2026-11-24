@@ -47,4 +47,9 @@ bool last_move(int& x, int& y);
 // tests (BUG-1457): forget it (last_move false until the next move)
 void forget_move();
 
+// BUG-0866: wheel handler for WM_MOUSEWHEEL on the game window (delta = wheel delta, keys = low word of wParam).
+// Return true to swallow the message (converted to WM_NULL).
+using WheelFn = bool (*)(int delta, uint16_t keys);
+void set_wheel_handler(WheelFn fn);
+
 } // namespace mouse

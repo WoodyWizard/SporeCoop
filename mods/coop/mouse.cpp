@@ -23,6 +23,7 @@ static ULONGLONG g_own_until;
 static volatile uint32_t g_key_presses[256];
 static volatile int g_move_x, g_move_y;
 static volatile bool g_moved;
+static WheelFn g_wheel_fn;
 
 bool g_window_input = true;
 COOP_FIX("input.window", "BUG-0429 BUG-0713", g_window_input,
@@ -62,6 +63,12 @@ static LRESULT CALLBACK proc(int code, WPARAM wp, LPARAM lp)
         }
         if (m->message == WM_CHAR && ours(m->hwnd) && g_chars.size() < 256)
             g_chars.push_back((char16_t)m->wParam);
+        if (m->message == WM_MOUSEWHEEL && ours(m->hwnd) && g_wheel_fn) {
+            int delta = (short)HIWORD(m->wParam);
+            uint16_t keys = (uint16_t)LOWORD(m->wParam);
+            if (g_wheel_fn(delta, keys))
+                ((MSG*)lp)->message = WM_NULL;
+        }
     }
     return CallNextHookEx(g_hook, code, wp, lp);
 }
@@ -76,10 +83,13 @@ void install(const void* game_window)
 
 void shutdown()
 {
+    g_wheel_fn = nullptr;
     if (g_hook)
         UnhookWindowsHookEx(g_hook);
     g_hook = nullptr;
 }
+
+void set_wheel_handler(WheelFn fn) { g_wheel_fn = fn; }
 
 uint32_t clicks() { return g_clicks; }
 
