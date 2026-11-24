@@ -110,6 +110,8 @@ def main():
         path = os.path.join(ROOT, rel)
         if os.path.splitext(rel)[1] not in TEXT_EXT or not os.path.isfile(path):
             continue
+        if rel.replace(os.sep, '/').startswith('third_party/'):  # (vendored code stays as its authors wrote it)
+            continue
         try:
             with open(path, encoding='utf-8') as f:
                 text = f.read()
