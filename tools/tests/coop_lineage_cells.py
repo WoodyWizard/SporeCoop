@@ -29,42 +29,48 @@ import time
 import twoinst
 from twoinst import Checks, keyframe, start  # (first: it puts tools/ on the path)
 import lane
+import part_substitutes as ps
 import settings_lib as sl
 from coop_cell_kin_species import keys_in_save
 from coop_cell_puppet_scale import playing, wait
 from coop_nest_species import fixtures_dir, read_pkg, write_pkg
 from harness import field
 
-CLL_TYPE, CLL_GROUP = 0x3D97A8E4, 0x40616200
-HOST_CELLS = (0x0625A974, 0x0625A976)
-GUEST_CELLS = (0x0625A978, 0x0625A97A)
+CELL_GROUP = 0x40616200
+CELL_TYPES = (0x1A99B06B, 0x030BDEE3, 0x2F7D0004)  # kBem, kMeta, kPng
+HOST_CELLS = (0xA1C46DF2, 0xBAF1AD40)
+GUEST_CELLS = (0x2C8CA6B2, 0x2DDF0D92)
 _ORIG_RESTORE = twoinst.restore_creations
 
 
-def _spore_game_pkg():
+def _spore_content_pkg():
     cands = []
     if os.environ.get('SPORE_GAME'):
-        cands.append(os.path.join(os.environ['SPORE_GAME'], 'Data', 'Spore_Game.package'))
+        cands.append(os.path.join(os.environ['SPORE_GAME'], 'Data', 'Spore_Content.package'))
     # Walk up from worktree/repo root to find SPORE-lab/laneN or SPORE/Data.
     base = lane.ROOT
     for _ in range(4):
-        cands.append(os.path.join(base, 'SPORE-lab', f'lane{lane.LANE}', 'Data', 'Spore_Game.package'))
-        cands.append(os.path.join(base, 'SPORE-lab', 'lane2', 'Data', 'Spore_Game.package'))
-        cands.append(os.path.join(base, 'Data', 'Spore_Game.package'))
+        cands.append(os.path.join(base, 'SPORE-lab', f'lane{lane.LANE}', 'Data', 'Spore_Content.package'))
+        cands.append(os.path.join(base, 'SPORE-lab', 'lane2', 'Data', 'Spore_Content.package'))
+        cands.append(os.path.join(base, 'Data', 'Spore_Content.package'))
         base = os.path.dirname(base)
     for p in cands:
         if os.path.exists(p):
             return p
-    raise RuntimeError(f'Spore_Game.package not found (checked {cands[:4]})')
+    raise RuntimeError(f'Spore_Content.package not found (checked {cands[:4]})')
 
 
 def _seed_cells():
-    """Extract real .cll cell creations from Spore_Game.package into host and guest EditorSaves.package."""
-    game_pkg = _spore_game_pkg()
+    """Extract real cell creations (kBem/kMeta/kPng) from Spore_Content.package into host and guest EditorSaves.package."""
+    pkg = _spore_content_pkg()
     want = set(HOST_CELLS) | set(GUEST_CELLS)
-    by_inst = {r[2]: r for r in read_pkg(game_pkg) if r[0] == CLL_TYPE and r[1] == CLL_GROUP and r[2] in want}
-    if len(by_inst) < len(want):
-        raise RuntimeError(f'missing .cll creations in {game_pkg}: got {sorted(by_inst)}')
+    by_inst = {inst: [] for inst in want}
+    for e in ps.entries(pkg):
+        if e['group'] == CELL_GROUP and e['type'] in CELL_TYPES and e['inst'] in want:
+            by_inst[e['inst']].append((e['type'], e['group'], e['inst'], ps.read(pkg, e)))
+    missing = [hex(i) for i, recs in by_inst.items() if not any(r[0] == 0x1A99B06B for r in recs)]
+    if missing:
+        raise RuntimeError(f'missing cell kBem creations in {pkg}: {missing}')
 
     def restore_with_cells(guest=True):
         _ORIG_RESTORE(guest)
@@ -74,9 +80,9 @@ def _seed_cells():
         for d, base_name, insts in targets:
             p = os.path.join(d, 'EditorSaves.package')
             base = os.path.join(fixtures_dir(), base_name)
-            recs = [r for r in read_pkg(p if os.path.exists(p) else base) if not (r[0] == CLL_TYPE and r[2] in want)]
+            recs = [r for r in read_pkg(p if os.path.exists(p) else base) if not (r[1] == CELL_GROUP and r[2] in want)]
             for inst in insts:
-                recs.append(by_inst[inst])
+                recs.extend(by_inst[inst])
             write_pkg(p, recs)
 
     twoinst.restore_creations = restore_with_cells

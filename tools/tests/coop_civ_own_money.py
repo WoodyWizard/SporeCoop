@@ -142,6 +142,8 @@ def case_main(ck, host, guest, setting_on):
         if v['player']:
             for kind in ('house', 'fun', 'factory', 'house', 'fun', 'factory'):
                 host.call(f'coop.civ build {k} {kind} nopay')
+    # Give host and guest distinct starting balances so separate wallets stay visibly distinct while both earn income.
+    write_money(host, 1500)
     time.sleep(2)
     wait(lambda: money(guest) is not None and money(host) is not None, 15, 0.5)
     g0, h0 = money(guest), money(host)

@@ -135,13 +135,17 @@ def part_own_cloud(ck, host, guest):
         hp0 = pool(guest)['hp']
         hp_min, downed, onto, used, t0 = hp0, 0, 0, set(), time.time()
         while time.time() - t0 < 40 and onto < 10:
-            hp_host = maker_pos(guest, 'host')
+            # On guest, 'host' reads me=() (guest's own cell) and '0' reads p0=() (host's puppet).
+            own_p = maker_pos(guest, 'host')
+            host_p = maker_pos(guest, '0')
+            if own_p and host_p and not (6.0 <= math.dist(own_p, host_p) <= 18.0):
+                host.call('coop.pool tp 10 0')
             keys = []
             for k in clouds_near(guest):
                 if k in used:
                     continue
                 cp = pos(guest, k)
-                if cp and (hp_host is None or math.dist(cp, hp_host) > 5.0):
+                if cp and (own_p is None or math.dist(cp, own_p) < 4.5) and (host_p is None or math.dist(cp, host_p) > 5.0):
                     keys.append(k)
             if keys:
                 used.add(keys[0])
@@ -153,7 +157,6 @@ def part_own_cloud(ck, host, guest):
                 if p['hp'] is not None and hp_min is not None:
                     hp_min = min(hp_min, p['hp'])
                 downed = max(downed, p['downed'] or 0)
-            host.call('coop.pool tp 10 0')
         print(f'  guest: onto {onto} of its own clouds, hp {hp0} -> min {hp_min}, knocked out {downed}; {audit(guest)}', flush=True)
         ck(onto >= 6, f'the guest was put onto its own clouds\' mirrors ({onto} >= 6)')
         ck(hp0 is not None and hp_min is not None and hp_min >= hp0 and not downed,
@@ -166,27 +169,24 @@ def part_own_cloud(ck, host, guest):
 def part_shrink(ck, host, guest):
     host.call('coop.pool invulnfor 120')
     guest.call('coop.pool invulnfor 120')
-    # EatFood shrinks a plant one level in place only when (plant_level - 1) is still inside the current view's level
-    # range (i.e. plant_level > own_level). Scan at the starting level (and nudge if needed) for a plant above own_level.
-    ol_m = field(guest.call('coop.pool tokens')['out'], r'own_level=(-?\d+)')
-    own_lv = int(ol_m) if ol_m is not None else 1
-    keys = []
-    t0 = time.time()
-    while time.time() - t0 < 20:
-        keys = plants(guest, n=24)
-        lvs = [(k, cell_line(host, k)[0]) for k in keys]
-        if any(lv is not None and lv > own_lv for _, lv in lvs):
-            break
-        guest.call('coop.pool tp 12 0')
-        time.sleep(2.5)
+    keys = plants(guest, n=12)
     lvs = [(k, cell_line(host, k)[0]) for k in keys]
-    print(f'  guest own_level={own_lv}, host plant levels={lvs[:10]}', flush=True)
+    print(f'  host plant levels={lvs[:8]}', flush=True)
     if not ck(keys, f'plants on the guest\'s screen ({keys})'):
         return
+    # EatFood shrinks a plant one level in place only when (plant_level - 1) is inside the current view's level range
+    # (level >= 1 at starting food=0). Starter tile plants are level 0, so promote a candidate to level 2 on both sides
+    # if no multi-bite plant is already present.
     done = None
     for k in keys:
         lv0, sz0, _, out0 = cell_line(host, k)
-        if lv0 is None or lv0 <= own_lv:
+        if lv0 is None:
+            continue
+        if lv0 < 1:
+            host.call(f'coop.pool celllevel {k} 2')
+            guest.call(f'coop.pool celllevel {k} 2')
+            lv0, sz0, _, out0 = cell_line(host, k)
+        if lv0 is None or lv0 < 1:
             continue
         print('  guest: ' + guest.call(f'coop.pool eat {k}')['out'].strip(), flush=True)
         time.sleep(0.5)
