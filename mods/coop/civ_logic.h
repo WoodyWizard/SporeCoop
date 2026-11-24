@@ -183,4 +183,45 @@ inline bool space_build_routed(bool fix, bool in_space, size_t bytes)
 // is not one of this game's own extras: the sweep of a complete cycle spares it. fix off (0.7.16.1): removed, and a
 // new mirror made on a later cycle
 inline bool sweep_spares(bool fix, bool waits_design) { return fix && waits_design; }
+
+// ---------------- standing city citizen gestures (BUG-1231) ----------------
+// On the host, standing city citizens play idle 0x02481DE5 or gestures (0x04A1DD75, 0x04A3442D, 0x050B5AB8, ...).
+// A guest's bound copy plays none of those on its own; worldobj.cpp carries the host citizen's drawn animation in the
+// citizen snapshot's u32 state field and mirrors standing gestures here.
+constexpr uint32_t kCitizenRunAnim = 0x02481DB0u;
+constexpr uint32_t kCitizenIdleAnim = 0x02481DE5u;
+constexpr uint32_t kCitizenGoneState = ~0u;
+
+inline bool is_citizen_gesture(uint32_t anim)
+{
+    return anim != 0 && anim != kCitizenGoneState && anim != kCitizenRunAnim && anim != kCitizenIdleAnim;
+}
+
+enum class CitizenAnimAction : uint8_t { Keep, PlayGesture, EndToIdle };
+
+inline CitizenAnimAction citizen_gesture_step(bool fix, bool moving, uint32_t local_anim, uint32_t host_anim,
+                                              uint32_t& last_gesture, double& gesture_at, double now,
+                                              double repeat_gap = 1.5)
+{
+    if (moving) {
+        last_gesture = 0;
+        return CitizenAnimAction::Keep;
+    }
+    if (!fix || host_anim == 0 || host_anim == kCitizenGoneState)
+        return CitizenAnimAction::Keep;
+    if (is_citizen_gesture(host_anim)) {
+        if (local_anim == host_anim)
+            return CitizenAnimAction::Keep;
+        if (host_anim != last_gesture || now - gesture_at >= repeat_gap) {
+            last_gesture = host_anim;
+            gesture_at = now;
+            return CitizenAnimAction::PlayGesture;
+        }
+        return CitizenAnimAction::Keep;
+    }
+    last_gesture = 0;
+    if (host_anim == kCitizenIdleAnim && is_citizen_gesture(local_anim))
+        return CitizenAnimAction::EndToIdle;
+    return CitizenAnimAction::Keep;
+}
 } // namespace civlogic

@@ -53,6 +53,10 @@ RUN_STANDING_OVER = 0.10  # at most this share of the guest's standing samples i
 # mod walked it back only 1.5 s later): standing samples p90 2.3-6.4 m, over 3 m in 7-22 % (6 recordings of fix/w51-trail;
 # civ.citizen_hold off 3.41 m); with civ.citizen_hold p90 0.54-0.55 m, max 2.4-2.8 m (labs in the ticket)
 STAND_LIMIT = 1.5  # m, p90 of a standing host citizen's copy from it
+# BUG-1231: standing host citizens play gestures (neither idle 02481DE5 nor run 02481DB0) in 20-45 % of standing samples;
+# with civ.citizen_gesture on, the guest's bound copy plays the same gesture (SPORE_FIX_OFF=civ.citizen_gesture: 0 %)
+IDLE_ANIM = '02481DE5'
+GESTURE_MATCH = 0.40  # at least this share of standing host gesture samples match on the guest copy
 
 
 def crossings(hr, gr, own_min=0.0):
@@ -125,7 +129,7 @@ def anim_report(hr, gr):
     from collections import Counter
     ha, ga = body_trail._by_key([r for r in hr if r[1][0] == 'a']), body_trail._by_key([r for r in gr if r[1][0] == 'a'])
     hz, gz = body_trail._by_key([r for r in hr if r[1][0] == 'z']), body_trail._by_key([r for r in gr if r[1][0] == 'z'])
-    hm, gm, both = Counter(), Counter(), []
+    hm, gm, both, stand_both = Counter(), Counter(), [], []
     for key, gv in ga.items():
         hv = ha.get(key)
         zk = 'z' + key[1:]
@@ -148,6 +152,8 @@ def anim_report(hr, gr):
             gm[(gs > RUN_SPEED, g_an)] += 1
             if hs > RUN_SPEED:
                 both.append((h_an, g_an))
+            elif gs <= RUN_SPEED:
+                stand_both.append((h_an, g_an))
     print(f'  host citizens (moving, animation): {hm.most_common(6)}', flush=True)
     print(f'  guest copies (moving, animation): {gm.most_common(6)}', flush=True)
     run = Counter(a for (m, a), n in hm.items() if m for _ in range(n)).most_common(1)
@@ -163,7 +169,10 @@ def anim_report(hr, gr):
     pair = sum(1 for g in walk if g == run) / max(len(walk), 1)
     print(f'  the copies of running host citizens (animation {run}) play it too: {pair:.0%} of {len(walk)} samples',
           flush=True)
-    return run, share(hm), share(gm), share(hm, False), share(gm, False)
+    gest = [(h, g) for h, g in stand_both if h not in (IDLE_ANIM, run, '00000000')]
+    g_match = sum(1 for h, g in gest if g == h) / max(len(gest), 1)
+    print(f'  the copies of gesturing standing host citizens match: {g_match:.0%} of {len(gest)} samples', flush=True)
+    return run, share(hm), share(gm), share(hm, False), share(gm, False), (g_match, len(gest))
 
 
 def speed_at(rows, t, win=0.3):
@@ -266,7 +275,7 @@ def main():
     ck(an is not None and an[2][1] >= 200, f"the guest's copies moved while the host's citizens ran "
        f'({an[2][1] if an else 0} moving samples >= 200)')
     if an:
-        run, (h_sh, h_n), (g_sh, g_n), (h_st, h_sn), (g_st, g_sn) = an
+        run, (h_sh, h_n), (g_sh, g_n), (h_st, h_sn), (g_st, g_sn), (g_match, g_gn) = an
         ck(g_sh >= RUN_SHARE and g_sh >= h_sh - RUN_BELOW_HOST,
            f'a moving copy plays the host\'s run {run}: {g_sh:.0%} of {g_n} moving samples on the guest, host {h_sh:.0%} '
            f'of {h_n} (at least {RUN_SHARE:.0%} and at most {RUN_BELOW_HOST:.0%} under the host; else it slides in its '
@@ -274,6 +283,9 @@ def main():
         ck(g_st <= h_st + RUN_STANDING_OVER,
            f'a standing copy is not in the run: {g_st:.0%} of {g_sn} standing samples on the guest, host {h_st:.0%} of '
            f'{h_sn} (at most {RUN_STANDING_OVER:.0%} over the host; else its legs run while it stands, BUG-1229)')
+        ck(g_gn >= 40 and g_match >= GESTURE_MATCH,
+           f'a standing copy plays the host\'s standing gestures: {g_match:.0%} of {g_gn} gesture samples match '
+           f'(at least {GESTURE_MATCH:.0%}, host samples >= 40; else copies stay in plain idle {IDLE_ANIM}, BUG-1231)')
     ck.faults(host=host, guest=guest)
     return ck.result()
 
