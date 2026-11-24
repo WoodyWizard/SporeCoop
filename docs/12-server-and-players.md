@@ -1994,3 +1994,68 @@ stay untouched and QA runs do not share the owner's game.
 * Updating it: strip build/coop.dll and build/sporekit.dll into its SporebinEP1/mods and SporebinEP1, copy the symbols
   and SporeCoop.package as msi.ps1 deploy does (no game of the copy running).
 
+## A new game while connected becomes a planet of the galaxy (BUG-9364, 2026-11-24, feat/lineages-alpha)
+<a id="server-new-game-planet"></a>
+
+The owner's idea of #server-galaxy-menu ("'New game' makes a new planet on the server"), built for a public planet.
+* A world this player starts while connected (Spore's own new game from an empty star, or a local save loaded by the
+  console), once it has settled for 5 s in a stage, enters the galaxy as a new planet: ENTER of "<name>|<stage>", the
+  game hosts it and stores it (the first upload 60 s later). Not the world played at the connect, on a planet or in a
+  session before: one try per world. The private row (#server-private-planets) uses the same step with its flag.
+* A name the galaxy already has (any stage) is not entered (it would join that planet and drop the new world): "This
+  galaxy already has a planet named ...: your new game stays off the galaxy. Start one with another name to share it."
+* `coop.galaxy status`: "new game planets (BUG-9364, on): made N, name taken N, old world '...'". Switch
+  `coop.fix galaxy.new_game_planet off`: only the private row and the console put a new world on the server.
+* ✔ In game (TITAN, the MSI): docs/tickets/BUG-9364-*. Not run: a taken name.
+
+## The Civ stage's end as a party (BUG-9368, 2026-11-24, feat/lineages-alpha)
+<a id="server-party-civ-end"></a>
+
+#server-party-stage-end for the last stage change. The Civ -> Space spacecraft request of a galaxy era's party leader
+(History's check once the planet is the party's) is held like the other stages' ends: MOVEON, the party's crossing
+"<planet>~<party>|Civ", the vote and the spaceship editor there, and the crossing ARRIVEs as the planet's Space era once
+its host plays Space. The Space era is stored when the host's ship is in a solar system (BUG-9348).
+* Only while the planet's era is still Civ: after the arrival each partner's own spacecraft request (its own ship from
+  its own History, the founders' own launch into Space) is not a stage end.
+* Switch `coop.fix galaxy.party_stage_end_civ off`: the Civ era's session goes into Space (the server refuses its saves).
+* ✔ In game (TITAN host, the MSI partner): docs/tickets/BUG-9368-*. The partner designed its own ship, left the planet
+  and loaded the shared orbital save; both ships in one solar system.
+* ~ `coop.civ stage_end now` (BUG-9346's test hook, the start crossing's instant end) takes every other nation's city,
+  a partner's capital too (the partner sees "Your only city was captured"): for a party's test take the other
+  nations' cities with `coop.civ capture <city>` after `cCivExpansion::SpawnNextCity`.
+
+## A direct game after the galaxy (BUG-9369, 2026-11-24, feat/lineages-alpha)
+<a id="server-direct-after-disconnect"></a>
+
+`coop.galaxy disconnect` (the Co-op window's Leave Galaxy) ends the planet's session and gives the session its plain
+network back: a direct game can be hosted or joined in the same run (before: "host failed: not connected to a galaxy
+server" until a restart). Switch `galaxy.direct_after_disconnect`. docs/tickets/BUG-9369-*.
+
+## The deep playtest of 2026-11-24 (feat/lineages-alpha)
+<a id="server-deep-playtest"></a>
+
+Owner 2026-11-24: "do a full deep test ... a full playthrough of the game ... leaving and joining parties, other eras
+seeing each other, ships flying with each other, parties in galactic adventures ... full functionality of powers".
+Three games: TITAN (profile DeepHost) and two on the MSI (DeepGuest, DeepGuest2), fresh profiles, 10 FPS, TITAN's
+galaxy server (out/galaxy/worlds_deep). Test commands stood in for hours of play (food, DNA, the Tribe goal, city
+captures); every stage change, editor, vote and crossing ran as the game's own. Pictures: images/deep_*.png.
+
+| Part | Result |
+|---|---|
+| Direct session (no galaxy): a new Cell game, the MSI joins, Cell play, knock-out and revive, the cell editor, the vote into Creature, own nests, a late joiner's first creature | ✔ (the owner's condition for the push of 6c393c83) |
+| Galaxy: a new Cell game becomes the planet Talas, the menu's Play joins it | ✔ after BUG-9364 |
+| A party of two: invite, Cell -> Creature, Creature -> Tribe, Tribe -> Civ through its crossings | ✔ |
+| Civ -> Space as a party, the partner's own ship, both ships in one solar system | ✔ after BUG-9368 |
+| A third player in its own party on the same planet: per-player DNA, the bar per party, the hand-over of a stage's host with no reload | ✔ |
+| Other stages seen: Tribe from Creature and back (tagged visitors), a Civ city's building in a Creature game, a Space ship over the planet | ✔ (the building after BUG-9367) |
+| Powers: Raging Roar (host, partner, another party's player), Tribe powers (host; a partner after BUG-9366), Civ superweapons through the party's vote (host and partner) | ✔ |
+| Parties: leave, decline, accept, a new leader, kick, join again | ✔ (a player of another stage cannot be invited: the rule) |
+| An adventure with two players (a direct session after leaving the galaxy) | ✔ started and seen together, after BUG-9369; not played to its end |
+| Crashes | none of the games' own: two crash reports, both from test commands (BUG-9363; a wrong `call` of mine) |
+
+* Fixed on the way: BUG-9363 (a test command), BUG-9364, BUG-9365, BUG-9366, BUG-9367, BUG-9368, BUG-9369.
+* Open, small: BUG-9370 .. BUG-9375 (docs/known-issues.md). BUG-9209's rest (the MSI's old profile MSIGuest cannot
+  name a first creature) was seen again; a fresh profile names fine.
+* Not run: Space tools and the Space powers of the archetypes, trade and war between empires, an adventure to its end,
+  impress help, four players, the owner's own alpha copy with the new build.
+* Questions for the owner: docs/ROADMAP.md 8T .. 8W.

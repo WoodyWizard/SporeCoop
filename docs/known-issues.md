@@ -4046,3 +4046,58 @@ it as a new planet, join it from the other MSI game. docs/tickets/BUG-9360-*.
   Fixed on feat/lineages-alpha (2026-11-24): the load put a carried object on a creature that had no body yet; that
   step is now skipped for such a creature (game.attach_no_model). The load crash itself was not seen again.
 
+## BUG-9370: A partner's Eat mission names the host's diet (2026-11-24, feat/lineages-alpha)
+<a id="known-partner-eat-mission-diet"></a>
+
+Deep playtest 2026-11-24 (Creature, direct session and galaxy planet): the HUD's "Eat" mission of a partner shows
+the text of the world's (the host's) diet: a herbivore partner on a carnivore's planet read "You're a carnivore.
+Hunt prey to eat.", a carnivore partner on a herbivore's planet "You're an herbivore. Eat a Fruit." Its own creature
+eats as its own mouth allows; only the hint misleads. Reproduce: a host whose cell was a carnivore, a partner whose
+first creature has a herbivore mouth; look at the partner's mission list. Not analysed (the mission comes with the
+host's world). docs/tickets/BUG-9370-*.
+
+## BUG-9371: Civ: a partner's camera starts on the host's city (2026-11-24, feat/lineages-alpha)
+<a id="known-civ-partner-camera-host-city"></a>
+
+Deep playtest 2026-11-24 (Civ, a galaxy planet's Civ era, a party of two): a partner entering the Civ era (the
+crossing's arrival, and every later entry) starts with its camera on the host's city ("[Titan]"), its own capital
+elsewhere on the planet (the blue marker on the minimap). Tribe starts at home (BUG-9152). Reproduce: two players
+with a capital each, the partner enters the era; look where its camera stands. Not analysed. docs/tickets/BUG-9371-*.
+
+## BUG-9372: Galaxy menu: a server planet's panel shows a garbage date (2026-11-24, feat/lineages-alpha)
+<a id="known-galaxy-menu-planet-date"></a>
+
+Deep playtest 2026-11-24: in the galaxy menu the panel of a planet of the galaxy server shows a date that is not
+one ("12/-67/38" for a planet made that hour, "01/24/00" for two stored ones). The entry the mod writes for a server
+planet (galaxy_menu.cpp) leaves the date's fields unset. Cosmetic. Reproduce: connect, click a server planet's star. docs/tickets/BUG-9372-*.
+
+## BUG-9373: Cell: the Party card has no picture before the first cell editor (2026-11-24, feat/lineages-alpha)
+<a id="known-cell-party-card-no-picture"></a>
+
+Deep playtest 2026-11-24 (Cell): the Party card of a player who never saved a cell of its own (a new game's first
+cell, a fresh profile) is an empty frame; after its first cell editor (a mate) the picture is there. Seen on both
+games after the host loaded its Cell save again and the guest joined again; in the very first session of the new
+game the host's card of the guest had a picture. creations.cpp portrait_tick finds no own cell key to take a picture
+from. Cosmetic. Reproduce: a new Cell game on fresh profiles, the guest joins; look at the Party cards. docs/tickets/BUG-9373-*.
+
+## BUG-9374: Creature: a player new to an era starts at the host's nest (2026-11-24, feat/lineages-alpha)
+<a id="known-creature-new-player-host-nest"></a>
+
+Deep playtest 2026-11-24 (Creature, a galaxy planet with a party of two): a third player entering the era made its
+first creature and got its own nest 243 m from the host's (`coop.homes`: seat 2, "herd enabled 0"), but its creature
+started at the host's nest, 5 m from the host. The second player's nest was 45 m away and it started there.
+Reproduce: a third player enters a Creature era whose free nest is far from the host; `coop.avatar` against
+`coop.homes`. Not analysed (the far nest's herd is not enabled when the player arrives). docs/tickets/BUG-9374-*.
+
+## BUG-9375: A partner's game can keep the pause 0x4BF38A6 after a refused stage-end request (2026-11-24, feat/lineages-alpha)
+<a id="known-pause-after-refused-stage-end"></a>
+
+Deep playtest 2026-11-24 (Civ -> Space, the MSI): a partner's spacecraft request was refused ("Only your party's
+leader moves your party on to the next stage", the first form of BUG-9368's fix; the log: "the game's editor-pending
+flag was left set with no editor coming (the request was refused): cleared, the stage is drawn again (BUG-0920)").
+Its next request opened the editor; after the editor and the change into Space the game kept the pause reason
+0x4BF38A6 ("an editor is coming"): Mission Control did not open and the load of the shared orbital save was held
+until `coop.pauses sub 04BF38A6`. Inferred, not shown: the refusal's cleanup leaves one Pause without its Resume.
+BUG-9368's corrected fix no longer refuses that request; the same refusal exists for a party's partner pressing
+History's check at the end of Creature or Tribe (not run). Reproduce: as a party's partner on a galaxy era press
+the stage's Advance and History's check (refused), then open any editor and leave it; `coop.pauses`. docs/tickets/BUG-9375-*.

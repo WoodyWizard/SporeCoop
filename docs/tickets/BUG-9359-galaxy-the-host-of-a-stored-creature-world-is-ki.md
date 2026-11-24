@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits:
+commits: e655cfb9
 tests: tools/qa_win (manual, the MSI: host Samuth, coop.team die, coop.galaxy leave on the death screen, enter again)
 signature:
 docs: docs/known-issues.md#known-galaxy-host-killed-on-arrival

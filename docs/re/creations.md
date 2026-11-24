@@ -1909,6 +1909,8 @@ Found for BUG-9341 (Ghidra on the Steam 3010a413 dump, code read live on TITAN):
 * ✔ On a galaxy planet a Creature host crashed ~6 s after era visitors' bake ask of another era's model: null database
   (+0x11E) in the death caption and in plain play, null model (+0x147) just after the first-creature editor. Fixed by
   skipping the message for such an editor (switch `galaxy.editor_snapshot_guard`).
+  CORRECTION (2026-11-24, feat/lineages-alpha): skipping the handler as a whole also dropped the message its end posts
+  (0x29D57F4, the bake's go-on): every later bake stood still. See #creations-bake-go-on (BUG-9367).
 * CORRECTION (2026-11-22): #creations-bake-in-tribe's inferred cause of BUG-9296 ("the bake's end reports to an editor
   the Tribe stage does not have") is this message: the Tribe crash had the same address (+0x11E). With the guard, the
   Tribe stage's "no bake asked" rule may no longer be needed (not tested).
@@ -1916,3 +1918,28 @@ Found for BUG-9341 (Ghidra on the Steam 3010a413 dump, code read live on TITAN):
   tools/qa_win/dis.py use the 0x400000 base: crash 0x005020BE is 0x005920BE in the .sym files and in dis.py; a raw
   `mem.read` takes the loaded address.
 
+## A bake's go-on message, and the stage entry that waits for the bake queue (BUG-9367, 2026-11-24, feat/lineages-alpha)
+<a id="creations-bake-go-on"></a>
+
+Read from the running Steam game with tools/qa_win/dis.py (addresses on the 0x400000 base) and seen on the MSI.
+* ✔ cEditor::HandleMessage's case of 0x3FC3F13 (0x5920A7 .. 0x5921DC): the save area's database
+  (Resource::GetDatabaseByID([this + 0x29C]), vt 0x28), the creation's name ([this + 0x88]), a path made of both
+  (0x41E010 with the format at 0x1395AE0) and 0x466B60(model, database, key): the editor writes its picture. Then, at
+  0x5921BA, `IMessageManager vt 0x14(0x29D57F4, 0, 0)` and return 1. So 0x29D57F4, which the bake's render posts itself
+  when no editor picture is wanted (#creations-editor-snapshot-message), is the bake's "picture taken, go on".
+* ✔ Without that message the bake stands still and every bake asked after it waits: IBakeManager vt 0x28 (no
+  arguments: the number of queued bakes) stayed at 8 for minutes (the four levels of a Civ era's building and vehicle,
+  asked by era visitors), no prop was made. With the message posted for a skipped handler the queue went 8, 6, 4, 2, 0
+  in 40 s (two levels every ~10 s at 10 FPS) and both props were made.
+* ✔ The Creature stage's entry: the mode-enter handler pauses with the reason 0x4BF38A7 (0xD45575) and runs
+  CreatureGame_ReturnStateMachine 0xD43DE0. Its last state (the code at 0xD4509E .. 0xD451A0) turns the renderer's
+  layer 0x16 off and each frame reads IBakeManager vt 0x28 (queued), the model world's vt 0x10 (pending, 0xB3D620) and
+  IBakeManager vt 0x3C(species profile + 0x504); only when the profile is baked, nothing is queued, nothing is pending
+  and the bytes 0x161ECE0 / 0x161ECDB are 0 it turns the layer on again, resumes 0x4BF38A7 and sets state 13. Until
+  then the screen is black with no HUD (the Tribe stage's entry is the same: docs/re/tribe.md, BUG-0313). A bake that
+  never ends is a black screen for good.
+* Tools: `coop.visit status` prints "bake queue (BUG-9367): N queued; <key> levels <mask> asked <0|1>" for each
+  waiting object and "bake go-on: N posted for a skipped snapshot". `coop.pauses trace` logs every Pause / Resume with
+  its caller (the entry's pause comes "from ...+0x17A1" of the state machine's symbol).
+* Pitfall: an address read with `mem.read` / `mem.ptr` on a game is the loaded one (ASLR: the MSI's base was 0x4F0000);
+  `call <address>` wants the address as the .sym files have it. A `call` of a loaded address took a test game down.

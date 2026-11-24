@@ -6367,3 +6367,19 @@ Found for BUG-9343 (Ghidra on the Steam dump, seen in game):
 * Note: the symbol files name 0xCDBEA0 twice (TribeGame_AdvanceProc, TribeHutUI_HandleMessage); Ghidra's decompile of
   it fails at the entry (and esp,-10); read it with `asm`.
 
+## The power bar's avatar on a guest (BUG-9366, 2026-11-24, feat/lineages-alpha)
+<a id="tribe-power-bar-avatar"></a>
+
+* ✔ (runtime, TITAN host and the MSI guest, a party's Tribe era) The HUD's ability bar (SporeCoop::AbilityBar_ptr)
+  keeps the ability indices of the avatar it was built for (AbilityBar_Rebuild at the HUD's start; in Tribe the player
+  tribe's chief, 0xD1E610). A chief's ability list depends on its creature: the host's chief had the powers 0x34..0x39
+  at indices 8..13 of 14, the guest's own chief at 7..12 of 13.
+* ✔ A guest's player tribe is the host's at the HUD's start and its own village later: its bar's power slots kept the
+  first chief's indices and named its own chief's abilities one on (0x35 "Refreshing Storm" for 0x34 "Traps"), whose
+  bar status is 10 (not earned): "Play the Creature Stage to discover how unlock this ability!". `coop.tribe powers`
+  showed the right unlock word (0x00900000) and `coop.tribe powers use 0x34` worked meanwhile.
+* ✔ tribe.cpp power_bar_tick calls AbilityBar_Rebuild (outside the frame) when the player tribe's chief, the index of
+  its first power or its ability count changes (switch `tribe.power_bar`); the buttons then read "Traps [F1]", "Fire
+  Bombs [F2]". BUG-0358's rebuild (creations.cpp) stays the Creature stage's.
+* ✔ A power needs the chieftain selected (its roster icon, the first of the Tribe list) before the button acts; Traps
+  places its lure at the chief, the button shows the recharge.

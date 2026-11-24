@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits:
+commits: ffd01832
 tests: tools/qa_win (manual, the MSI: coop.attachtest with game.attach_no_model off / on; a Vandh private planet joined)
 signature: 0xC0000005 at 0x00A920E0 SporeCoop::cLocomotiveObject_SetDesiredSpeed+0xB70, read 0x17C, < cCreatureBase::PlayAnimation+0x1C80 < cCreatureAnimal::SetSpecies+0xB8 < cGamePersistenceManager::LoadGame
 docs: docs/re/creature.md#creature-attach-no-model

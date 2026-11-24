@@ -9448,3 +9448,41 @@ BUG-9326 (docs/re/tribe.md#tribe-partner-pens). Follows #testing-tribe-final-qa 
 * `coop.party invite <name>` finds a galaxy player only while the game has the galaxy's player list (it asks for it
   while the Social Menu is open: `coop.party social toggle` first).
 
+## The deep playtest's tools and pitfalls (2026-11-24, feat/lineages-alpha)
+<a id="testing-deep-playtest-tools"></a>
+
+What a by-hand playthrough on TITAN and the MSI needed (docs/12-server-and-players.md#server-deep-playtest).
+* Fresh profiles have Spore's tutorials on: every tutorial card pauses the game (a host's pause is everybody's: "<host>
+  paused the game") and Civ's camera tutorial waits for real camera input. Set `OptionTutorialsEnabled 0` and
+  `OptionShowHints 0` in the test profile's Preferences\Preferences.prop while its game is closed (as tools/spore.sh
+  prepare_profile does). A card left: its check is 15 px left of and 21 px above the bottom right corner of
+  `coop.ui where 05822D40`. `coop.pauses sub <reason>` lifts a pause that waits for input.
+* A fresh profile's first start shows Spore's register box (X, then "Don't prompt me again" and OK) and sometimes
+  "Network play disabled" (its check).
+* The new game wizard at 1024 x 768 (the lab's 1440 x 1080 places moved by the window's centre): a star from `coop.ui
+  tree 3` (id 0x02E5A4A8; `move` to it first, then `click`: a small far star takes no click without the hover), the
+  Cell icon 513,236, a diet card 692,381 / 785,381, next 878,462, Normal 744,381, play 882,452. Editors: a part dragged
+  onto the body, done 998,748, the name panel's dice 406,514 (800 x 600: 294,346), done again. Name Your Captain: dice
+  707,399, check 728,472. Mission Control 290,605: "been there" 512,441 twice, then the first answer 512,410 three
+  times, `wheel 512 300 -25` until `call Simulator::GetCurrentContext cdecl` says 1. Galactic Adventures: the menu
+  entry 92,246, then 358,386, 684,340, 862,470, 866,350, 864,470.
+* Shortcuts used: `coop.pool food 1000` (Cell, three times: a level's worth each), `coop.dna add 3000` (Creature: brain
+  level 4), `coop.tribe advance` (the Tribe goal), `call Simulator::cCivExpansion::SpawnNextCity thiscall <expansion> 0
+  0` and `coop.civ capture <city>` (Civ; answer each "Choose the city's specialty" box), `coop.civ swgrant <seat> <type>
+  <money>` and `coop.civ super <type>` (a superweapon through the party's vote), `coop.space land` (the ship onto its
+  planet). `coop.dna add` is the Creature stage's only (BUG-9363).
+* New: `coop.hp hunger` reads and `coop.hp hunger <n>` sets the own creature's hunger (0 .. 100). An idle creature goes
+  from 100 to 0 in about 8 minutes at 10 FPS and then starves (the game's own rate): a script that leaves creatures
+  standing feeds them (a loop of `coop.hp hunger 100`), and a creature put into deep water meets the sea monster.
+* A stage's special ability (Raging Roar) is the HUD's round button over the stance buttons (517,660; 405,492 at 800 x
+  600); `coop.abilities play <index>` answers -1 for it.
+* Two test games on the MSI start at the same window place: `window 0 0` for the first and a second of 800 x 600 at
+  `window 1040 0`, or a click lands in the other game. Both read one coop.ini (a setting like `[galaxy] other_eras` set
+  in one test is the other profile's too: `coop.visit eras on`).
+* The MSI's link fell back to a relay for a while: one start ended in Steam's "Application load error S:0000065432"
+  box (the watchdog logs the dialog; stop that game and start again). A log search over the MSI's whole sporekit.log
+  takes minutes: read the last 5000 lines.
+* `mod.reload` and a new build: every MSI game is stopped for `msi.ps1 deploy`; a party is gone after its members'
+  restart (invite again), the planet's stored worlds are entered again with `coop.galaxy enter "<planet>|<stage>"`.
+* The galaxy server keeps three older copies of a stage's world (<planet>_<stage>-<id>.world.1 .. .3): with the server
+  stopped an older one copied over the newest gives a stage back as it was (used to play Civ's end again).
