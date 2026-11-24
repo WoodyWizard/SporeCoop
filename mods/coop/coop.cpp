@@ -3189,6 +3189,16 @@ static unsigned g_cross_holds = 0, g_cross_sent = 0;
 static bool g_cross_more = true;
 COOP_FIX("galaxy.party_stage_end_more", "BUG-9292", g_cross_more,
          "galaxy: on a galaxy era the Cell -> Creature switch and the Tribe -> Civ graduation move the leader's party into its own crossing first");
+// BUG-9368: the Civ stage's end had no crossing: on a galaxy planet the party's leader went through the spaceship
+// editor into Space inside the planet's Civ era, the galaxy server refused every save of it ("this world is in the
+// Space stage, not Civ", asked again every 34 s) and the planet never got the party's Space era (seen 2026-11-24,
+// the deep playtest). On: the Civ -> Space spacecraft request (native_first_spacecraft: History's check once the
+// planet is the party's) moves the leader's party into its own crossing first, as the other stages' ends; the
+// crossing arrives as the planet's Space era once its host plays Space. Off: the Civ era's session as before.
+static bool g_cross_civ = true;
+COOP_FIX("galaxy.party_stage_end_civ", "BUG-9368", g_cross_civ,
+         "galaxy: on a galaxy era the Civ -> Space spacecraft request moves the leader's party into its own crossing first");
+static bool native_first_spacecraft(void* req);
 static bool g_cell_cross = false; // the Cell switch waits for the crossing
 void SK_CDECL h_CellToCreature();
 bool SK_CDECL h_Submit(void* req);
@@ -3241,7 +3251,12 @@ bool SK_CDECL h_Submit(void* req)
     const bool creature_end = mode == modes::kCreature && !g_lineages_evo_req && req && skg::readable(req, 0x94) &&
                               skg::field<uint32_t>(req, 0x90) == kTagStageEnd;
     const bool tribe_end = g_cross_more && req && skg::readable(req, 0x94) && native_tribal_graduation(req);
-    if (!g_vote_bypass && req && (creature_end || tribe_end)) {
+    // BUG-9368. Only while the planet's era is still Civ: once the crossing arrived as the Space era, a partner's own
+    // spacecraft request (its own ship, History's check in its still loaded Civ world) is its launch, not a stage end
+    // (it was refused with "Only your party's leader ..." in the first run of this fix)
+    const bool civ_end = g_cross_civ && req && skg::readable(req, 0x94) && native_first_spacecraft(req) &&
+                         net::galaxy::era_of(galaxy::current_planet()) == net::galaxy::kEraCiv;
+    if (!g_vote_bypass && req && (creature_end || tribe_end || civ_end)) {
         std::string why;
         const auto step = galaxy::stage_end_request(why);
         if (step == galaxy::kStageEndHold) {

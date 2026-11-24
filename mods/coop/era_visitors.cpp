@@ -316,7 +316,18 @@ COOP_FIX("galaxy.editor_snapshot_guard", "BUG-9341", g_snap_guard,
 typedef char(__fastcall* EdMsgFn)(void* self, void* edx, uint32_t id, void* msg);
 static EdMsgFn o_EdMsg;
 static uintptr_t a_GetDb;
-static uint64_t g_snaps_seen, g_snaps_skipped;
+static uint64_t g_snaps_seen, g_snaps_skipped, g_snaps_continued;
+// BUG-9367: the editor's handler of 0x3FC3F13 ends by posting 0x29D57F4 (0x5921BA: IMessageManager vt 0x14(0x29D57F4,
+// 0, 0), then it returns 1): the bake's "picture taken, go on", which the bake's render posts itself when no editor
+// picture is wanted. BUG-9341's guard left the handler out as a whole, so that message never came: the bake stood still
+// with every later one behind it (IBakeManager vt 0x28 stayed at the 8 levels asked for a Civ era's building and
+// vehicle), another era's props were never made, and a Creature stage's entry (0xD43DE0, the wait at 0xD450BC for an
+// empty bake queue) never ended: a black screen with the pause 0x4BF38A7 for good for a player entering a planet's
+// Creature era beside its Civ era (seen 2026-11-24, the MSI). On: the skipped handler's go-on message is posted in
+// its place. Off: BUG-9341's guard as it was (the black screen).
+static bool g_snap_continue = true;
+COOP_FIX("galaxy.bake_go_on", "BUG-9367", g_snap_continue,
+         "galaxy: a skipped editor snapshot still posts the bake's go-on message (a black screen entering a Creature era beside a Civ era)");
 static char __fastcall h_EdMsg(void* self, void* edx, uint32_t id, void* msg)
 {
     if (id == 0x3FC3F13 && self) {
@@ -327,6 +338,14 @@ static char __fastcall h_EdMsg(void* self, void* edx, uint32_t id, void* msg)
             g_snaps_skipped++;
             H->log(M, SK_INFO, "era visitors: an editor without its %s skipped a bake's snapshot message (BUG-9341)",
                    !db ? "save area" : "model");
+            if (g_snap_continue) { // BUG-9367: what the handler's end does
+                static uintptr_t get = H->sym("App::IMessageManager::Get");
+                if (void* mm = get ? skg::cdecl_call<void*>(get) : nullptr) {
+                    skg::vcall<char>(mm, 0x14 / 4, 0x29D57F4u, (void*)nullptr, (void*)nullptr);
+                    g_snaps_continued++;
+                    return 1;
+                }
+            }
             return 0;
         }
     }
@@ -1302,6 +1321,26 @@ std::string stream_status()
                  (unsigned long long)g_bakes_pending, (unsigned long long)g_bakes_skipped, (unsigned long long)g_snaps_seen,
                  (unsigned long long)g_snaps_skipped);
         out += b;
+        snprintf(b, sizeof b, "  bake go-on (BUG-9367, %s): %llu posted for a skipped snapshot\n", g_snap_continue ? "on" : "off",
+                 (unsigned long long)g_snaps_continued);
+        out += b;
+        { // BUG-9367: the game's bake queue (IBakeManager vt 0x28, no arguments: the Creature stage's entry at
+          // 0xD450C5 waits until it is under 1) and each waiting object's baked levels and "asked" flag
+            static uintptr_t get = H->sym("Editors::IBakeManager::Get");
+            void* bm = get ? skg::cdecl_call<void*>(get) : nullptr;
+            snprintf(b, sizeof b, "  bake queue (BUG-9367): %d queued", bm ? skg::vcall<int>(bm, 0x28 / 4) : -1);
+            out += b;
+            for (auto& [k, o] : g_objs)
+                if (bm && o.waiting) {
+                    int lods = 0;
+                    for (int l = 0; l < 4; l++)
+                        lods |= (skg::vcall<char>(bm, 0x1C / 4, o.key, l) != 0) << l;
+                    snprintf(b, sizeof b, "; %08X/%08X levels %X asked %d", o.key[0], o.key[1], lods,
+                             (int)(skg::vcall<char>(bm, 0x18 / 4, o.key) != 0));
+                    out += b;
+                }
+            out += "\n";
+        }
         snprintf(b, sizeof b, "  solid (BUG-9293): on=%d pushes %llu, by a stretch %llu, last %.2f m; nearest stretch %.2f m (its reach %.2f)\n",
                  (int)g_solid, (unsigned long long)g_solid_pushes, (unsigned long long)g_solid_stretch_pushes, g_solid_last_push,
                  g_stretch_closest, g_stretch_r);
