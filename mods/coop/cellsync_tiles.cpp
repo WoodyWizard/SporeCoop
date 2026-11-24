@@ -660,6 +660,10 @@ static void stack_tick()
     stop_at(av, pos_of(av));
     stop_at(c, pos_of(av));
 }
+static bool g_fix_rescale_origin = true;
+COOP_FIX("cell.rescale_origin", "BUG-1394", g_fix_rescale_origin,
+         "cell: keep WorldScaleStep recentering at (0,0,0) when a connected peer's camera is >1000 m from origin");
+
 void SK_CDECL h_WorldScale(float dt)
 {
     g_last_dt = dt;
@@ -684,7 +688,31 @@ void SK_CDECL h_WorldScale(float dt)
     if (g_fix_scale_food_flush) // BUG-1066: after the drain, whose level change starts the scale moving
         flush();
     puppet_poison(dt); // BUG-0716: the partners' poison parts, as the avatar's in this step
+    // BUG-1394: WorldScaleStep (0x00E73E50) passes cCellUI+0x48 to Cell_RescaleAbout (0x00E6DB70), which recentered
+    // the entire world whenever |cam|^2 > 1e6. In co-op, hold cCellUI+0x48 at (0,0,0) across the call so all peers
+    // rescale around the shared origin, then restore cCellUI+0x48 scaled by old_scale / new_scale.
+    uint8_t* g = G();
+    uint8_t* ui = (a_CellUI && g && in_cell()) ? *(uint8_t**)a_CellUI : nullptr;
+    float* cam = (ui && skg::readable(ui + 0x48, 0x0C)) ? (float*)(ui + 0x48) : nullptr;
+    float old_sc = g ? F<float>(g, 0x514C) : 0.f;
+    float target_sc = g ? F<float>(g, 0x5150) : 0.f;
+    bool moving = g && old_sc != target_sc;
+    bool connected = C.sess && C.sess->connected();
+    bool hold = cam && cell_logic::rescale_needs_origin_hold(g_fix_rescale_origin, connected, moving,
+                                                             cam[0], cam[1], cam[2]);
+    float saved_cam[3] = {};
+    if (hold) {
+        saved_cam[0] = cam[0];
+        saved_cam[1] = cam[1];
+        saved_cam[2] = cam[2];
+        cam[0] = cam[1] = cam[2] = 0.f;
+    }
     o_WorldScale(dt);
+    if (hold) {
+        float new_sc = g ? F<float>(g, 0x514C) : old_sc;
+        cell_logic::rescale_restore_cam(saved_cam, old_sc, new_sc, cam);
+        g_n.rescale_origin_holds++;
+    }
 }
 
 // BUG-1509: every partner list is deleted by the loop that follows (hand_over gives a tile to the host's list only)

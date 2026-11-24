@@ -130,6 +130,7 @@ struct Counters {
     uint32_t joins_load = 0;     // tests: guest moved next to the host after a new avatar
     uint32_t bg_culled = 0;
     uint32_t leave_writes = 0, leave_dropped = 0; // BUG-0308: our pool work while the stage was left (off) / skipped (on)
+    uint32_t rescale_origin_holds = 0; // BUG-1394: WorldScaleStep calls whose camera >1000 m was held at origin
 };
 
 struct Mirror {
