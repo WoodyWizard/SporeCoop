@@ -123,10 +123,10 @@ def part_own_cloud(ck, host, guest):
     if not ck(sl.force(host, [guest], 'all.friendly_fire', 'on'), 'friendly fire on for both'):
         return
     try:
-        # Keep the host 10 m away (drawn so the puppet's poison step emits clouds, far enough that the host's own
-        # clouds never touch the guest under friendly fire).
+        # Keep the host 8 m away (well inside the host's view so the puppet's poison step emits clouds steadily,
+        # while far enough that the host's own clouds stay > 4.5 m away from the guest).
         host.call('coop.pool invulnfor 120')
-        host.call('coop.pool tp 10 0')
+        host.call('coop.pool tp 8 0')
         got = host.call(f'coop.pool borrow poison graft p{gid}')['out'].strip()
         print('  host: ' + got, flush=True)
         if not ck(got.startswith('borrowed'), 'the guest\'s puppet has the poison part in the host\'s game'):
@@ -138,20 +138,20 @@ def part_own_cloud(ck, host, guest):
             # On guest, 'host' reads me=() (guest's own cell) and '0' reads p0=() (host's puppet).
             own_p = maker_pos(guest, 'host')
             host_p = maker_pos(guest, '0')
-            if own_p and host_p and not (6.0 <= math.dist(own_p, host_p) <= 18.0):
-                host.call('coop.pool tp 10 0')
+            if own_p and host_p and not (6.0 <= math.dist(own_p, host_p) <= 11.0):
+                host.call('coop.pool tp 8 0')
             keys = []
             for k in clouds_near(guest):
                 if k in used:
                     continue
                 cp = pos(guest, k)
-                if cp and (own_p is None or math.dist(cp, own_p) < 4.5) and (host_p is None or math.dist(cp, host_p) > 5.0):
+                if cp and (own_p is None or math.dist(cp, own_p) < 4.5) and (host_p is None or math.dist(cp, host_p) > 4.5):
                     keys.append(k)
             if keys:
                 used.add(keys[0])
                 if 'moved' in guest.call(f'coop.pool swimto {keys[0]} tp 0.2')['out']:
                     onto += 1
-            for _ in range(4):
+            for _ in range(2):
                 time.sleep(0.25)
                 p = pool(guest)
                 if p['hp'] is not None and hp_min is not None:
