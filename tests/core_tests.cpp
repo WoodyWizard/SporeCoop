@@ -21,6 +21,7 @@
 #include "net/snapshot_rx.h"
 #include "share_logic.h"
 #include "world_id.h"
+#include "worldobj_corn.h"
 #include "worldobj_orn.h"
 
 static int g_fail = 0;
@@ -1046,9 +1047,47 @@ static void captain_rules()
     CHECK(own_step(true, true, 6, 0x20, 0, 0x10, 0x20) == Own::kHold);
 }
 
+static void city_ornament_rules()
+{
+    using namespace wobj_corn;
+    constexpr uint8_t kCiv = 4, kSpace = 8;
+    // Stage activation: Space always, Civ only when civ.city_ornament is on (BUG-1456).
+    CHECK(stage_active(kSpace, kCiv, true, kSpace));
+    CHECK(stage_active(kSpace, kCiv, true, kCiv));
+    CHECK(stage_active(kSpace, kCiv, false, kSpace));
+    CHECK(!stage_active(kSpace, kCiv, false, kCiv));
+    CHECK(!stage_active(0, 0, true, kCiv));
+
+    // State encoding: variant when enabled, 0 when disabled or sentinel kGone.
+    constexpr uint32_t kLamp = 0x6F8212CAu, kPlanter = 0x6F8212C8u;
+    CHECK(encode_state(kLamp, true) == kLamp);
+    CHECK(encode_state(kLamp, false) == 0u);
+    CHECK(encode_state(0u, true) == 0u);
+    CHECK(encode_state(kGone, true) == 0u);
+
+    // Behind / model update decisions:
+    // - kGone always triggers removal regardless of fix switch.
+    CHECK(behind(kPlanter, kGone, true) && behind(kPlanter, kGone, false));
+    CHECK(!should_set_model(kPlanter, kGone, true));
+    // - Different non-zero host variant triggers SetModelKey when enabled, ignored when off.
+    CHECK(behind(kPlanter, kLamp, true) && should_set_model(kPlanter, kLamp, true));
+    CHECK(!behind(kPlanter, kLamp, false) && !should_set_model(kPlanter, kLamp, false));
+    // - Same variant: no-op.
+    CHECK(!behind(kLamp, kLamp, true) && !should_set_model(kLamp, kLamp, true));
+    // - Older host sending state 0: no model overwrite (backwards compatible).
+    CHECK(!behind(kPlanter, 0u, true) && !should_set_model(kPlanter, 0u, true));
+
+    // ResourceKey builder matches SporeApp.exe 0x00E8F790 (+0x22C, 0, 0x9430ADD7).
+    uint32_t key[3] = {1, 2, 3};
+    model_key(kLamp, key);
+    CHECK(key[0] == kLamp && key[1] == 0u && key[2] == kCityOrnGroup);
+    printf("  city_ornament_rules ok\n");
+}
+
 int main()
 {
     ornament_fade_rules();
+    city_ornament_rules();
     arrival_wait();
     registry_bind();
     registry_liveness();

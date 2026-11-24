@@ -2,6 +2,7 @@
 // docs/sync-architecture-plan.md, docs/re/creature.md#creature-world-objects).
 #include "lifecycle.h"
 #include "worldobj.h"
+#include "worldobj_corn.h"
 #include "worldobj_orn.h"
 
 #include <windows.h>
@@ -120,8 +121,15 @@ struct Kind {
     // apart), and such a guest takes the velocity from snapshots over `fast_vel_dt` s apart (closer ones: kept)
     bool* fast_fix = nullptr;
     double fast_every = 0, fast_vel_dt = 0.3;
+    // BUG-1456: optional stage bits enabled only when *extra_stages_fix is on (city_ornament in Civ)
+    uint8_t extra_stages = 0;
+    bool* extra_stages_fix = nullptr;
 };
 static bool kind_on(const Kind& K) { return !K.fix || *K.fix; }
+static bool kind_in_stage(const Kind& K, uint8_t sb)
+{
+    return wobj_corn::stage_active(K.stages, K.extra_stages, K.extra_stages_fix && *K.extra_stages_fix, sb);
+}
 constexpr uint32_t kGone = 0xFFFFFFFFu; // the state of an object the host's game no longer has
 
 static void collect_noun(uint32_t noun, Items& out, uint32_t (*read)(void*), bool (*take)(void*) = nullptr,
@@ -824,12 +832,18 @@ static bool cult_place(const Item& l, const net::Vec3& hp, uint32_t) { return ga
 // without decorations, then moved to the host's places), and a guest's decoration left without a host partner is
 // removed the way City_RemoveTurret removes a turret: its layout slot cleared (0xAFADD0 on city +0x4B4),
 // DestroyInstance, erased from the city's decoration vector (+0x308..+0x30C, 0xD5AA90). The model variant (the
-constexpr uint32_t kOrnamentNoun = 0x018C88E4, kCityOrnModel = 0x02AE5BA7;
+constexpr uint32_t kOrnamentNoun = wobj_corn::kOrnamentNoun, kCityOrnModel = wobj_corn::kCityOrnModel;
 static uintptr_t a_PlanetModelGet, a_PlanetUpAt, a_CityDecorate, a_LayoutClear, a_VecErase;
 constexpr uint32_t kCityNounW = 0x018C43E8;
 constexpr uintptr_t kCityDecor = 0x308, kCityLayout = 0x4B4;
-static uint32_t g_corn_sets, g_corn_removed;
-static uint32_t corn_state(void*) { return 0; }
+static uint32_t g_corn_sets, g_corn_removed, g_corn_models;
+// BUG-1456: city_ornament was Space-only and left the decoration model variant (+0x22C: lamp post, tree planter,
+// fountain, brazier) per game. On: city_ornament runs in Civ as well and updates a bound decoration's model variant
+// (+0x22C + cSpatialObject::SetModelKey {variant, 0, 0x9430ADD7}). Off: Space-only, positions only (0.7.17).
+static bool g_civ_corn_fix = true;
+COOP_FIX("civ.city_ornament", "BUG-1456", g_civ_corn_fix,
+         "civ: a city's decorations (lamp posts, planters, fountains) match the host's in position and model variant");
+static uint32_t corn_state(void* o) { return wobj_corn::encode_state(field<uint32_t>(o, 0x22C), g_civ_corn_fix); }
 static bool corn_take(void* o) { return !IsBadReadPtr(o, 0x230) && field<uint32_t>(o, 0x228) == kCityOrnModel; }
 static uint32_t corn_class(void* o) { return field<uint32_t>(o, 0x22C); }
 static void corn_collect(Items& out) { collect_noun(kOrnamentNoun, out, corn_state, corn_take, corn_class); }
@@ -877,10 +891,20 @@ static void* decor_city(void* o)
     }
     return nullptr;
 }
-static bool corn_behind(uint32_t, uint32_t host) { return host == kGone; }
+static bool corn_behind(uint32_t local, uint32_t host) { return wobj_corn::behind(local, host, g_civ_corn_fix); }
 static void corn_apply(const Item& l, uint32_t host)
 {
-    if (host != kGone || !a_LayoutClear || !a_VecErase || !corn_take(l.p) || game::noun_id(l.p) != kOrnamentNoun)
+    if (!corn_take(l.p) || game::noun_id(l.p) != kOrnamentNoun)
+        return;
+    if (wobj_corn::should_set_model(l.st, host, g_civ_corn_fix)) {
+        field<uint32_t>(l.p, 0x22C) = host;
+        uint32_t key[3];
+        wobj_corn::model_key(host, key);
+        vcall<void>((uint8_t*)l.p + 0x70, 0x94 / 4, (const uint32_t*)key); // cSpatialObject::SetModelKey (0xC889A0)
+        g_corn_models++;
+        return;
+    }
+    if (host != kGone || !a_LayoutClear || !a_VecErase)
         return;
     void* c = decor_city(l.p);
     if (!c)
@@ -1333,11 +1357,12 @@ static Kind g_kinds[] = {
     {.name = "cultural_target", .stages = kStCiv | kStSpace, .tol = 3.f, .range = 400.f, .max = 48,
      .collect = cult_collect, .behind = none_behind, .apply = none_apply, .acted = none_acted, .act = none_act,
      .gone_acted = false, .drop_own = false, .place = cult_place, .relocate = 120.f, .place_eps = 0.5f},
-    // BUG-0541 (0.7.9 L2b): the cities' decorations at the host's places (the whole planet, as space_vehicle; one packet
-    // holds 56, 6 cities' sets: on a planet with more the farthest from the guest's ship stay its own)
+    // BUG-0541 (0.7.9 L2b) / BUG-1456 (0.7.99): the cities' decorations at the host's places and model variants
+    // (Space always; Civ while civ.city_ornament is on; one packet holds 56, 6 cities' sets)
     {.name = "city_ornament", .stages = kStSpace, .tol = 1.5f, .range = 2500.f, .max = 56,
      .collect = corn_collect, .behind = corn_behind, .apply = corn_apply, .acted = none_acted, .act = none_act,
-     .gone_acted = false, .drop_own = true, .make = corn_make, .place = corn_place, .relocate = 2500.f, .place_eps = 0.5f},
+     .gone_acted = false, .drop_own = true, .make = corn_make, .place = corn_place, .relocate = 2500.f, .place_eps = 0.5f,
+     .extra_stages = kStCiv, .extra_stages_fix = &g_civ_corn_fix},
     // BUG-0485: the planet's spice nodes (static, the whole planet), the host's scale
     {.name = "node", .stages = kStCreature | kStTribe | kStCiv, .tol = 3.f, .range = 3000.f, .max = 48,
      .collect = node_collect, .behind = node_behind, .apply = node_apply, .acted = none_acted, .act = none_act,
@@ -1439,7 +1464,7 @@ static void host_tick(double now)
         Kind& K = g_kinds[k];
         bool fast = K.fast_fix && *K.fast_fix && K.fast_every > 0;
         double every = fast ? K.fast_every : K.every > 0 ? K.every : kSnapInterval;
-        if (!kind_on(K) || !(K.stages & sb) || K.max > kMaxPerSnap || now - g_last_tx[k] < every)
+        if (!kind_on(K) || !kind_in_stage(K, sb) || K.max > kMaxPerSnap || now - g_last_tx[k] < every)
             continue;
         g_last_tx[k] = now;
         // BUG-1227: a guest before 0.7.15 gets every `every` s (one fast tick of n)
@@ -1776,7 +1801,7 @@ static void drive_frame(double now, uint8_t sb, bool away)
     for (int k = 0; k < kKinds; k++) {
         Kind& K = g_kinds[k];
         GuestKind& G = g_g[k];
-        if (!K.drive || !kind_on(K) || !(K.stages & sb) || away || G.binds.empty() || now - G.snap.at > kStale)
+        if (!K.drive || !kind_on(K) || !kind_in_stage(K, sb) || away || G.binds.empty() || now - G.snap.at > kStale)
             continue;
         Items local;
         K.collect(local);
@@ -1817,7 +1842,7 @@ static void guest_tick(double now)
     bool away = C.host_away && C.host_away();
     for (int k = 0; k < kKinds; k++) {
         GuestKind& G = g_g[k];
-        if (!kind_on(g_kinds[k]) || !(g_kinds[k].stages & sb) || away || now - G.snap.at > kStale) {
+        if (!kind_on(g_kinds[k]) || !kind_in_stage(g_kinds[k], sb) || away || now - G.snap.at > kStale) {
             G.binds.clear();
             G.own.clear();
             continue;
@@ -1853,7 +1878,7 @@ static void on_snap(net::Reader& r, double now)
         s.objs[id] = {p, st, cls, aux};
     }
     Kind& K = g_kinds[k];
-    if (!kind_on(K) || !(K.stages & stage_bit()) || (C.host_away && C.host_away()) || g_epoch != game::world_epoch())
+    if (!kind_on(K) || !kind_in_stage(K, stage_bit()) || (C.host_away && C.host_away()) || g_epoch != game::world_epoch())
         return;
     g_st[k].rx++;
     g_g[k].snap = std::move(s);
@@ -1869,7 +1894,7 @@ static void on_act(uint8_t from, net::Reader& r)
     if (!r.ok() || k >= kKinds)
         return;
     Kind& K = g_kinds[k];
-    if (!kind_on(K) || !(K.stages & stage_bit()))
+    if (!kind_on(K) || !kind_in_stage(K, stage_bit()))
         return;
     g_st[k].req_rx++;
     Items all;
@@ -1988,9 +2013,9 @@ std::string status()
                  t.tx, t.rx, t.bound, t.applied, t.dropped, t.missing, t.made, t.req_tx, t.req_rx, t.acted, t.placed, t.relocated, t.reclassed);
         s += b;
     }
-    snprintf(b, sizeof b, "fruit made drops=%u fail=%u; bundles made=%u carried=%u removed=%u left_alone=%u; city decorations sets=%u removed=%u; "
+    snprintf(b, sizeof b, "fruit made drops=%u fail=%u; bundles made=%u carried=%u removed=%u left_alone=%u; city decorations sets=%u removed=%u models=%u; "
              "ornaments faded=%u destroyed=%u gone_held=%u host_new=%d\n",
-             g_fruit_made_drops, g_fruit_made_fail, g_bundles_made, g_bundles_carried, g_bundles_removed, g_bundles_left_alone, g_corn_sets, g_corn_removed,
+             g_fruit_made_drops, g_fruit_made_fail, g_bundles_made, g_bundles_carried, g_bundles_removed, g_bundles_left_alone, g_corn_sets, g_corn_removed, g_corn_models,
              g_orn_fades, g_orn_destroys, g_orn_gone_held, (int)g_orn_host_new);
     s += b;
     snprintf(b, sizeof b, "citizens walks=%u puts=%u far=%u relocs=%u glides=%u runs=%u run_ends=%u holds=%u hold_places=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks,
@@ -2408,8 +2433,10 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     a_LayoutClear = H->sym("SporeCoop::Layout_ClearObject");
     a_VecErase = H->sym("SporeCoop::VectorPtr_EraseValue");
     if (!a_FruitSetState || !a_FloraGet || !a_DropFruit || !a_TreeVt || !a_OrnUsed || !a_RewardFind || !a_RewardHandlerVt || !a_HerdSetExtinct || !a_HerdSetExtinctFlag)
-        for (auto& k : g_kinds)
+        for (auto& k : g_kinds) {
             k.stages = 0; // a symbol missing on this build: every game keeps its own (logged below)
+            k.extra_stages = 0;
+        }
     fields::add_kind({fields::K_CIV_CITIZEN, "civ_citizen", nullptr, kCitizenFields, 1, citizen_each, citizen_mirror,
                       [] { return game::mode_id() == modes::kCiv; }});
     fields::add_kind({fields::K_SPACE_CITIZEN, "space_citizen", &g_space_scale_fix, kCitizenFields, 1, space_citizen_each,

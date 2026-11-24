@@ -13,6 +13,10 @@ position), not the mod's bookkeeping:
                     the other's within 1.5 m), in 3 landings (a takeoff between: the cities are set up anew; their
                     layouts differed in 2 of 3 loads). wobj.city_ornament off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-045654:host_space_ornament).
 
+  --case ornament_civ (BUG-1456, civ_npc) Civ city decorations (lamp posts, tree planters, fountains, braziers;
+                    noun 0x18C88E4 with model variant +0x22C in census key=) match between host and guest in both
+                    position (1.5 m) and model variant (SPORE_FIX_OFF=civ.city_ornament fails: host_civ_ornament_off).
+
   --case bundle_drop (BUG-0661, tribe) a host member carrying food dies: the food lies on the ground at the host's place
                     in the guest's game too, no copy is still carried (SPORE_FIX_OFF=wobj.bundle_reclass fails)
   --case bundle_civ (BUG-0548, civ) food on the ground by the host's city (as a fight's loot): the host's lies at
@@ -401,14 +405,64 @@ def ornament(host, guest, ck, rounds=3):
     ck(not bad, f'the guest\'s planet has the host\'s ornaments at their places and no others in every round (not in {bad})')
 
 
+def ornament_civ(host, guest, ck):
+    """BUG-1456: Civ city decorations (noun 0x018C88E4, model 0x02AE5BA7, variant +0x22C in census key=)
+    match between host and guest in both position (1.5 m) and model variant within the snapshot area."""
+    import worlddiff
+    noun = 0x018C88E4
+
+    def orns(con):
+        return [r for r in worlddiff.dump(con, 5000, (0.0, 0.0, 0.0)).rows
+                if r['noun'] == noun and r.get('key', '00000000') != '00000000']
+
+    def compare():
+        ho, go = orns(host), orns(guest)
+        # host sends the 56 nearest the guest's pointer (or capital): compare that snapshot area
+        me = worlddiff.dump(guest, 1, (0.0, 0.0, 0.0)).me
+        if not me or math.hypot(*me) < 1.0:
+            cities = [r for r in worlddiff.dump(host, 5000, (0.0, 0.0, 0.0)).rows if r['noun'] == 0x018C43E8]
+            me = cities[0]['pos'] if cities else None
+        if me and len(ho) > 56:
+            r = sorted(math.dist(h['pos'], me) for h in ho)[55]
+            ho = [h for h in ho if math.dist(h['pos'], me) <= r - 2]
+            go = [g for g in go if math.dist(g['pos'], me) <= r - 2]
+        h_only, bad_model = [], []
+        for h in ho:
+            near = [g for g in go if math.dist(g['pos'], h['pos']) < 1.5]
+            if not near:
+                h_only.append((tuple(round(v) for v in h['pos']), h['key']))
+            else:
+                best = min(near, key=lambda g: math.dist(g['pos'], h['pos']))
+                if best['key'] != h['key']:
+                    bad_model.append((tuple(round(v) for v in h['pos']), h['key'], best['key']))
+        g_only = [(tuple(round(v) for v in g['pos']), g['key'])
+                  for g in go if not any(math.dist(h['pos'], g['pos']) < 1.5 for h in ho)]
+        return ho, go, h_only, g_only, bad_model
+
+    ok = wait(lambda: not any(compare()[2:]), 25)
+    ho, go, h_only, g_only, bad_model = compare()
+    print(f'  civ ornaments: host {len(ho)}, guest {len(go)}; host_only {len(h_only)} {h_only[:4]}, '
+          f'guest_only {len(g_only)} {g_only[:4]}, model_mismatch {len(bad_model)} {bad_model[:4]}', flush=True)
+    wobj_lines = [ln for ln in guest.call('coop.wobj')['out'].splitlines()
+                  if 'city_ornament' in ln or 'city decorations' in ln]
+    print('  wobj:', ' | '.join(wobj_lines), flush=True)
+    ck(len(ho) >= 9, f'the host has Civ city decorations ({len(ho)})')
+    ck(ok and not h_only and not g_only,
+       f'every Civ city decoration in the snapshot area stands at the host\'s place (host_only={len(h_only)}, guest_only={len(g_only)})')
+    ck(not bad_model,
+       f'every Civ city decoration has the host\'s model variant (mismatches={len(bad_model)}: {bad_model[:4]})')
+    ck(any('kind city_ornament' in ln and 'binds=0 ' not in ln for ln in wobj_lines),
+       'guest bound city_ornament snapshots in Civ')
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--case', choices=('fruit', 'bundle', 'bundle_carry', 'bundle_drop', 'bundle_civ', 'cultural', 'ornament'), required=True)
+    ap.add_argument('--case', choices=('fruit', 'bundle', 'bundle_carry', 'bundle_drop', 'bundle_civ', 'cultural', 'ornament', 'ornament_civ'), required=True)
     a = ap.parse_args()
-    host, guest = start({'fruit': 'creature', 'bundle': 'tribe', 'bundle_carry': 'tribe', 'bundle_drop': 'tribe', 'bundle_civ': 'civ_npc', 'cultural': 'civ_npc', 'ornament': 'space'}[a.case])
+    host, guest = start({'fruit': 'creature', 'bundle': 'tribe', 'bundle_carry': 'tribe', 'bundle_drop': 'tribe', 'bundle_civ': 'civ_npc', 'cultural': 'civ_npc', 'ornament': 'space', 'ornament_civ': 'civ_npc'}[a.case])
     ck = Checks()
     time.sleep(6)  # the first snapshots
-    {'fruit': fruit, 'bundle': bundle, 'bundle_carry': bundle_carry, 'bundle_drop': bundle_drop, 'bundle_civ': bundle_civ, 'cultural': cultural, 'ornament': ornament}[a.case](host, guest, ck)
+    {'fruit': fruit, 'bundle': bundle, 'bundle_carry': bundle_carry, 'bundle_drop': bundle_drop, 'bundle_civ': bundle_civ, 'cultural': cultural, 'ornament': ornament, 'ornament_civ': ornament_civ}[a.case](host, guest, ck)
     print('  guest:', guest.call('coop.wobj')['out'].strip().replace('\n', ' | '), flush=True)
     print('  host:', host.call('coop.wobj')['out'].strip().replace('\n', ' | '), flush=True)
     ck.faults(host=host, guest=guest)
