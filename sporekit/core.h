@@ -12,7 +12,7 @@
 
 #include "../sdk/include/sporekit.h"
 
-#define SK_VERSION "0.3.18"
+#define SK_VERSION "0.3.19"
 
 // ---- SkMod (opaque for mods) ----
 struct SkMod {
@@ -52,6 +52,7 @@ int instance_id();
 int ini_int(const std::wstring& file, const char* section, const char* key, int def);
 std::string ini_str(const std::wstring& file, const char* section, const char* key,
                     const char* def);
+bool ini_set_str(const std::wstring& file, const char* section, const char* key, const char* value);
 
 // sha256.cpp
 std::string sha256_file_hex(const std::wstring& path);
@@ -284,6 +285,18 @@ int frame_limit_now();          // kFrameLimitMS in the game now (-1: not readab
 int frame_limit_own();          // the game's own value as SporeKit keeps it (BUG-0779)
 unsigned frame_limit_changes(); // changes of the value by another program / the game seen
 void set_frame_limit(int ms);    // console: frame.limit <ms> (33 = the game's own, 0 = none)        // test runs: lift the game's 30 fps cap ([sporekit] test_frame_ms)       // test runs: move the game window to a secondary monitor
+int frame_target_now();                  // BUG-0865: 0 = auto, 1..360 = active fps cap
+int set_frame_target(int fps, bool persist = true);
+const char* frame_target_timer_kind();   // "high-res" / "timer" / "sleep" / "none"
+void pace_frame_target();                // called at start of frame_common
+bool borderless_enabled();               // BUG-0865: configured borderless state
+bool borderless_applied();               // whether borders are currently stripped
+bool borderless_video_windowed();        // last D3D9 Windowed flag
+void borderless_video_mode(bool windowed);
+bool set_borderless(bool on, bool persist = true);
+void maintain_borderless();              // called outside the frame when borderless needs apply/restore
+void maintain_borderless_if_needed();    // cheap check from frame_common (queues outside-frame work)
+std::string borderless_status();         // console: window.borderless status line
 
 // fixes.cpp: fixes with a switch for tests (`kit.fix <name> 0|1`): 1 (default) = fixed, 0 = the old
 // behaviour, so a test can show that it still catches the bug. Plain atomics: readable from an
@@ -332,6 +345,8 @@ extern KitFix g_fix_cmdkeep;   // BUG-1018: a mod's image is freed only after it
 extern KitFix g_fix_postinit;  // BUG-1021: SK_EV_POST_INIT is not fired after a failed cSporeApp::Init
 extern KitFix g_fix_offstackcap; // BUG-1520 (KIT-13): the off-stack check also after the logger's dedup and its cap
 extern KitFix g_fix_reportzip;   // BUG-1521 (KIT-21): report archives written to .part, never over another of the second
+extern KitFix g_fix_frametarget; // BUG-0865: live 1-360 fps cap with high-resolution waitable timer pacing
+extern KitFix g_fix_borderless;  // BUG-0865: borderless windowed mode (strip WS_OVERLAPPEDWINDOW, fit monitor rect, restore WINDOWPLACEMENT)
 // BUG-1033: a module's file name, "" when GetModuleFileNameW fails (a module unloaded meanwhile) or cuts the path;
 // the callers' stack buffers were used whatever the call returned
 inline std::wstring module_path(HMODULE m)

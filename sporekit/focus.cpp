@@ -3,8 +3,10 @@
 // the real mouse pointer.
 #include <algorithm>
 #include "core.h"
+#include "display_logic.h"
 
 #include <atomic>
+#include <cstdio>
 
 namespace sk {
 
@@ -142,6 +144,120 @@ static int g_game_ms = 33; // the game's own value, read before the first change
 static int g_last_seen = -1; // the value after SporeKit's last look / write (-1: never)
 static unsigned g_others = 0; // changes by someone else seen
 
+// BUG-0865: live 1-360 fps cap with high-resolution waitable timer pacing and borderless windowed mode
+static int g_frame_target = -1; // -1: unread from sporekit.ini, 0: auto (game default), 1..360: fps cap
+static skdisp::PacerState g_pacer{};
+static HANDLE g_pace_timer = nullptr;
+static bool g_pace_timer_tried = false;
+static bool g_pace_high_res = false;
+static LARGE_INTEGER g_qpc_freq{};
+
+static void frame_target_ensure_loaded()
+{
+    if (g_frame_target >= 0)
+        return;
+    int v = ini_int(mods_dirw() + L"\\sporekit.ini", "sporekit", "frame_target", 0);
+    g_frame_target = skdisp::clamp_fps(v);
+    if (g_frame_target > 0)
+        SKLOG(SK_INFO, "frame target: loaded %d fps from sporekit.ini", g_frame_target);
+}
+
+static int64_t qpc_now_ns()
+{
+    if (g_qpc_freq.QuadPart == 0)
+        QueryPerformanceFrequency(&g_qpc_freq);
+    LARGE_INTEGER c{};
+    QueryPerformanceCounter(&c);
+    if (g_qpc_freq.QuadPart <= 0)
+        return (int64_t)(now_seconds() * 1e9);
+    int64_t sec = c.QuadPart / g_qpc_freq.QuadPart;
+    int64_t rem = c.QuadPart % g_qpc_freq.QuadPart;
+    return sec * 1000000000LL + (rem * 1000000000LL) / g_qpc_freq.QuadPart;
+}
+
+static void ensure_pace_timer()
+{
+    if (g_pace_timer_tried)
+        return;
+    g_pace_timer_tried = true;
+    using CreateWaitableTimerExW_t = HANDLE(WINAPI*)(LPSECURITY_ATTRIBUTES, LPCWSTR, DWORD, DWORD);
+    HMODULE k32 = GetModuleHandleW(L"kernel32.dll");
+    auto fn = k32 ? (CreateWaitableTimerExW_t)(void*)GetProcAddress(k32, "CreateWaitableTimerExW") : nullptr;
+    constexpr DWORD kHighRes = 0x00000002u; // CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+    if (fn) {
+        g_pace_timer = fn(nullptr, nullptr, kHighRes, TIMER_ALL_ACCESS);
+        if (g_pace_timer) {
+            g_pace_high_res = true;
+            SKLOG(SK_INFO, "frame target: high-resolution waitable timer ready");
+            return;
+        }
+    }
+    g_pace_timer = CreateWaitableTimerW(nullptr, TRUE, nullptr);
+    if (g_pace_timer)
+        SKLOG(SK_INFO, "frame target: high-resolution timer unavailable, using standard waitable timer");
+    else
+        SKLOG(SK_WARN, "frame target: waitable timer unavailable, using Sleep fallback");
+}
+
+const char* frame_target_timer_kind()
+{
+    if (!g_pace_timer_tried)
+        return "idle";
+    if (g_pace_high_res)
+        return "high-res";
+    return g_pace_timer ? "timer" : "sleep";
+}
+
+int frame_target_now()
+{
+    frame_target_ensure_loaded();
+    return g_frame_target;
+}
+
+int set_frame_target(int fps, bool persist)
+{
+    frame_target_ensure_loaded();
+    fps = skdisp::clamp_fps(fps);
+    g_frame_target = fps;
+    g_pacer.next_ns = 0;
+    if (persist)
+        ini_set_str(mods_dirw() + L"\\sporekit.ini", "sporekit", "frame_target", std::to_string(fps).c_str());
+    SKLOG(SK_INFO, "frame target: %d fps%s (fix=%d)", fps, fps == 0 ? " (auto)" : "",
+          fixed(g_fix_frametarget) ? 1 : 0);
+    apply_frame_limit();
+    return fps;
+}
+
+void pace_frame_target()
+{
+    frame_target_ensure_loaded();
+    if (!fixed(g_fix_frametarget) || g_frame_target <= 0) {
+        g_pacer.next_ns = 0;
+        return;
+    }
+    int64_t now = qpc_now_ns();
+    int64_t wait_ns = skdisp::pace_step(g_pacer, g_frame_target, now);
+    if (wait_ns <= 0)
+        return;
+    int64_t deadline = now + wait_ns;
+    ensure_pace_timer();
+    int64_t sleep_100ns = skdisp::timer_sleep_100ns(wait_ns, g_pace_high_res);
+    if (sleep_100ns > 0) {
+        if (g_pace_timer) {
+            LARGE_INTEGER due{};
+            due.QuadPart = -sleep_100ns;
+            if (SetWaitableTimer(g_pace_timer, &due, 0, nullptr, nullptr, FALSE))
+                WaitForSingleObject(g_pace_timer, INFINITE);
+        } else {
+            DWORD ms = (DWORD)(sleep_100ns / 10000LL);
+            if (ms > 0)
+                Sleep(ms);
+        }
+    }
+    for (int spins = 0; spins < 50000 && qpc_now_ns() < deadline; spins++)
+        SwitchToThread();
+}
+
 void set_frame_limit(int ms)
 {
     g_forced = ms;
@@ -159,6 +275,7 @@ static int* frame_limit_field()
 
 void apply_frame_limit()
 {
+    frame_target_ensure_loaded();
     if (g_forced == -2) {
         std::wstring ini = mods_dirw() + L"\\sporekit.ini";
         g_forced = ini_int(ini, "sporekit", "frame_ms", -1);
@@ -188,10 +305,158 @@ void apply_frame_limit()
     }
     uint32_t mode = game_mode_id();
     bool menu = mode == 0 || mode == 0x2CCD1D2; // startup / GalaxyGameEntry
-    int want = g_forced >= 0 ? g_forced : (menu && g_menu_ms >= 0 ? g_menu_ms : g_game_ms);
+    int want = skdisp::desired_frame_ms(g_frame_target, fixed(g_fix_frametarget), g_forced, g_menu_ms, menu, g_game_ms);
     if (*f != want)
         *f = want;
     g_last_seen = want;
+}
+
+// ---- Borderless windowed mode (BUG-0865) ----
+static skdisp::BorderlessState g_bl{};
+static bool g_bl_loaded = false;
+static WINDOWPLACEMENT g_bl_wp{};
+
+static void borderless_ensure_loaded()
+{
+    if (g_bl_loaded)
+        return;
+    g_bl_loaded = true;
+    g_bl.enabled = ini_int(mods_dirw() + L"\\sporekit.ini", "sporekit", "borderless", 0) != 0;
+    if (g_bl.enabled)
+        SKLOG(SK_INFO, "borderless: loaded on from sporekit.ini");
+}
+
+static bool monitor_rect_of(HWND w, skdisp::RectI& out)
+{
+    HMONITOR m = MonitorFromWindow(w, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{};
+    mi.cbSize = sizeof mi;
+    if (!m || !GetMonitorInfoW(m, &mi))
+        return false;
+    out = {(int32_t)mi.rcMonitor.left, (int32_t)mi.rcMonitor.top, (int32_t)mi.rcMonitor.right,
+           (int32_t)mi.rcMonitor.bottom};
+    return out.valid();
+}
+
+bool borderless_enabled()
+{
+    borderless_ensure_loaded();
+    return g_bl.enabled;
+}
+
+bool borderless_applied() { return g_bl.applied; }
+bool borderless_video_windowed() { return g_bl.video_windowed; }
+
+void borderless_video_mode(bool windowed)
+{
+    borderless_ensure_loaded();
+    g_bl.video_windowed = windowed;
+    if (!windowed) {
+        g_bl.applied = false;
+        return;
+    }
+    if (g_bl.enabled && fixed(g_fix_borderless))
+        run_outside_frame(maintain_borderless);
+}
+
+void maintain_borderless()
+{
+    borderless_ensure_loaded();
+    HWND w = (HWND)game_window();
+    if (!w || !IsWindow(w))
+        return;
+    uint32_t cur_style = (uint32_t)GetWindowLongW(w, GWL_STYLE);
+    uint32_t cur_ex = (uint32_t)GetWindowLongW(w, GWL_EXSTYLE);
+    RECT wr{};
+    GetWindowRect(w, &wr);
+    skdisp::RectI cur_rect{(int32_t)wr.left, (int32_t)wr.top, (int32_t)wr.right, (int32_t)wr.bottom};
+    skdisp::RectI mon{};
+    monitor_rect_of(w, mon);
+    skdisp::BorderlessAction act = skdisp::decide_borderless(g_bl, fixed(g_fix_borderless), cur_style, cur_rect, mon);
+    if (act == skdisp::BorderlessAction::Apply) {
+        if (!g_bl.applied) {
+            g_bl.saved_style = cur_style;
+            g_bl.saved_exstyle = cur_ex;
+            g_bl.saved_rect = cur_rect;
+            g_bl_wp = {};
+            g_bl_wp.length = sizeof g_bl_wp;
+            g_bl.have_saved = GetWindowPlacement(w, &g_bl_wp) != FALSE;
+        }
+        uint32_t ns = skdisp::borderless_style(cur_style);
+        uint32_t nex = skdisp::borderless_exstyle(cur_ex);
+        if (ns != cur_style)
+            SetWindowLongW(w, GWL_STYLE, (LONG)ns);
+        if (nex != cur_ex)
+            SetWindowLongW(w, GWL_EXSTYLE, (LONG)nex);
+        SetWindowPos(w, HWND_TOP, mon.left, mon.top, mon.width(), mon.height(),
+                     SWP_FRAMECHANGED | SWP_NOOWNERZORDER | SWP_NOACTIVATE);
+        g_bl.applied = true;
+        SKLOG(SK_INFO, "borderless: applied (%d,%d)-(%d,%d) style=0x%08X", mon.left, mon.top, mon.right, mon.bottom,
+              ns);
+    } else if (act == skdisp::BorderlessAction::Restore) {
+        SetWindowLongW(w, GWL_STYLE, (LONG)g_bl.saved_style);
+        SetWindowLongW(w, GWL_EXSTYLE, (LONG)g_bl.saved_exstyle);
+        if (g_bl.have_saved)
+            SetWindowPlacement(w, &g_bl_wp);
+        SetWindowPos(w, nullptr, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        g_bl.applied = false;
+        SKLOG(SK_INFO, "borderless: restored style=0x%08X rect=(%d,%d)-(%d,%d)", g_bl.saved_style, g_bl.saved_rect.left,
+              g_bl.saved_rect.top, g_bl.saved_rect.right, g_bl.saved_rect.bottom);
+    }
+}
+
+void maintain_borderless_if_needed()
+{
+    borderless_ensure_loaded();
+    HWND w = (HWND)game_window();
+    if (!w || !IsWindow(w))
+        return;
+    uint32_t cur_style = (uint32_t)GetWindowLongW(w, GWL_STYLE);
+    RECT wr{};
+    GetWindowRect(w, &wr);
+    skdisp::RectI cur_rect{(int32_t)wr.left, (int32_t)wr.top, (int32_t)wr.right, (int32_t)wr.bottom};
+    skdisp::RectI mon{};
+    monitor_rect_of(w, mon);
+    if (skdisp::decide_borderless(g_bl, fixed(g_fix_borderless), cur_style, cur_rect, mon) !=
+        skdisp::BorderlessAction::None)
+        run_outside_frame(maintain_borderless);
+}
+
+bool set_borderless(bool on, bool persist)
+{
+    borderless_ensure_loaded();
+    g_bl.enabled = on;
+    if (persist)
+        ini_set_str(mods_dirw() + L"\\sporekit.ini", "sporekit", "borderless", on ? "1" : "0");
+    SKLOG(SK_INFO, "borderless: %s (windowed=%d fix=%d)", on ? "on" : "off", g_bl.video_windowed ? 1 : 0,
+          fixed(g_fix_borderless) ? 1 : 0);
+    if (!in_frame() && GetCurrentThreadId() == main_thread_id())
+        maintain_borderless();
+    else
+        run_outside_frame(maintain_borderless);
+    return g_bl.enabled;
+}
+
+std::string borderless_status()
+{
+    borderless_ensure_loaded();
+    HWND w = (HWND)game_window();
+    uint32_t st = w ? (uint32_t)GetWindowLongW(w, GWL_STYLE) : 0;
+    RECT wr{};
+    if (w)
+        GetWindowRect(w, &wr);
+    skdisp::RectI mon{};
+    if (w)
+        monitor_rect_of(w, mon);
+    char b[256];
+    snprintf(b, sizeof b,
+             "window.borderless enabled=%d applied=%d windowed=%d fix=%d style=0x%08X borders=%d "
+             "rect=%ld,%ld,%ld,%ld mon=%d,%d,%d,%d",
+             g_bl.enabled ? 1 : 0, g_bl.applied ? 1 : 0, g_bl.video_windowed ? 1 : 0,
+             fixed(g_fix_borderless) ? 1 : 0, st, skdisp::has_window_borders(st) ? 1 : 0, wr.left, wr.top, wr.right,
+             wr.bottom, mon.left, mon.top, mon.right, mon.bottom);
+    return b;
 }
 
 int frame_limit_now()
@@ -279,6 +544,8 @@ void place_test_window()
     HWND w = (HWND)game_window();
     if (!g_test_run || !w)
         return;
+    if (borderless_enabled() && fixed(g_fix_borderless))
+        return; // BUG-0865: borderless mode owns the window rect
     std::string mode = ini_str(mods_dirw() + L"\\sporekit.ini", "sporekit", "test_monitor", "auto");
     if (mode == "off" || mode == "primary")
         return;

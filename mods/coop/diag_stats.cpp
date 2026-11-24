@@ -489,6 +489,9 @@ static void env_minute(int avg_fps)
 {
     if (g_uncapped_told)
         return;
+    if (g_H && g_H->size >= offsetof(SkHost, frame_target_get) + sizeof(g_H->frame_target_get) &&
+        g_H->frame_target_get && g_H->frame_target_get() > 0)
+        return; // BUG-0865: SporeKit's own frame.target paces the frames (kFrameLimitMS == 0 is expected)
     int ms = frame_limit_ms();
     if (ms < 0 || ms >= 10 || avg_fps < 50)
         return; // capped (the game's own 16 ms, a limit another program set) or not fast anyway

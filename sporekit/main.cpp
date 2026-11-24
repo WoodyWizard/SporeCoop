@@ -36,6 +36,12 @@ std::string ini_str(const std::wstring& file, const char* section, const char* k
     return skini::read_str(file, section, key, def);
 }
 
+bool ini_set_str(const std::wstring& file, const char* section, const char* key, const char* value)
+{
+    ini_fixes();
+    return skini::write_str(file, section, key, value);
+}
+
 // ---------------- SkHost implementation ----------------
 SK_PRINTF(3, 4) static void h_log(SkMod* m, int lvl, const char* fmt, ...)
 {
@@ -155,6 +161,11 @@ static const char* h_symbols_build()
     return h.c_str();
 }
 
+static int h_frame_target_get() { return frame_target_now(); }
+static int h_frame_target_set(int fps) { return set_frame_target(fps, true); }
+static int h_borderless_get() { return borderless_enabled() ? 1 : 0; }
+static int h_borderless_set(int on) { return set_borderless(on != 0, true) ? 1 : 0; }
+
 SkHost g_host = {
     SK_ABI_VERSION, sizeof(SkHost),
     h_log, h_logv,
@@ -186,6 +197,10 @@ SkHost g_host = {
     h_report_shot,
     h_report_shot_pending,
     overlay_tris,
+    h_frame_target_get,
+    h_frame_target_set,
+    h_borderless_get,
+    h_borderless_set,
 };
 
 } // namespace sk

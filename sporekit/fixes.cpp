@@ -45,6 +45,8 @@ KitFix g_fix_cmdkeep{"cmdkeep", "mod.unload / mod.reload wait for the mod's cons
 KitFix g_fix_postinit{"postinit", "SK_EV_POST_INIT (main menu ready) is not fired when the game's own cSporeApp::Init failed (BUG-1021)", 1};
 KitFix g_fix_offstackcap{"offstackcap", "the off-stack check (BUG-0956) runs also for a fault the logger has seen before or after its 64 fault places: such a fault still writes its crash report (BUG-1520)", 1};
 KitFix g_fix_reportzip{"reportzip", "a report archive is written to a .part file and renamed when complete, and a second archive in the same second gets its own name (BUG-1521)", 1};
+KitFix g_fix_frametarget{"frametarget", "frame.target: 1-360 fps cap with high-resolution waitable timer pacing and game frame-ms lift (BUG-0865)", 1};
+KitFix g_fix_borderless{"borderless", "window.borderless: strip WS_OVERLAPPEDWINDOW, fit monitor rect, restore WINDOWPLACEMENT (BUG-0865)", 1};
 KitFix g_fix_logprune{"logprune", "only the newest crash reports, dumps, reports and archives stay in mods\\logs (BUG-0137)", 1};
 
 std::vector<KitFix*> kit_fixes() { return {&g_fix_stackdump, &g_fix_cheatwait, &g_fix_reentry, &g_fix_hookkeep,
@@ -54,7 +56,7 @@ std::vector<KitFix*> kit_fixes() { return {&g_fix_stackdump, &g_fix_cheatwait, &
                                        &g_fix_frameunwind, &g_fix_outpump, &g_fix_presentlost, &g_fix_faultstorm, &g_fix_dialognote, &g_fix_framelimit, &g_fix_offstack, &g_fix_taskdrop, &g_fix_drawncam,
                                        &g_fix_stackvq, &g_fix_wheelmk, &g_fix_presentunwind, &g_fix_taskcut, &g_fix_crashcopy,
                                        &g_fix_reportsafe, &g_fix_vehbounds, &g_fix_trireset, &g_fix_cmdkeep, &g_fix_postinit,
-                                       &g_fix_offstackcap, &g_fix_reportzip}; }
+                                       &g_fix_offstackcap, &g_fix_reportzip, &g_fix_frametarget, &g_fix_borderless}; }
 
 KitFix* kit_fix_find(const char* name)
 {

@@ -197,6 +197,14 @@ typedef struct SkHost {
      * (alpha blended), drawn on top like overlay_text and in call order with it. The game's render states are
      * put back after each call. Valid only during SK_EV_OVERLAY; at most 256 triangles per call. */
     void (*overlay_tris)(const float* xy, int n, uint32_t argb);
+
+    /* ---- since 0.3.19 (check size) ---- */
+    /* frame rate target (BUG-0865): 0 = game default (auto), 1..360 = waitable-timer cap; persisted in sporekit.ini */
+    int (*frame_target_get)(void);
+    int (*frame_target_set)(int fps);
+    /* borderless windowed mode (BUG-0865): 0 = off, 1 = on; persisted in sporekit.ini */
+    int (*borderless_get)(void);
+    int (*borderless_set)(int on);
 } SkHost;
 
 typedef struct SkModInfo {

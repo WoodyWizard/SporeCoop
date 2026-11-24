@@ -1,5 +1,6 @@
 // Built-in devkit console commands.
 #include "core.h"
+#include "display_logic.h"
 
 #include <cstdio>
 #include <malloc.h>
@@ -112,8 +113,8 @@ static int c_info(void*, int, const char* const*, SkOut* o)
 
 static int c_frame(void*, int, const char* const*, SkOut* o)
 {
-    outf(o, "frame=%llu fps=%.1f limit=%d own=%d changes=%u", (unsigned long long)frame_index(), fps(),
-         frame_limit_now(), frame_limit_own(), frame_limit_changes());
+    outf(o, "frame=%llu fps=%.1f limit=%d own=%d changes=%u target=%d", (unsigned long long)frame_index(), fps(),
+         frame_limit_now(), frame_limit_own(), frame_limit_changes(), frame_target_now());
     return 0;
 }
 
@@ -913,6 +914,50 @@ void register_builtin_commands()
                     return 0;
                 },
                 nullptr, M); // BUG-1016: apply_frame_limit runs on the main thread every frame (was any thread)
+    command_add(k, "frame.target",
+                "frame.target [<1-360>|auto] - live frame rate cap with high-resolution waitable timer (BUG-0865)",
+                [](void*, int argc, const char* const* argv, SkOut* out) {
+                    if (argc >= 2) {
+                        int fps_val = 0;
+                        if (!skdisp::parse_fps_arg(argv[1], fps_val)) {
+                            outf(out, "usage: frame.target [<1-360>|auto]");
+                            return 1;
+                        }
+                        set_frame_target(fps_val, true);
+                    }
+                    int t = frame_target_now();
+                    outf(out, "frame.target target=%d (%s) fix=%d limit_ms=%d own_ms=%d fps=%.1f timer=%s", t,
+                         skdisp::fps_label(t).c_str(), fixed(g_fix_frametarget) ? 1 : 0, frame_limit_now(),
+                         frame_limit_own(), fps(), frame_target_timer_kind());
+                    return 0;
+                },
+                nullptr, M);
+    command_add(k, "window.borderless",
+                "window.borderless [on|off|disturb] - borderless windowed mode (BUG-0865)",
+                [](void*, int argc, const char* const* argv, SkOut* out) {
+                    if (argc >= 2) {
+                        if (!strcmp(argv[1], "disturb")) {
+                            // tests: simulate Spore restoring window borders/size (maintain_borderless re-applies)
+                            if (HWND w = (HWND)game_window()) {
+                                LONG st = GetWindowLongW(w, GWL_STYLE);
+                                SetWindowLongW(w, GWL_STYLE, st | WS_OVERLAPPEDWINDOW);
+                                SetWindowPos(w, nullptr, 40, 40, 800, 600,
+                                             SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+                            }
+                            outf(out, "%s", borderless_status().c_str());
+                            return 0;
+                        }
+                        bool on = false;
+                        if (!skdisp::parse_bool_arg(argv[1], on)) {
+                            outf(out, "usage: window.borderless [on|off]");
+                            return 1;
+                        }
+                        set_borderless(on, true);
+                    }
+                    outf(out, "%s", borderless_status().c_str());
+                    return 0;
+                },
+                nullptr, SK_CMD_OUTSIDE_FRAME);
     command_add(k, "frame", "frame counter and fps", c_frame, nullptr, A);
     command_add(k, "frame.interval", "frame.interval [reset] - Present interval statistic since the last reset (BUG-0779)",
                 [](void*, int argc, const char* const* argv, SkOut* out) {
