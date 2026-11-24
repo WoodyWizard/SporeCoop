@@ -4033,6 +4033,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 Seen twice on the MSI with TITAN's galaxy server: entering Samuth's stored Creature world (or a copy) as its host, the
 death screen "You were killed in battle!" came during the stage's intro. Reproduce: `coop.galaxy enter "Samuth|Creature"`
 on a galaxy started from out/galaxy_fixtures/worlds_base. Not analysed (docs/tickets/BUG-9359-*).
+  Fixed on feat/lineages-alpha (2026-11-24): the cause was a save made while the host was dead; the galaxy no longer
+  saves a planet then (a world already saved so, like the fixture's Samuth, still opens on the death screen once).
 
 ## BUG-9360: a guest crashes loading a host's world made from its old own save (2026-11-23, feat/lineages-alpha)
 <a id="known-host-own-save-load-crash"></a>

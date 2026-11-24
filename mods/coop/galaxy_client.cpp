@@ -912,10 +912,36 @@ static bool g_space_hint = true;
 COOP_FIX("galaxy.space_save_hint", "BUG-9348", g_space_hint, "galaxy: a Space era host at its planet is told the world is saved once the ship is in the solar system");
 static std::string g_space_hint_for;
 static unsigned g_space_hints;
+// BUG-9359: a planet stored while its host was on the death screen loads into that screen for the next host ("You were
+// killed in battle!" on arrival: Spore keeps the death in the save; full health on arrival did not stop it). The
+// timed save waited for a quiet moment, but only 150 s, and leaving (Leave, the menu, Alt+F4) saved at once. On: no
+// galaxy save while the host's creature is dead (the death screen up): the timed one waits for the respawn, leaving
+// keeps the galaxy's last save (the player is told). Off: as before.
+static bool g_no_dead_save = true;
+COOP_FIX("galaxy.no_dead_save", "BUG-9359", g_no_dead_save, "galaxy: a planet is never stored while its host's creature is dead");
+static bool g_host_dead;           // the host's creature at the last look in the Creature stage (kept for the menu's save)
+static unsigned g_dead_saves_held; // timed saves put off, leaves without a save
+static void host_dead_tick()
+{
+    if (game::mode_id() == modes::kMenu)
+        return; // (Spore's save on the way to the menu was made with the last state seen)
+    void* av = game::mode_id() == modes::kCreature ? game::avatar() : nullptr;
+    g_host_dead = av && (game::is_dead(av) || game::health(av) <= 0);
+}
+
 static void start_upload()
 {
     if (g_upstep != kUpIdle || g_hstep != kHosting || is_crossing(g_planet)) // (BUG-9278: a crossing is not stored)
         return;
+    if (g_no_dead_save && g_host_dead) { // BUG-9359
+        g_dead_saves_held++;
+        if (g_leave_after) {
+            H->log(M, SK_INFO, "galaxy: leaving with the creature dead: no save (BUG-9359)");
+            upload_done(false, "your creature is dead; the galaxy keeps the last save from before");
+        } else
+            g_next_upload = H->time_seconds() + 15;
+        return;
+    }
     std::string err;
     if (g_up_nosave) { // (Spore saved when it left the stage for the menu)
         g_upstep = kUpSaving;
@@ -1024,6 +1050,7 @@ static void upload_tick(double now)
     }
     if (g_hstep != kHosting || g_role != kHostRole)
         return;
+    host_dead_tick(); // BUG-9359
     // owner 2026-11-17: leaving to the main menu while hosting leaves the planet: Spore saved on the way, that save goes
     // to the galaxy and the planet is handed over
     // BUG-9268: not the game's own reload of this planet (a Tribe rescue, a new founder seat: world::load_slot goes
@@ -1063,8 +1090,8 @@ static void upload_tick(double now)
                 g_quiet_waits++;
             }
             const double waited = now - g_quiet_wait_since;
-            if (!(idle && quiet(now)) && !(waited > 90 && quiet(now)) && waited < 150)
-                return;
+            if (!(idle && quiet(now)) && !(waited > 90 && quiet(now)) && (waited < 150 || (g_no_dead_save && g_host_dead)))
+                return; // (BUG-9359: no limit while the host is dead)
             if (idle)
                 g_idle_saves++;
         }
