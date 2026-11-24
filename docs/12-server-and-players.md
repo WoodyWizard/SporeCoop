@@ -1916,3 +1916,31 @@ Monocypher 4.0.2 vendored in third_party/monocypher (BSD-2 / CC0, the release's 
   recv_from then failed at once every time: the game spun a core and its console never answered.
 * Not done: the game's own planet sessions on a LAN or direct (not through the galaxy server) stay as they were.
 
+## The galaxy's chat (8O, 2026-11-23, feat/lineages-alpha)
+<a id="server-galaxy-chat"></a>
+
+The owner's answer to 8O: "The chat will always be a global chat, we can add filters for party chat too." Code
+55370617 (net/galaxy.h GCHAT, server/galaxy/main.cpp, coop.cpp galaxy_say / on_gchat, the Social Menu's row).
+* On a galaxy server the chat line (the Co-op window's, also in the galaxy menu, where there was none) goes to
+  everyone online in the galaxy: every planet, every stage, the menu. "/p <text>" goes to the party only ("[Party]" in
+  green); a player alone gets a note back. Whispers stay as they were ("/w <name> <text>").
+* The filter: "/chat party" (the chat window and the feed show the party's lines, whispers and notices only) and
+  "/chat all"; the Social Menu (F8) has a row "Chat shows" with a button, gold "Everyone", grey "Party". Kept in
+  coop.ini [galaxy] chat_filter.
+* Moderation on the server: one line, control characters removed, 400 bytes at most, 5 lines at once then one a
+  second from a player, the players of the server's ban list (8D A, banned.txt `player` lines) are muted and told so.
+  The server logs counts only, never the text.
+* Off a galaxy server the chat is the session's, as before. Switch `coop.fix galaxy.chat off`: as before (the galaxy
+  menu's chat line sends nothing: "not connected").
+* ✔ tools/tests/galaxy_server_check.py "the galaxy chat (8O)": to all, to the party only, no party, one line, muted,
+  the rate; FAIL on the server before (out/lab_runs/8o_server_fail.txt: 6 FAILED), PASS (8o_server_pass.txt).
+* ✔ In game (the MSI's two games in the galaxy menu, TITAN's server, both encrypted): a line from one menu showed on
+  the other's screen (images/8o_galaxy_chat_menu.png); a party made in the menu, "/p" reached the partner as [Party];
+  "/chat party": the window showed the two party lines only; the Social Menu's button by real clicks: Party ->
+  Everyone -> Party, the window following (images/8o_chat_filter_button.png); switch off: "not connected", nothing
+  arrived; on: it arrived.
+* Fixed on the way: the Social Menu did not rebuild when only the chat row changed (its change check); a player alone
+  is a party of one on the server (a "/p" line came back to the sender alone).
+* Test pitfall: Git Bash turns an argument starting with "/" into a Windows path ("/p" became "P:/"): run qa.py with
+  MSYS_NO_PATHCONV=1 for chat commands.
+

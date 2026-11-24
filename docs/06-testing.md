@@ -9439,3 +9439,12 @@ BUG-9326 (docs/re/tribe.md#tribe-partner-pens). Follows #testing-tribe-final-qa 
   tunnel then reaches the console, but a game whose main thread is stuck accepts and never answers (the MSI shows its
   connections in CloseWait). Check the game's CPU time first (a stuck loop grows it a second a second).
 
+## Chat commands through qa.py from Git Bash (2026-11-23, feat/lineages-alpha)
+<a id="testing-chat-msys-paths"></a>
+
+* Git Bash rewrites an argument that starts with "/" into a Windows path before Python sees it: `qa.py msi2 coop.say
+  /p hello` sent "P:/ hello". Set `MSYS_NO_PATHCONV=1` for such commands.
+* `coop.gchat` shows the galaxy chat's counts, the last lines got and what the chat window shows (after the filter).
+* `coop.party invite <name>` finds a galaxy player only while the game has the galaxy's player list (it asks for it
+  while the Social Menu is open: `coop.party social toggle` first).
+
