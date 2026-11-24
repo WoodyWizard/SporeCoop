@@ -1,14 +1,14 @@
 ---
 id: BUG-1463
 title: campaign_tribe_latecut: the plant's own 45 s hold ate the raid's 120 s after the first cut; dropped at 403 s with the hut at 1 of 400
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w65-tests
 commits: def13b5f
 tests: tools/tests/coop_campaign.py (campaign_tribe_latecut)
@@ -29,5 +29,8 @@ coop_campaign.py: for the planted raid the limit is counted from the end of the 
 ## Verification
 Open, waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run campaign_tribe_latecut --lane N --retry 0 --no-build` PASS (the twin with CAMPAIGN_OLD_RAID_CUT=1 still fails: its suite entry). no-fail-run: a test fix; FAIL before 20261123-023643.
 
+- 2026-11-23 (0.7.16.1 final check): campaign_tribe_latecut PASS in 20261123-222910 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-23: opened (fix/w65-tests).

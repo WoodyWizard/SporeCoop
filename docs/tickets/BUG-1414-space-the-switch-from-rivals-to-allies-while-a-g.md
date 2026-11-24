@@ -1,14 +1,14 @@
 ---
 id: BUG-1414
 title: Space: the switch from Rivals to Allies while a guest is in an editor or an adventure credits the shared total back to the host as the guest's correction (audit SPC-2)
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-11-22
 source: audit 0.7.15.5 SPC-2 (out/research/ext-audit-verify-civ-spc.md)
 role: guest
 versions: 0.7.16.1
-fixed_in:
+fixed_in: unreleased
 branch: fix/w63-space
 commits: 0d07ae00
 tests: space_merge_away, space_merge_away_off
@@ -49,7 +49,10 @@ earns 7000 and the host spends 1000, the guest acts as outside Space (`coop.spac
 6 s later the guest is back: both games' Space money (cEmpire +0xD0) must be host budget + guest budget and stay.
 Expected: PASS with the fix; FAIL with SPORE_FIX_OFF=space.merge_hold_totals (host = its budget twice + the guest's).
 
+- 2026-11-23 (0.7.16.1 final check): space_merge_away PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened.
 - 2026-11-22: fix and test on fix/w63-space (no lab run yet: lanes busy with the 0.7.16 final check).
 

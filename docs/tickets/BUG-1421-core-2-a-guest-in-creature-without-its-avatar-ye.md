@@ -1,14 +1,14 @@
 ---
 id: BUG-1421
 title: CORE-2: a guest in Creature without its avatar yet when the landfall editor's vote ends loses its first own Creature editor
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-22
 source: audit
 role: guest
 versions: 0.7.16.1
-fixed_in:
+fixed_in: unreleased
 branch: fix/w63-editor
 commits: 35163c73, 2a454d1e
 tests: editor_stand_landing, twin editor_stand_landing_off
@@ -41,7 +41,10 @@ Open, waiting for the lab run.
   editor after the vote whose end saw no avatar).
 * Wanted FAIL: `editor_stand_landing_off` (SPORE_FIX_OFF=core.own_editor_no_avatar: no own editor).
 
+- 2026-11-23 (0.7.16.1 final check): editor_stand_landing PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened (audit CORE-2).
 - 2026-11-22: fixed on fix/w63-editor (35163c73), tests 2a454d1e.
 

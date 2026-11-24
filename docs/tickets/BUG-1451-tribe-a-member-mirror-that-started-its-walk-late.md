@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: lab
 role: 
 versions: 0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w70-catch
 commits: fdea37ed, 8cf107d5
 tests: tools/tests/coop_body_trail.py (body_trail_tribe_player)
@@ -60,3 +60,4 @@ Verified on lanes 2-3 (fix/w70-catch `8cf107d5`, while `rel/0.7.17` ran on lanes
 - 2026-11-23: fix/w65-night: tribe.smooth_catch, the bound grows with the lag (capped at BUG-1235's 9 m/s).
 - 2026-11-23: fix/w69-triage2 (0.7.16.1 final check): no effect shown. Members' longest stretch over 2 m, fix on (20261123-111347): 2.02 / 0.99 / 1.09 / 0.85 s (2 of 4 FAIL); SPORE_FIX_OFF=tribe.smooth_catch (20261123-121417): 0.97 / 2.47 / 1.85 / 1.70 s (3 of 4 FAIL); rank test p ~0.24, and the off run's network was worse (NPC longest 0.38-1.31 s against 0.42-0.65 s, smooth_catch does not touch NPCs). rel/0.7.16 before the switch: 0.65-1.16 s, 1 of 6 over 1.0 s. Tracks: the fix-on 2.02 s (out/lane4/track/body_trail_tribe_20261123-111642.json, t1 37.4 s) is this ticket's case: the copy starts ~0.5 s late (4.9 m behind at 9 m/s), keeps 3.4-4.9 m while the host runs 9 m/s (the bound caps at kLagCatchMax 9 m/s = the run speed: no catching up while the member runs), then closes only ~2 m/s while the host slows (4.7 -> 3.2 m in 0.8 s); the off arm's 2.47 s (out/lane3/track/body_trail_tribe_20261123-121552.json, t1 24.0 s) closes at the same ~2 m/s (3.7 -> 2.1 m in 0.7 s). Mod: the fix does not change the slow-phase closing; proposal: let the catch-up bound exceed the member's speed (lead_sp + min(lag / 0.5 s, 9 m/s): 18 m/s is 0.58 m a 32 ms frame, under the test's 0.86 m jump limit) and check which lag mirror_drive feeds it (the distance to the aim, not to the host's body now). Stays open.
 - 2026-11-23: fix/w70-catch (`8cf107d5`): `mirror_catch_bound` caps `walk_speed` and lifts `catch_up` under `tribe.smooth_catch`; verified 6/6 PASS (`0.67-0.92 s`, lab `20261123-132907`) vs off 3/4 FAIL (`1.00-1.54 s`, lab `20261123-133430`), 0 jumps in `tribe_walk_player` x4 (`20261123-133802`), 5/5 Tribe regressions (`20261123-134309`). Closed.
+- 2026-11-23: released in 0.7.16.1.

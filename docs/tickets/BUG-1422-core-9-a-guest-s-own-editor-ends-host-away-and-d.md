@@ -1,14 +1,14 @@
 ---
 id: BUG-1422
 title: CORE-9: a guest's own editor ends host away and drops the DNA it earned while the host was away
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-22
 source: audit
 role: guest
 versions: 0.7.16.1
-fixed_in:
+fixed_in: unreleased
 branch: fix/w63-editor
 commits: 35163c73, 2a454d1e
 tests: dna_own_away_editor, twin dna_own_away_editor_off
@@ -39,7 +39,10 @@ Open, waiting for the lab run.
   editor, evolves in its own editor before the host is back: the host's game has the 20 afterwards, the guest's too).
 * Wanted FAIL: `dna_own_away_editor_off` (SPORE_FIX_OFF=core.away_through_editor: the 20 are dropped).
 
+- 2026-11-23 (0.7.16.1 final check): dna_own_away_editor PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened (audit CORE-9).
 - 2026-11-22: fixed on fix/w63-editor (35163c73), tests 2a454d1e.
 

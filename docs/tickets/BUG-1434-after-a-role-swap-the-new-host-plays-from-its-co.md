@@ -1,14 +1,14 @@
 ---
 id: BUG-1434
 title: After a role swap the new host plays from its co-op copy of the old host's galaxy (an old planet starts instead of the session's world), and the copy keeps the old host's marker, so the next share replaces or moves the new host's progress
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-22
 source: discord
 role: all
 versions: 0.7.15.5
-fixed_in:
+fixed_in: unreleased
 branch: fix/w64-share
 commits: 2d3bc204, f6f56ea1
 tests: copy_slot_keep, copy_slot_notice (coop_copy_slot.py); twins copy_slot_keep_off, copy_slot_notice_off; win_unit test_slot_own_progress (--old-own)
@@ -32,6 +32,9 @@ Not covered: a save made as a guest and the game quit within 1 s before the watc
 ## Verification
 Open, waiting for the lab run. PASS expected: copy_slot_keep (the guest saves alone in its copy S, rejoins, the host shares twice: S's planet file keeps its bytes, the world goes into another slot), copy_slot_notice (the host leaves, the guest hosts from S: a notification says it hosts the planet from its copy of Alice's world, made for that planet), win_unit (test_slot_own_progress). FAIL expected: copy_slot_keep_off (SPORE_FIX_OFF=world.copy_own_save: the second share replaces S), copy_slot_notice_off (SPORE_FIX_OFF=world.copy_notice: no notification), `win_unit.py --old-own` (SPORE_FIX_OFF=world.copy_own_save).
 
+- 2026-11-23 (0.7.16.1 final check): copy_slot_keep and copy_slot_notice PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened.
 - 2026-11-22: safety part fixed on fix/w64-share (own progress in a copy is kept, the host is told whose copy it plays), tests and twins, waiting for the lab run; sharing only the played planet stays for 0.7.17.

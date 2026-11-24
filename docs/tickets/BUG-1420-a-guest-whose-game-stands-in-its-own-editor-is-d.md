@@ -1,14 +1,14 @@
 ---
 id: BUG-1420
 title: A guest whose game stands in its own editor is dropped silently, or kept for good through the keepalive: kick it after 30 s, told, so it can join again
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-22
 source: PR #216 review (reverse case)
 role: host
 versions: 0.7.16.1
-fixed_in:
+fixed_in: unreleased
 branch: fix/w63-editor
 commits: 35163c73, 2a454d1e, 2bb64f64, 1718b4c2
 tests: editor_stand_guest, twins editor_stand_vote_off, editor_stand_told_off; unit test_timeout_told (net_tests)
@@ -62,7 +62,10 @@ Open, waiting for the lab run.
 * Wanted FAIL: `editor_stand_vote_off` (SPORE_FIX_OFF=core.vote_stuck_kick: the vote runs its 60 s, the guest is not
   removed) and `editor_stand_told_off` (SPORE_FIX_OFF=net.timeout_told: the guest stays "connected" after its hang).
 
+- 2026-11-23 (0.7.16.1 final check): editor_stand_guest PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened (the reverse case of PR #216).
 - 2026-11-22: fixed on fix/w63-editor (35163c73), tests 2a454d1e.
 

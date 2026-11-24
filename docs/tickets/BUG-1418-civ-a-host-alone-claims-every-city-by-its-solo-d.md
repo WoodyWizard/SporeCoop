@@ -1,14 +1,14 @@
 ---
 id: BUG-1418
 title: Civ: a host alone claims every city by its solo deal, so a joiner gets no city of its own (CIV-6)
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-22
 source: audit
 role: host
 versions: 0.7.15 and later (since E1, BUG-1153)
-fixed_in:
+fixed_in: unreleased
 branch: fix/w63-civ
 commits: 9578bf3b
 tests: civ_solo_deal, civ_solo_deal_off, civ_owners_session
@@ -50,7 +50,10 @@ the joiner's on both games, B still the host's. Twin `civ_solo_deal_off` (SPORE_
 host's, must FAIL. Regression: civ_owners_session, civ_owners_reload. (B) has no lab test (needs a guest with a new
 token; the rule is in tests/civ_tests.cpp).
 
+- 2026-11-23 (0.7.16.1 final check): civ_solo_deal and civ_owners_session PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened.
 - 2026-11-22: fix on fix/w63-civ (switches civ.solo_claims, civ.adopt_owners; test civ_solo_deal and its twin); lab run pending.
 

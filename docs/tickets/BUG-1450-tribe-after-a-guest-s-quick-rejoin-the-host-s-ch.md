@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: lab
 role: 
 versions: 0.7.16, 0.7.16.1
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w67-chief
 commits: fd47f96c, b2cd3f49, 7f840a0a, d14d7ff7
 tests: tribe_owners_rejoin, tribe_owners_rejoin_back (coop_tribe_owners_rejoin.py); twins tribe_owners_rejoin_off, tribe_owners_rejoin_back_off; tribe_held_item (coop_tribe_looks.py: "the host's chief #N is still the host's member"); tests/tribe_tests.cpp balance_leader
@@ -66,3 +66,4 @@ fix/w67-chief, lanes 2 and 3, `SPORE_DETECTOR=20 python3 tools/lab.py run ... --
 ## History
 - 2026-11-23: opened (fix/w65-night triage); for 0.7.16.1.
 - 2026-11-23: cause confirmed from the code; fixed on fix/w67-chief (tribe.balance_leader, the lab test of TR-1's join window).
+- 2026-11-23: released in 0.7.16.1.

@@ -1,16 +1,16 @@
 ---
 id: BUG-1425
 title: install.bat copied the loader over a missing steam_api_orig.dll and said installed after failed copies (KIT-25)
-status: open
+status: fixed
 kind: bug
 stage: Installer
 reported: 2026-11-22
 source: audit
 role: both
 versions: 0.7.16.1
-fixed_in:
+fixed_in: unreleased
 branch: fix/w63-net
-commits:
+commits: 238644aa
 tests: win_unit (test_install_bat_backup), win_unit_kit25_off
 signature:
 docs:
@@ -47,7 +47,10 @@ install.bat of 5376d388 FAILED (4) in test_install_bat_backup (the loader as ste
 Lab: `tools/lab.py run win_unit win_unit_kit25_off`: win_unit must PASS, win_unit_kit25_off
 (SPORE_WIN_UNIT_ARGS=--old-kit25) must FAIL.
 
+- 2026-11-23 (0.7.16.1 final check): win_unit PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened.
 
 - 2026-11-22: renumbered from BUG-9310 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9310.

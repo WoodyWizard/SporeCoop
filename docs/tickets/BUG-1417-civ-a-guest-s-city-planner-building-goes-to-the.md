@@ -1,16 +1,16 @@
 ---
 id: BUG-1417
 title: Civ: a guest's city planner building goes to the host at AddBuilding, before the planner kept it (free building or refund, CIV-7)
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-22
 source: audit
 role: guest
 versions: 0.7.16 and earlier (since BUG-0189)
-fixed_in:
+fixed_in: unreleased
 branch: fix/w63-civ
-commits:
+commits: a3c27944
 tests: civ_planner_miss, civ_planner_miss_off, civ_planner_build
 signature:
 docs: docs/re/civ.md#civ-build-refund
@@ -46,7 +46,10 @@ the house tile on a taken plot of its planner (real input) and closes it; precon
 Twin `civ_planner_miss_off` (SPORE_FIX_OFF=civ.planner_closed): the host builds the house, must FAIL. Regression:
 `civ_planner_build` (a kept house still reaches the host, now at the planner's close).
 
+- 2026-11-23 (0.7.16.1 final check): civ_planner_miss and civ_planner_build PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened.
 - 2026-11-22: fix on fix/w63-civ (switch civ.planner_closed, test civ_planner_miss and its twin); lab run pending.
 

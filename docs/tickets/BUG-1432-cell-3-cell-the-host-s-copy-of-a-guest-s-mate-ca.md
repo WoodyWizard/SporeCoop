@@ -1,14 +1,14 @@
 ---
 id: BUG-1432
 title: CELL-3: Cell: the host's copy of a guest's mate can be killed or eaten on the host (repeatable free meat, the mate dies on the host only)
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-11-22
 source: audit
 role: host
 versions: 0.7.16.1
-fixed_in:
+fixed_in: unreleased
 branch: fix/w63-life
 commits: 75d69f4a, 39f2f060
 tests: cell_mate_copy (coop_cell_mate_copy.py); twin cell_mate_copy_off
@@ -29,7 +29,10 @@ Inferred from code and docs/re/cell.md#cell-guest-hit-game (Ghidra, verified the
 ## Verification
 Open, waiting for the lab run. PASS expected: cell_mate_copy (the guest's mating call; the host sets the copy's hp to 1 and bites it with the game's Bite three times and hits it once: the same copy alive and not dying, not made again, no loot near it, the guest's mate alive). FAIL expected: cell_mate_copy_off (SPORE_FIX_OFF=cell.mate_copy_safe: the copy breaks, drops meat, is made again). Not covered by a lab test: the 3-4 player path (another guest's bite, MSG_CELL_HIT / MSG_CELL_EAT), the same predicate. Independent of all.shared_dna.
 
+- 2026-11-23 (0.7.16.1 final check): cell_mate_copy PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened (audit item); fixed on fix/w63-life with its test and twin, waiting for the lab run.
 
 - 2026-11-22: renumbered from BUG-9317 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9317.

@@ -1,16 +1,16 @@
 ---
 id: BUG-1423
 title: My Creations file of several hundred MB: the whole size was allocated before the size check (bad_alloc in the 32-bit game, CORE-11)
-status: open
+status: fixed
 kind: crash
 stage: All
 reported: 2026-11-22
 source: audit
 role: both
 versions: 0.7.16.1
-fixed_in:
+fixed_in: unreleased
 branch: fix/w63-net
-commits:
+commits: d4c50db9
 tests: creations_big_file, creations_big_file_off
 signature:
 docs:
@@ -39,7 +39,10 @@ Open, waiting for the lab run. `tools/lab.py run creations_big_file creations_bi
 EditorSaves.package is replaced by a sparse 2.2 GB file for ~35 s; creations_big_file must PASS (the game goes on,
 the creations come back), creations_big_file_off (the twin) must FAIL (the guest's game ends in the read).
 
+- 2026-11-23 (0.7.16.1 final check): creations_big_file PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened.
 
 - 2026-11-22: renumbered from BUG-9308 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9308.

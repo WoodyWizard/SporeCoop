@@ -1,14 +1,14 @@
 ---
 id: BUG-1428
 title: CR-2: Creature: a guest's hit or resync on an NPC the host's game removed reaches the freed creature (rare host crash)
-status: open
+status: fixed
 kind: crash
 stage: Creature
 reported: 2026-11-22
 source: audit
 role: host
 versions: 0.7.16.1
-fixed_in:
+fixed_in: unreleased
 branch: fix/w63-life
 commits: 31ec75ce, 39f2f060
 tests: creature_hit_gone (coop_creature_hit_gone.py); twin creature_hit_gone_off
@@ -29,7 +29,10 @@ Both handlers also ask `host_npc(id)` and drop the message when the NPC is not a
 ## Verification
 Open, waiting for the lab run (no lab runs during the 0.7.16 final check). PASS expected: creature_hit_gone (hits_applied unchanged, msg_gone_refused + 1, no crash). FAIL expected: creature_hit_gone_off (SPORE_FIX_OFF=npc.msg_live: the hit is applied to the freed creature, or the host crashes). Own DNA / shared DNA: the handlers do not depend on all.shared_dna (the kill credit path after the check is unchanged).
 
+- 2026-11-23 (0.7.16.1 final check): creature_hit_gone PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened (audit item); fixed on fix/w63-life with its test and twin, waiting for the lab run.
 
 - 2026-11-22: renumbered from BUG-9313 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9313.

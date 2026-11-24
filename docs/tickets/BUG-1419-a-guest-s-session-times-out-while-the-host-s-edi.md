@@ -1,14 +1,14 @@
 ---
 id: BUG-1419
 title: A guest's session times out while the host's editor loads for more than 30 s on a slow PC (port of PR #216)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-22
 source: PR #216 (IltonBJSilva)
 role: guest
 versions: 0.7.16.1
-fixed_in:
+fixed_in: unreleased
 branch: fix/w63-editor
 commits: 35163c73, 2a454d1e, 2bb64f64
 tests: editor_stand_host, twin editor_stand_host_off; unit busy_long_wait (core_tests)
@@ -51,7 +51,10 @@ Open, waiting for the lab run (no lab runs during the 0.7.16 final check).
 * Wanted FAIL: `python3 tools/lab.py run editor_stand_host_off --lanes N` (SPORE_FIX_OFF=core.editor_long_wait: the
   guest's session times out after 30 s).
 
+- 2026-11-23 (0.7.16.1 final check): editor_stand_host PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-22: opened (port of PR #216 by IltonBJSilva, 0.7.16.1 scope).
 - 2026-11-22: fixed on fix/w63-editor (35163c73), tests 2a454d1e.
 

@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: audit 0.7.15.5 SPC-8 (out/research/ext-audit-verify-civ-spc.md)
 role: guest
 versions: 0.7.16.1
-fixed_in: unreleased
+fixed_in: 0.7.16.1
 branch: fix/w63-space
 commits: ca07b2e8, b8c8196d
 tests: space_grant_restore, space_grant_restore_off, space_core_own_save, space_core_own_save_off
@@ -59,3 +59,4 @@ Verified on lanes 2-3 (rel/0.7.16.1 `b8c8196d`, lab `20261123-144817`):
 - 2026-11-22: renumbered from BUG-9300 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9300.
 - 2026-11-23: fix/w69-triage2: the twin space_core_own_save_off PASSED (20261123-120656) because in both arms reward_tick never looked at the partner's entry; updated test to wait for restore_pending=0 and report INCONCLUSIVE when undecided.
 - 2026-11-23: rel/0.7.16.1 (`b8c8196d`): running the updated test (`20261123-144108`) showed `restore_pending=1` stayed true forever in an own Space save (inv_tick returns at inv_own_save() without sending a fresh hold, so g_win.pending saw `world != fresh` indefinitely). Returning false from `inv_restore_pending()` when `inv_own_save()` is true resolved it; verified all 4 tests/twins in `20261123-144817`. Closed.
+- 2026-11-23: released in 0.7.16.1.

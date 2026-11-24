@@ -1,14 +1,14 @@
 ---
 id: BUG-1460
 title: Tribe: a guest's game faults 38 times at 0x00C8F6D3 (game function 0xC8F6D0 called on null: the lookup 0xC230B0 returned none, call at 0xC286B1) during a raid (campaign_tribe_noclick, caught)
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-23
 source: lab
 role: 
 versions: 0.7.16
-fixed_in:
+fixed_in: unreleased
 branch:
 commits: 1a8e910f
 tests: campaign_tribe_noclick (tools/tests/coop_campaign.py)
@@ -74,13 +74,10 @@ tests al), tribe_logic::makeway_skip, read-only, an atomic counter (any thread).
 with --nofix).
 
 ## Verification
-Open, waiting for the lab run. No deterministic lab case: the fault needs a detached body that walks AND is blocked on
-its path (Creature_AskGroupToMakeWay's +0x330 bits); a check that the guest's body of a member killed while walking stays
-within 1 m of the host's body (tribe_dead_player with a walk order before the kill) would show part (a) only, not
-written yet. Lab: `SPORE_DETECTOR=20 python3 tools/lab.py run tribe_dead_member tribe_dead_player tribe_join_body
-tribe_body_teardown tribe_body_menu --lane N --retry 0 --no-build` PASS (the body paths), `campaign_tribe_noclick
---repeat 3` without 0x00C8F6D3 and with `tribe bodies: ... skipped=` in the guests' coop.tribe.
+* FAIL run (before fix): 20261123-023643 (rel/0.7.16 fd28f88f, campaign_tribe_noclick: 38 caught faults at 0x00C8F6D3); unit test `tests/tribe_tests.cpp` `body_rules` FAILs with `--nofix`.
+* PASS runs (0.7.16.1 final check, aad722ac): `campaign_tribe_noclick` PASS in 20261123-152921 (0 faults), plus `tribe_dead_member`, `tribe_dead_player`, `tribe_join_body`, `tribe_body_teardown`, `tribe_body_menu` all PASS in 20261123-152921; unit test `tests/tribe_tests.cpp` `body_rules` PASS.
 
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-23: opened (fix/w65-tests triage).
 - 2026-11-23: fix/w69-triage2 (0.7.16.1 final check triage): campaign_tribe_noclick#2 of 20261123-111750 stuck at goal bar 1/5 is not this fault: no exception line in any of its 12 game logs (no 0x00C8F6D3, faults 0); the host's raid click failed (BUG-1535, the BUG-1091 driver class, also before 0.7.16.1). The makeway_null skipped= count is only in coop.status, not logged: unknown for that run; the campaign now keeps coop.status with each finding.

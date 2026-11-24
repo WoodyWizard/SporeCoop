@@ -1,14 +1,14 @@
 ---
 id: BUG-1464
 title: nest_species: kill_game left the BUG-1075 start marker; the guest's restart was refused and waited 90 s, the host showed the killed guest silent (monitor gate)
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w65-tests
 commits: def13b5f
 tests: tools/tests/coop_creature_desync.py kill_game (nest_species, late_species, every kill_game user)
@@ -29,5 +29,8 @@ kill_game removes the instance's start marker after the kill (as `spore.sh kill`
 ## Verification
 Open, waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run nest_species --lane N --retry 0 --no-build` PASS without the monitor gate (the restart within seconds). no-fail-run: a test fix; FAIL before 20261123-023643.
 
+- 2026-11-23 (0.7.16.1 final check): nest_species and late_species PASS in 20261123-152921 (aad722ac).
+
 ## History
+- 2026-11-23: closed on the 0.7.16.1 final check lab evidence.
 - 2026-11-23: opened (fix/w65-tests).
