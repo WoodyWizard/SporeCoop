@@ -1974,3 +1974,23 @@ there; across the planet's stages the party's players and visitors do not see ea
 * ~ The hint behind the open Social Menu: the feed's notice stands under the panel's top (the panel sits at the
   screen's top right).
 
+## The owner's own alpha copy (2026-11-24, feat/lineages-alpha, decisions 5Z, 8S A)
+<a id="server-owner-alpha-copy"></a>
+
+For the owner's full test of the alpha: a copy of the QA game of its own, so the owner's Steam Spore, its mods and saves
+stay untouched and QA runs do not share the owner's game.
+* The copy: out/owner-alpha/native (made from out/release36/native without its logs and backups; steam_appid.txt kept),
+  the build of ffd01832 (coop.dll, sporekit.dll, the GOG 2024 symbols, SporeCoop.package). Its mods/sporekit.ini has no
+  frame cap (the QA copy's frame_ms=100 is commented out): about 130 fps on TITAN. coop.ini as the QA copy's (the name
+  "Pandize -NoShare-", the galaxy row 127.0.0.1:47900).
+* The profile: LineagesAlpha (instance 5, 1600x900), the one of the first alpha test (#server-alpha-test-1).
+* The galaxy: out/galaxy/worlds_owner: Abber (Civ) and Clyth (Tribe) from worlds_8qa1, its server key (the MSI's games
+  pin the same key, so the MSI can be the second player) and creations. Samuth left out: its stored Creature world has
+  its host starving at 2 health.
+* The launcher (outside the repository): `Spore Multiplayer/Lineages-Alpha-Test.cmd` starts the galaxy server
+  (galaxy.ps1 start -Worlds out\galaxy\worlds_owner) and the copy (launch.ps1 -Copy out\owner-alpha\native).
+* Checked 2026-11-24: the launcher started both, the game loaded coop 0.7.14.1-lineages69-dev with the BUG-9360 guard,
+  connected to the galaxy (2 planets), closed again. qa.py talks to it only with SPORECOOP_QA_COPY set to the copy.
+* Updating it: strip build/coop.dll and build/sporekit.dll into its SporebinEP1/mods and SporebinEP1, copy the symbols
+  and SporeCoop.package as msi.ps1 deploy does (no game of the copy running).
+
