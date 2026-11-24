@@ -606,4 +606,31 @@ inline int guest_want_spent(int host_spent, int own_spent, double own_age, int p
     return out;
 }
 
+// BUG-1394: Cell_RescaleAbout (0x00E6DB70, docs/re/cell.md#cell-rescale-centre) shifts the whole world by a snapped
+// recentering vector C whenever the local camera point cCellUI+0x48 has |p|^2 > 1e6 (1000 m from origin). In co-op
+// each peer has its own camera, so one peer >1000 m from origin would shift its world origin while a partner near the
+// origin stays at (0,0,0), splitting the shared coordinate frame. Holding cCellUI+0x48 at (0,0,0) across WorldScaleStep
+// forces C = (0,0,0) for every connected peer, then restores cCellUI+0x48 scaled by (old_scale / new_scale).
+constexpr float kRescaleOriginMaxR2 = 1e6f;
+
+inline bool rescale_needs_origin_hold(bool fix, bool connected, bool moving, float cam_x, float cam_y, float cam_z)
+{
+    if (!fix || !connected || !moving)
+        return false;
+    if (!std::isfinite(cam_x) || !std::isfinite(cam_y) || !std::isfinite(cam_z))
+        return false;
+    float r2 = cam_x * cam_x + cam_y * cam_y + cam_z * cam_z;
+    return r2 > kRescaleOriginMaxR2;
+}
+
+inline void rescale_restore_cam(const float saved[3], float old_scale, float new_scale, float out[3])
+{
+    float inv = (std::isfinite(old_scale) && std::isfinite(new_scale) && old_scale > 0.f && new_scale > 0.f)
+                    ? (old_scale / new_scale)
+                    : 1.f;
+    out[0] = saved[0] * inv;
+    out[1] = saved[1] * inv;
+    out[2] = saved[2] * inv;
+}
+
 } // namespace cell_logic

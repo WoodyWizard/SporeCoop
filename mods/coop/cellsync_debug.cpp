@@ -1356,10 +1356,10 @@ std::string debug(const std::vector<std::string>& a)
         auto* t = (float*)(ui + 0x54);
         auto* l = (float*)(ui + 0x60);
         net::Vec3 me = pos_of(av);
-        char b[320];
-        snprintf(b, sizeof b, "cam=(%.2f %.2f) target=(%.2f %.2f) lag=(%.2f %.2f) avatar=(%.2f %.2f) off=%.2f follow=%u bc=%.2f snaps=%u scale=%.3f heals=%u",
+        char b[360];
+        snprintf(b, sizeof b, "cam=(%.2f %.2f) target=(%.2f %.2f) lag=(%.2f %.2f) avatar=(%.2f %.2f) off=%.2f follow=%u bc=%.2f snaps=%u scale=%.3f heals=%u origin_holds=%u",
                  d[0], d[1], t[0], t[1], l[0], l[1], me.x, me.y, std::hypot(d[0] - me.x, d[1] - me.y),
-                 F<uint32_t>(ui, 0xE0), F<float>(ui, 0xBC), g_n.camera_snaps, G() ? F<float>(G(), 0x514C) : 0.f, g_n.camera_heals);
+                 F<uint32_t>(ui, 0xE0), F<float>(ui, 0xBC), g_n.camera_snaps, G() ? F<float>(G(), 0x514C) : 0.f, g_n.camera_heals, g_n.rescale_origin_holds);
         return b;
     }
     if (a.size() >= 2 && a[0] == "noowncloud") { // tests (BUG-0892): 1 = our own avatar makes no poison cloud

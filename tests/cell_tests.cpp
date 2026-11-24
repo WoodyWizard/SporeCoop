@@ -544,6 +544,29 @@ static void dna_nonneg()
     CHECK(food_drop == 20 && clamped);
 }
 
+static void rescale_origin()
+{
+    // BUG-1394: WorldScaleStep recentering threshold is |cam|^2 > 1e6 (1000 m from origin).
+    CHECK(!rescale_needs_origin_hold(true, true, true, 0.f, 0.f, 0.f));
+    CHECK(!rescale_needs_origin_hold(true, true, true, 1000.f, 0.f, 0.f)); // boundary: 1e6 is not > 1e6
+    CHECK(rescale_needs_origin_hold(true, true, true, 1001.f, 0.f, 0.f));
+    CHECK(rescale_needs_origin_hold(true, true, true, 800.f, 800.f, 0.f)); // 1.28e6 > 1e6
+    CHECK(!rescale_needs_origin_hold(false, true, true, 1200.f, 0.f, 0.f)); // switch off
+    CHECK(!rescale_needs_origin_hold(true, false, true, 1200.f, 0.f, 0.f)); // solo / disconnected
+    CHECK(!rescale_needs_origin_hold(true, true, false, 1200.f, 0.f, 0.f)); // scale not moving
+    CHECK(!rescale_needs_origin_hold(true, true, true, std::nanf(""), 0.f, 0.f));
+
+    // Restoring saved cCellUI+0x48 scales by old_scale / new_scale (matching Cell_RescaleAbout around origin)
+    float saved[3] = {1200.f, -300.f, 0.f}, out[3] = {};
+    rescale_restore_cam(saved, 1.0f, 1.5f, out);
+    CHECK(std::fabs(out[0] - 800.f) < 1e-3f && std::fabs(out[1] + 200.f) < 1e-3f && out[2] == 0.f);
+    // Unchanged scale -> exact restore; invalid scale -> safe fallback (factor 1)
+    rescale_restore_cam(saved, 1.25f, 1.25f, out);
+    CHECK(out[0] == 1200.f && out[1] == -300.f && out[2] == 0.f);
+    rescale_restore_cam(saved, 1.0f, 0.0f, out);
+    CHECK(out[0] == 1200.f && out[1] == -300.f && out[2] == 0.f);
+}
+
 int main(int argc, char** argv)
 {
     for (int i = 1; i < argc; i++)
@@ -569,6 +592,7 @@ int main(int argc, char** argv)
     lineage_rules();
     solo_refill();
     dna_nonneg();
+    rescale_origin();
     if (g_fail) {
         printf("cell_tests: %d FAILED\n", g_fail);
         return 1;

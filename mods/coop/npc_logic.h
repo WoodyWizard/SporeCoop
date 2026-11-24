@@ -77,4 +77,57 @@ inline WalkOut walk_velocity(const WalkIn& in, bool fix)
     return out;
 }
 
+// BUG-1388 (`coop.fix npc.creature_replace_snap`): when the host's game re-places a standing Creature NPC
+// (e.g. post-editor nest members moved 5-6 m in one step with host velocity 0), the guest's proxy walked
+// after it on the host's path instead of teleporting there, leaving it 5-7 m off for 2-3 s. Detect a > 3 m
+// target displacement within a short window while the host NPC reports standing speed and the proxy is > 3 m off.
+constexpr float kReplaceJumpM = 3.f;
+constexpr double kReplaceWindowS = 0.30;
+
+struct ReplaceTrack {
+    Vec3 prev{};
+    double prev_t = -1.0;
+    Vec3 anchor{};
+    double anchor_t = -1.0;
+    Vec3 old_anchor{};
+    double old_t = -1.0;
+};
+
+inline float dist(const Vec3& a, const Vec3& b)
+{
+    float dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+inline bool standing_replace(ReplaceTrack& tr, const Vec3& target, const Vec3& vel, const Vec3& drawn,
+                             double now, bool fix)
+{
+    if (tr.prev_t < 0 || now < tr.prev_t || now - tr.prev_t > 1.0) {
+        tr.prev = tr.anchor = tr.old_anchor = target;
+        tr.prev_t = tr.anchor_t = tr.old_t = now;
+        return false;
+    }
+    float jump = dist(target, tr.prev);
+    if (tr.anchor_t >= 0 && now - tr.anchor_t <= kReplaceWindowS)
+        jump = std::max(jump, dist(target, tr.anchor));
+    if (tr.old_t >= 0 && now - tr.old_t <= kReplaceWindowS)
+        jump = std::max(jump, dist(target, tr.old_anchor));
+    const bool snap = fix && speed(vel) <= kReportedWalkMin && jump > kReplaceJumpM &&
+                      dist(drawn, target) > kReplaceJumpM;
+    if (snap) {
+        tr.prev = tr.anchor = tr.old_anchor = target;
+        tr.prev_t = tr.anchor_t = tr.old_t = now;
+        return true;
+    }
+    tr.prev = target;
+    tr.prev_t = now;
+    if (now - tr.anchor_t >= kReplaceWindowS * 0.5) {
+        tr.old_anchor = tr.anchor;
+        tr.old_t = tr.anchor_t;
+        tr.anchor = target;
+        tr.anchor_t = now;
+    }
+    return false;
+}
+
 } // namespace npc_logic

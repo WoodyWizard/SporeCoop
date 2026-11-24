@@ -569,6 +569,10 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", npc::debug_pushback((uint16_t)atoi(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])).c_str());
         return 0;
     }
+    if (argc > 3 && !strcmp(argv[1], "replace")) { // host (tests, BUG-1388): replace <id> <dist_m>
+        SAY("%s", npc::debug_replace((uint16_t)atoi(argv[2]), (float)atof(argv[3])).c_str());
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "raised")) { // tests (BUG-0440): raised <r> [x y z]
         net::Vec3 at{argc > 5 ? (float)atof(argv[3]) : 0.f, argc > 5 ? (float)atof(argv[4]) : 0.f, argc > 5 ? (float)atof(argv[5]) : 0.f};
         SAY("%s", npc::debug_raised((float)atof(argv[2]), argc > 5 ? &at : nullptr).c_str());
@@ -992,6 +996,15 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
         bool ok = social::debug_set_record(strtoul(argv[2], nullptr, 16), atoi(argv[3]), (uint32_t)atoi(argv[4]));
         SAY(ok ? "record set" : "no relationship manager");
         return ok ? 0 : 1;
+    }
+    if (argc > 3 && !strcmp(argv[1], "setdefault")) { // tests (BUG-1540): setdefault <npc id> <rel>
+        int old = social::debug_set_default((uint16_t)atoi(argv[2]), atoi(argv[3]));
+        if (old < 0) {
+            SAY("no such NPC or tuning");
+            return 1;
+        }
+        SAY("default %d -> %d", old, atoi(argv[3]));
+        return 0;
     }
     if (argc > 3 && !strcmp(argv[1], "event")) { // tests (BUG-0168): event <hex crt> <n>, the game's ApplyEvent
         bool ok = social::debug_event(strtoul(argv[2], nullptr, 16), atoi(argv[3]));

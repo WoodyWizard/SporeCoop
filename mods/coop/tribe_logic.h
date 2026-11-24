@@ -361,4 +361,77 @@ inline bool took_goes_back(bool fix, bool tribe_listed, bool citizen_listed, boo
     return !fix || (tribe_listed && citizen_listed && same_serial && !in_vector);
 }
 
+// ---------------- WP-F1 (0.7.99): BUG-1347 & BUG-1458 ----------------
+
+// BUG-1347 (`coop.fix tribe.hold_track`): Citizen_SetHandheldItem's attach (0xC240E0) looks up the current animation
+// via 0x9FF700, which scans pending (+0xF4C) and playing (+0xF0C) tracks in slot order without checking fade state
+// (+0xC0). Binding to a pending (0) or fading-out (3) track makes the hold modifier tick (0xC11240) delete the hold on
+// the very next frame. Handle formula verified at 0x9FF63C..0x9FF659 / 0x9FF79D..0x9FF7AE.
+inline uint32_t track_handle(uint32_t slot, uint32_t gen)
+{
+    if (slot > 0xFu)
+        return 0;
+    return ((slot + 1u) & 0xFFu) | (gen << 8);
+}
+
+inline bool track_live_state(int state) { return state == 1 || state == 2; }
+
+enum class HoldRetryAction { None, Clear, Retry, RestartAndRetry };
+
+// BUG-1347: decides what held_items_tick should do when a mirror has a bound host hold (`hold_bound`) whose modifier
+// is missing (`!has_hold`). With `track_fix` on, retries run every 0.15 s (up to 4 times) and restart the bound anim
+// if the mirror dropped back to idle while the host hold is still fresh (< 2.0 s).
+inline HoldRetryAction hold_retry_action(bool retry_fix, bool track_fix, bool hold_bound, bool has_hold,
+                                         double since_set, double since_hold, uint8_t retries, bool has_item,
+                                         bool same_anim, bool slow_tick)
+{
+    if (!retry_fix || !hold_bound || has_hold || !has_item)
+        return HoldRetryAction::None;
+    const double interval = track_fix ? 0.15 : 0.30;
+    const uint8_t max_retries = track_fix ? 4 : 2;
+    if (!track_fix && !slow_tick)
+        return HoldRetryAction::None;
+    if (since_set < interval)
+        return HoldRetryAction::None;
+    if (retries >= max_retries)
+        return HoldRetryAction::Clear;
+    if (!same_anim) {
+        if (track_fix && since_hold >= 0.0 && since_hold < 2.0)
+            return HoldRetryAction::RestartAndRetry;
+        return HoldRetryAction::Clear;
+    }
+    return HoldRetryAction::Retry;
+}
+
+// BUG-1458 (`coop.fix tribe.hand_side`): Citizen_PickHandBone (0x00C24270) chooses a citizen's primary hand slot by
+// `mObjectId % num_hands`, so a guest's mirror picks the opposite hand ~50% of the time (chief staff raised on the
+// opposite side). Replicating the host's hand slot (1-based) lets the guest select the same limb slot and compute the
+// matching secondary hand (+0xFC8) with the game's own opposite-side rule.
+struct HandLimb {
+    int bone = -1;
+    uint8_t side = 0;
+};
+
+inline int find_hand_slot(const HandLimb* limbs, int n, int bone)
+{
+    if (!limbs || n <= 0)
+        return -1;
+    for (int i = 0; i < n; i++)
+        if (limbs[i].bone == bone)
+            return i;
+    return -1;
+}
+
+inline int pick_secondary_slot(const HandLimb* limbs, int n, int primary)
+{
+    if (!limbs || n <= 0 || primary < 0 || primary >= n)
+        return -1;
+    int first = (primary + 1) % n;
+    uint8_t pside = limbs[primary].side;
+    for (int d = first; d != primary; d = (d + 1) % n)
+        if (limbs[d].side != pside)
+            return d;
+    return first;
+}
+
 } // namespace tribe_logic

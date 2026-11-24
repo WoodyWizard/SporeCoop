@@ -515,7 +515,7 @@ COOP_FIX("tribe.guest_mission", "BUG-1068", g_guest_mission_fix,
          "tribe: a village the guests raid or give gifts to counts for the stage's goal, as one the host acts on");
 uint32_t g_guest_missions;
 // the village (cTribe) of an order's target: the tribe itself, a hut (+0x230), a tool (+0x1F8), a member (+0x1014)
-static void* target_village(void* o)
+void* target_village(void* o)
 {
     if (!o || !game::object_alive(o))
         return nullptr;

@@ -339,6 +339,7 @@ void* member_mirror(uint16_t id);
 struct AnimStats {
     uint32_t hold_sent = 0, hold_rx = 0, hold_bound = 0, hold_item_sets = 0, hold_anim_plays = 0, hold_queued = 0;
     uint32_t hold_retried = 0; // BUG-1347
+    uint32_t hold_rebound = 0; // BUG-1347: hold modifiers rebound from pending/fading tracks onto main track
     uint32_t anim_relay_sent = 0, anim_relay_played = 0, anim_relay_failed = 0, anim_relay_rx = 0, anim_snap_played = 0;
     uint32_t air_sent = 0, air_rx = 0, air_placed = 0, air_landed = 0;
     uint32_t idle_sent = 0, idle_refreshed = 0, idle_played = 0, stale_cut = 0;
@@ -380,6 +381,16 @@ void apply_held_tool(void* c, float v);
 // item + 1 (values under 0.001 are not sent). `coop.fix tribe.held_item off`: the mirrors' hands as before.
 constexpr uintptr_t kHeldItemOff = 0xFFC; // cCreatureCitizen: mCurrentHandheldItem
 constexpr uintptr_t kHandOff = 0xFC4;     // ... the hand (an attachment slot) the item goes to
+constexpr uintptr_t kHandLimbsOff = 0xE40; // cCreatureBase: vector of 0x24-byte hand limb entries (0xC24270, BUG-1458)
+constexpr uintptr_t kModifiersOff = 0xB48; // cCreatureBase: timed modifiers table (8 x 0x44, 0xC11240, BUG-1347)
+
+extern bool g_hold_track_fix;   // BUG-1347 (tribe.hold_track)
+extern bool g_hand_side_fix;    // BUG-1458 (tribe.hand_side)
+extern uint32_t g_hand_side_sets;
+uint32_t main_track_handle(void* c);
+bool rebind_hold_to_main(void* c);
+int hand_slot_of(void* c, int* count = nullptr, uint8_t* side = nullptr);
+bool set_hand_slot(void* c, int want_slot);
 
 extern uintptr_t a_SetHandheldItem;
 extern uintptr_t a_ClearPending;
@@ -600,6 +611,7 @@ extern std::string g_baby_last;
 void baby_on_host(uint8_t from, const net::Vec3& pos);
 void conquer_on_host(uint8_t from, const net::Vec3& p);
 extern uint32_t g_guest_missions;
+void* target_village(void* o);
 void host_command(uint8_t from, net::Reader& r);
 extern bool g_fix_gameover;
 extern uint32_t g_spawns_blocked;

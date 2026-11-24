@@ -338,6 +338,8 @@ public:
     // walk; nor across the death flag (the dead state at the place of the death, the next one at the nest).
     // Blended, the puppet's target slid the whole way in 0.1 s and the puppet walked after it (0 = off)
     float jump_speed = 0;
+    // BUG-1388: > 0: a standing re-placement over this distance (m) with velocity < 0.3 m/s snaps instead of smoothing/lerping
+    float stand_jump_max = 0;
     // BUG-0680: the extrapolation past the newest state falls off (g_puppet_fall_fix); the partners' puppets
     bool interp_fall = false;
     // BUG-0674: a late state is brought in over time (drive.lead_late's late_time) without smooth_max: the NPC proxies.
@@ -606,6 +608,9 @@ private:
                 if (jump_speed > 0 && (((a.s.flags ^ b.s.flags) & PF_DEAD) ||
                                        dist(ap, b.s.pos) > jump_speed * (float)std::max(b.t - a.t, 0.01)))
                     return true;
+                if (stand_jump_max > 0 && dist(Vec3{}, a.s.vel) < 0.3f && dist(Vec3{}, b.s.vel) < 0.3f &&
+                    dist(ap, b.s.pos) > stand_jump_max)
+                    return true;
                 float f = (float)((t - a.t) / (b.t - a.t));
                 out.pos = lerp(ap, b.s.pos, f);
                 out.rot = nlerp(a.s.rot, b.s.rot, f);
@@ -815,7 +820,8 @@ private:
                 // the raw lead (the mirror stops there by drive::step); smoothed, an overshoot of the lead slid back
                 // at kSmoothRate (3 m/s) and the mirror walked back to its stop
                 const bool stop = dist(Vec3{}, v) < 0.3f && dist(Vec3{}, sm_vel_) >= 0.3f;
-                if (d > smooth_max || stop) {
+                const bool stand_jump = stand_jump_max > 0 && dist(Vec3{}, v) < 0.3f && d > stand_jump_max;
+                if (d > smooth_max || stop || stand_jump) {
                     off = {};
                     snap_vel = true;
                 } else if (d > 1e-4f) {

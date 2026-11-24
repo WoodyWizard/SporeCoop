@@ -885,6 +885,56 @@ static void test_walk_gait()
     CHECK(speed(i.vel) < 0.01f && (fix ? i.walk_sp == 0.f : i.walk_sp == 3.f));
 }
 
+// BUG-1388: standing Creature NPC re-placed > 3 m in <= 0.30 s snaps proxy instead of walking
+static void test_standing_replace()
+{
+    printf("standing replace: post-editor nest re-placement snaps proxy (BUG-1388)\n");
+    using namespace npc_logic;
+    // 1. One-step 5.6 m re-placement while host speed is 0 -> snaps when fix is on, not when off
+    {
+        ReplaceTrack tr;
+        CHECK(!standing_replace(tr, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, 10.0, true));
+        CHECK(!standing_replace(tr, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, 10.05, true));
+        CHECK(standing_replace(tr, {5.6f, 0, 0}, {0, 0, 0}, {0, 0, 0}, 10.10, true));
+        // after snap, staying at the new pos does not re-trigger
+        CHECK(!standing_replace(tr, {5.6f, 0, 0}, {0, 0, 0}, {5.6f, 0, 0}, 10.15, true));
+    }
+    // 2. Fix off: never snaps
+    {
+        ReplaceTrack tr;
+        CHECK(!standing_replace(tr, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, 10.0, false));
+        CHECK(!standing_replace(tr, {5.6f, 0, 0}, {0, 0, 0}, {0, 0, 0}, 10.05, false));
+    }
+    // 3. Multi-frame 5.6 m re-placement over 0.15 s (e.g. two snapshots) still triggers within kReplaceWindowS
+    {
+        ReplaceTrack tr;
+        CHECK(!standing_replace(tr, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, 10.0, true));
+        CHECK(!standing_replace(tr, {2.0f, 0, 0}, {0, 0, 0}, {0, 0, 0}, 10.05, true));
+        CHECK(standing_replace(tr, {5.6f, 0, 0}, {0, 0, 0}, {0.5f, 0, 0}, 10.10, true));
+    }
+    // 4. Normal walking NPC (reported speed 6 m/s) does NOT trigger standing replace
+    {
+        ReplaceTrack tr;
+        CHECK(!standing_replace(tr, {0, 0, 0}, {6.f, 0, 0}, {0, 0, 0}, 10.0, true));
+        CHECK(!standing_replace(tr, {5.6f, 0, 0}, {6.f, 0, 0}, {0, 0, 0}, 10.05, true));
+    }
+    // 5. Unreported walk at 4 m/s (1.2 m in 0.30 s) does NOT trigger standing replace
+    {
+        ReplaceTrack tr;
+        for (int k = 0; k < 40; k++) {
+            double t = 10.0 + k * 0.05;
+            float x = (float)(k * 0.05 * 4.0);
+            CHECK(!standing_replace(tr, {x, 0, 0}, {0, 0, 0}, {std::max(0.f, x - 0.5f), 0, 0}, t, true));
+        }
+    }
+    // 6. Proxy already near target (< 3 m) does NOT trigger
+    {
+        ReplaceTrack tr;
+        CHECK(!standing_replace(tr, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, 10.0, true));
+        CHECK(!standing_replace(tr, {5.6f, 0, 0}, {0, 0, 0}, {5.0f, 0, 0}, 10.05, true));
+    }
+}
+
 // BUG-1527 / BUG-1515: social_logic.h
 static void test_social_logic()
 {
@@ -919,6 +969,16 @@ static void test_social_logic()
     // BUG-1515: a won meter closes after the hold
     CHECK(!meter_close_due(true, 10.0, 10.5, 1.5) && meter_close_due(true, 10.0, 11.6, 1.5));
     CHECK(meter_close_due(false, 10.0, 10.1, 1.5) && meter_close_due(true, -1, 10.1, 1.5));
+    // BUG-1540: host materializes undiscovered wild species default relation (1..5) before ApplyEvent
+    CHECK(should_materialize_rel(true, true, true, true, 0, 5));
+    CHECK(should_materialize_rel(true, true, true, true, 0, 3));
+    CHECK(!should_materialize_rel(false, true, true, true, 0, 5));  // fix off
+    CHECK(!should_materialize_rel(true, false, true, true, 0, 5));  // guest
+    CHECK(!should_materialize_rel(true, true, false, true, 0, 5));  // not Creature stage
+    CHECK(!should_materialize_rel(true, true, true, false, 0, 5));  // null creature
+    CHECK(!should_materialize_rel(true, true, true, true, 5, 5));   // already materialized
+    CHECK(!should_materialize_rel(true, true, true, true, 0, 0));   // unknown default
+    CHECK(!should_materialize_rel(true, true, true, true, 0, 6));   // player species / allied
 }
 
 int main(int argc, char** argv)
@@ -946,6 +1006,7 @@ int main(int argc, char** argv)
     test_max_hp_null_species();
     test_share_fresh();
     test_walk_gait();
+    test_standing_replace();
     printf(g_fail ? "npc tests: %d FAILED\n" : "npc tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

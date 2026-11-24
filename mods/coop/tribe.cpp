@@ -966,7 +966,6 @@ static float read_held_item(void* c) { return has_body(c) ? (float)(F<int>(c, kH
 // of taking it (the staff stuck out forward, the arm down; the same on the host when a test attached there, until
 // the modifier was ended by hand). So a started kind 5 modifier that a mirror has had for kHoldMax s is ended with
 // the game's own remove (as the detach 0xC241A0 does): the item settles into the grip.
-constexpr uintptr_t kModifiersOff = 0xB48; // cCreatureBase: the timed modifiers' table (8 x 0x44)
 constexpr double kHoldMax = 1.5;
 static uintptr_t a_ModifierRemove;
 uint32_t g_item_holds_ended;
@@ -985,8 +984,13 @@ static std::unordered_map<uint16_t, HoldSeen> g_hold_seen; // mirror id -> its s
 static bool g_hold_retry_fix = true;
 COOP_FIX("tribe.hold_retry", "BUG-1347", g_hold_retry_fix,
          "tribe: a guest's copy of a member takes its item into the hand again when the first take in the host's animation did not start");
-constexpr double kHoldRetry = 0.3;
-constexpr uint8_t kHoldRetries = 2;
+bool g_hold_track_fix = true;
+COOP_FIX("tribe.hold_track", "BUG-1347", g_hold_track_fix,
+         "tribe: rebind a mirror's kind-5 hold modifier from pending/fading tracks to the live main track and retry holds promptly");
+bool g_hand_side_fix = true;
+COOP_FIX("tribe.hand_side", "BUG-1458", g_hand_side_fix,
+         "tribe: replicate each member's primary hand slot so mirrors hold staffs and tools in the same hand as the host");
+uint32_t g_hand_side_sets = 0;
 // the hand's started modifier of c: its handle (u16 serial | index << 16), 0 none; end: remove it
 uint32_t hold_modifier(void* c, bool end)
 {
@@ -1160,24 +1164,42 @@ static void held_items_tick(double now)
         uint32_t h = mirror_ok(e_) && has_body(c) && F<int>(c, kHeldItemOff) ? hold_modifier(c, false) : 0; // (BUG-0955)
         if (h)
             m.hold_set_at = 0; // (BUG-1347: started)
-        else if (slow && g_hold_retry_fix && g_mirror_hold_fix && m.hold_bound && m.hold_set_at > 0 &&
-                 now - m.hold_set_at >= kHoldRetry && now >= m.hold_set_at && a_SetHandheldItem && mirror_ok(e_) &&
-                 has_body(c) && !game::is_dead(c)) {
-            uint32_t cur = 0;
-            int item = F<int>(c, kHeldItemOff);
-            if (m.hold_retries >= kHoldRetries || item <= 0 || !game::drawn_state(c, nullptr, &cur) ||
-                cur != m.hold_anim_bound) {
-                m.hold_set_at = 0; // (another animation now, or tried enough: the host's resend binds it)
-            } else if (hand_ready(c)) {
-                float sc = read_item_scale(c);
-                clear_pending_same(c, cur);
-                set_hand(c, item);
-                if (g_item_scale_fix && sc != 1.f)
-                    apply_item_scale(c, sc);
-                m.hold_retries++;
+        else {
+            // BUG-1347: if a previously started bound hold dropped early while the host's hold is still fresh, re-arm
+            if (g_hold_track_fix && g_hold_retry_fix && g_mirror_hold_fix && m.hold_bound && m.hold_set_at == 0 &&
+                now - m.hold_at >= 0.0 && now - m.hold_at < 2.0 && m.hold_retries < 4)
                 m.hold_set_at = now;
-                g_anim.hold_retried++;
-                hold_ev(id, 'A', cur, m.hold_retries);
+            if (g_hold_retry_fix && g_mirror_hold_fix && m.hold_bound && m.hold_set_at > 0 && now >= m.hold_set_at &&
+                a_SetHandheldItem && mirror_ok(e_) && has_body(c) && !game::is_dead(c)) {
+                uint32_t cur = 0;
+                int item = F<int>(c, kHeldItemOff);
+                bool drawn = game::drawn_state(c, nullptr, &cur);
+                auto act = tribe_logic::hold_retry_action(
+                    g_hold_retry_fix, g_hold_track_fix, m.hold_bound, h != 0, now - m.hold_set_at, now - m.hold_at,
+                    m.hold_retries, item > 0 && drawn, drawn && cur == m.hold_anim_bound, slow);
+                if (act == tribe_logic::HoldRetryAction::Clear) {
+                    m.hold_set_at = 0;
+                } else if ((act == tribe_logic::HoldRetryAction::Retry ||
+                            act == tribe_logic::HoldRetryAction::RestartAndRetry) &&
+                           hand_ready(c)) {
+                    if (act == tribe_logic::HoldRetryAction::RestartAndRetry && m.hold_anim_bound) {
+                        game::play_behaviour_anim(c, m.hold_anim_bound, 0, 1, -1);
+                        m.relayed_anim = m.hold_anim_bound;
+                        m.anim_rx_at = now;
+                        cur = m.hold_anim_bound;
+                    }
+                    float sc = read_item_scale(c);
+                    clear_pending_same(c, cur);
+                    set_hand(c, item);
+                    if (g_hold_track_fix)
+                        rebind_hold_to_main(c);
+                    if (g_item_scale_fix && sc != 1.f)
+                        apply_item_scale(c, sc);
+                    m.hold_retries++;
+                    m.hold_set_at = now;
+                    g_anim.hold_retried++;
+                    hold_ev(id, 'A', cur, m.hold_retries);
+                }
             }
         }
         auto it = g_hold_seen.find(id);
@@ -1232,6 +1254,88 @@ int hand_model(void* c)
 }
 static const fields::Field kHeldItem{fields::F_HELD_ITEM, "item", read_held_item, apply_held_item, 0.01f};
 static const fields::Field kItemFields[] = {kHeldItem};
+
+// BUG-1458: Citizen_PickHandBone (0x00C24270) chooses a citizen's primary hand slot by `mObjectId % num_hands`,
+// so a guest's mirror picks the opposite hand ~50% of the time. Read the citizen's 0x24-byte hand limb entries
+// at c+0xE40..+0xE44 (+0x00 bone index, +0x18 side) and replicate the 1-based slot index to mirrors.
+static int read_hand_limbs(void* c, tribe_logic::HandLimb* out, int max_n)
+{
+    if (!has_body(c))
+        return 0;
+    uint8_t* b = F<uint8_t*>(c, kHandLimbsOff);
+    uint8_t* e = F<uint8_t*>(c, kHandLimbsOff + 4);
+    if (!b || e <= b || (size_t)(e - b) % 0x24 != 0)
+        return 0;
+    int n = (int)((size_t)(e - b) / 0x24);
+    if (n <= 0 || n > max_n || !skg::readable(b, (size_t)n * 0x24))
+        return 0;
+    for (int i = 0; i < n; i++) {
+        out[i].bone = *(int*)(b + (size_t)i * 0x24);
+        out[i].side = *(uint8_t*)(b + (size_t)i * 0x24 + 0x18);
+    }
+    return n;
+}
+int hand_slot_of(void* c, int* count, uint8_t* side)
+{
+    tribe_logic::HandLimb limbs[32];
+    int n = read_hand_limbs(c, limbs, 32);
+    if (count)
+        *count = n;
+    if (side)
+        *side = 0;
+    if (n <= 0)
+        return -1;
+    int slot = tribe_logic::find_hand_slot(limbs, n, F<int>(c, kHandOff));
+    if (slot >= 0 && side)
+        *side = limbs[slot].side;
+    return slot;
+}
+bool set_hand_slot(void* c, int want_slot)
+{
+    tribe_logic::HandLimb limbs[32];
+    int n = read_hand_limbs(c, limbs, 32);
+    if (n <= 0 || want_slot < 0 || want_slot >= n)
+        return false;
+    int want_bone = limbs[want_slot].bone;
+    int sec_slot = tribe_logic::pick_secondary_slot(limbs, n, want_slot);
+    int want_other = sec_slot >= 0 ? limbs[sec_slot].bone : want_bone;
+    if (F<int>(c, kHandOff) == want_bone && F<int>(c, kHandOff + 4) == want_other)
+        return false;
+    if (game::creature_bone(c, want_bone) == bone_rules::Bone::Out)
+        return false; // BUG-1335 safety: never point +0xFC4 past the body's bone array
+    int item = F<int>(c, kHeldItemOff);
+    float sc = item > 0 ? read_item_scale(c) : 1.f;
+    if (item > 0 && a_SetHandheldItem)
+        thiscall<void>(a_SetHandheldItem, c, 0, -1); // detach from old hand before changing +0xFC4
+    F<int>(c, kHandOff) = want_bone;
+    F<int>(c, kHandOff + 4) = want_other;
+    if (item > 0 && a_SetHandheldItem) {
+        set_hand(c, item);
+        if (g_hold_track_fix)
+            rebind_hold_to_main(c);
+        if (g_item_scale_fix && sc != 1.f)
+            apply_item_scale(c, sc);
+    }
+    return true;
+}
+static float read_hand_slot(void* c)
+{
+    int slot = hand_slot_of(c);
+    return slot >= 0 ? (float)(slot + 1) : 0.f;
+}
+static void apply_hand_slot(void* c, float v)
+{
+    int want_slot = (int)std::lround(v) - 1;
+    if (want_slot < 0)
+        return;
+    if (set_hand_slot(c, want_slot)) {
+        if (g_hand_side_sets++ < 20)
+            H->log(M, SK_INFO, "tribe: member #%u's hand slot -> %d (bone=%d) as on host (BUG-1458)",
+                   member_id(c), want_slot + 1, F<int>(c, kHandOff));
+    }
+}
+static const fields::Field kHandSlot{fields::F_HAND_SLOT, "hand_slot", read_hand_slot, apply_hand_slot, 0.01f, 0.f, 32.f};
+static const fields::Field kHandFields[] = {kHandSlot};
 
 // BUG-0912: the game sizes the item's model when it attaches it (0xC250A0: the scale of the model's transform = the
 // height of the member's bounding box, spatial vt 0x68 [+0x14] - [+8], times the tuning float 0x1581334) and never
@@ -1652,6 +1756,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     fields::add_kind({fields::K_TRIBE_ITEM_SCALE, "tribe_member_item_scale", &g_item_scale_fix, kItemScaleFields, 1, member_each,
                       member_mirror, [] { return active(); }});
     fields::add_kind({fields::K_TRIBE_HUNGER, "tribe_member_hunger", &g_hunger_fix, kHungerFields, 1, member_each, member_mirror,
+                      [] { return active(); }});
+    fields::add_kind({fields::K_TRIBE_HAND, "tribe_member_hand", &g_hand_side_fix, kHandFields, 1, member_each, member_mirror,
                       [] { return active(); }});
     a_SetHunger = H->sym("SporeCoop::Creature_SetHunger");
     a_ClockStop = H->sym("SporeCoop::Clock_Stop"); // BUG-1187

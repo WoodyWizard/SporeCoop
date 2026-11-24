@@ -833,7 +833,8 @@ std::string debug(const std::vector<std::string>& a)
         if (!has_body(c))
             return "no such member";
         int cleared = -1;
-        if (a.size() >= 3 && a[2] != "end" && a_SetHandheldItem) {
+        bool is_crossfade = a.size() >= 4 && a[3] == "crossfade";
+        if (a.size() >= 3 && a[2] != "end" && !is_crossfade && a_SetHandheldItem) {
             // `pending` (tests, BUG-1349): the pending starts of the animation drawn now are ended first (the BUG-0992
             // call): the attach binds the hold to a pending track of the current id before the playing one, and a hold
             // on a track that does not play ends at once (tribe_mirror_hold: "the host's chief let go at once")
@@ -852,12 +853,86 @@ std::string debug(const std::vector<std::string>& a)
         }
         if (a.size() >= 3 && a[2] == "end")
             return "end " + std::to_string(hold_modifier(c, true) ? 1 : 0);
-        char b[160];
-        snprintf(b, sizeof b, "hand item=%d model=%d hand=%d scale=%.3f desired=%.3f sets=%u", F<int>(c, kHeldItemOff),
-                 hand_model(c), F<int>(c, kHandOff), vcall<float>((uint8_t*)c + 0xC0, 0x34 / 4), vcall<float>(c, 0x80 / 4, 0),
-                 g_item_sets);
+        // tests (BUG-1347): `hand <id> <item> crossfade` restarts the current animation so an earlier fading-out
+        // track of the same id exists ahead of the live main track, then calls set_hand + rebind_hold_to_main
+        if (a.size() >= 4 && a[3] == "crossfade" && a_SetHandheldItem) {
+            uint32_t cur = 0;
+            if (!game::drawn_state(c, nullptr, &cur) || !cur)
+                return "crossfade: no current anim";
+            uint32_t want = 0;
+            uint8_t* ac = F<uint8_t*>(c, 0xB54);
+            uint8_t* st = ac && skg::readable(ac + 0x184, 4) ? *(uint8_t**)(ac + 0x184) : nullptr;
+            // Start a fresh crossfade of `cur` (up to 3 tries) until an earlier slot in +0xF0C holds a fading track of `cur`
+            auto has_earlier_fading = [&]() -> bool {
+                if (!st || !skg::readable(st, 0xFAC))
+                    return false;
+                uint32_t mi = *(uint32_t*)(st + 0xFA4);
+                for (uint32_t i = 0; i < 16 && i < mi; i++) {
+                    uint32_t k = *(uint32_t*)(st + 0xF0C + i * 4);
+                    if (k > 0xF)
+                        continue;
+                    uint8_t* tr = st + 8 + k * 0xF0;
+                    if (*(uint32_t*)tr && *(uint32_t*)(tr + 0xD8) == cur &&
+                        !tribe_logic::track_live_state(*(int*)(tr + 0xC0)))
+                        return true;
+                }
+                return false;
+            };
+            for (int tries = 0; tries < 3 && !has_earlier_fading(); tries++)
+                game::play_behaviour_anim(c, cur, 0, 1, -1);
+            if (!has_earlier_fading())
+                game::play_behaviour_anim(c, cur, 0, 0, -1); // queue pending track of `cur` in +0xF4C (checked before +0xF0C by 0x9FF700)
+            want = main_track_handle(c);
+            thiscall<void>(a_SetHandheldItem, c, 0, -1);
+            set_hand(c, atoi(a[2].c_str()));
+            auto read_mod_handle = [&]() -> uint32_t {
+                uint8_t* tab = F<uint8_t*>(c, kModifiersOff);
+                if (!tab || !skg::readable(tab, 8 * 0x44))
+                    return 0;
+                for (uint32_t i = 0; i < 8; i++) {
+                    uint8_t* e = tab + i * 0x44;
+                    if (*(int*)(e + 0x24) == 5 && *(int*)(e + 0x28) == 0 && *(void**)(e + 0x3C) == c)
+                        return *(uint32_t*)(e + 0x04);
+                }
+                return 0;
+            };
+            uint32_t before = read_mod_handle();
+            if (g_hold_track_fix)
+                rebind_hold_to_main(c);
+            uint32_t after = read_mod_handle();
+            char b[200];
+            snprintf(b, sizeof b, "crossfade anim=%08X main=%08X before=%08X after=%08X rebound=%u fix=%d",
+                     cur, want, before, after, g_anim.hold_rebound, (int)g_hold_track_fix);
+            return b;
+        }
+        int nhands = 0;
+        uint8_t side = 0;
+        int slot = hand_slot_of(c, &nhands, &side);
+        char b[240];
+        snprintf(b, sizeof b, "hand item=%d model=%d hand=%d slot=%d hands=%d side=%u side_sets=%u scale=%.3f desired=%.3f sets=%u",
+                 F<int>(c, kHeldItemOff), hand_model(c), F<int>(c, kHandOff), slot >= 0 ? slot + 1 : 0, nhands,
+                 (unsigned)side, g_hand_side_sets, vcall<float>((uint8_t*)c + 0xC0, 0x34 / 4),
+                 vcall<float>(c, 0x80 / 4, 0), g_item_sets);
         return std::string(b) + " hold=" + std::to_string(hold_modifier(c, false) ? 1 : 0) + " holds_ended=" +
                std::to_string(g_item_holds_ended) + (cleared >= 0 ? " pending_cleared=" + std::to_string(cleared) : "");
+    }
+    // tests (BUG-1458): handflip <member id>: flip the member to its opposite hand slot (reproduces the 50% mObjectId%n mismatch)
+    if (a.size() >= 2 && a[0] == "handflip") {
+        void* c = is_guest() ? member_mirror((uint16_t)atoi(a[1].c_str())) : local_of((uint16_t)atoi(a[1].c_str()));
+        if (!has_body(c))
+            return "no such member";
+        int nhands = 0;
+        uint8_t side0 = 0, side1 = 0;
+        int slot0 = hand_slot_of(c, &nhands, &side0);
+        if (slot0 < 0 || nhands < 2)
+            return "handflip: need >=2 hands";
+        int want = (slot0 + 1) % nhands;
+        bool ok = set_hand_slot(c, want);
+        int slot1 = hand_slot_of(c, &nhands, &side1);
+        char b[160];
+        snprintf(b, sizeof b, "handflip ok=%d slot=%d->%d side=%u->%u hand=%d model=%d", (int)ok, slot0 + 1,
+                 slot1 + 1, (unsigned)side0, (unsigned)side1, F<int>(c, kHandOff), hand_model(c));
+        return b;
     }
     // BUG-1335 (tests): handbone [member id]: each member of the player tribe (or that one): its hand bone (+0xFC4),
     // its body's bone count, the bone's state against the array (ok / out / unknown), its item and the drawn model
@@ -1125,7 +1200,15 @@ std::string debug(const std::vector<std::string>& a)
         });
         void* vec[3] = {sel.data(), sel.data() + sel.size(), sel.data() + sel.size()};
         int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, action, t, (void*)nullptr);
-        return "action ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) + ") " + g_last_cmd;
+        bool goal_set = false;
+        if (is_host() && (action == 15 || action == 9)) { // BUG-1535: match a host right-click's goal mission
+            if (void* v = target_village(t); v && wsync::goal_target(v)) {
+                g_guest_missions++;
+                goal_set = true;
+            }
+        }
+        return "action ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) +
+               (goal_set ? ", goal=1" : "") + ") " + g_last_cmd;
     }
     if (!a.empty() && a[0] == "party") { // party: tests (BUG-0646), the selected members party at the own fire pit
         // (a click on the fire pit: CitizenAction 12 Party with the tool of type 10, docs/re/tribe.md 2)
@@ -1418,7 +1501,7 @@ std::string debug(const std::vector<std::string>& a)
                " sent=" + std::to_string(g_anim.phase_sent) + " rx=" + std::to_string(g_anim.phase_rx) + " set=" + std::to_string(g_anim.phase_set) + " unlooped=" + std::to_string(g_anim.phase_unlooped) +
                " last_off=" + std::to_string(g_phase_last_off) + "\ntracks fix=" + std::to_string((int)g_phase_tracks_fix) +
                " sent=" + std::to_string(g_anim.tracks_sent) + " rx=" + std::to_string(g_anim.tracks_rx) + " set=" + std::to_string(g_anim.tracks_set) + "\nhold fix=" + std::to_string((int)g_mirror_hold_fix) + " sent=" + std::to_string(g_anim.hold_sent) + " rx=" + std::to_string(g_anim.hold_rx) +
-               " bound=" + std::to_string(g_anim.hold_bound) + " item_sets=" + std::to_string(g_anim.hold_item_sets) + " anim_plays=" + std::to_string(g_anim.hold_anim_plays) + " queued=" + std::to_string(g_anim.hold_queued) + " retried=" + std::to_string(g_anim.hold_retried) +
+               " bound=" + std::to_string(g_anim.hold_bound) + " item_sets=" + std::to_string(g_anim.hold_item_sets) + " anim_plays=" + std::to_string(g_anim.hold_anim_plays) + " queued=" + std::to_string(g_anim.hold_queued) + " retried=" + std::to_string(g_anim.hold_retried) + " rebound=" + std::to_string(g_anim.hold_rebound) +
                "\ntheme sent=" + std::to_string(g_anim.theme_sent) + " rx=" + std::to_string(g_anim.theme_rx) + " played=" + std::to_string(g_anim.theme_played) +
                "\nparty fix=" + std::to_string((int)g_party_fix) + " sent=" + std::to_string(g_anim.party_sent) + " rx=" +
                std::to_string(g_anim.party_rx) + " played=" + std::to_string(g_anim.party_played) + " stopped=" + std::to_string(g_anim.party_stopped) + " outside=" + std::to_string(g_party_stops_outside) +
