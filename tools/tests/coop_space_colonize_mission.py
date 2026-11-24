@@ -82,7 +82,10 @@ def main():
     if not pid:
         return ck.result()
 
-    # 2. Guest creates and accepts the colonize tutorial mission targeting P
+    # 2. Guest gets interstellar drive (cMissionColonize::FindTargetPlanet checks UFO jump range) and creates
+    #    the colonize tutorial mission targeting P
+    print('  guest drive:', sp(guest, 'tool add interstellardrive'), flush=True)
+    no_movie(guest, esc=True)
     create_out = sp(guest, f'colonize_mission create {pid}')
     print('  guest mission created:', create_out.strip().replace('\n', ' | '), flush=True)
     m0 = mission_state(guest)
