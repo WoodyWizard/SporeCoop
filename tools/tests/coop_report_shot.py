@@ -186,12 +186,17 @@ def main():
             readme = z.read('README.txt').decode('utf-8', 'replace') if 'README.txt' in names else ''
             ck('shots/' in readme and 'screenshot=0' in readme, 'the archive\'s README explains shots/ and how to turn them off')
 
-        # 4. "Report a problem" in the host's window: a screenshot of the click
+        # 4. "Report a problem" in the host's window: a screenshot of the click without the lobby window (BUG-1541)
         time.sleep(2.5)  # over the 2 s between two shots of one game (the host's of the mark)
         ui = Ui(host, 'host')
+        host_clean = os.path.join(lane.out_dir('shots'), f'report_shot_host_clean_{lane.HOST}.png')
+        host_lobby = os.path.join(lane.out_dir('shots'), f'report_shot_host_lobby_{lane.HOST}.png')
+        host.call('shot ' + host_clean)
         host.call(f'key {VK_F9}')
         st = ui.wait(lambda s: s['open'] == '1' and s['report']['vis'], 20, 'the co-op window')
         ck(st is not None, 'the host\'s co-op window is open with "Report a problem"')
+        time.sleep(0.5)
+        host.call('shot ' + host_lobby)
         h1 = log_size(lane.HOST)
         z0 = {f for f in os.listdir(LOGS) if f.startswith('SporeCoop-report-')}
         time.sleep(1.1)  # a new archive name
@@ -208,6 +213,21 @@ def main():
         zh = os.path.join(LOGS, os.path.basename(za.group(1).replace('\\', '/'))) if za else None
         hn = zipfile.ZipFile(zh).namelist() if zh and os.path.exists(zh) else []
         ck(rs and rs.group(1) in hn, f'the button\'s archive has it ({new})')
+        if rs and zh and os.path.exists(zh) and os.path.exists(host_clean) and os.path.exists(host_lobby):
+            from PIL import Image, ImageChops, ImageStat
+            rep_img = Image.open(io.BytesIO(zipfile.ZipFile(zh).read(rs.group(1)))).convert('RGB')
+            cln_img = Image.open(host_clean).convert('RGB').resize(rep_img.size)
+            lob_img = Image.open(host_lobby).convert('RGB').resize(rep_img.size)
+            rw, rh = rep_img.size
+            box = (int(rw * 0.28), int(rh * 0.22), int(rw * 0.72), int(rh * 0.78))
+            d_clean = sum(ImageStat.Stat(ImageChops.difference(rep_img.crop(box), cln_img.crop(box))).mean) / 3.0
+            d_lobby = sum(ImageStat.Stat(ImageChops.difference(rep_img.crop(box), lob_img.crop(box))).mean) / 3.0
+            d_ref = sum(ImageStat.Stat(ImageChops.difference(cln_img.crop(box), lob_img.crop(box))).mean) / 3.0
+            print(f'  BUG-1541 lobby crop diff: report-vs-clean={d_clean:.1f}, report-vs-lobby={d_lobby:.1f}, clean-vs-lobby={d_ref:.1f}', flush=True)
+            ck(d_ref > 15.0 and d_clean < d_lobby * 0.6,
+               f'Report a problem screenshot hid the co-op lobby window (diff to clean={d_clean:.1f}, to lobby={d_lobby:.1f})')
+            restored = ui.wait(lambda s: s['open'] == '1' and s['report']['vis'], 5, 'co-op window restored after shot')
+            ck(restored is not None, 'co-op lobby window restored immediately after taking the screenshot')
         host.call(f'key {VK_F9}')
     finally:
         with open(INI, 'wb') as f:

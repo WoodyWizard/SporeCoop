@@ -13,9 +13,9 @@
 #include <cstdio>
 #include <map>
 
+#include "coop_ui.h"
 #include "fixes.h"
 #include "modes.h"
-#include "fixes.h"
 #include "net/diagmsg.h"
 
 namespace support {
@@ -113,7 +113,7 @@ static bool kit_has_shot()
 
 bool shot_setting() { return g_H->config_int(g_M, "report", "screenshot", 1) != 0; }
 
-int report_shot(const char* tag, const std::string& caption, std::string* name)
+int report_shot_now(const char* tag, const std::string& caption, std::string* name)
 {
     if (!shot_setting()) {
         SLOG("report shot: off ([report] screenshot=0 in coop.ini)");
@@ -128,7 +128,25 @@ int report_shot(const char* tag, const std::string& caption, std::string* name)
     return r ? 1 : 0;
 }
 
-int report_shot_state() { return kit_has_shot() ? g_H->report_shot_pending() : -1; }
+int report_shot(const char* tag, const std::string& caption, std::string* name)
+{
+    if (!shot_setting()) {
+        SLOG("report shot: off ([report] screenshot=0 in coop.ini)");
+        return -1;
+    }
+    if (!kit_has_shot())
+        return 0;
+    if (coop_ui::defer_report_shot(tag, caption))
+        return 1;
+    return report_shot_now(tag, caption, name);
+}
+
+int report_shot_state()
+{
+    if (coop_ui::report_shot_deferred())
+        return 1;
+    return kit_has_shot() ? g_H->report_shot_pending() : -1;
+}
 
 void report_shots_forget()
 {

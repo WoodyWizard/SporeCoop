@@ -1,4 +1,5 @@
 #include "coop_ui.h"
+#include "diag_coop.h"
 #include "trace.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -759,6 +760,94 @@ static int g_report_shot;           // what report_shot answered (1 requested, 0
 static bool g_report_fs_fix = true;
 COOP_FIX("core.report_no_explorer", "BUG-1528", g_report_fs_fix,
          "ui: Report a problem does not open Explorer while the game fills the screen (it minimized the game)");
+
+// BUG-1541: hide the co-op lobby window for one clean rendered frame when taking a Report a problem or /bug
+// screenshot so the dialog does not obscure the center of the captured game scene.
+static bool g_shot_hide_fix = true;
+COOP_FIX("ui.report_shot_hide", "BUG-1541", g_shot_hide_fix,
+         "ui: temporarily hide the co-op lobby window for one frame when taking a Report a problem or /bug screenshot");
+static bool g_shot_hide;
+static bool g_shot_hidden_applied;
+static std::string g_shot_tag;
+static std::string g_shot_caption;
+static int g_shot_wait_frames;
+static int g_shot_restore_frames;
+static double g_shot_hide_until;
+
+bool defer_report_shot(const char* tag, const std::string& caption)
+{
+    if (!g_shot_hide_fix || !g_ok || !g_want_open || !D.root || !sui::visible(D.root))
+        return false;
+    if (!tag || !*tag)
+        return false;
+    if (!g_shot_tag.empty())
+        return true;
+    g_shot_tag = tag;
+    g_shot_caption = caption;
+    g_shot_hide = true;
+    g_shot_hidden_applied = false;
+    g_shot_wait_frames = 1;
+    g_shot_restore_frames = 0;
+    g_shot_hide_until = H->time_seconds() + 1.5;
+    g_dirty = true;
+    return true;
+}
+
+bool report_shot_deferred() { return !g_shot_tag.empty(); }
+
+static void shot_hide_tick(double now)
+{
+    if (!g_shot_hide)
+        return;
+    if (!g_shot_tag.empty()) {
+        if (!g_shot_hidden_applied) {
+            g_dirty = true;
+            if (now >= g_shot_hide_until) {
+                // Fallback if refresh could not run (never leave a report shot stuck)
+                std::string tag = std::move(g_shot_tag);
+                std::string cap = std::move(g_shot_caption);
+                g_shot_tag.clear();
+                g_shot_caption.clear();
+                g_shot_hide = false;
+                support::report_shot_now(tag.c_str(), cap);
+                g_dirty = true;
+            }
+            return;
+        }
+        if (g_shot_wait_frames > 0) {
+            g_shot_wait_frames--;
+            return;
+        }
+        // A full frame has now rendered with D.root hidden, and we are inside Present before report_shot_on_present().
+        std::string tag = std::move(g_shot_tag);
+        std::string cap = std::move(g_shot_caption);
+        g_shot_tag.clear();
+        g_shot_caption.clear();
+        int r = support::report_shot_now(tag.c_str(), cap);
+        if (r > 0) {
+            g_shot_restore_frames = 1;
+        } else {
+            g_shot_hide = false;
+            g_shot_hidden_applied = false;
+            g_dirty = true;
+        }
+        return;
+    }
+    if (g_shot_restore_frames > 0) {
+        g_shot_restore_frames--;
+        if (g_shot_restore_frames == 0) {
+            g_shot_hide = false;
+            g_shot_hidden_applied = false;
+            g_dirty = true;
+        }
+        return;
+    }
+    if (now >= g_shot_hide_until) {
+        g_shot_hide = false;
+        g_shot_hidden_applied = false;
+        g_dirty = true;
+    }
+}
 static int g_test_fullscreen = -1; // tests: 1 / 0 forces the answer, -1 the game window decides
 static bool game_fills_screen()
 {
@@ -1990,7 +2079,9 @@ static void refresh()
     }
     if (g_want_open && g_recenter_fix)
         place_window(D.root);
-    show(D.root, g_want_open && H->time_seconds() >= g_aside_until);
+    show(D.root, g_want_open && H->time_seconds() >= g_aside_until && !g_shot_hide);
+    if (g_shot_hide && D.root && !sui::visible(D.root))
+        g_shot_hidden_applied = true;
     if (!g_want_open) {
         if (A.lan_scan)
             A.lan_scan(false);
@@ -2099,6 +2190,10 @@ void test_reset()
 {
     g_settings_page = false;
     g_space_page = false;
+    g_shot_hide = false;
+    g_shot_hidden_applied = false;
+    g_shot_tag.clear();
+    g_shot_caption.clear();
     open(false);
 }
 
@@ -2193,6 +2288,7 @@ void tick()
         }
     }
     double now = H->time_seconds();
+    shot_hide_tick(now);
     report_tick(now);
     if (g_status_until > 0 && now >= g_status_until) { // a message of a finished action (BUG-0104)
         g_status.clear();
@@ -2210,6 +2306,10 @@ void tick()
 
 void shutdown()
 {
+    g_shot_hide = false;
+    g_shot_hidden_applied = false;
+    g_shot_tag.clear();
+    g_shot_caption.clear();
     if (D.root)
         sui::set_visible(D.root, false);
     if (g_ok)

@@ -116,6 +116,10 @@ struct Api {
     uint16_t default_port = 0;
 };
 
+// BUG-1541: temporarily hide the co-op lobby window for one clean rendered frame when taking a report screenshot
+bool defer_report_shot(const char* tag, const std::string& caption);
+bool report_shot_deferred();
+
 void init(const SkHost* host, SkMod* mod, Api api);
 void tick();     // every frame (inside Present): only schedules UI work outside the frame
 void open(bool on);

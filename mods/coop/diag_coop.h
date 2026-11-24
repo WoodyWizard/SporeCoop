@@ -89,6 +89,7 @@ bool shot_setting();      // [report] screenshot=1
 // a screenshot of this frame for the report archive: 1 requested, 0 not (busy, too soon, no
 // SporeKit support), -1 switched off; its name ("shots/...jpg") into name
 int report_shot(const char* tag, const std::string& caption, std::string* name = nullptr);
+int report_shot_now(const char* tag, const std::string& caption, std::string* name = nullptr);
 int report_shot_state();  // 1 being taken, 0 written, -1 failed (SkHost::report_shot_pending)
 void report_shots_forget(); // switched off: the kept screenshots are removed
 
