@@ -747,7 +747,9 @@ int summon(uint8_t guest)
         if (!tok)
             return 0;
         auto before = party_list(guest);
-        const bool ok = drama::summon_for(puppet);
+        bool ok = drama::summon_for(puppet, guest);
+        if (!ok) // BUG-9362: the world's summon is another party's: an event of this party's own
+            ok = drama::summon_extra(puppet, guest);
         auto after = party_list(guest);
         party_leave(tok);
         int n = 0;
@@ -773,7 +775,10 @@ int summon(uint8_t guest)
     uint8_t* posse = posse_get ? skg::cdecl_call<uint8_t*>(posse_get) : nullptr;
     const bool have_count = posse && skg::readable(posse, 0x20);
     const int32_t count_before = have_count ? skg::field<int32_t>(posse, 0x1C) : -1;
-    const bool for_puppet = g_flock_leader_fix && drama::summon_for(puppet);
+    const bool for_puppet = g_flock_leader_fix && drama::summon_for(puppet, guest);
+    // BUG-9362: the world's summon is another party's: an event of this party's own (its flock lands in the host's pack
+    // as the world event's does, and goes to the partner below)
+    const bool extra = g_flock_leader_fix && !for_puppet && drama::summon_extra(puppet, guest);
     if (!g_flock_leader_fix)
         skg::thiscall<void>(a_StartKind, mgr, 8, 0); // the game's own summon (cSummonCreatureEvent): a flock in the host's pack
     int n = 0, slot = 0;
@@ -790,6 +795,8 @@ int summon(uint8_t guest)
     // not recruit for its 2-3 minutes): it ends now, the guest's pack keeps the members at the guest's side
     if (g_out_of_host_pack && for_puppet && n)
         drama::end_flock_event();
+    if (g_out_of_host_pack && extra && n)
+        drama::end_extra_flock(guest); // (BUG-9362: as the world event's above)
     if (have_count) {
         const int32_t count_after = skg::field<int32_t>(posse, 0x1C);
         const bool put_back = g_out_of_host_pack && n && count_after != count_before;

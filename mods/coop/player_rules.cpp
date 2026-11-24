@@ -1,5 +1,6 @@
 #include "player_rules.h"
 #include "call_guard.h"
+#include "parties_net.h"
 #include "savestrip.h"
 
 #include <windows.h>
@@ -505,6 +506,21 @@ static uint32_t g_lock_blocked, g_lock_tx, g_lock_rx, g_lock_refused;
 
 void set_summon_limit(int n) { g_summon_limit = std::clamp(n, 1, 16); }
 
+// BUG-9362 (8RB: one flock per party): the flocks out now of player `who`'s party (its own counts) and whose; with
+// the extra events off, every flock of the world counts (one per world, as before)
+static int party_summons_out(uint8_t who, uint8_t& owner)
+{
+    owner = 0xFF;
+    int n = 0;
+    for (uint8_t o : drama::flock_owners())
+        if (!drama::extra_on() || o == who || parties::same_party(o, who)) {
+            if (owner == 0xFF)
+                owner = o;
+            n++;
+        }
+    return n;
+}
+
 // host: the summons out now and whose (0 the host, 0xFF none)
 static int host_summons_out(uint8_t& owner)
 {
@@ -522,14 +538,14 @@ static int host_summons_out(uint8_t& owner)
 static bool locked(int& out, int& limit, uint8_t& owner)
 {
     if (is_host()) {
-        out = host_summons_out(owner);
+        out = drama::extra_on() ? party_summons_out(0, owner) : host_summons_out(owner); // BUG-9362: the host's party
         limit = g_summon_limit;
     } else {
         if (H->time_seconds() - g_lock_rx_at > 5) // (no word from the host: not locked here; the host still decides)
             return false;
         out = g_lock_out, limit = g_lock_limit, owner = g_lock_owner;
     }
-    return out >= std::min(limit, kGameSummons);
+    return out >= (drama::extra_on() ? limit : std::min(limit, kGameSummons)); // (BUG-9362: Spore's one is no limit now)
 }
 
 static void summon_lock_tick(double now)
@@ -537,6 +553,29 @@ static void summon_lock_tick(double now)
     if (!g_summon_lock_fix || !is_host() || !game::in_creature_stage())
         return;
     uint8_t owner;
+    if (drama::extra_on()) { // BUG-9362: each guest hears its own party's flocks, once a second and at a change
+        static std::map<uint8_t, std::pair<int, uint8_t>> sent;
+        const bool beat = now - g_lock_tx_at >= 1.0;
+        if (beat)
+            g_lock_tx_at = now;
+        for (auto& p : C.sess->players()) {
+            if (p.id == 0)
+                continue;
+            const int out = party_summons_out(p.id, owner);
+            auto it = sent.find(p.id);
+            if (!beat && it != sent.end() && it->second == std::make_pair(out, owner))
+                continue;
+            sent[p.id] = {out, owner};
+            net::Writer w;
+            w.u8(K_SUMMONLOCK);
+            w.u8((uint8_t)out);
+            w.u8((uint8_t)g_summon_limit);
+            w.u8(owner);
+            C.sess->send_reliable_to(p.id, net::MSG_PLAYER_RULE, w);
+            g_lock_tx++;
+        }
+        return;
+    }
     int out = host_summons_out(owner);
     if (out == g_lock_sent_out && owner == g_lock_sent_owner && now - g_lock_tx_at < 1.0)
         return;
@@ -597,6 +636,15 @@ std::string summon_lock_status()
 
 static int __cdecl h_AbilityTick(void* c, int a2, int a3, int a4, int a5, uint32_t* st)
 {
+    // BUG-9362: the host's own Summon Flock while another party's flock has the world's summon event: the game's
+    // StartKind(8) finds no idle event (it did nothing); the host's party gets an extra event of its own
+    if (c && st && st[1] == 0 && is_host() && c == game::avatar() && game::in_creature_stage() && drama::extra_on() &&
+        drama::world_flock_busy()) {
+        uint8_t* ab = ability_ptr(c, (int)st[0]);
+        uint8_t owner = 0xFF;
+        if (ab && *(uint32_t*)(ab + 8) == kSummon && party_summons_out(0, owner) < g_summon_limit)
+            drama::summon_extra(nullptr, 0);
+    }
     if (g_roar_fix && c && st && st[1] == 0 && is_guest() && c == game::avatar() && game::in_creature_stage()) {
         uint8_t* ab = ability_ptr(c, (int)st[0]);
         if (ab && *(uint32_t*)(ab + 8) == kSummon && guest_pack::enabled()) {
@@ -1343,6 +1391,7 @@ static bool ufo_save_filter(void* o, uint32_t noun)
 void tick(double now)
 {
     summon_lock_tick(now); // decision 5FA
+    drama::flock_tick(now); // BUG-9362: the extra summon events
     if (g_carry_fix && (!g_thrown.empty() || !g_puts.empty() || !g_carried.empty() || !g_synced.empty()))
         carry_tick(now);
     if (is_host() && game::in_creature_stage() && now - g_ufo_tx_at >= 0.1) {
@@ -1499,7 +1548,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             return;
         int out = 0, limit = 1;
         uint8_t owner = 0xFF;
-        if (g_summon_lock_fix && locked(out, limit, owner)) { // decision 5FA: the host decides (a guest that missed the lock)
+        const bool party_locked = drama::extra_on() ? party_summons_out(from, owner) >= g_summon_limit // BUG-9362
+                                                    : locked(out, limit, owner);
+        if (g_summon_lock_fix && party_locked) { // decision 5FA: the host decides (a guest that missed the lock)
             g_lock_refused++;
             H->log(M, SK_INFO, "player_rules: player %u's Summon Flock refused: the party's flock is out (player %d, 5FA)", from,
                    owner == 0xFF ? -1 : (int)owner);

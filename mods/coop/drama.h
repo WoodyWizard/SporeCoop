@@ -19,7 +19,16 @@ std::string debug(const std::vector<std::string>& args);
 // BUG-0736: a guest's own Summon Flock (event kind 8) is the host's to make
 extern bool g_flock_relay;
 // host: the game's summon event started with a partner's puppet as the avatar (the flock comes to it); false: none
-bool summon_for(void* puppet);
+bool summon_for(void* puppet, uint8_t owner = 0xFF);
+// BUG-9362: an extra summon event for a party whose flock is not out while the world's own runs (host; puppet null:
+// the host's own avatar leads it); flock_tick runs them each frame; flock_owners: the summoners of the flocks out now
+// (the world's event first)
+bool summon_extra(void* puppet, uint8_t owner);
+bool end_extra_flock(uint8_t owner); // BUG-9362: as end_flock_event, for that player's extra event
+void flock_tick(double now);
+std::vector<uint8_t> flock_owners();
+bool extra_on();
+bool world_flock_busy();
 // BUG-9233: the summon event started by summon_for ends at its next update (its time left, +0x2C, to 0): the game takes
 // its flock out of the host's pack then; false when there is none
 bool end_flock_event();

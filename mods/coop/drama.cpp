@@ -231,6 +231,7 @@ static void drop_stale_attack_tribe(void* ev, const char* why)
            t, alive ? "listed alive" : "destroyed", why);
 }
 
+static uintptr_t a_Alloc, a_EvCtor; // BUG-9362 (below, with summon_extra)
 static void* g_flock_event;  // the summon event started for a puppet (host)
 static void* g_flock_puppet; // that puppet
 static void forget_flock(const char* why)
@@ -424,14 +425,215 @@ void init(const SkHost* host, SkMod* mod, net::Session* sess)
         H->hook_create(M, (void*)su, (void*)h_SpawnUfo, (void**)&o_SpawnUfo);
     } else
         H->log(M, SK_WARN, "drama: UFOAbductionEvent_SpawnUFO / Simulator::SpawnUFO missing: a guest's visiting ship is its own pick");
+    a_Alloc = H->sym("GeneralAllocator::new_"); // BUG-9362
+    a_EvCtor = H->sym("SporeCoop::SummonEvent_ctor");
     if (uintptr_t u = H->sym("SporeCoop::SummonEvent_Update"))
         H->hook_create(M, (void*)u, (void*)h_SummonUpdate, (void**)&o_SummonUpdate);
     else
         H->log(M, SK_WARN, "drama: SporeCoop::SummonEvent_Update missing: a flock summoned for a partner follows the host's avatar, not the partner");
 }
 
-bool summon_for(void* puppet)
+bool summon_running();
+void* summon_puppet();
+// ---- BUG-9362 (decision 5FB with 8RB, owner 2026-11-23: "it should be all abilities working", one Summon Flock per
+// party): Spore's world has one summon event (cSummonCreatureEvent, made once by the drama manager's factory 0xD4D4B0):
+// while one party's flock was out, another party's Summon Flock found no idle event and did nothing. A party whose
+// flock is not out gets an extra event of its own: the game's own allocation (0x74 bytes, GeneralAllocator::new_) and
+// constructor (SporeCoop::SummonEvent_ctor 0xD4C8D0), the world event's settings copied (+0x10 the kinds it blocks,
+// +0x14 its kind, +0x1C its trigger, +0x20 / +0x24 its hours, +0x30 "ends when the leader dies", its property lists
+// +0x40 and +0x44 shared with a reference each), started as DramaManager_StartEvent starts one (+0xC = 1, +0x2C from
+// property 0xB1F42539, vt+0x30) and run each frame as the manager runs its own (+0x2C -= dt; the leader dead with
+// +0x30 set, or "done?" vt+0x3C: +0xC = 0 and its end vt+0x34; else its update vt+0x40(dt)). Its leader is the
+// summoner: the host's avatar, or a partner's puppet in the avatar's place inside that partner's pack, as the world
+// event does for a partner. Never in the manager's list: never saved, never counted against the world's own events.
+// Off: one summon per world, as before.
+static bool g_extra_fix = true;
+COOP_FIX("creature.flock_per_party", "BUG-9362", g_extra_fix, "creature: each party gets its own Summon Flock event (not one per world)");
+struct ExtraFlock {
+    void* ev = nullptr;
+    void* proto = nullptr;  // the world event it was made from (another world: not used again)
+    void* puppet = nullptr; // null: the host's own avatar leads it
+    uint8_t owner = 0xFF;   // the summoner (session player id; 0 the host)
+};
+static std::vector<ExtraFlock> g_extras;
+static uint8_t g_flock_owner = 0xFF; // the world event's summoner when it was started for a puppet
+static unsigned g_extra_made, g_extra_started, g_extra_ended, g_extra_refused;
+static double g_extra_last_now = -1;
+constexpr size_t kSummonEventBytes = 0x74;
+
+static void* make_extra_event(uint8_t* proto)
 {
+    if (!a_Alloc || !a_EvCtor || !proto || !skg::readable(proto, kSummonEventBytes))
+        return nullptr;
+    uint8_t* ev = skg::cdecl_call<uint8_t*>(a_Alloc, (uint32_t)kSummonEventBytes, "SP_Simulator/cSummonCreatureEvent/COM",
+                                            0, 0, 0, 0);
+    if (!ev)
+        return nullptr;
+    skg::thiscall<void>(a_EvCtor, (void*)ev); // (fastcall: the object in ECX)
+    for (uintptr_t off : {0x10u, 0x14u, 0x1Cu, 0x20u, 0x24u})
+        skg::field<uint32_t>(ev, off) = skg::field<uint32_t>(proto, off);
+    ev[0x30] = proto[0x30];
+    skg::field<int32_t>(ev, 0x18) = -1; // (uses: no limit)
+    // +0x40 the event's property list (the world event's own: shared, no reference taken: an extra event is used only
+    // while the world event it was made from is the world's, summon_extra); +0x44 is a key, not an object (0x614A7EA,
+    // the flag its update reads: the first version took it for a pointer and the host's game faulted reading 0x614A7EA,
+    // 2026-11-23); +0x48 / +0x4C copied as they are. An extra event is never released (the game's own never is either)
+    for (uintptr_t off : {0x40u, 0x44u, 0x48u, 0x4Cu})
+        skg::field<uint32_t>(ev, off) = skg::field<uint32_t>(proto, off);
+    {
+        char hex[0x74 * 3 + 1] = {};
+        for (size_t i = 0; i < kSummonEventBytes; i++)
+            snprintf(hex + i * 3, 4, "%02X ", proto[i]);
+        H->log(M, SK_INFO, "drama: the world's summon event %p: %s(BUG-9362)", proto, hex);
+    }
+    g_extra_made++;
+    H->log(M, SK_INFO, "drama: an extra summon event %p made from the world's %p (BUG-9362)", ev, proto);
+    return ev;
+}
+
+// runs fn with `puppet` as the game's avatar (null: the host's own) inside that puppet's player's pack
+template <typename F>
+static void as_leader(void* puppet, F fn)
+{
+    if (!puppet) {
+        fn();
+        return;
+    }
+    void* nm = game::noun_manager();
+    if (!nm || !game::is_puppet(puppet) || !game::object_alive(puppet))
+        return;
+    const size_t tok = guest_pack::party_mode() ? guest_pack::party_enter_puppet(puppet) : 0;
+    void*& av = skg::field<void*>(nm, game::kNounAvatarOff);
+    void* real = av;
+    void*& tun = skg::field<void*>(puppet, 0xE84); // (a puppet has no archetype tuning: the avatar's, as in summon_for)
+    void* lent = !tun && real ? skg::field<void*>(real, 0xE84) : nullptr;
+    if (lent)
+        tun = lent;
+    size_t mark = game::lend_ledger_on() ? game::swap_open(game::swap_undo_u32, &av, (uintptr_t)real, "extra flock avatar") : 0;
+    av = puppet;
+    fn();
+    av = real;
+    if (game::lend_ledger_on())
+        game::swap_close(mark);
+    if (lent && tun == lent)
+        tun = nullptr;
+    if (tok)
+        guest_pack::party_leave_token(tok);
+}
+
+bool summon_extra(void* puppet, uint8_t owner)
+{
+    if (!g_extra_fix || is_guest() || !game::in_creature_stage() || (puppet && !game::is_puppet(puppet)))
+        return false;
+    uint8_t* proto = (uint8_t*)g_last_event[8];
+    ExtraFlock* slot = nullptr;
+    for (auto& x : g_extras)
+        if (x.ev && x.proto == proto && !((uint8_t*)x.ev)[0xC]) {
+            slot = &x;
+            break;
+        }
+    if (!slot) {
+        void* ev = make_extra_event(proto);
+        if (!ev) {
+            g_extra_refused++;
+            H->log(M, SK_WARN, "drama: no extra summon event (the world's summon %p, BUG-9362)", proto);
+            return false;
+        }
+        g_extras.push_back({ev, proto, nullptr, 0xFF});
+        slot = &g_extras.back();
+    }
+    uint8_t* ev = (uint8_t*)slot->ev;
+    slot->puppet = puppet;
+    slot->owner = owner;
+    ev[0xC] = 1; // as DramaManager_StartEvent: active, its duration, its start
+    if (void* props = skg::field<void*>(ev, 0x40)) {
+        void* prop = nullptr;
+        if (skg::vcall<bool>(props, 0x24 / 4, 0xB1F42539u, (void*)&prop) && prop && skg::field<uint16_t>(prop, 0x12) == 0xD) {
+            static uintptr_t a_GetFloat = H->sym("App::Property::GetValueFloat");
+            if (a_GetFloat)
+                skg::field<float>(ev, 0x2C) = *skg::thiscall<float*>(a_GetFloat, prop);
+        }
+    }
+    as_leader(puppet, [&] { skg::vcall<void>(ev, 0x30 / 4); });
+    g_extra_started++;
+    H->log(M, SK_INFO, "drama: an extra Summon Flock (event %p) for player %u, %.0f s (BUG-9362)", ev, owner,
+           skg::field<float>(ev, 0x2C));
+    return true;
+}
+
+void flock_tick(double now)
+{
+    const double dt = g_extra_last_now < 0 ? 0.0 : std::clamp(now - g_extra_last_now, 0.0, 0.5);
+    g_extra_last_now = now;
+    if (g_extras.empty() || is_guest() || !o_SummonUpdate || !o_SummonEnd)
+        return;
+    const bool here = game::in_creature_stage();
+    for (auto& x : g_extras) {
+        uint8_t* ev = (uint8_t*)x.ev;
+        if (!ev || !ev[0xC])
+            continue;
+        const bool stale = x.proto != g_last_event[8]; // (another world's: its herd is gone with it)
+        const bool gone = !here || stale || (x.puppet && (!game::is_puppet(x.puppet) || !game::object_alive(x.puppet)));
+        if (gone) { // (the stage or the partner left: ended without its leader, as the game ends one for a dead avatar)
+            ev[0xC] = 0;
+            if (here && !stale)
+                o_SummonEnd(ev);
+            g_extra_ended++;
+            continue;
+        }
+        skg::field<float>(ev, 0x2C) -= (float)dt;
+        void* leader = x.puppet ? x.puppet : game::avatar();
+        const bool dead = ev[0x30] && leader && game::is_dead(leader);
+        bool done = dead;
+        if (!done)
+            done = skg::vcall<bool>(ev, 0x3C / 4);
+        if (!done && g_flock_release && skg::field<float>(ev, 0x2C) < -5.f) // (as the world event: 5 s past its time)
+            done = true;
+        if (done) {
+            ev[0xC] = 0;
+            as_leader(x.puppet, [&] { o_SummonEnd(ev); });
+            g_extra_ended++;
+            H->log(M, SK_INFO, "drama: the extra Summon Flock of player %u ended (BUG-9362)", x.owner);
+            continue;
+        }
+        float fdt = (float)dt;
+        uint32_t bits;
+        memcpy(&bits, &fdt, 4);
+        as_leader(x.puppet, [&] { o_SummonUpdate(ev, bits); });
+    }
+}
+
+// BUG-9362: as end_flock_event, for player `owner`'s extra event: its flock is the partner's now (out of its list), its
+// time left 0; flock_tick ends it once "done?" says so or 5 s later
+bool end_extra_flock(uint8_t owner)
+{
+    for (auto& x : g_extras)
+        if (x.ev && ((uint8_t*)x.ev)[0xC] && x.owner == owner) {
+            skg::field<float>(x.ev, 0x2C) = 0.f;
+            auto n = tidy_summon_list(flock_herd(x.ev));
+            H->log(M, SK_INFO, "drama: player %u's extra summon ends now (%d out of its list, %d left, BUG-9362)", owner, n.second,
+                   n.first);
+            return true;
+        }
+    return false;
+}
+
+std::vector<uint8_t> flock_owners()
+{
+    std::vector<uint8_t> v;
+    if (summon_running()) // the world's own event: its partner, else the host
+        v.push_back(summon_puppet() ? g_flock_owner : (uint8_t)0);
+    for (auto& x : g_extras)
+        if (x.ev && ((uint8_t*)x.ev)[0xC])
+            v.push_back(x.owner);
+    return v;
+}
+bool extra_on() { return g_extra_fix; }
+bool world_flock_busy() { return summon_running(); }
+
+bool summon_for(void* puppet, uint8_t owner)
+{
+    g_flock_owner = owner;
     void* mgr = a_Get ? skg::cdecl_call<void*>(a_Get) : nullptr;
     void* nm = game::noun_manager();
     if (!mgr || !a_StartKind || !nm || !puppet || !game::is_puppet(puppet) || is_guest())
