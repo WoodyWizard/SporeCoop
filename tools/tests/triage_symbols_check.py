@@ -140,7 +140,7 @@ def main():
         os.chmod(os.path.join(bindir, 'gh'), 0o755)
         log = os.path.join(tmp, 'gh.log')
         sha = hashlib.sha256(open(tar_path, 'rb').read()).hexdigest() if tar_path else '0' * 64
-        new = '0.7.99'
+        new = '0.9.99'
         rep99 = os.path.join(tmp, 'crash-20261115-000099.txt')
         report(rep99, new, coop_rva, kit_rva)
         genv = dict(env, PATH=bindir + os.pathsep + env.get('PATH', ''), FAKE_GH_LOG=log, FAKE_GH_TAR=tar_path,
@@ -161,7 +161,7 @@ def main():
               and not os.path.exists(os.path.join(tmp, 'cache2', new)),
               f'a wrong sha256 is refused, nothing cached ({[l for l in out.splitlines() if l.startswith("symbols")]})')
         rc, out = run([rep99], dict(genv, SPORECOOP_SYMBOLS_CACHE=os.path.join(tmp, 'cache3'), FAKE_GH_FAIL='1'))
-        check(rc == 0 and re.search(r'^symbols\s+none for coop 0\.7\.99: gh release download', out, re.M) is not None
+        check(rc == 0 and re.search(rf'^symbols\s+none for coop {re.escape(new)}: gh release download', out, re.M) is not None
               and 'signature' in out, 'gh failing without a cache: `symbols    none`, the rest of the triage stays')
         open(log, 'w').close()
         old = os.path.join(tmp, 'crash-20261031-000000.txt')

@@ -71,16 +71,22 @@
 // place without the host, led by a guest the host names; a peer before space 1.3 is never sent it nor named).
 // 0.7.17.1 (BUG-1539): space 1.4 appends optional trailing u32 mission_id to wire::space_core::Mission (K_MISSION);
 // older readers stop before it, and newer readers accept old K_MISSION payloads with mission_id = 0.
+// WP-0 of 0.7.99 (docs/plan-0.7.99.md): pre-0.8 release minors bumped once so parallel WPs never collide:
+// creature 1.4 (WP-A co-op Galactic Adventures MSG 79 ADVENTURE, BUG-1474/0793; WP-G guest pack recruit BUG-1256;
+// WP-F post-editor nest proxies BUG-1388), cell 1.3 (WP-G Cell friendly fire BUG-0899; WP-F rescale centre BUG-1394),
+// tribe 1.2 (WP-G Tribe friendly fire BUG-0899; WP-F chief hold/facing BUG-1347/1458), civ 1.3 (WP-G Civ friendly fire
+// BUG-0899, citizen gestures BUG-1231; WP-F city decorations BUG-1456, vehicle burst BUG-0438), space 1.5 (WP-F colony
+// citizen lead BUG-1404), creations 1.3 (WP-Q shared creations library BUG-0873).
 FAMILY(session,   1, 1, 3, STAGE_ALWAYS, "session", "net/protocol.h wire/history.h")
 FAMILY(world,     2, 1, 1, STAGE_ALWAYS, "world transfer", "")
-FAMILY(creature,  3, 1, 3, STAGE_CREATURE, "Creature", "")
+FAMILY(creature,  3, 1, 4, STAGE_CREATURE, "Creature", "")
 FAMILY(npc,       4, 1, 2, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
-FAMILY(cell,      5, 1, 2, STAGE_CELL, "Cell", "")
-FAMILY(tribe,     6, 1, 1, STAGE_TRIBE, "Tribe", "wire/tribe_anim.h")
-FAMILY(civ,       7, 1, 2, STAGE_CIV | STAGE_SPACE, "Civilization", "")
-FAMILY(space,     8, 1, 4, STAGE_SPACE, "Space", "wire/common.h wire/space_core.h wire/space_map.h wire/space_contracts.h wire/space_diplomacy.h wire/space_finale.h wire/space_rivalry.h wire/space_allies.h wire/space_trade.h wire/space_planets.h wire/space_badges.h wire/space_eco.h wire/space_ufo.h")
+FAMILY(cell,      5, 1, 3, STAGE_CELL, "Cell", "")
+FAMILY(tribe,     6, 1, 2, STAGE_TRIBE, "Tribe", "wire/tribe_anim.h")
+FAMILY(civ,       7, 1, 3, STAGE_CIV | STAGE_SPACE, "Civilization", "")
+FAMILY(space,     8, 1, 5, STAGE_SPACE, "Space", "wire/common.h wire/space_core.h wire/space_map.h wire/space_contracts.h wire/space_diplomacy.h wire/space_finale.h wire/space_rivalry.h wire/space_allies.h wire/space_trade.h wire/space_planets.h wire/space_badges.h wire/space_eco.h wire/space_ufo.h")
 FAMILY(shared,    9, 1, 0, STAGE_TRIBE | STAGE_CIV | STAGE_SPACE, "shared resources", "wire/common.h wire/shared_res.h")
-FAMILY(creations, 10, 1, 2, STAGE_ALWAYS, "creations", "species_line_core.h")
+FAMILY(creations, 10, 1, 3, STAGE_ALWAYS, "creations", "species_line_core.h")
 
 // Class notes (from the 0.7.14 switch of host_world.h): ANIM, DAMAGE are Session: a partner's own creature (its
 // puppet); SETTINGS, COLORS, REPORT, HOST_WORLD: the session's, wherever the guest plays (HOST_WORLD is what

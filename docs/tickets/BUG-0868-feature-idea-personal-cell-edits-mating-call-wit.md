@@ -1,20 +1,20 @@
 ---
 id: BUG-0868
 title: Feature idea: personal Cell edits (mating call) without a Ready vote
-status: open
+status: duplicate
 kind: feature
 stage: Cell
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 lineages30-dev (coop.cpp personal_cell_edit)
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
-related:
+fixed_in: 0.7.16
+branch: 
+commits: 
+tests: 
+signature: 
+docs: 
+related: BUG-1263
 ---
 
 ## Report

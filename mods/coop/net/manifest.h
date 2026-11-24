@@ -116,6 +116,7 @@ constexpr ReservedMsg kReservedMsgs[] = {
                                    "creature 1.3 and cell 1.2 gate it, the row's family is the WP's choice"},
     {77, "RESCUE", Family::creature, "WP-R1 revive (feat/w71-revive): K_DOWN, K_RESULT, K_LINES"},
     {78, "UFO_LEAD", Family::space, "WP-S1 fleets (fix/w73-fleet, BUG-1288; the agy branch's 74 moves here)"},
+    {79, "ADVENTURE", Family::creature, "WP-A co-op Galactic Adventures (0.7.99, BUG-1474/BUG-0793): shared run + host actors"},
 };
 inline const ReservedMsg* reserved_msg(uint8_t id)
 {

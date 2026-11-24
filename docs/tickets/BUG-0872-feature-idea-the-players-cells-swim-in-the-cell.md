@@ -1,20 +1,20 @@
 ---
 id: BUG-0872
 title: Feature idea: the players' cells swim in the Cell stage as native NPC species
-status: open
+status: duplicate
 kind: feature
 stage: Cell
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 lineages43-dev, BUG-9111 (lineage_cells.cpp)
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
-related: BUG-0802
+fixed_in: 0.7.17
+branch: 
+commits: 
+tests: 
+signature: 
+docs: 
+related: BUG-0802, BUG-1477
 ---
 
 ## Report
