@@ -2062,18 +2062,24 @@ static int c_cine(void*, int argc, const char* const* argv, SkOut* out)
 
 // BUG-1536: on Cell shutdown (0xE82060..0xE82079) the game unregisters static Cell fluid-field object 0x15A839C
 // (surface id 0x01010003) and frees cCellGame (+0x4108 fluid/particle pool) WITHOUT clearing [0x16B3C04] (cCellGame::_ptr)
-// or the static bounds 0x16B3C88..0x16B3C9C. Any Swarm particle effect created in Cell keeps its cached pointer
-// [esi+0x1b0] = 0x15A839C; on the first Swarm update in Creature, vtable+0x18 (CellFluid_Contains 0xE5CA60) checks the
-// stale static bounds and returns 1, and vtable+0x24/+0x28 (CellFluid_Sample 0xE51850) dereferences freed [0x16B3C04]+0x4108
-// and faults at 0xE4E454 (host crash 146 ms after Cell -> Creature). Track cCellGame lifetime via ctor/dtor (do NOT null
-// [0x16B3C04], because Cell_GetConsequenceTrait 0xE5C9D0 reads +0x5190 after Cell) and guard the three vtable methods
+// BUG-1536: Cell fluid-field lifetime guard. CellWorld_Shutdown (0xE7F9B0, called by cCellGameMode::OnModeExit
+// 0xE81BA0 on leaving Cell) frees the 0x30580-byte soft-body particle pool and fluid velocity grid [cCellGame+0x4108]
+// (allocated by CellFluidPool_Alloc 0xE4ECA0 at 0xE80F57) via 0xE4DC60 without clearing [cCellGame+0x4108] or
+// static bounds 0x16B3C88..0x16B3C9C; cCellGameMode::Shutdown (0xE8206E) also runs cCellGame_dtor (0xE63F90) without
+// clearing [0x16B3C04] (because Cell_GetConsequenceTrait 0xE5C9D0 reads +0x5190 after Cell). Any Swarm particle effect
+// created in Cell keeps its cached pointer [esi+0x1b0] = 0x15A839C; on the next Swarm update after Cell exit,
+// vtable+0x18 (CellFluid_Contains 0xE5CA60) checks the stale static bounds and returns 1, and vtable+0x24/+0x28
+// (CellFluid_Sample 0xE51850) dereferences freed [0x16B3C04]+0x4108 and faults at 0xE4E454 (host crash 146 ms after
+// Cell -> Creature). Track the fluid pool's exact allocation/shutdown lifetime and guard the three vtable methods
 // that read the bounds or [0x16B3C04]+0x4108. Off (`coop.fix game.cell_fluid_dtor off`): the unguarded game methods.
-using CellGameCtorFn = void*(__thiscall*)(void*);
+using CellFluidAllocFn = void*(__cdecl*)();
+using CellWorldShutFn = void(__cdecl*)();
 using CellGameDtorFn = void(__thiscall*)(void*);
 using CellFluidContainsFn = int(__thiscall*)(void*, const float*);
 using CellFluidApplyFn = void(__thiscall*)(void*, const float*);
 using CellFluidSampleFn = float*(__thiscall*)(void*, float*, const float*);
-static CellGameCtorFn g_cell_ctor_orig;
+static CellFluidAllocFn g_cell_fluid_alloc_orig;
+static CellWorldShutFn g_cell_world_shut_orig;
 static CellGameDtorFn g_cell_dtor_orig;
 static CellFluidContainsFn g_cell_fluid_contains_orig;
 static CellFluidApplyFn g_cell_fluid_apply_orig;
@@ -2085,11 +2091,18 @@ static bool g_cell_fluid_fix = true;
 COOP_FIX_UNSAFE("game.cell_fluid_dtor", "BUG-1536", g_cell_fluid_fix,
                 "cell: Swarm effects lingering past Cell shutdown no longer sample the freed Cell fluid/particle pool (crash at 0x00E4E454)");
 
-static void* __fastcall cell_game_ctor_guard(void* self, void*)
+static void* __cdecl cell_fluid_alloc_guard()
 {
-    void* r = g_cell_ctor_orig(self);
-    g_cell_fluid_alive.store(true, std::memory_order_release);
+    void* r = g_cell_fluid_alloc_orig();
+    if (r)
+        g_cell_fluid_alive.store(true, std::memory_order_release);
     return r;
+}
+
+static void __cdecl cell_world_shut_guard()
+{
+    g_cell_fluid_alive.store(false, std::memory_order_release);
+    g_cell_world_shut_orig();
 }
 
 static void __fastcall cell_game_dtor_guard(void* self, void*)
@@ -2137,8 +2150,8 @@ static float* __fastcall cell_fluid_sample_guard(void* self, void*, float* out, 
 // (vtable+0x18 CellFluid_Contains -> vtable+0x24 CellFluid_Sample) on the static fluid-field object at its bounds centre
 static int c_cellfluid(void*, int argc, const char* const* argv, SkOut* out)
 {
-    bool hooked = g_cell_ctor_orig && g_cell_dtor_orig && g_cell_fluid_contains_orig && g_cell_fluid_apply_orig &&
-                  g_cell_fluid_sample_orig;
+    bool hooked = g_cell_fluid_alloc_orig && g_cell_world_shut_orig && g_cell_dtor_orig &&
+                  g_cell_fluid_contains_orig && g_cell_fluid_apply_orig && g_cell_fluid_sample_orig;
     if (argc > 1 && !strcmp(argv[1], "probe")) {
         if (!hooked || !g_cell_fluid_obj || !g_cell_fluid_bounds || !readable((void*)g_cell_fluid_obj, 4) ||
             !readable((void*)g_cell_fluid_bounds, 24)) {
@@ -2345,20 +2358,22 @@ void init(const SkHost* host, SkMod* mod)
                    c_fxcut, nullptr, SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.fruitpool", "coop.fruitpool - the plants' free and loose fruit: references, flags, state (BUG-0584)",
                    c_fruitpool, nullptr, SK_CMD_MAIN_THREAD);
-    uintptr_t cc = H->sym("SporeCoop::cCellGame_ctor"), cd = H->sym("SporeCoop::cCellGame_dtor"),
-              fc = H->sym("SporeCoop::CellFluid_Contains"), fa = H->sym("SporeCoop::CellFluid_Apply"),
-              fs_ = H->sym("SporeCoop::CellFluid_Sample");
+    uintptr_t ca = H->sym("SporeCoop::CellFluidPool_Alloc"), cw = H->sym("SporeCoop::CellWorld_Shutdown"),
+              cd = H->sym("SporeCoop::cCellGame_dtor"), fc = H->sym("SporeCoop::CellFluid_Contains"),
+              fa = H->sym("SporeCoop::CellFluid_Apply"), fs_ = H->sym("SporeCoop::CellFluid_Sample");
     g_cell_fluid_obj = H->sym("SporeCoop::CellFluid_obj");
     g_cell_fluid_bounds = H->sym("SporeCoop::CellFluid_bounds");
     g_cell_fluid_alive.store(game::mode_id() == modes::kCell, std::memory_order_release);
-    bool cell_fluid = cc && cd && fc && fa && fs_ &&
-                      H->hook_create(M, (void*)cc, (void*)&cell_game_ctor_guard, (void**)&g_cell_ctor_orig) == 0 &&
+    bool cell_fluid = ca && cw && cd && fc && fa && fs_ &&
+                      H->hook_create(M, (void*)ca, (void*)&cell_fluid_alloc_guard, (void**)&g_cell_fluid_alloc_orig) == 0 &&
+                      H->hook_create(M, (void*)cw, (void*)&cell_world_shut_guard, (void**)&g_cell_world_shut_orig) == 0 &&
                       H->hook_create(M, (void*)cd, (void*)&cell_game_dtor_guard, (void**)&g_cell_dtor_orig) == 0 &&
                       H->hook_create(M, (void*)fc, (void*)&cell_fluid_contains_guard, (void**)&g_cell_fluid_contains_orig) == 0 &&
                       H->hook_create(M, (void*)fa, (void*)&cell_fluid_apply_guard, (void**)&g_cell_fluid_apply_orig) == 0 &&
                       H->hook_create(M, (void*)fs_, (void*)&cell_fluid_sample_guard, (void**)&g_cell_fluid_sample_orig) == 0;
     if (!cell_fluid) {
-        g_cell_ctor_orig = nullptr;
+        g_cell_fluid_alloc_orig = nullptr;
+        g_cell_world_shut_orig = nullptr;
         g_cell_dtor_orig = nullptr;
         g_cell_fluid_contains_orig = nullptr;
         g_cell_fluid_apply_orig = nullptr;

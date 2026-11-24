@@ -29,15 +29,14 @@ from twoinst import Checks, start
 
 def first_free_planet(con, star):
     out = sp(con, f'allies star {star}')
-    # lines like: "  planet 010000A1 tech=0 ..." or hex 8-digit PlanetID with tech=0 / civ=0
+    # lines like: "  planet 0046000C 'Esaris' tech=1 loaded(pol=FFFFFFFF)"
     for ln in out.splitlines():
-        m = re.search(r'\b([0-9A-F]{8})\b', ln)
-        if m and ('tech=0' in ln or 'tech=1' in ln or 'tech 0' in ln or 'civ=0' in ln or 'none' in ln.lower()):
+        m = re.search(r'\bplanet ([0-9A-F]{8})\b', ln)
+        if m and ('tech=0' in ln or 'tech=1' in ln or 'pol=FFFFFFFF' in ln):
             return m.group(1)
-    # fallback: any planet line matching this star's low 24 bits
     star_hex = f'{star:06X}'
     for ln in out.splitlines():
-        m = re.search(rf'\b([0-9A-F]{{2}}{star_hex})\b', ln)
+        m = re.search(rf'\bplanet ([0-9A-F]{{2}}{star_hex})\b', ln)
         if m:
             return m.group(1)
     return None

@@ -52,6 +52,12 @@ def dev_delayed(con):
 def sync_info(con):
     out = con.call('coop.diag sync')['out'].strip()
     d = {'raw': out}
+    m = re.search(r'checks (\d+) ok (\d+) differs (\d+) mismatch (\d+)', out)
+    if m:
+        d['checks'] = int(m.group(1))
+        d['ok'] = int(m.group(2))
+        d['differs'] = int(m.group(3))
+        d['mismatch'] = int(m.group(4))
     for k in ('terrain_warns',):
         m = re.search(rf'\b{k}=(\d+)', out)
         if m:
@@ -62,17 +68,33 @@ def sync_info(con):
     return d
 
 
+def run_real_sync_check(host, timeout=35):
+    """Trigger sync-check until one actually compares (ok or differs/mismatch increments past kShareQuiet=20 s)."""
+    s0 = sync_info(host)
+    base = s0.get('ok', 0) + s0.get('differs', 0) + s0.get('mismatch', 0)
+    t0 = time.time()
+    last_ask = 0.0
+    while time.time() - t0 < timeout:
+        now = time.time()
+        if now - last_ask >= 2.0:
+            host.call('coop.diag sync now')
+            last_ask = now
+        time.sleep(1.0)
+        s = sync_info(host)
+        if s.get('ok', 0) + s.get('differs', 0) + s.get('mismatch', 0) > base:
+            return s
+    return sync_info(host)
+
+
 def main():
     host, guest = start()
     ck = Checks()
 
-    # 1. Clean initial Creature world: verify zero terrain divergence
-    host.call('coop.diag sync now')
-    time.sleep(3)
-    s0 = sync_info(host)
+    # 1. Clean initial Creature world: wait past kShareQuiet (20 s) so sync-check actually compares NPCs
+    s0 = run_real_sync_check(host, timeout=35)
     print(f'  initial host sync: {s0["raw"]}', flush=True)
-    ck(s0.get('terrain_warns', -1) == 0 and s0.get('terrain_max_m', 99.0) < 0.50,
-       f'clean Creature load has matching terrain height (warns={s0.get("terrain_warns")}, max_m={s0.get("terrain_max_m")})')
+    ck(s0.get('ok', 0) >= 1 and s0.get('terrain_warns', -1) == 0 and s0.get('terrain_max_m', 99.0) < 0.50,
+       f'clean Creature load compared cleanly with matching terrain height (ok={s0.get("ok")}, warns={s0.get("terrain_warns")}, max_m={s0.get("terrain_max_m")})')
 
     # 2. Guest goes to galaxy menu and marks graphics device busy/minimized
     print('  guest menu:', guest.call('coop.menu')['out'].strip(), flush=True)
@@ -110,22 +132,19 @@ def main():
     if not in_world:
         return ck.result()
 
-    time.sleep(4)
-    host.call('coop.diag sync now')
-    time.sleep(3)
-    s1 = sync_info(host)
+    # Wait past kShareQuiet (20 s) so sync-check actually compares NPCs on the reloaded world
+    s1 = run_real_sync_check(host, timeout=35)
     print(f'  after reload host sync: {s1["raw"]}', flush=True)
-    ck(s1.get('terrain_warns', -1) == 0 and s1.get('terrain_max_m', 99.0) < 0.50,
-       f'reloaded Creature world has matching terrain height (warns={s1.get("terrain_warns")}, max_m={s1.get("terrain_max_m")})')
+    ck(s1.get('ok', 0) > s0.get('ok', 0) and s1.get('terrain_warns', -1) == 0 and s1.get('terrain_max_m', 99.0) < 0.50,
+       f'reloaded Creature world compared cleanly with matching terrain height (ok={s0.get("ok")}->{s1.get("ok")}, warns={s1.get("terrain_warns")}, max_m={s1.get("terrain_max_m")})')
 
     # 4. Planted terrain height divergence (-2.5 m ground shift on guest NPCs)
     warns_before = s1.get('terrain_warns', 0)
     log_warns_before = read_log(lane.HOST).count('sync-check: terrain height differs')
     print('  guest force terrain:', guest.call('coop.diag sync force terrain')['out'].strip(), flush=True)
     try:
-        host.call('coop.diag sync now')
-        flagged = wait(lambda: read_log(lane.HOST).count('sync-check: terrain height differs') > log_warns_before, 15)
-        s2 = sync_info(host)
+        s2 = run_real_sync_check(host, timeout=20)
+        flagged = read_log(lane.HOST).count('sync-check: terrain height differs') > log_warns_before
         print(f'  with forced terrain diff host sync: {s2["raw"]}', flush=True)
         ck(flagged and s2.get('terrain_warns', 0) > warns_before and s2.get('terrain_max_m', 0.0) >= 1.5,
            f'sync-check flagged the 2.5 m terrain height divergence (flagged={flagged}, warns={warns_before}->{s2.get("terrain_warns")}, max_m={s2.get("terrain_max_m")})')
