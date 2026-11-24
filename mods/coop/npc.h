@@ -138,4 +138,18 @@ std::string anims_status(); // BUG-0464: behaviour animations relayed / played o
 std::string current_anims(); // coop.npc cur (tests): each NPC's current animation
 std::string debug_untune(uint16_t id); // guest (tests): proxy <id> without tuning, as Create made it in a herd of ours // BUG-0462: proxies given the host NPC's archetype tuning
 
+// BUG-1256: Creature stage guest pack recruitment
+bool recruit_for_player(uint16_t id, uint8_t player, int max_pack);
+bool dismiss_for_player(uint16_t id, uint8_t player);
+void release_player_pack(uint8_t player);
+int pack_count_of(uint8_t player);
+uint8_t pack_owner_of(uint16_t id);
+std::vector<std::pair<uint16_t, uint8_t>> pack_owners_snapshot();
+bool take_pack_dirty();
+void set_guest_pack_owners(const std::vector<std::pair<uint16_t, uint8_t>>& entries);
+int local_posse_count();
+int local_posse_max();
+bool debug_guest_dismiss(uint16_t id);
+std::string guest_pack_status();
+
 } // namespace npc

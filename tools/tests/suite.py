@@ -1673,3 +1673,5 @@ add('ff_tribe', P + 'coop_ff_tribe.py', minutes=4, fixture='tribe')  # BUG-0899:
 add('ff_tribe_off', 'SPORE_FIX_OFF=tribe.friendly_fire ' + P + 'coop_ff_tribe.py', ('twin',), minutes=4, fixture='tribe')  # BUG-0899 twin: Tribe friendly fire disabled: must FAIL
 add('ff_civ', P + 'coop_ff_civ.py', minutes=4, fixture='civ_npc')  # BUG-0899: all.friendly_fire in Civ stage (military vehicles attack and damage partner vehicles with FF on; SPORE_FIX_OFF=civ.friendly_fire fails: ff_civ_off)
 add('ff_civ_off', 'SPORE_FIX_OFF=civ.friendly_fire ' + P + 'coop_ff_civ.py', ('twin',), minutes=4, fixture='civ_npc')  # BUG-0899 twin: Civ friendly fire disabled: must FAIL
+add('guest_pack_recruit', P + 'coop_guest_pack_recruit.py', minutes=5, fixture='creature')  # BUG-1256: Creature stage guest pack recruitment (recruit allied NPC, brain limit enforced, host slots preserved, dismiss & leave cleanup; SPORE_FIX_OFF=social.guest_recruit fails: guest_pack_recruit_off)
+add('guest_pack_recruit_off', 'SPORE_FIX_OFF=social.guest_recruit ' + P + 'coop_guest_pack_recruit.py', ('twin',), minutes=5, fixture='creature')  # BUG-1256 twin: guest pack recruit disabled: must FAIL

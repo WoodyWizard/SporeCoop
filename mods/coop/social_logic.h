@@ -10,7 +10,9 @@
 // again once one newer than the send came (or kSoloHoldS later).
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
+#include <map>
 #include <vector>
 
 namespace social_logic {
@@ -85,5 +87,80 @@ inline bool meter_close_due(bool fix, double won_at, double now, double hold)
 {
     return !fix || won_at < 0 || now - won_at >= hold;
 }
+
+// ---------------- guest pack recruit (BUG-1256) ----------------
+// Native Spore GetMaxMembers (0xD52DC0): min(brain_level, 3), 0 for brain 0.
+constexpr uint16_t kPackMinor = 4; // creature 1.4 (0.7.99): K_PACK, K_DISMISS, trailing pack_limit in K_ENGAGE
+constexpr int kMaxPackSize = 3;
+constexpr uint8_t kNoOwner = 0xFF;
+
+inline int pack_limit_for_brain(int brain_level)
+{
+    return std::clamp(brain_level, 0, kMaxPackSize);
+}
+
+enum class RecruitFail : uint8_t { Ok = 0, Disabled = 1, NotAllied = 2, AlreadyInPack = 3, PackFull = 4 };
+
+inline RecruitFail can_recruit(bool fix, bool allied_or_kin, bool already_in_pack, int current_pack, int max_pack)
+{
+    if (!fix)
+        return RecruitFail::Disabled;
+    if (!allied_or_kin)
+        return RecruitFail::NotAllied;
+    if (already_in_pack)
+        return RecruitFail::AlreadyInPack;
+    int cap = std::clamp(max_pack, 0, kMaxPackSize);
+    if (cap <= 0 || current_pack >= cap)
+        return RecruitFail::PackFull;
+    return RecruitFail::Ok;
+}
+
+// Tracks which player owns each guest-recruited pack member (npc_id -> player_id, 1..7).
+struct PackOwners {
+    std::map<uint16_t, uint8_t> owners;
+
+    int count_of(uint8_t player) const
+    {
+        int n = 0;
+        for (auto& [id, p] : owners)
+            if (p == player)
+                n++;
+        return n;
+    }
+
+    uint8_t owner_of(uint16_t id) const
+    {
+        auto it = owners.find(id);
+        return it != owners.end() ? it->second : kNoOwner;
+    }
+
+    bool add(uint16_t id, uint8_t player, int max_pack)
+    {
+        if (player == 0 || player >= 8 || owners.count(id))
+            return false;
+        int cap = std::clamp(max_pack, 0, kMaxPackSize);
+        if (cap <= 0 || count_of(player) >= cap)
+            return false;
+        owners[id] = player;
+        return true;
+    }
+
+    bool remove(uint16_t id) { return owners.erase(id) > 0; }
+
+    std::vector<uint16_t> release_player(uint8_t player)
+    {
+        std::vector<uint16_t> out;
+        for (auto it = owners.begin(); it != owners.end();) {
+            if (it->second == player) {
+                out.push_back(it->first);
+                it = owners.erase(it);
+            } else
+                ++it;
+        }
+        return out;
+    }
+
+    void clear() { owners.clear(); }
+};
 
 } // namespace social_logic

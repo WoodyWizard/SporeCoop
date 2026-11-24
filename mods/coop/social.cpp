@@ -41,7 +41,15 @@ static constexpr double kEngageTime = 60.0;          // an engagement without ac
 
 // K_SOLO (BUG-1527, creature 1.3): {u8 n, n x {u8 event, u32 key[3], u16 count}} a guest's own species events of an away
 // time; an older host ignores the kind (it is never sent to one)
-enum Kind : uint8_t { K_ACT = 0, K_PROGRESS = 1, K_RESULT = 2, K_GOAL = 3, K_ENGAGE = 4, K_PROMPT = 5, K_SOLO = 6 };
+// K_PACK / K_DISMISS (BUG-1256, creature 1.4): guest pack recruitment owners broadcast & guest dismiss request
+enum Kind : uint8_t { K_ACT = 0, K_PROGRESS = 1, K_RESULT = 2, K_GOAL = 3, K_ENGAGE = 4, K_PROMPT = 5, K_SOLO = 6, K_PACK = 7, K_DISMISS = 8 };
+
+bool g_guest_recruit_fix = true;
+COOP_FIX("social.guest_recruit", "BUG-1256", g_guest_recruit_fix,
+         "creature: guests can recruit allied or kin creatures into their own pack (follows the guest, respects brain limit, releases on leave)");
+static std::map<uint8_t, int> g_guest_pack_cap; // host: each guest's last reported max pack size (0..3)
+static uint32_t g_recruited = 0;
+static double g_pack_sent_at = 0;
 
 // BUG-0525: the NPC's prompts of a guest's social game (docs/re/creature.md#creature-social-prompts). The native
 // session (SocialPropose 0xDA4360, its tick 0xDA4950) has the NPC perform the abilities of a prompt list (npc
@@ -275,12 +283,42 @@ static bool g_log_posts = false;
 static int social_mode(void* npc_c) { return a_SocialMode ? thiscall<int>(a_SocialMode, npc_c) : 0; }
 static uint32_t g_posts_logged = 0;
 
-static void send_engage(uint16_t id) // BUG-0525: the host starts the NPC's prompts
+static void send_engage(uint16_t id) // BUG-0525: the host starts the NPC's prompts; BUG-1256: trailing pack_limit
 {
     net::Writer w;
     w.u8(K_ENGAGE);
     w.u16(id);
+    if (g_guest_recruit_fix)
+        w.u8((uint8_t)std::clamp(npc::local_posse_max(), 0, social_logic::kMaxPackSize));
     C.sess->send_reliable_to(0, net::MSG_SOCIAL, w);
+}
+
+void send_dismiss(uint16_t id)
+{
+    if (!is_guest() || !g_guest_recruit_fix || !C.sess)
+        return;
+    net::Writer w;
+    w.u8(K_DISMISS);
+    w.u16(id);
+    C.sess->send_reliable_to(0, net::MSG_SOCIAL, w);
+}
+
+static void broadcast_pack()
+{
+    if (!is_host() || !C.sess)
+        return;
+    auto list = npc::pack_owners_snapshot();
+    net::Writer w;
+    w.u8(K_PACK);
+    w.u16(0);
+    uint8_t n = (uint8_t)std::min<size_t>(list.size(), 32);
+    w.u8(n);
+    for (uint8_t i = 0; i < n; i++) {
+        w.u16(list[i].first);
+        w.u8(list[i].second);
+    }
+    C.sess->broadcast_reliable(net::MSG_SOCIAL, w);
+    g_pack_sent_at = H->time_seconds();
 }
 
 // BT_PostStimulus 0xBC9940: the avatar posts the social stimulus 0x10000 to the NPC it engages in
@@ -699,7 +737,8 @@ static void meter_tick()
         void* px = npc::proxy((uint16_t)g_engaged);
         if (g_meter_retry_fix && H->time_seconds() - g_meter_missed_at < kMeterRetry)
             return; // (BUG-1058: a missed open, tried again shortly)
-        if (px && !game::impressed(px) && social_mode(px) != 0)
+        int sm = px ? social_mode(px) : 0;
+        if (px && sm != 0 && (!game::impressed(px) || (g_guest_recruit_fix && sm == 4)))
             meter_task(0, g_engaged, 0, rounds_needed(px));
         else
             return;
@@ -802,6 +841,7 @@ struct Game {
     bool answered = true;  // the open prompt got its answer (or none is open)
     double prompt_at = 0, next_at = 0;
     float score = 0, needed = 0;
+    bool recruit = false; // BUG-1256
 };
 static std::map<std::pair<uint8_t, uint16_t>, Game> g_games;
 static uint32_t g_acts_in = 0, g_impressed = 0, g_refused = 0;
@@ -819,6 +859,7 @@ static size_t games_of(uint8_t id)
     return n;
 }
 PLAYER_STATE("social.games", [](uint8_t id) {
+    g_guest_pack_cap.erase(id);
     if (!g_forget_leaver)
         return;
     for (auto it = g_games.begin(); it != g_games.end();)
@@ -850,6 +891,7 @@ std::string games_dump()
 struct Pending { // applied outside the frame (the result refreshes the creature UI)
     uint8_t player;
     uint16_t npc;
+    bool recruit = false; // BUG-1256
 };
 static std::vector<Pending> g_pending;
 // BUG-1055: a success of the ended session is not paid out after it (apply_success outside the frame)
@@ -899,13 +941,58 @@ static uint32_t reaction_anim(int relation) // as the social success 0xD9BC40 pi
     }
 }
 
+static int guest_pack_cap_of(uint8_t player)
+{
+    auto it = g_guest_pack_cap.find(player);
+    return it != g_guest_pack_cap.end() ? it->second : npc::local_posse_max();
+}
+
+static bool same_species_key(void* a, void* b)
+{
+    if (!a || !b)
+        return false;
+    auto ka = game::species_key(a), kb = game::species_key(b);
+    return ka.instance != 0 && ka.instance == kb.instance && ka.type == kb.type && ka.group == kb.group;
+}
+
+static bool is_recruit_candidate(void* c, uint8_t from)
+{
+    if (!g_guest_recruit_fix || !c || game::is_dead(c) || from == 0)
+        return false;
+    void* av = game::avatar();
+    void* mgr = rel_mgr();
+    void* pup = C.puppet_of ? C.puppet_of(from) : nullptr;
+    int rel = (mgr && a_RelGet && av) ? thiscall<int>(a_RelGet, mgr, (uint8_t*)c + game::kSpeciesKeyOff, c, av) : 0;
+    bool allied_or_kin = (rel == 6) || same_species_key(c, av) || same_species_key(c, pup);
+    return social_logic::can_recruit(g_guest_recruit_fix, allied_or_kin, game::pack_member(c),
+                                     npc::pack_count_of(from), guest_pack_cap_of(from)) ==
+           social_logic::RecruitFail::Ok;
+}
+
 // the native result of a won social game (0xD9BC40) without its meter UI: the species' impress
 // event (counts, ally at the tuning's threshold), the NPC's DNA worth, the "impressed" flag, the
 // NPC's reaction animation
-static void apply_success(uint8_t player, uint16_t id)
+static void apply_success(uint8_t player, uint16_t id, bool recruit)
 {
     void* c = npc::host_npc(id);
     void* mgr = rel_mgr();
+    if (recruit) {
+        if (!c || !g_guest_recruit_fix || game::is_dead(c) || game::pack_member(c) ||
+            !npc::recruit_for_player(id, player, guest_pack_cap_of(player))) {
+            g_refused++;
+            send_result(id, player, false, 0, 0);
+            return;
+        }
+        uint32_t anim = reaction_anim(6);
+        if (a_PlayReaction)
+            thiscall<int>(a_PlayReaction, c, anim, 1, -1);
+        g_recruited++;
+        broadcast_pack();
+        send_result(id, player, true, anim, 0.f);
+        if (C.feed)
+            C.feed(C.sess->name_of(player) + " recruited a pack member");
+        return;
+    }
     if (!c || !mgr || !a_RelEvent || game::is_dead(c) || game::impressed(c)) {
         g_refused++; // gone, died or impressed by somebody else meanwhile
         send_result(id, player, false, 0, 0);
@@ -949,7 +1036,7 @@ static void pending_task(void*)
     auto v = std::move(g_pending);
     g_pending.clear();
     for (auto& p : v)
-        apply_success(p.player, p.npc);
+        apply_success(p.player, p.npc, p.recruit);
 }
 
 static uint32_t ability_anim(void* a) // cCreatureAbility::GetAnimationID(0) 0x4D3D30: +0x48 vector, default 0x4330667
@@ -1007,16 +1094,22 @@ static void fail_game(uint8_t player, uint16_t id)
 }
 
 // host: the guest engaged NPC #id (K_ENGAGE): a new game with its prompt list
-static void host_engage(uint8_t from, uint16_t id)
+static void host_engage(uint8_t from, uint16_t id, int pack_limit)
 {
+    if (pack_limit >= 0)
+        g_guest_pack_cap[from] = std::clamp(pack_limit, 0, social_logic::kMaxPackSize);
     void* c = npc::host_npc(id);
-    if (!c || game::is_dead(c) || game::impressed(c) || social_mode(c) == 0)
+    if (!c || game::is_dead(c))
+        return;
+    bool recruit = is_recruit_candidate(c, from);
+    if (!recruit && (game::impressed(c) || social_mode(c) == 0))
         return;
     double now = H->time_seconds();
     Game& g = g_games[{from, id}];
     if (!g.prompts.empty() && now - g.last < kEngageTime && g.idx < (int)g.prompts.size())
         return; // a game with it is on
     g = Game{};
+    g.recruit = recruit;
     g.prompts = pick_prompts(c);
     g.last = now;
     g.next_at = now + kPromptGreet;
@@ -1038,7 +1131,8 @@ static void host_prompt_tick(double now)
             ++it;
             continue;
         }
-        if (!c || game::is_dead(c) || game::impressed(c) || now - g.last > kEngageTime) {
+        bool done_already = g.recruit ? (game::pack_member(c) || !is_recruit_candidate(c, from)) : game::impressed(c);
+        if (!c || game::is_dead(c) || done_already || now - g.last > kEngageTime) {
             it = g_games.erase(it);
             continue;
         }
@@ -1071,7 +1165,9 @@ static void host_act(uint8_t from, uint16_t id, uint32_t type)
     g_acts_in++;
     void* c = npc::host_npc(id);
     void* pup = C.puppet_of ? C.puppet_of(from) : nullptr;
-    if (!c || game::is_dead(c) || game::impressed(c) || social_mode(c) == 0 ||
+    bool recruit = is_recruit_candidate(c, from);
+    bool valid_normal = c && !game::is_dead(c) && !game::impressed(c) && social_mode(c) != 0;
+    if (!c || game::is_dead(c) || (!recruit && !valid_normal) ||
         (pup && net::dist(game::position(pup), game::position(c)) > kActRange + 4)) {
         g_refused++;
         send_result(id, from, false, 0, 0);
@@ -1105,25 +1201,28 @@ static void host_act(uint8_t from, uint16_t id, uint32_t type)
         send_progress(from, id, std::min(done, 255), std::min(needed, 255));
         if (g.score + 1e-3f < g.needed)
             return;
+        bool won_recruit = g.recruit || recruit;
         g_games.erase(gi);
         if (g_pending.empty())
             H->run_outside_frame(pending_task, nullptr);
-        g_pending.push_back({from, id});
+        g_pending.push_back({from, id, won_recruit});
         return;
     }
     Game& g = g_games[{from, id}];
     if (now - g.last > kEngageTime)
         g.rounds = 0;
     g.last = now;
+    g.recruit = recruit;
     g.rounds++;
     int needed = rounds_needed(c);
     send_progress(from, id, std::min(g.rounds, needed), needed);
     if (g.rounds < needed)
         return;
+    bool won_recruit = g.recruit;
     g_games.erase({from, id});
     if (g_pending.empty())
         H->run_outside_frame(pending_task, nullptr);
-    g_pending.push_back({from, id});
+    g_pending.push_back({from, id, won_recruit});
 }
 
 // ------------------------------------------------------------------ module
@@ -1179,8 +1278,11 @@ void tick(double now)
                            ": +" + std::to_string((int)(o.dna + 0.5f)) + " DNA");
             }
     }
-    if (is_host())
+    if (is_host()) {
         host_prompt_tick(now);
+        if (npc::take_pack_dirty() || (!npc::pack_owners_snapshot().empty() && now - g_pack_sent_at >= 5.0))
+            broadcast_pack();
+    }
     if (is_host()) {
         static double last = 0;
         if (now - last < (g_table_fast_fix ? 0.25 : 1.0))
@@ -1398,8 +1500,27 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         return;
     }
     if (kind == K_ENGAGE && is_host()) {
+        int pack_limit = r.left() >= 1 ? (int)r.u8() : -1;
         if (r.ok())
-            host_engage(from, id);
+            host_engage(from, id, pack_limit);
+        return;
+    }
+    if (kind == K_DISMISS && is_host() && from != 0) { // BUG-1256
+        if (r.ok() && npc::dismiss_for_player(id, from))
+            broadcast_pack();
+        return;
+    }
+    if (kind == K_PACK && is_guest() && from == 0) { // BUG-1256
+        uint8_t n = r.u8();
+        std::vector<std::pair<uint16_t, uint8_t>> entries;
+        entries.reserve(std::min<uint8_t>(n, 32));
+        for (uint8_t i = 0; i < n && i < 32 && r.ok(); i++) {
+            uint16_t nid = r.u16();
+            uint8_t owner = r.u8();
+            entries.push_back({nid, owner});
+        }
+        if (r.ok())
+            npc::set_guest_pack_owners(entries);
         return;
     }
     if (kind == K_PROMPT && is_guest()) { // BUG-0525: the NPC's prompt: its mirror performs it
@@ -1468,11 +1589,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         } else if (px && anim && a_PlayReaction && !game::is_dead(px)) // BUG-0525: a failed game's animation
             thiscall<int>(a_PlayReaction, px, anim, 1, -1);
         const bool own = own_progress::active(); // BUG-1469: the friend's DNA is ours alone
-        if (mine && ok && own)
+        if (mine && ok && own && dna > 0.f)
             own_progress::take_gain(dna, "friend");
+        bool recruited_mine = mine && ok && dna == 0.f && npc::pack_owner_of(id) == C.sess->my_id();
         if (mine && C.feed)
-            C.feed(ok ? "Impressed! +" + std::to_string((int)(dna + 0.5f)) + (own ? " DNA" : " DNA for the pack")
-                      : "It does not want to socialize now");
+            C.feed(recruited_mine ? "Recruited into your pack!"
+                   : ok ? "Impressed! +" + std::to_string((int)(dna + 0.5f)) + (own ? " DNA" : " DNA for the pack")
+                        : "It does not want to socialize now");
         if (mine && ok && id == g_meter_npc)
             meter_task(2, id);
         if (mine && g_engaged == id)
@@ -1492,6 +1615,8 @@ void on_session_end()
     g_goal_paid.clear();
     g_goal_owed.clear();
     g_games.clear();
+    g_guest_pack_cap.clear(); // BUG-1256
+    g_pack_sent_at = 0;
     g_have_table = false;
     g_host_table.clear();
     g_sent.clear();
@@ -1503,10 +1628,10 @@ std::string status()
     char b[900];
     if (is_host())
         snprintf(b, sizeof b,
-                 "social(host): acts_in=%u impressed=%u refused=%u games=%u species_tx=%u goal_dna_paid=%u "
+                 "social(host): acts_in=%u impressed=%u recruited=%u refused=%u games=%u species_tx=%u goal_dna_paid=%u "
                  "goal_dna_dropped=%u goal_owed=%u goal_owed_paid=%u prompts_sent=%u answers=%u answers_wrong=%u "
                  "answers_early=%u prompt_fails=%u games_forgotten=%u\n",
-                 g_acts_in, g_impressed, g_refused, (unsigned)g_games.size(), g_table_tx, g_goal_dna_paid,
+                 g_acts_in, g_impressed, g_recruited, g_refused, (unsigned)g_games.size(), g_table_tx, g_goal_dna_paid,
                  g_goal_dna_dropped, (unsigned)g_goal_owed.size(), g_goal_owed_paid, g_prompts_sent, g_answers,
                  g_answers_wrong, g_answers_early, g_prompt_fails, g_games_forgotten);
     else
@@ -1534,6 +1659,17 @@ std::string solo_dump()
         s += b;
     }
     return s;
+}
+
+std::string pack_dump()
+{
+    std::string out = npc::guest_pack_status();
+    char b[96];
+    for (auto& [id, owner] : npc::pack_owners_snapshot()) {
+        snprintf(b, sizeof b, "pack_member id=%u owner=%u\n", (unsigned)id, (unsigned)owner);
+        out += b;
+    }
+    return out;
 }
 
 std::string species_dump()

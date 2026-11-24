@@ -943,6 +943,15 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", social::solo_dump().c_str());
         return 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "pack")) { // tests (BUG-1256)
+        SAY("%s", social::pack_dump().c_str());
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "dismiss")) { // tests (BUG-1256): guest dismisses recruited pack member <id>
+        bool ok = npc::debug_guest_dismiss((uint16_t)atoi(argv[2]));
+        SAY(ok ? "dismissed" : "not dismissed");
+        return ok ? 0 : 1;
+    }
     if (argc > 1 && !strcmp(argv[1], "species")) {
         SAY("%s", social::species_dump().c_str());
         return 0;
