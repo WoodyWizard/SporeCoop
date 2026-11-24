@@ -727,6 +727,79 @@ COOP_FIX("civ.wait_design_kept", "BUG-1481", g_fix_wait_design_kept,
          "civ: a guest's vehicle waiting for the host's design answer is bound later, not removed and made again");
 static std::unordered_set<void*> g_wait_design; // guest: this cycle's candidates waiting for the design answer
 
+// BUG-0438: guest burst-loss tracking and 20 Hz moving-vehicle kinematics receiver (kVehKinChunk 0xF8).
+static double g_burst_until = -100.0;
+static uint16_t g_kin_seq = 0, g_last_state_cycle = 0;
+static bool g_have_kin_seq = false, g_have_state_cycle = false;
+
+void reset_veh_kin()
+{
+    g_burst_until = -100.0;
+    g_kin_seq = g_last_state_cycle = 0;
+    g_have_kin_seq = g_have_state_cycle = false;
+}
+
+static void note_burst_gap(uint16_t prev, uint16_t cur, bool& have, uint16_t& last, double now)
+{
+    if (have && civlogic::seq_gap(prev, cur)) {
+        g_burst_until = now + civlogic::kVehBurstHold;
+        g_n.burst_arms++;
+    }
+    if (!have || (int16_t)(cur - last) > 0) {
+        last = cur;
+        have = true;
+    }
+}
+
+void guest_veh_kin(net::Reader& r)
+{
+    uint16_t seq = r.u16();
+    uint8_t chunk = r.u8(), chunks = r.u8();
+    uint32_t ms = r.u32();
+    uint8_t n = r.u8();
+    if (!r.ok() || chunk != kVehKinChunk || chunks != 0 || n > 32)
+        return;
+    if (!g_veh_burst_fix)
+        return;
+    double now = H->time_seconds();
+    double sent = ms / 1000.0;
+    note_burst_gap(g_kin_seq, seq, g_have_kin_seq, g_kin_seq, now);
+    g_n.kin_rx++;
+    for (int i = 0; i < n && r.ok(); i++) {
+        uint16_t id = r.u16();
+        net::Vec3 pos{r.f32(), r.f32(), r.f32()};
+        net::Quat rot{r.f32(), r.f32(), r.f32(), r.f32()};
+        net::Vec3 vel{r.f32(), r.f32(), r.f32()};
+        float ht = r.f32();
+        if (!r.ok())
+            return;
+        if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z) ||
+            !std::isfinite(rot.x) || !std::isfinite(rot.y) || !std::isfinite(rot.z) || !std::isfinite(rot.w))
+            continue;
+        GvRef x = gv_find(id);
+        if (!x)
+            continue; // full snapshot creates / binds mirrors; kinematics only updates existing bound mirrors
+        GV& g = *x.g;
+        void* v = x.v;
+        bool alive_v = v && gv_ok(x) && !F<uint8_t>(v, kVDead);
+        if (!alive_v)
+            continue;
+        g.pos = pos;
+        g.rot = rot;
+        g.seen = now;
+        g.kin_at = now;
+        float top = F<float>(v, 0x218);
+        if (std::isfinite(ht) && ht > 0.f && ht < 10000.f) {
+            g.host_top = ht;
+            if (g_vel_cap_host_fix)
+                top = std::max(top, ht);
+        }
+        g.est.max_speed = g_vel_cap_fix ? 2.f * top + 10.f : 0.f;
+        g.est.max_ahead = g_extrap_fix ? (net::g_lead_fix ? kVehLead : kVehAhead) : 0.4;
+        g.est.update_vel(pos, vel, now, sent);
+    }
+}
+
 void guest_state(net::Reader& r)
 {
     uint16_t cycle = r.u16();
@@ -736,6 +809,8 @@ void guest_state(net::Reader& r)
     g_rx.policy.keep_order = g_cycle_order_fix; // (the switch is read every chunk)
     if (!g_rx.begin(cycle, chunk, chunks))
         return; // a bad header, or a late chunk of an older cycle
+    if (g_veh_burst_fix && chunk == 0)
+        note_burst_gap(g_last_state_cycle, cycle, g_have_state_cycle, g_last_state_cycle, H->time_seconds());
     if (!guest_cities(r))
         return;
     guest_nodes_and_buildings(r);
@@ -786,7 +861,10 @@ void guest_state(net::Reader& r)
         // host hitch, when its vehicles stand (BUG-0186: 0.4 s threw one 10 m ahead)
         if (g_extrap_fix && net::g_lead_fix)
             g.est.max_ahead = kVehLead;
-        g.est.update(m.pos, now, sent);
+        // BUG-0438: when 20 Hz host-velocity kinematics recently updated this mirror, keep its exact velocity
+        // rather than overwriting it with the 10 Hz EMA chord velocity.
+        if (!(g_veh_burst_fix && now - g.kin_at < 0.20))
+            g.est.update(m.pos, now, sent);
         if (v && (!gv_ok(x) || F<uint8_t>(v, kVDead))) { // (BUG-0951: also another vehicle at its address)
             uint16_t bid;
             if (g_veh_lifetime_fix && gv_id_of(v, bid) && bid == id && game::listed(v, kVehicleNoun))
@@ -914,8 +992,20 @@ void guest_tick(double now)
         const net::Vec3 at = veh_pos(x.v);
         net::Vec3 cur = at;
         // moved on with the estimated velocity (no lag behind the host); BUG-0425 (drive.lead): by the one-way latency
-        // the session measures (half the round trip), not a fixed 0.03 s
-        net::Vec3 want = g.est.at(now + (g_place_now_fix ? fdt : 0.0), net::g_lead_fix ? net::g_one_way : 0.03);
+        // the session measures (half the round trip), not a fixed 0.03 s; BUG-0438 (civ.veh_burst): longer burst lead
+        // inside a packet-gap-armed window (host hitches keep kVehLead)
+        const double lat = net::g_lead_fix ? net::g_one_way : 0.03;
+        const double t_want = now + (g_place_now_fix ? fdt : 0.0);
+        net::Vec3 want;
+        if (g_veh_burst_fix && g.est.sender >= 0) {
+            const double age = t_want - g.est.t;
+            const double knee = g.est.hz.knee(net::kFallMargin);
+            const double a = civlogic::veh_extrap_time(age, lat, knee, now < g_burst_until, true, g.est.max_ahead,
+                                                       net::kFallTau, net::g_lead_fall_fix);
+            want = g.est.at_extrap(a);
+        } else {
+            want = g.est.at(t_want, lat);
+        }
         if (g_place_now_fix && g.has_put) // BUG-0438: on with the target's velocity, only the rest glided below
             cur = {cur.x + g.est.vel.x * (float)fdt, cur.y + g.est.vel.y * (float)fdt, cur.z + g.est.vel.z * (float)fdt};
         float d = net::dist(cur, want);

@@ -64,8 +64,8 @@ extern bool g_ok;
 // the city planner (docs/re/civ.md#civ-planner-sell-back, BUG-1532): the object in the hand, the plot under it (-1:
 // none), the hand's "Sell For" flag (dropped so, the planner sells it back)
 constexpr uintptr_t kEdHand = 0xC0, kEdHover = 0xFC, kSpSell = 0x6E;
-constexpr uintptr_t kVSpatial = 0x34, kVPos = 0x38, kVRot = 0x44, kVSelected = 0xA0, kVHp = 0x540, kVLoco = 0xB1C,
-                    kVPurpose = 0xB20, kVDead = 0xBCD, kPol = 0x30,
+constexpr uintptr_t kVSpatial = 0x34, kVPos = 0x38, kVRot = 0x44, kVSelected = 0xA0, kVVel = kVSpatial + 0x1C8,
+                    kVHp = 0x540, kVLoco = 0xB1C, kVPurpose = 0xB20, kVDead = 0xBCD, kPol = 0x30,
                     kVOrders = 0xB68;
 constexpr uintptr_t kCityPos = 0x124, kCitySpecialty = 0x540, kCitySlots = 0x43C, kCityCiv = 0x590,
                     kCityCapture = 0x748, // + 4: capturing political id
@@ -145,12 +145,17 @@ struct Counters {
     uint32_t space_held_built = 0, space_relayed = 0, space_relay_in = 0;
     uint32_t space_place_seen = 0;
     uint32_t world_checks_fired = 0;
+    uint32_t kin_tx = 0, kin_rx = 0, burst_arms = 0; // BUG-0438: 20 Hz vehicle kinematics and loss-burst windows
 };
 extern Counters g_n;
 
 struct HV {
     uint8_t owner;
     uint32_t pol; // the vehicle's political id when it was listed (BUG-0059: a reused address)
+    // BUG-0438: host-side previous sample for finite-difference fallback & moving/stop-tail detection
+    net::Vec3 prev_pos{}, last_kin_pos{};
+    double prev_t = 0.0, last_moving_at = 0.0;
+    bool have_prev = false, have_kin = false;
 };
 // host: an entry of the table (id: its net id, v: its vehicle, serial: v's cGameData::mID when it was listed (BUG-0951:
 // a reused address of the same nation too), h: its data)
@@ -179,6 +184,7 @@ struct GV { // (its vehicle and the vehicle's serial are the registry entry's re
     float pushed = 0, pushed_max = 0, err = 0;
     double pushed_at = 0;
     float host_top = -1.f; // BUG-0787: the host vehicle's top speed from the last snapshot, -1 = not sent
+    double kin_at = -100.0; // BUG-0438: last local time kVehKinChunk updated this vehicle's velocity
 };
 constexpr uint32_t kCreatureNoun = 0x018EB45E; // cCreatureAnimal: the wild creatures (not synced in Civ, BUG-0970)
 constexpr uint32_t kBuildingModelType = 0x2399BE55;
@@ -524,12 +530,16 @@ extern bool g_extrap_fix;
 extern bool g_instant_found_fix;
 extern double g_last_city_spawn;
 extern bool g_place_now_fix;
+extern bool g_veh_burst_fix;
 extern bool g_vel_cap_fix;
 extern bool g_vel_cap_host_fix;
 void guest_build(net::Reader& r);
 void guest_building_hp(net::Reader& r);
 void guest_roads(net::Reader& r);
 void guest_state(net::Reader& r);
+void guest_veh_kin(net::Reader& r);
+void reset_veh_kin();
+constexpr uint8_t kVehKinChunk = 0xF8; // MSG_CIV_STATE chunk index of 20 Hz moving-vehicle kinematics (chunks 0, civ 1.3+)
 void host_buildings_session_end();
 constexpr uint32_t kFoundInstant = 1; // MSG_CIV_BUILD kNextCitySite noun: the host founded it instantly
 constexpr uint8_t kNextCitySite = 0xFF; // MSG_CIV_BUILD city index: "found the next city site", noun 0

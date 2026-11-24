@@ -5,6 +5,7 @@
 #include "lineage_cells.h"
 #include "civ_wallet.h"
 #include "coop_state.h"
+#include "designs.h"
 #include "own_progress.h"
 #include "revive.h"
 #include "cocoon.h"
@@ -1905,10 +1906,39 @@ void register_commands_editor()
                        return 0;
                    },
                    nullptr, SK_CMD_OUTSIDE_FRAME);
-    H->command_add(M, "coop.vote", "coop.vote [test|go|tribeend [<archetype hex>]|noavatar <s>] - evolution vote (test: a vote without an editor; tribeend: the end-of-Tribe editor guard; noavatar: a vote end in <s> sees no avatar, BUG-1421; tests)",
+    H->command_add(M, "coop.vote", "coop.vote [test|go|ship|tribeend [<archetype hex>]|noavatar <s>] - evolution vote (test: a vote without an editor; ship: Civ -> Space spaceship editor request; tribeend: the end-of-Tribe editor guard; noavatar: a vote end in <s> sees no avatar, BUG-1421; tests)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1 && !strcmp(argv[1], "test") && g_sess.role() == net::Role::Host && !g_vote.active) {
                            start_vote(nullptr, g_name + " wants to evolve (test)");
+                       } else if (argc > 1 && !strcmp(argv[1], "ship") && game::mode_id() == modes::kCiv) {
+                           // tests (BUG-1531): native Civ -> Space spaceship EditorRequest (0xCF5A44..0xCF5ACB) through the vote hook
+                           uintptr_t ctor = H->sym("EditorRequest_ctor"), alloc = H->sym("GeneralAllocator::new_"),
+                                     submit = H->sym("Editors::EditorRequest::Submit");
+                           if (!ctor || !alloc || !submit) {
+                               SAY("not possible here");
+                               return 1;
+                           }
+                           void* req = skg::cdecl_call<void*>(alloc, (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
+                           if (!req) {
+                               SAY("not possible here");
+                               return 1;
+                           }
+                           skg::thiscall<void*>(ctor, req);
+                           skg::vcall<int>(req, 1); // AddRef
+                           skg::field<uint32_t>(req, 0xC) = designs::kShipEditor;
+                           skg::field<uint32_t>(req, 0x90) = 0x0116D51Du;
+                           skg::field<uint8_t>(req, 0x34) = 0;
+                           skg::field<uint8_t>(req, 0x36) = 1;
+                           skg::field<uint8_t>(req, 0x37) = 1;
+                           skg::field<uint8_t>(req, 0x38) = 1;
+                           skg::field<uint8_t>(req, 0x39) = 0;
+                           skg::field<uint8_t>(req, 0x3B) = 0;
+                           skg::field<uint8_t>(req, 0x3C) = 1;
+                           skg::field<uint8_t>(req, 0x3D) = 1;
+                           skg::field<uint8_t>(req, 0x64) = 1;
+                           bool r = skg::cdecl_call<bool>(submit, req);
+                           skg::vcall<int>(req, 2); // Release
+                           SAY("ship editor request submitted -> %d\n", (int)r);
                        } else if (argc > 1 && !strcmp(argv[1], "editor")) {
                            // a request through the vote (the hook), like the game's own editor entry
                            uintptr_t ctor = H->sym("EditorRequest_ctor"), submit = H->sym("Editors::EditorRequest::Submit");

@@ -1142,8 +1142,10 @@ void setup_callbacks()
                     modes::mode_name(g_mode), landing ? ", no avatar yet, BUG-1421" : "");
                 feed("evolution: your own editor opens when you have arrived in the Creature stage");
             }
-            if (ended && g_vote.editor) // WP-X1 (BUG-1276): the host's end-of-Tribe editors: our own ones after the arrival
-                civ_arrival_vote(g_vote.editor, g_mode);
+            if (ended && g_vote.editor) {
+                civ_arrival_vote(g_vote.editor, g_mode);     // WP-X1 (BUG-1276): the host's end-of-Tribe editors
+                civ_ship_editor_vote(g_vote.editor, g_mode); // BUG-1531: the host's Civ -> Space spaceship editor
+            }
             g_vote.active = on;
             g_vote.left = left;
             g_vote.text = text;

@@ -183,4 +183,83 @@ inline bool space_build_routed(bool fix, bool in_space, size_t bytes)
 // is not one of this game's own extras: the sweep of a complete cycle spares it. fix off (0.7.16.1): removed, and a
 // new mirror made on a later cycle
 inline bool sweep_spares(bool fix, bool waits_design) { return fix && waits_design; }
+
+// ---------------- vehicle burst kinematics (BUG-0438) ----------------
+// 20 Hz kinematics stream for moving Civ vehicles (MSG_CIV_STATE chunk kVehKinChunk 0xF8, chunks 0, civ 1.3+) and
+// loss-burst lead adaptation:
+// - A packet-number gap (seq_gap) proves packet loss on the wire (distinct from a host hitch, where seq advances by 1)
+//   and arms a burst window (kVehBurstHold s) during which extrapolation uses a longer knee/tau/cap.
+// - Outside a burst window the tight kVehLead (0.30 s) and normal fall_time stay active so a host hitch never overshoots.
+constexpr double kVehKinPeriod = 0.05;     // 20 Hz moving-vehicle kinematics rate
+constexpr double kVehStopTail = 0.30;      // keep sending 0.3 s after a stop so vel=0 arrives promptly
+constexpr double kVehBurstHold = 4.0;      // s: burst-loss window after a seq/cycle gap
+constexpr double kVehBurstLead = 0.55;     // s: max extrapolation during a confirmed loss burst
+constexpr double kVehBurstKnee = 0.35;     // s: full-speed horizon before exponential decay in a burst
+constexpr double kVehBurstTau = 0.25;      // s: decay time constant in a burst
+
+inline bool seq_gap(uint16_t prev, uint16_t cur)
+{
+    uint16_t d = (uint16_t)(cur - prev);
+    return d > 1u && d < 64u;
+}
+
+// Compute vehicle extrapolation time (s) from state age, one-way latency, and normal horizon knee.
+// `fall_on` is drive.lead_fall; `burst_fix` is civ.veh_burst; `in_burst` is true inside the gap-armed burst window.
+inline double veh_extrap_time(double age, double latency, double knee, bool in_burst, bool burst_fix,
+                              double max_ahead, double fall_tau, bool fall_on)
+{
+    double a0 = std::max(age + latency, 0.0);
+    bool burst = burst_fix && in_burst;
+    double eff_knee = (burst ? std::max(knee, kVehBurstKnee) : knee) + latency;
+    double eff_tau = burst ? kVehBurstTau : fall_tau;
+    double eff_cap = burst ? std::max(max_ahead, kVehBurstLead) : max_ahead;
+    if (fall_on && a0 > eff_knee)
+        a0 = eff_knee + eff_tau * (1.0 - std::exp(-(a0 - eff_knee) / eff_tau));
+    return std::min(a0, eff_cap);
+}
+
+// Pick a clean host vehicle velocity: prefer cLocomotiveObject::mVelocity when finite, non-trivial, and within
+// max_speed; else fall back to host-side finite-difference (pos - prev_pos) / dt (zero network jitter).
+inline void veh_vel_pick(const float loco[3], const float pos[3], const float prev[3], bool have_prev, double dt,
+                         float max_speed, float out[3])
+{
+    auto ok_vec = [&](const float v[3]) {
+        if (!std::isfinite(v[0]) || !std::isfinite(v[1]) || !std::isfinite(v[2]))
+            return false;
+        float s2 = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+        return max_speed <= 0.f || s2 <= max_speed * max_speed;
+    };
+    float ls2 = loco[0] * loco[0] + loco[1] * loco[1] + loco[2] * loco[2];
+    if (ok_vec(loco) && ls2 > 0.04f) { // > 0.2 m/s from locomotion
+        out[0] = loco[0];
+        out[1] = loco[1];
+        out[2] = loco[2];
+        return;
+    }
+    if (have_prev && dt > 0.005 && dt < 0.5) {
+        float fd[3] = {(pos[0] - prev[0]) / (float)dt, (pos[1] - prev[1]) / (float)dt, (pos[2] - prev[2]) / (float)dt};
+        if (ok_vec(fd)) {
+            out[0] = fd[0];
+            out[1] = fd[1];
+            out[2] = fd[2];
+            return;
+        }
+    }
+    out[0] = out[1] = out[2] = 0.f;
+}
+
+// Whether a vehicle should be included in the 20 Hz kinematics packet: moving now, moved since last send, or just stopped.
+inline bool veh_kin_send(const float vel[3], const float pos[3], const float last_pos[3], bool have_last,
+                         double now, double last_moving_at)
+{
+    float v2 = vel[0] * vel[0] + vel[1] * vel[1] + vel[2] * vel[2];
+    if (v2 > 0.09f) // > 0.3 m/s
+        return true;
+    if (have_last) {
+        float dx = pos[0] - last_pos[0], dy = pos[1] - last_pos[1], dz = pos[2] - last_pos[2];
+        if (dx * dx + dy * dy + dz * dz > 0.0025f) // > 0.05 m
+            return true;
+    }
+    return last_moving_at > 0.0 && now - last_moving_at <= kVehStopTail;
+}
 } // namespace civlogic

@@ -972,6 +972,33 @@ struct VelocityEstimate {
         pos = p;
         t = now;
     }
+    // BUG-0438: update directly with a sender-reported velocity (zero EMA lag on starts, turns, stops).
+    void update_vel(const Vec3& p, const Vec3& v, double now, double sender_s)
+    {
+        if (sender_s >= 0 && g_fix.sender_time) {
+            if (sender >= 0) {
+                double dts = sender_s - sender;
+                if (dts <= 0 && dts > -60)
+                    return; // older or duplicate
+                if (dts <= 0)
+                    clock.clear();
+                else
+                    hz.add(now - t);
+            }
+            clock.add(now - sender_s, now);
+            pos = p;
+            bool ok = std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z) && !too_fast(v);
+            vel = ok ? v : Vec3{};
+            sender = sender_s;
+            t = sender_s + clock.value();
+            return;
+        }
+        pos = p;
+        bool ok = std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z) && !too_fast(v);
+        vel = ok ? v : Vec3{};
+        sender = -1;
+        t = now;
+    }
     // latency: the one-way delay before the snapshot arrived
     // BUG-0674 (g_lead_fall_fix): past the usual horizon (with sender times) at a falling speed
     HorizonMedian<32> hz;
@@ -982,6 +1009,12 @@ struct VelocityEstimate {
             a0 = fall_time(a0, hz.knee(kFallMargin) + latency);
         float a = (float)std::min(a0, max_ahead);
         return {pos.x + vel.x * a, pos.y + vel.y * a, pos.z + vel.z * a};
+    }
+    // Extrapolate using an explicit extrapolation duration `a` (s) computed by caller rules (BUG-0438).
+    Vec3 at_extrap(double a) const
+    {
+        float fa = (float)std::max(a, 0.0);
+        return {pos.x + vel.x * fa, pos.y + vel.y * fa, pos.z + vel.z * fa};
     }
 };
 

@@ -125,6 +125,10 @@ static void all_rows(AllQ& q)
                     uint8_t ow = tribe::owner_of(carrier);
                     r.owner = ow == 0xFF ? -1 : ow;
                 }
+            } else if (noun == 0x018C88E4 && !IsBadReadPtr(o, 0x230) &&
+                       *(uint32_t*)((uint8_t*)o + 0x228) == 0x02AE5BA7u) {
+                // BUG-1456: city decoration model variant (+0x22C: lamp post, tree planter, fountain, brazier)
+                r.key = *(uint32_t*)((uint8_t*)o + 0x22C);
             }
             q->rows->push_back(r);
             return true;

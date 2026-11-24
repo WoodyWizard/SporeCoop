@@ -9,7 +9,9 @@
 
 #include "civ_logic.h"
 #include "civ_wallet_logic.h"
+#include "net/interp.h"
 #include "net/shared_ledger.h"
+#include "ship_editor_logic.h"
 
 static int g_fail = 0;
 #define CHECK(c)                                                         \
@@ -285,6 +287,137 @@ static void test_passive_income_cause()
     CHECK(near(net::host_own_cause(999999, 999950, 0, 49), 0));
 }
 
+// BUG-0438 (civ.veh_burst): 20 Hz moving-vehicle kinematics, host velocity selection, and burst-window lead
+static void test_veh_burst()
+{
+    printf("veh_burst\n");
+    // Sequence gap detection: consecutive advances are not gaps; 1..62 dropped packets are; wraparound works; huge jumps ignored.
+    CHECK(!seq_gap(10, 10) && !seq_gap(10, 11));
+    CHECK(seq_gap(10, 12) && seq_gap(10, 15));
+    CHECK(!seq_gap(0xFFFF, 0) && seq_gap(0xFFFF, 1) && seq_gap(0xFFFE, 1));
+    CHECK(!seq_gap(100, 99)); // out-of-order / old packet
+
+    // Extrapolation time: outside a burst window (host hitch), stays clamped at normal knee/tau/cap (0.30 s).
+    double normal_long = veh_extrap_time(0.45, 0.035, 0.14, false, true, 0.30, 0.12, true);
+    CHECK(normal_long < 0.30 && normal_long > 0.25);
+    // Inside a confirmed loss burst (seq gap armed) with burst_fix ON, extrapolates cleanly past 0.40 s without stalling at 0.28 s.
+    double burst_on = veh_extrap_time(0.40, 0.035, 0.14, true, true, 0.30, 0.12, true);
+    double burst_off = veh_extrap_time(0.40, 0.035, 0.14, true, false, 0.30, 0.12, true);
+    CHECK(burst_on > 0.42 && burst_on <= kVehBurstLead);
+    CHECK(burst_off < 0.30); // off reproduces the 0.28 s stall (3+ m trail at 20 m/s)
+    // At a 0.40 s gap on a 20 m/s straight drive (true lead needed = 0.435 s), error drops from >3 m to <0.3 m:
+    CHECK((0.435 - burst_on) * 20.0 < 0.35);
+    CHECK((0.435 - burst_off) * 20.0 > 2.8);
+
+    // Host velocity selection: prefers locomotion velocity when valid and non-zero, falls back to finite-difference, rejects NaN/excess.
+    float out[3] = {};
+    float loco_ok[3] = {20.f, 0.f, 0.f}, zero[3] = {0.f, 0.f, 0.f};
+    float p0[3] = {0.f, 0.f, 0.f}, p1[3] = {1.f, 0.f, 0.f};
+    veh_vel_pick(loco_ok, p1, p0, true, 0.05, 50.f, out);
+    CHECK(std::fabs(out[0] - 20.f) < 1e-4f);
+    veh_vel_pick(zero, p1, p0, true, 0.05, 50.f, out); // loco 0 -> finite-difference 1 / 0.05 = 20 m/s
+    CHECK(std::fabs(out[0] - 20.f) < 1e-4f);
+    float loco_nan[3] = {std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f};
+    veh_vel_pick(loco_nan, p1, p0, true, 0.05, 50.f, out); // NaN loco -> falls back to clean finite-difference
+    CHECK(std::fabs(out[0] - 20.f) < 1e-4f);
+    float loco_jump[3] = {200.f, 0.f, 0.f};
+    veh_vel_pick(loco_jump, p0, p0, true, 0.05, 50.f, out); // exceeds max_speed -> 0
+    CHECK(out[0] == 0.f && out[1] == 0.f && out[2] == 0.f);
+
+    // Moving / stop-tail filter: sends while moving, for kVehStopTail s after stopping, then stops streaming idle vehicles.
+    CHECK(veh_kin_send(loco_ok, p1, p1, true, 10.0, 10.0));
+    CHECK(veh_kin_send(zero, p1, p1, true, 10.2, 10.0));   // within stop tail: sends vel=0
+    CHECK(!veh_kin_send(zero, p1, p1, true, 10.5, 10.0));  // idle past stop tail: skipped
+
+    // VelocityEstimate::update_vel: immediate turn response (zero EMA lag) vs old EMA update.
+    net::VelocityEstimate e_vel, e_ema;
+    e_vel.max_speed = e_ema.max_speed = 60.f;
+    for (int i = 0; i < 5; i++) {
+        double t = i * 0.05;
+        net::Vec3 p{(float)(20.0 * t), 0.f, 0.f};
+        e_vel.update_vel(p, {20.f, 0.f, 0.f}, t + 0.035, t);
+        e_ema.update(p, t + 0.035, t);
+    }
+    // Sharp 90-degree turn at t = 0.25 s: velocity switches to (0, 20, 0) immediately.
+    e_vel.update_vel({4.0f, 1.0f, 0.f}, {0.f, 20.f, 0.f}, 0.285, 0.25);
+    e_ema.update({4.0f, 1.0f, 0.f}, 0.285, 0.25);
+    CHECK(std::fabs(e_vel.vel.x) < 1e-4f && std::fabs(e_vel.vel.y - 20.f) < 1e-4f);
+    CHECK(std::fabs(e_ema.vel.x) > 5.f); // old EMA still dragged along old +X direction
+}
+
+static void test_guest_ship_editor()
+{
+    printf("guest spaceship editor (BUG-1531)\n");
+    using namespace ship_editor;
+    constexpr uint32_t kCiv = 0x01654C04u, kTribe = 0x01654C02u;
+
+    // Guards: fix off, host, elsewhere, wrong mode, wrong editor id
+    State s;
+    CHECK(!s.on_vote_end(kShipEditor, kCiv, kCiv, true, false, false, 10.0));   // fix off
+    CHECK(!s.on_vote_end(kShipEditor, kCiv, kCiv, false, false, true, 10.0));   // host
+    CHECK(!s.on_vote_end(kShipEditor, kCiv, kCiv, true, true, true, 10.0));     // elsewhere
+    CHECK(!s.on_vote_end(kShipEditor, kTribe, kCiv, true, false, true, 10.0));  // wrong mode
+    CHECK(!s.on_vote_end(0x99E92F05u, kCiv, kCiv, true, false, true, 10.0));    // City Hall, not ship
+    CHECK(s.phase == Phase::Idle && s.votes == 0);
+
+    // Happy path: vote passes -> settles 0.5 s -> opens -> editor seen -> result captured -> returns to Civ
+    CHECK(s.on_vote_end(kShipEditor, kCiv, kCiv, true, false, true, 10.0));
+    CHECK(s.phase == Phase::Pending && s.votes == 1 && s.held());
+    // Duplicate vote while active is ignored
+    CHECK(!s.on_vote_end(kShipEditor, kCiv, kCiv, true, false, true, 10.1));
+    // Busy/paused resets settle clock
+    CHECK(s.step_pending(true, true, true, true, false, false, false, true, false, false, 10.4, 0.1) == StepAction::Wait);
+    CHECK(s.step_pending(true, true, true, true, false, false, false, false, false, false, 10.7, 0.3) == StepAction::Wait);
+    CHECK(s.step_pending(true, true, true, true, false, false, false, false, false, false, 11.0, 0.3) == StepAction::Open);
+    CHECK(s.phase == Phase::Opening);
+    // Defer inside outside-frame task returns to Pending and settles again
+    s.defer_opening(11.0);
+    CHECK(s.phase == Phase::Pending);
+    CHECK(s.step_pending(true, true, true, true, false, false, false, false, false, false, 11.6, 0.6) == StepAction::Open);
+    s.on_submit_result(true, 11.6);
+    CHECK(s.phase == Phase::Open && s.opened == 1);
+    // Ignores unrelated tags (e.g. native tag or outfitter tag)
+    uint32_t k_other[3] = {0x11111111u, 0x476A98C7u, 0x40656200u};
+    CHECK(!s.on_result(kNativeTag, kUfoDesign, k_other, false));
+    // Sees Editor mode, receives own tag result, returns to Civ
+    CHECK(s.step_open(false, true, false, 12.0) == StepAction::Wait && s.editor_seen);
+    uint32_t k_mine[3] = {0xAABBCCDDu, 0x476A98C7u, 0x40656200u};
+    CHECK(s.on_result(kOwnShipTag, kUfoDesign, k_mine, false));
+    CHECK(s.results == 1 && s.cancels == 0 && s.res.key[0] == 0xAABBCCDDu);
+    CHECK(s.step_open(false, false, true, 13.0) == StepAction::Wait); // loading transition
+    CHECK(s.step_open(true, false, false, 13.5) == StepAction::Returned);
+    CHECK(s.phase == Phase::Done && !s.held());
+
+    // Session end cancels Pending (BUG-0234), but keeps an already Open editor tracked so return unpauses
+    State s2;
+    CHECK(s2.on_vote_end(kShipEditor, kCiv, kCiv, true, false, true, 20.0));
+    s2.on_session_end();
+    CHECK(s2.phase == Phase::Idle && s2.dropped == 1 && !s2.held());
+    CHECK(s2.on_vote_end(kShipEditor, kCiv, kCiv, true, false, true, 25.0));
+    CHECK(s2.step_pending(true, true, true, true, false, false, false, false, false, false, 25.6, 0.6) == StepAction::Open);
+    s2.on_submit_result(true, 25.6);
+    s2.on_session_end();
+    CHECK(s2.phase == Phase::Open && s2.held());
+    CHECK(s2.step_open(false, true, false, 26.0) == StepAction::Wait);
+    CHECK(s2.on_result(kOwnShipTag, kUfoDesign, nullptr, true) && s2.cancels == 1);
+    CHECK(s2.step_open(true, false, false, 27.0) == StepAction::Returned && s2.phase == Phase::Done);
+
+    // Timeout if editor never appears after Submit
+    State s3;
+    CHECK(s3.on_vote_end(kShipEditor, kCiv, kCiv, true, false, true, 50.0));
+    CHECK(s3.step_pending(true, true, true, true, false, false, false, false, false, false, 50.6, 0.6) == StepAction::Open);
+    s3.on_submit_result(true, 50.6);
+    CHECK(s3.step_open(true, false, false, 50.6 + kOpenLimit + 1.0) == StepAction::Drop);
+    CHECK(s3.phase == Phase::Idle && s3.dropped == 1);
+
+    // Hard timeout caps paused wait; direct exit to Space/Menu drops cleanly without Civ unpause
+    State s4;
+    CHECK(s4.on_vote_end(kShipEditor, kCiv, kCiv, true, false, true, 100.0));
+    for (int i = 1; i <= 305; i++)
+        s4.step_pending(true, true, true, true, false, false, false, false, true, false, 100.0 + i, 1.0);
+    CHECK(s4.phase == Phase::Idle && s4.dropped == 1);
+}
+
 int main()
 {
     test_money();
@@ -295,6 +428,8 @@ int main()
     test_wallets();
     test_local_play_gate();
     test_passive_income_cause();
+    test_veh_burst();
+    test_guest_ship_editor();
     printf(g_fail ? "civ_tests: %d FAILED\n" : "civ_tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

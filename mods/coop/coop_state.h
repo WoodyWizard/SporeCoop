@@ -511,6 +511,10 @@ void civ_arrival_tick(double now);
 void civ_arrival_result(const void* data); // civ_editors.cpp: an editor's result message 0x30C11C7
 void civ_arrival_init();
 std::string civ_arrival_status();
+// ---- BUG-1531 (in civ_arrival.cpp): a guest's own spaceship editor at the Civ -> Space vote ----
+void civ_ship_editor_vote(uint32_t editor, uint32_t mode);
+void civ_ship_editor_result(const void* data);
+std::string civ_ship_editor_status();
 void start_vote(void* req, const std::string& text);
 void submit_tick(double now);
 void vote_action_tick(double now);

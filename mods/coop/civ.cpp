@@ -328,6 +328,14 @@ COOP_FIX("civ.extrap", "BUG-0186", g_extrap_fix,
 bool g_place_now_fix = true;
 COOP_FIX("civ.place_now", "BUG-0438", g_place_now_fix,
          "civ: a mirrored vehicle is drawn on its target, not half a step and a frame behind it");
+// BUG-0438: under a loss burst (SPORE_NET=burst: 30 % loss) 10 Hz Civ snapshots fell 0.3-0.6 s apart and fall_time
+// choked extrapolation at ~0.28 s while EMA chord velocity lagged turns and stops (sync_civ_loss p90 3.21-7.32 m).
+// On: moving vehicles stream at 20 Hz with host velocity (kVehKinChunk 0xF8 to civ 1.3+ peers), full snapshots are
+// phase-locked at 0.10 s, and a seq/cycle gap arms a 4 s burst window with kVehBurstLead 0.55 s (host hitches keep
+// kVehLead 0.30 s). Off: 10 Hz position-only snapshots and 0.30 s cap (0.7.17).
+bool g_veh_burst_fix = true;
+COOP_FIX("civ.veh_burst", "BUG-0438", g_veh_burst_fix,
+         "civ: moving vehicles stream at 20 Hz with host velocity and a burst-loss lead window");
 bool g_vel_cap_fix = true;
 COOP_FIX("civ.vel_cap", "BUG-0186", g_vel_cap_fix,
          "civ: a vehicle step faster than twice its top speed is taken as a jump, not a speed to extrapolate");
@@ -2498,6 +2506,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             guest_tribes(peek);
         else if (peek.ok() && chunk == kInfluenceChunk && chunks == 0) // BUG-1285, BUG-1287: religion, economy
             guest_influence(peek);
+        else if (peek.ok() && chunk == kVehKinChunk && chunks == 0) // BUG-0438: 20 Hz moving-vehicle kinematics
+            guest_veh_kin(r);
         else if (!g_veh_hold) // (tests, BUG-0951: `coop.civ vehhold`)
             guest_state(r);
     }
@@ -2567,6 +2577,7 @@ void on_session_end()
     g_tribe_extra_seen.clear();
     hv_clear();
     gv_clear();
+    reset_veh_kin(); // BUG-0438
     g_city_owner.clear();
     g_host_cities.clear();
     g_split_for.clear();
@@ -2589,6 +2600,7 @@ void on_world_change()
     planner_out_clear(); // BUG-1417 (the cities are freed)
     g_bld_rekeyed.clear(); // BUG-0670 (the buildings are freed)
     caption_disarm();
+    reset_veh_kin(); // BUG-0438
     // BUG-0773: after a real load the vehicles are gone and nothing is written (boost_ours: in the game's list now,
     // the same nation, still the speed the mod wrote); a world change seen while they live gives their speed back
     clear_coop_tables(g_fix_boost_restore);
@@ -2596,6 +2608,7 @@ void on_world_change()
     // would write +0x218 into the old world's vehicles if the order ever changed)
     hv_clear();
     gv_clear();
+    reset_veh_kin(); // BUG-0438
     g_city_owner.clear();
     g_host_cities.clear();
     g_split_for.clear();
