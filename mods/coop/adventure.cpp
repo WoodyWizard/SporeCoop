@@ -1534,6 +1534,7 @@ std::string command(const std::vector<std::string>& args)
                 paired++;
             float hp = game::health(obj), mhp = game::max_health(obj);
             bool inv = (skg::readable((uint8_t*)obj + 0x5DC, 4) && *(uint32_t*)((uint8_t*)obj + 0x5DC) == 2u) ||
+                       (skg::readable((uint8_t*)obj + 0x628, 1) && *(uint8_t*)((uint8_t*)obj + 0x628) != 0) ||
                        (skg::readable((uint8_t*)obj + 0xB58, 4) && ((*(uint32_t*)((uint8_t*)obj + 0xB58) & 0x200u) != 0));
             uint32_t pol = game::political_id(obj);
             double unp = -1.0;
@@ -1599,6 +1600,37 @@ std::string command(const std::vector<std::string>& args)
         h_SetState(pm, st);
         char ln[96];
         snprintf(ln, sizeof ln, "requested state=%d actual_state=%d\n", st, skg::field<int32_t>(pm, 0x90));
+        return std::string(head) + ln;
+    }
+
+    if (args[0] == "vulnerable" && args.size() >= 2) {
+        uint32_t id = (uint32_t)strtoul(args[1].c_str(), nullptr, 10);
+        std::vector<LocalCandidate> cands;
+        std::unordered_map<uint32_t, game::LiveRef> refs;
+        gather_local_candidates(cands, refs);
+        void* target = nullptr;
+        uint32_t ser = 0;
+        for (const auto& c : cands) {
+            if (c.dead)
+                continue;
+            uint32_t hk = g_pairing.host_for_local(c.local_id);
+            if (c.local_id == id || hk == id) {
+                target = game::live(refs[c.local_id]);
+                ser = c.local_id;
+                if (target)
+                    break;
+            }
+        }
+        if (!target)
+            return std::string(head) + "no living actor matching " + args[1] + "\n";
+        if (skg::readable((uint8_t*)target + 0x628, 1))
+            *(uint8_t*)((uint8_t*)target + 0x628) = 0;
+        if (skg::readable((uint8_t*)target + 0x5DC, 4) && *(uint32_t*)((uint8_t*)target + 0x5DC) == 2u)
+            *(uint32_t*)((uint8_t*)target + 0x5DC) = 0;
+        if (skg::readable((uint8_t*)target + 0xB58, 4))
+            *(uint32_t*)((uint8_t*)target + 0xB58) &= ~0x200u;
+        char ln[128];
+        snprintf(ln, sizeof ln, "vulnerable serial=%u hp=%.1f\n", ser, game::health(target));
         return std::string(head) + ln;
     }
 

@@ -89,16 +89,23 @@ def main():
     ck(hav is not None and hpup is not None and hav[1] != 'FFFFFFFF' and hpup[2] == hav[1],
        f'2. host partner captain puppet has captain political ID (av={hav and hav[1]}, pup={hpup and hpup[2]})')
 
-    # 3. Wait for Act 1 scenario creatures to pair on guest
+    # 3. Wait for Act 1 scenario creatures to pair on guest (prefer waiting briefly until a damageable one pairs)
     def paired_live():
         ga = [a for a in parse_actors(g) if not a['dead'] and a['host_key'] != 0 and a['ai_skip']]
         return ga if ga else None
 
     ga_paired = wait_until(paired_live, 30, step=1.0, what='paired adventure actors on guest')
+    # Give host actor stream 3 s to finish pairing all Act 1 creatures (including non-invincible enemies)
+    if ga_paired:
+        time.sleep(3)
+        ga_paired = paired_live() or ga_paired
     ha_all = parse_actors(h)
     ga_all = parse_actors(g)
-    print(f'  host actors: {len(ha_all)}, guest actors: {len(ga_all)}, guest paired+ai_skip: {len(ga_paired or [])}',
+    ha_dmg = [a for a in ha_all if not a['dead'] and not a['inv']]
+    print(f'  host actors: {len(ha_all)} (damageable={len(ha_dmg)}), guest actors: {len(ga_all)}, guest paired+ai_skip: {len(ga_paired or [])}',
           flush=True)
+    if ha_dmg:
+        print('  host damageable sample:', [(a['serial'], int(a['hp']), a['pol']) for a in ha_dmg[:12]], flush=True)
     ck(bool(ga_paired), f'3. guest paired living scenario creatures with NPCTickAI skipped ({len(ga_paired or [])})')
     keyframe('enemies_act1', 'WP-A Act 1 paired adventure creatures on host and guest', {'host': h, 'guest': g}, settle=3)
 
@@ -110,10 +117,13 @@ def main():
         print('  paired host sample:', [(h_a['serial'], int(h_a['hp']), int(h_a['inv']), h_a['pol']) for _, h_a in candidates[:12]], flush=True)
         hostile_dmg = [(g_a, h_a) for g_a, h_a in candidates if not h_a['inv'] and h_a['pol'] != av_pol and h_a['hp'] >= 10.0]
         any_dmg = [(g_a, h_a) for g_a, h_a in candidates if not h_a['inv'] and h_a['hp'] >= 10.0]
+        hostile_any = [(g_a, h_a) for g_a, h_a in candidates if h_a['pol'] != av_pol and h_a['hp'] >= 10.0]
         if hostile_dmg:
             target, h_match = min(hostile_dmg, key=lambda p: p[1]['hp'])
         elif any_dmg:
             target, h_match = min(any_dmg, key=lambda p: p[1]['hp'])
+        elif hostile_any:
+            target, h_match = min(hostile_any, key=lambda p: p[1]['hp'])
         elif candidates:
             target, h_match = min(candidates, key=lambda p: p[1]['hp'])
         else:
@@ -122,11 +132,14 @@ def main():
         ck(h_match is not None, f'3b. host has living actor serial={hk}')
         if h_match:
             d = dist3(target['pos'], h_match['pos'])
-            print(f'  paired target host_key={hk}: hp={h_match["hp"]:.1f}/{h_match["max_hp"]:.1f} '
+            print(f'  paired target host_key={hk}: hp={h_match["hp"]:.1f}/{h_match["max_hp"]:.1f} inv={int(h_match["inv"])} pol={h_match["pol"]} '
                   f'guest_pos={target["pos"]} host_pos={h_match["pos"]} dist={d:.2f} m', flush=True)
             ck(d < 4.0, f'3c. paired guest creature tracks host position within 4 m ({d:.2f} m)')
 
             # 4. Guest hit forwarding -> host HP drops
+            if h_match['inv']:
+                print(f'  host vulnerable {hk}: ' +
+                      safe_call(h, f'coop.adventure vulnerable {hk}').replace('\n', ' | '), flush=True)
             hp_before = h_match['hp']
             hit_dmg = max(50, int(hp_before * 0.25)) if hp_before >= 100.0 else max(5, int(hp_before * 0.4))
             min_drop = max(3.0, hit_dmg * 0.1)
