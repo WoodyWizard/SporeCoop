@@ -596,8 +596,19 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
 {
     auto say = [&](const std::string& s) { H->out_printf(out, "%s", s.c_str()); };
     if (argc == 2 && !strcmp(argv[1],"hunger")) {
-        H->out_printf(out,"drain samples=%u previous=%.8f requested=%.8f result=%.8f",
-                      g_hunger_probe.samples,g_hunger_probe.previous,g_hunger_probe.requested,g_hunger_probe.result);
+        void* av = game::in_creature_stage() ? game::avatar() : nullptr;
+        H->out_printf(out,"drain samples=%u previous=%.8f requested=%.8f result=%.8f now=%.2f",
+                      g_hunger_probe.samples,g_hunger_probe.previous,g_hunger_probe.requested,g_hunger_probe.result,
+                      av ? skg::field<float>(av,0xBBC) : -1.f);
+        return 0;
+    }
+    // tests (the deep playtest of 2026-11-24): the own avatar's hunger meter set through the game's clamping setter
+    // (0 = starving: the game's own starvation damage follows)
+    if (argc == 3 && !strcmp(argv[1],"hunger")) {
+        void* av = game::in_creature_stage() ? game::avatar() : nullptr;
+        if (!av || !o_SetHunger) { say("no avatar in the Creature stage (or no hunger setter)"); return 1; }
+        o_SetHunger(av,(float)atof(argv[2]));
+        H->out_printf(out,"hunger=%.2f",skg::field<float>(av,0xBBC));
         return 0;
     }
     if (argc == 3 && !strcmp(argv[1],"enemy")) {
@@ -883,7 +894,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     }
     a_CmdStim = H->sym("SporeCoop::CreatureCommandStimulus"); // BUG-0735
     a_CanDefend = H->sym("SporeCoop::PosseMemberCanDefend");
-    H->command_add(M, "coop.hp", "coop.hp [enemy <npc>|pack|attack <player>|packhit <player> <hp>|packtarget <player> [combatant]] - creature health of the own avatar, partners' puppets, the pack (tests)",
+    H->command_add(M, "coop.hp", "coop.hp [hunger [<n>]|enemy <npc>|pack|attack <player>|packhit <player> <hp>|packtarget <player> [combatant]] - creature health of the own avatar, partners' puppets, the pack (tests)",
                    c_hp, nullptr, SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.sneak", "coop.sneak [on|off|force] - the sneak state of the own avatar and the partners' puppets (tests, BUG-0463)",
                    c_sneak, nullptr, SK_CMD_MAIN_THREAD);

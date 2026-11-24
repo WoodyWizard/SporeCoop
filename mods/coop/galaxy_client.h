@@ -108,7 +108,8 @@ bool chat(uint8_t channel, const std::string& text); // 8O: a line to the galaxy
 bool private_on();                          // 8N A: private planets can be asked for (a galaxy server, the switch)
 bool private_pending();                     // 8N A: the next new game becomes the party's private planet
 std::string private_request(bool on);       // 8N A: the Social Menu's "Private planet" button
-std::string enter_private(const std::string& planet); // 8N A (tests): enter a new planet as the party's private one
+std::string enter_private(const std::string& planet);
+std::string new_planet_status(); // BUG-9364: a new game started while connected becomes a planet // 8N A (tests): enter a new planet as the party's private one
 void set_upload_every(double seconds); // tests (300 by default)
 
 } // namespace galaxy

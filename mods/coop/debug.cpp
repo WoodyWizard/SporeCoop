@@ -985,6 +985,12 @@ int c_dna(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 2 && (!strcmp(argv[1], "add") || !strcmp(argv[1], "gain")) &&
         !need_syms(out, {"Simulator::cCreatureGameData::AddEvolutionPoints"}))
         return 1;
+    // BUG-9363: the game's AddEvolutionPoints reads the Creature game's data; in the Cell stage it faulted (a
+    // read of 0x144 at 0xCCD57F) and took the game down
+    if (argc > 2 && (!strcmp(argv[1], "add") || !strcmp(argv[1], "gain")) && game::mode_id() != modes::kCreature) {
+        SAY("coop.dna %s: the Creature stage only (the Cell stage: coop.pool food <n>)", argv[1]);
+        return 1;
+    }
     if (argc > 2 && !strcmp(argv[1], "add")) {
         // simulate a gain as the game would report it (goes through the coop hook), exactly N: test
         // setups (not scaled by the party's pace, BUG-0510)

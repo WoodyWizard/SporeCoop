@@ -5971,6 +5971,54 @@ static void partner_cards_guest_tick()
            eff[0], eff[1], bits);
 }
 
+// BUG-9366: the HUD's ability bar (SporeCoop::AbilityBar_ptr) holds ability indices of the avatar it was built for
+// (SporeCoop::AbilityBar_Rebuild, at the HUD's start: in Tribe the player tribe's chief). A guest's player tribe becomes
+// its own village after that, with a chief of its own creature: another ability list (the host's chief had power 0x34
+// at index 8, the guest's own at 7), and the bar's two power buttons then named the abilities one index on (Refreshing
+// Storm for Traps): powers the player has not earned, "Play the Creature Stage to discover how unlock this ability!",
+// while the powers it has earned had no button (seen 2026-11-24, a party's crossing into Tribe on a galaxy planet). On:
+// the bar is built again whenever the player tribe's chief or the place of its powers in its list changes. Off: the
+// bar of the HUD's start (69-dev).
+static bool g_power_bar_fix = true;
+COOP_FIX("tribe.power_bar", "BUG-9366", g_power_bar_fix,
+         "tribe: the chief's power buttons are built again when the player tribe's chief changes (a guest's own village)");
+static void* g_tbar_chief;
+static int g_tbar_index = -2, g_tbar_count = -1;
+static bool g_tbar_queued;
+static unsigned g_tbar_rebuilds;
+static void power_bar_task(void*)
+{
+    g_tbar_queued = false;
+    static uintptr_t rebuild = H->sym("SporeCoop::AbilityBar_Rebuild"), ptr = H->sym("SporeCoop::AbilityBar_ptr");
+    if (!rebuild || !ptr || game::mode_id() != modes::kTribe) return;
+    uint8_t* bar = *(uint8_t**)ptr;
+    if (!bar || !skg::readable(bar, 0xD8)) return;
+    skg::cdecl_call<void>(rebuild);
+    g_tbar_rebuilds++;
+    H->log(M, SK_INFO, "tribe: the power bar is built again for chief %p (its powers from ability %d of %d, BUG-9366)",
+           g_tbar_chief, g_tbar_index, g_tbar_count);
+}
+static void power_bar_tick()
+{
+    if (game::mode_id() != modes::kTribe) {
+        g_tbar_chief = nullptr;
+        g_tbar_index = -2;
+        return;
+    }
+    if (!g_power_bar_fix || g_tbar_queued) return;
+    void* t = native_player_tribe();
+    void* chief = t ? F<void*>(t, kNativeLeaderOff) : nullptr;
+    if (!is_citizen(chief)) return;
+    const int idx = citizen_ability_index(chief, kChiefPowerFirst);
+    const int n = skg::vcall<int>(chief, 0xB0 / 4);
+    if (chief == g_tbar_chief && idx == g_tbar_index && n == g_tbar_count) return;
+    g_tbar_chief = chief;
+    g_tbar_index = idx;
+    g_tbar_count = n;
+    g_tbar_queued = true;
+    H->run_outside_frame(power_bar_task, nullptr);
+}
+
 // host: partner `from` (seat `seat`) wants its chief (`member`, its id in the guest's game) to use power `type`
 static bool chief_power_on_host(uint8_t from, int seat, uint16_t member, uint32_t type)
 {
@@ -7887,6 +7935,7 @@ static void guest_tick(double now)
 {
     static double own_village_at;
     partner_cards_guest_tick(); // 7Q A
+    power_bar_tick();           // BUG-9366
     if (g_persp_host) { // BUG-9154: the right press on a party member's hut
         mouse::install(H->game_window());
         mouse::set_tribe_input(party_gift_input);

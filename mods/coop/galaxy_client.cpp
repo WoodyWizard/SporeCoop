@@ -1320,13 +1320,36 @@ std::string private_request(bool on)
     return "Start a new game on an empty star: it becomes your party's private planet. Only your party (and friends you "
            "invite to it) can play there; others can visit its Space stage.";
 }
+// BUG-9364: a player connected to a galaxy who started a new game on an empty star played it off the galaxy (only the
+// private row above or the console put a new world on the server): nobody saw or could join the new planet, and the
+// owner's idea of the menu (2026-11-17, "'New game' makes a new planet on the server") was never built. On: a world
+// this player starts while connected (not the one it played at the connect, on a planet or in a session before)
+// enters the galaxy as a new planet once it settled for 5 s, as the private one does; a name the galaxy already has
+// stays off the galaxy (entering it would join that planet and drop the new world; the player is told). One try per
+// world. Off: only the private row and the console.
+static bool g_new_planet_fix = true;
+COOP_FIX("galaxy.new_game_planet", "BUG-9364", g_new_planet_fix,
+         "galaxy: a new game started while connected becomes a planet of the galaxy");
+static std::string g_online_old_world; // the world of the connect, of a planet or session, or tried: never entered by itself
+static unsigned g_new_planets_made, g_new_planets_taken;
+std::string new_planet_status()
+{
+    return "new game planets (BUG-9364, " + std::string(g_new_planet_fix ? "on" : "off") + "): made " +
+           std::to_string(g_new_planets_made) + ", name taken " + std::to_string(g_new_planets_taken) + ", old world '" +
+           g_online_old_world + "'";
+}
 static void private_tick(double now)
 {
-    if (!g_private_pending || !g_welcomed || !g_planet.empty() || (C.sess && C.sess->role() != net::Role::None))
+    const std::string w = modes::current_world_name();
+    if (!g_welcomed || !g_planet.empty() || (C.sess && C.sess->role() != net::Role::None)) {
+        g_online_old_world = w; // BUG-9364: not a new game started while connected and free
+        return;
+    }
+    const bool priv = g_private_pending;
+    if (!priv && !g_new_planet_fix)
         return;
     const uint8_t era = era_of_mode(game::mode_id());
-    const std::string w = modes::current_world_name();
-    if (!era || w.size() < 5 || w.compare(w.size() - 4, 4, ".spo") || w == g_private_old_world) {
+    if (!era || w.size() < 5 || w.compare(w.size() - 4, 4, ".spo") || w == (priv ? g_private_old_world : g_online_old_world)) {
         g_private_seen.clear();
         return;
     }
@@ -1337,11 +1360,26 @@ static void private_tick(double now)
     }
     if (now - g_private_seen_at < 5)
         return;
-    g_private_pending = false;
-    g_private_made++;
-    const std::string key = era_key(w.substr(0, w.size() - 4), era);
-    H->log(M, SK_INFO, "galaxy: '%s' becomes this party's private planet (8N A)", key.c_str());
-    say(enter_with(key, kEnterPrivate) + " (your party's private planet)");
+    const std::string name = w.substr(0, w.size() - 4);
+    const std::string key = era_key(name, era);
+    g_online_old_world = w; // (one try per world)
+    if (priv) {
+        g_private_pending = false;
+        g_private_made++;
+        H->log(M, SK_INFO, "galaxy: '%s' becomes this party's private planet (8N A)", key.c_str());
+        say(enter_with(key, kEnterPrivate) + " (your party's private planet)");
+        return;
+    }
+    for (const auto& p : g_planets)
+        if (era_of(p.name) && era_planet(p.name) == name) {
+            g_new_planets_taken++;
+            H->log(M, SK_WARN, "galaxy: the new game '%s' stays off the galaxy: it has a planet of that name (BUG-9364)", name.c_str());
+            say("This galaxy already has a planet named " + name + ": your new game stays off the galaxy. Start one with another name to share it.");
+            return;
+        }
+    g_new_planets_made++;
+    H->log(M, SK_INFO, "galaxy: the new game '%s' becomes a planet of the galaxy (BUG-9364)", key.c_str());
+    say(enter_with(key, 0) + " (your new planet joins the galaxy: others can play here)");
 }
 std::string enter_private(const std::string& planet) { return enter_with(planet, kEnterPrivate); } // tests
 
@@ -1756,7 +1794,7 @@ std::string status()
              g_uploads_done, g_downloads_done, g_handovers, g_warm_hosts, g_warm_joins, g_warm_accepted, g_silent_saves, g_idle_saves, g_quiet_waits, g_menu_handovers, g_reloads_kept, g_resumes, g_resumed_hosts, g_close_holds,
              g_last_upload.empty() ? "-" : g_last_upload.c_str(), g_start_fix ? "on" : "off", g_starts_sent, g_start_ends,
              g_start_era ? era_name(g_start_era) : "-", g_start_era ? (g_start_asked ? " (its end asked)" : " (on its way)") : "");
-    return s + b;
+    return s + b + "\n" + new_planet_status();
 }
 
 void set_upload_every(double s) { g_upload_every = s < 10 ? 10 : s; }

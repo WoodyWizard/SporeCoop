@@ -6300,6 +6300,18 @@ COOP_FIX("all.own_rings", "BUG-9321", g_own_rings,
 // too (a partner's vehicle under the bottom bar drew its ring over the bar). Off: both drawn (67-dev).
 constexpr uint32_t kGuideFrameId = 0x53C5B392;
 std::atomic<bool> g_cover_up{false};
+// BUG-9365: Spore's History screen (the timeline; the stage's Advance button opens it) is a full screen window of the
+// stage's own mode: the party cards, the partners' tags, arrows and rings, the knock-out box with its red frame and
+// the notices were drawn over it (a host knocked out while it read History had the SPECTATING box over the timeline).
+// Its timeline body (control id 0x54E504CD under the container 0x8C509D6C) exists only while History is open (runtime
+// 2026-11-24, Cell, `coop.ui where`). On: History counts as a cover like the Spore Guide, and the party cards and the
+// knock-out box are hidden under it too. Off: all drawn over it (69-dev).
+constexpr uint32_t kHistoryBodyId = 0x54E504CD;
+std::atomic<bool> g_history_up{false};
+bool g_history_cover_fix = true;
+COOP_FIX("ui.cover_history", "BUG-9365", g_history_cover_fix,
+         "ui: the party cards, tags, rings, arrows, the knock-out box and notices are not drawn over Spore's History screen");
+unsigned g_history_hidden;
 bool g_cover_fix = true;
 COOP_FIX("ui.cover_labels", "BUG-9319", g_cover_fix,
          "ui: no party ring, name tag or arrow over the Spore Guide window; no party ring over the HUD");
@@ -6696,8 +6708,10 @@ void menu_check_task(void*)
     sui::Win root = sui::main_window();
     g_text_up = g_text_fix && root && shown_chain(sui::find(root, kCheatConsoleId));
     const bool guide = root && shown_chain(sui::find(root, kGuideFrameId));
-    g_cover_up = g_cover_fix && guide;                // BUG-9319
-    notify::set_covered(g_guide_notices_fix && guide); // BUG-9322
+    const bool history = g_history_cover_fix && root && shown_chain(sui::find(root, kHistoryBodyId)); // BUG-9365
+    g_history_up = history;
+    g_cover_up = (g_cover_fix && guide) || history;                // BUG-9319
+    notify::set_covered((g_guide_notices_fix && guide) || history); // BUG-9322
 }
 
 void menu_tick(double now)
@@ -7318,7 +7332,7 @@ static bool update_party_panel(bool labels)
     // BUG-9228 (owner play test 2026-11-15: "Party is covering the next page button in the editor for painting"): not in
     // an editor (its pages' buttons sit at the bottom right where the cards go). `coop.fix ui.party_editor_hide off`.
     const bool editor = g_party_editor_hide && (g_mode == modes::kEditor || g_mode == modes::kEdit);
-    const bool show = !(game_busy() & (busy::kPaused | busy::kInputLock)) && !editor;
+    const bool show = !(game_busy() & (busy::kPaused | busy::kInputLock)) && !editor && !g_history_up; // (BUG-9365)
     return coop_ui::set_party_hud(show, rows, ui_scale(), open_sporepedia_of);
 }
 
@@ -7657,9 +7671,13 @@ void on_overlay(void*, int, void*)
     bool labels = !g_menu_up && !coop_ui::is_open();
     if (!labels)
         g_menu_hidden++;
-    else if (g_cover_up && g_cover_fix) { // BUG-9319: the Spore Guide window
+    else if (g_cover_up && (g_cover_fix || g_history_up)) { // BUG-9319: the Spore Guide window; BUG-9365: History
         labels = false;
         g_cover_hidden++;
+    }
+    if (g_history_up && s_downed_parts) { // BUG-9365: the knock-out box's windows (drawn again when History closes)
+        coop_ui::set_downed_hud(false, false, "", {}, {}, nullptr);
+        g_history_hidden++;
     }
     else if (cinematic_holds_labels()) { // BUG-0985
         labels = false;
