@@ -106,6 +106,9 @@ def main():
 
         # Make the species allied (relation=6, impressed=3) on the host and let table sync to guest
         print(f'  allying species {sp} (NPCs {ids}):', host.call(f'coop.social record {sp} 6 3')['out'].strip(), flush=True)
+        # Creature fixture starts at brain level 0 (pack cap 0); advance brain to level 1+ so guest can recruit >= 1
+        print('  brain upgrade dna:', host.call('coop.dna add 250')['out'].strip(), flush=True)
+        sl.wait(lambda: pack_info(guest).get('local_max', 0) >= 1, 20)
         time.sleep(1.5)
 
         gp0 = pack_info(guest)

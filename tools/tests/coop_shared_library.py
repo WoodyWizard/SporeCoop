@@ -81,20 +81,22 @@ def parse_entries(con):
 def main():
     host, guest = start('creature')
     ck = Checks()
-    lib_dir = os.path.join(lane.HOST_DIR, 'SporeCoop', 'SharedLibrary')
-    retry_copy = os.path.join(lane.HOST_DIR, 'SporeCoop', 'retry_test.png')
+    # The creature fixture populates host's My Creations with PNGs (own_pngs=7) while guest starts empty;
+    # verify guest receives, imports, isolates, persists offline, deduplicates, and retries host's creations.
+    lib_dir = os.path.join(lane.GUEST_DIR, 'SporeCoop', 'SharedLibrary')
+    retry_copy = os.path.join(lane.GUEST_DIR, 'SporeCoop', 'retry_test.png')
 
     try:
-        # 1. Wait for creations 1.3 background sync + ImportPNG on host
+        # 1. Wait for creations 1.3 background sync + ImportPNG on guest
         def synced():
-            fl = parse_feed_lib(host)
+            fl = parse_feed_lib(guest)
             return fl if fl['count'] >= 1 and any(rm == 1 for _, _, _, rm in fl['keys']) else None
 
-        fl = wait_until(synced, 45, 1.5, 'host receives and imports guest creations')
-        list_raw, rows = parse_entries(host)
-        print('  host library:', list_raw.splitlines()[0] if list_raw else '-', flush=True)
+        fl = wait_until(synced, 45, 1.5, 'guest receives and imports host creations')
+        list_raw, rows = parse_entries(guest)
+        print('  guest library:', list_raw.splitlines()[0] if list_raw else '-', flush=True)
         ck(fl is not None and fl['count'] >= 1,
-           f'host Shared Creations feed lists imported partner creations (count={fl["count"] if fl else 0})')
+           f'guest Shared Creations feed lists imported partner creations (count={fl["count"] if fl else 0})')
         ck(fl is not None and all(rm == 1 for _, _, _, rm in fl['keys']) and len(fl['keys']) >= 1,
            'all feed keys exist in Spore ResourceManager (in_rm=1)')
 
@@ -105,8 +107,8 @@ def main():
            f'SharedLibrary persisted on disk (index={os.path.isfile(idx_file)}, pngs={len(png_files)})')
 
         # 3. Verify Sporepedia tab registration and My Creations isolation
-        fm = parse_feed_my(host)
-        print('  host feed my:', fm['raw'].strip(), flush=True)
+        fm = parse_feed_my(guest)
+        print('  guest feed my:', fm['raw'].strip(), flush=True)
         ck(fm['tab_in_default'] == 1,
            f'AssetBrowserFeedLists default root includes Shared Creations category (tab_in_default={fm["tab_in_default"]})')
         ck(fm['hidden'] >= 1 and fm['leaked'] == 0,
@@ -116,8 +118,8 @@ def main():
         if png_files:
             n_before = len(rows)
             shutil.copyfile(png_files[0], retry_copy)
-            dedup_out = host.call('coop.library ingest retry_test.png dedup')['out'].strip()
-            _, rows_after = parse_entries(host)
+            dedup_out = guest.call('coop.library ingest retry_test.png dedup')['out'].strip()
+            _, rows_after = parse_entries(guest)
             ck('added=0' in dedup_out and len(rows_after) == n_before,
                f'duplicate PNG rejected cleanly ({dedup_out}, entries {n_before}->{len(rows_after)})')
 
@@ -127,8 +129,8 @@ def main():
                           20, 1.0, 'guest leaves session')
         ck(left, 'session ended cleanly')
         time.sleep(2)
-        fl_after = parse_feed_lib(host)
-        fm_after = parse_feed_my(host)
+        fl_after = parse_feed_lib(guest)
+        fm_after = parse_feed_my(guest)
         ck(fl_after['count'] >= 1 and all(rm == 1 for _, _, _, rm in fl_after['keys']),
            f'Shared Creations feed persists after session end (count={fl_after["count"]})')
         ck(fm_after['tab_in_default'] == 1 and fm_after['leaked'] == 0,
@@ -136,23 +138,23 @@ def main():
 
         # 6. Verify failed-import retry path (fails when creations.library_retry is off)
         if os.path.isfile(retry_copy):
-            host.call('coop.library clear')
-            host.call('coop.library failnext')
-            ing = host.call('coop.library ingest retry_test.png retry_check')['out'].strip()
+            guest.call('coop.library clear')
+            guest.call('coop.library failnext')
+            ing = guest.call('coop.library ingest retry_test.png retry_check')['out'].strip()
             print('  retry ingest:', ing, flush=True)
 
             def failed_once():
-                _, r = parse_entries(host)
+                _, r = parse_entries(guest)
                 return r[0] if (len(r) == 1 and r[0]['imp'] == 0 and r[0]['att'] >= 1) else None
 
             first = wait_until(failed_once, 15, 0.5, 'first ImportPNG attempt fails as injected')
             ck(first is not None, f'first ImportPNG failure recorded ({first})')
 
-            host.call('coop.library retry')
+            guest.call('coop.library retry')
 
             def retried_ok():
-                _, r = parse_entries(host)
-                fl_r = parse_feed_lib(host)
+                _, r = parse_entries(guest)
+                fl_r = parse_feed_lib(guest)
                 return (r[0], fl_r) if (len(r) == 1 and r[0]['imp'] == 1 and fl_r['count'] >= 1 and
                                         any(rm == 1 for _, _, _, rm in fl_r['keys'])) else None
 

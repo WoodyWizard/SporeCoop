@@ -71,7 +71,8 @@ def start_adventure(inst):
 def boot_into_tutorial(ck):
     lane.sh('kill')
     time.sleep(2)
-    lane.sh('restore', 'creature')
+    lane.sh('fixture', 'restore', 'creature', lane.HOST_PROFILE)
+    lane.sh('fixture', 'restore', 'creature', lane.GUEST_PROFILE)
     lane.sh('deploy')
     for f in os.listdir(lane.HOST_DIR):
         if f.endswith('.package'):

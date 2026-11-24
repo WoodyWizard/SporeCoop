@@ -175,7 +175,7 @@ static bool is_vertebra(void* rb)
 {
     if (rigblock_flag(rb, 0))
         return true;
-    void* pl = *(void**)((uint8_t*)rb + 0x18);
+    void* pl = *(void**)((uint8_t*)rb + 0x0C);
     return prop_bool_true(pl, kPropIsVertebra);
 }
 
@@ -183,7 +183,7 @@ static bool is_part_eligible(void* rb)
 {
     if (!rb || !skg::readable(rb, 0xDD0))
         return false;
-    void* pl = *(void**)((uint8_t*)rb + 0x18);
+    void* pl = *(void**)((uint8_t*)rb + 0x0C);
     bool vert = is_vertebra(rb);
     bool sock = rigblock_flag(rb, 31) || prop_bool_true(pl, kPropSocketConnector);
     bool ball = rigblock_flag(rb, 32) || prop_bool_true(pl, kPropBallConnector);

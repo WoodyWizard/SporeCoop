@@ -22,7 +22,7 @@ import time
 
 from twoinst import Checks, game_runs, start
 
-POS_RE = re.compile(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)')
+POS_RE = re.compile(r'(?:pos|at)=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)')
 
 
 def npc_pos(con, nid):

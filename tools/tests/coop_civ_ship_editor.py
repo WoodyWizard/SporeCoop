@@ -87,52 +87,54 @@ def drive_ship_editor(con, tries=12):
 
 def main():
     ck = Checks()
-    with start(fixture='civ') as (host, guest):
-        ck(wait(lambda: mode_id(host) == CIV and mode_id(guest) == CIV, 30, 1.0),
-           f'both games start in Civ (host={mode_id(host)} guest={mode_id(guest)})')
+    host, guest = start('civ')
+    ck(wait(lambda: mode_id(host) == CIV and mode_id(guest) == CIV, 30, 1.0),
+       f'both games start in Civ (host={mode_id(host)} guest={mode_id(guest)})')
 
-        # 1. Host submits the native Civ -> Space spaceship EditorRequest through the vote hook
-        out = host.call('coop.vote ship')['out']
-        print('  host coop.vote ship:', out.strip(), flush=True)
-        ck(wait(lambda: host.call('coop.vote')['out'].startswith('vote active'), 10, 0.5),
-           'host Civ -> Space spaceship vote is active')
-        ck(wait(lambda: guest.call('coop.vote')['out'].startswith('vote active'), 10, 0.5),
-           'guest sees the Civ -> Space spaceship vote')
+    # 1. Host submits the native Civ -> Space spaceship EditorRequest through the vote hook
+    out = host.call('coop.vote ship')['out']
+    print('  host coop.vote ship:', out.strip(), flush=True)
+    ck(wait(lambda: host.call('coop.vote')['out'].startswith('vote active'), 10, 0.5),
+       'host Civ -> Space spaceship vote is active')
+    ck(wait(lambda: guest.call('coop.vote')['out'].startswith('vote active'), 10, 0.5),
+       'guest sees the Civ -> Space spaceship vote')
 
-        # 2. Guest votes ready -> both host and guest enter the spaceship editor
-        gu = Ui(guest, 'guest')
-        if gu.wait(lambda s: s['ready']['vis'], 10, 'ready button'):
-            gu.click('ready')
-        else:
-            guest.call('coop.ready 1')
+    # 2. Guest votes ready -> both host and guest enter the spaceship editor
+    gu = Ui(guest, 'guest')
+    if gu.wait(lambda s: s['ready']['vis'], 10, 'ready button'):
+        gu.click('ready')
+    else:
+        guest.call('coop.ready 1')
 
-        host_ed = wait(lambda: mode_id(host) == EDITOR, 45, 0.5)
-        ck(host_ed, f'host enters the spaceship editor ({mode_id(host)})')
+    host_ed = wait(lambda: mode_id(host) == EDITOR, 45, 0.5)
+    ck(host_ed, f'host enters the spaceship editor ({mode_id(host)})')
 
-        guest_ed = wait(lambda: mode_id(guest) == EDITOR, 35, 0.5)
+    guest_ed = wait(lambda: mode_id(guest) == EDITOR, 35, 0.5)
+    st, res, raw = civship(guest)
+    print('  guest civship (open):', raw.strip(), flush=True)
+    ck(guest_ed and st.get('opened') == '1',
+       f'guest opens its own spaceship editor after the vote (mode={mode_id(guest)} civship={st})')
+    keyframe('ship_editor_open', 'Civ -> Space vote passed: host and guest in the spaceship editor', settle=0)
+    if not guest_ed:
+        ck.faults(host=host, guest=guest)
+        return ck.result()
+
+    # 3. Guest builds a spaceship and leaves the editor cleanly back to Civ
+    back = drive_ship_editor(guest)
+    ck(back, f'guest leaves its spaceship editor cleanly back to Civ ({mode_id(guest)})')
+    if back:
+        done_ok = wait(lambda: civship(guest)[0].get('phase') == 'done', 20, 0.5)
         st, res, raw = civship(guest)
-        print('  guest civship (open):', raw.strip(), flush=True)
-        ck(guest_ed and st.get('opened') == '1',
-           f'guest opens its own spaceship editor after the vote (mode={mode_id(guest)} civship={st})')
-        keyframe('ship_editor_open', 'Civ -> Space vote passed: host and guest in the spaceship editor', settle=0)
-        if not guest_ed:
-            return ck.finish()
+        print('  guest civship (done):', raw.strip(), flush=True)
+        ck(done_ok, f'guest civship reached phase=done ({st})')
+        ck(res.get('seen') and not res.get('cancelled') and res.get('key', 0) != 0,
+           f'guest spaceship result captured cleanly ({res})')
+        unpaused = wait(lambda: 'paused' not in busy_flags(guest), 20, 0.5)
+        ck(unpaused, f'guest Civ stage is not stuck paused after returning from spaceship editor (busy={busy_flags(guest)})')
+        keyframe('ship_editor_back', 'guest returned cleanly from its spaceship editor to Civilization', settle=0)
 
-        # 3. Guest builds a spaceship and leaves the editor cleanly back to Civ
-        back = drive_ship_editor(guest)
-        ck(back, f'guest leaves its spaceship editor cleanly back to Civ ({mode_id(guest)})')
-        if back:
-            done_ok = wait(lambda: civship(guest)[0].get('phase') == 'done', 20, 0.5)
-            st, res, raw = civship(guest)
-            print('  guest civship (done):', raw.strip(), flush=True)
-            ck(done_ok, f'guest civship reached phase=done ({st})')
-            ck(res.get('seen') and not res.get('cancelled') and res.get('key', 0) != 0,
-               f'guest spaceship result captured cleanly ({res})')
-            unpaused = wait(lambda: 'paused' not in busy_flags(guest), 20, 0.5)
-            ck(unpaused, f'guest Civ stage is not stuck paused after returning from spaceship editor (busy={busy_flags(guest)})')
-            keyframe('ship_editor_back', 'guest returned cleanly from its spaceship editor to Civilization', settle=0)
-
-    return ck.finish()
+    ck.faults(host=host, guest=guest)
+    return ck.result()
 
 
 if __name__ == '__main__':

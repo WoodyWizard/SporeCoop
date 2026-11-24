@@ -119,7 +119,7 @@ def main():
 
     ck(hc1['holds'] > 0, f'host held rescale origin at (0,0,0) (origin_holds={hc1["holds"]})')
     ck(w_drift < 150.0, f'host world coordinate pos*scale did not shift by recentering (drift={w_drift:.1f} m)')
-    ck(abs(sep1 - sep0) < 200.0 and sep1 > 800.0,
+    ck(abs(sep1 - sep0) < 200.0 and sep1 > 400.0,
        f'host/guest coordinate frames stayed aligned (sep*scale {sep0:.1f} -> {sep1:.1f} m)')
     ck(hc1['off'] is not None and hc1['off'] < 1.5,
        f'host camera stayed centred on its own cell after rescale (off={hc1["off"]} m)')

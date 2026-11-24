@@ -43,10 +43,21 @@ def main():
         cities, hv, _ = civ_state(host)
         h_mil = [i for i, v in hv.items() if v['owner'] == 0 and v['purpose'] == 0 and v['hp'] > 20]
         g_mil = [i for i, v in hv.items() if v['owner'] == 1 and v['purpose'] == 0 and v['hp'] > 20]
-        # Give one military vehicle to guest if guest has none yet
-        if not g_mil and len(h_mil) >= 2:
-            host.call(f'coop.give 1 {h_mil[1]}')
-            time.sleep(1.5)
+        # Spawn a second military vehicle and give it to guest if guest has none yet
+        if not g_mil:
+            before_ids = set(hv.keys())
+            if len(h_mil) < 2:
+                print('  host spawnveh:', host.call('coop.civ spawnveh 0 0 0')['out'].strip(), flush=True)
+                time.sleep(2.0)
+                cities, hv, _ = civ_state(host)
+                new_ids = sorted(set(hv.keys()) - before_ids)
+                give_id = new_ids[0] if new_ids else None
+            else:
+                give_id = h_mil[1]
+            if give_id is not None:
+                host.call(f'coop.civ select {give_id} 1')
+                print('  host give:', host.call('coop.give 1')['out'].strip(), flush=True)
+                time.sleep(2.5)
             cities, hv, _ = civ_state(host)
             h_mil = [i for i, v in hv.items() if v['owner'] == 0 and v['purpose'] == 0 and v['hp'] > 20]
             g_mil = [i for i, v in hv.items() if v['owner'] == 1 and v['purpose'] == 0 and v['hp'] > 20]

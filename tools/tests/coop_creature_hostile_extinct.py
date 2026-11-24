@@ -37,7 +37,7 @@ def table(con):
 
 
 def dna_of(con):
-    m = re.search(r'dna=([-\d.]+)', con.call('coop.avatar')['out'] or '')
+    m = re.search(r'dna=([-\d.]+)', con.call('coop.dna')['out'] or '')
     return float(m.group(1)) if m else None
 
 
