@@ -219,12 +219,13 @@ static void kill_tick(void* avatar, double now)
 {
     if (!g_kill_body)
         return;
-    if (g_kill_body != avatar || !alive(avatar) || now > g_kill_until) {
+    // Also stop if the creature was healed/respawned into a fresh body reusing the pointer (e.g. baby_game).
+    if (g_kill_body != avatar || !alive(avatar) || game::health(avatar) > 2.f || now > g_kill_until) {
         g_kill_body = nullptr;
         return;
     }
     hold(avatar, false); // (not its health: 1 every frame undid the game's death of the lethal hit, PR #214 lane D)
-    if (now < g_kill_next)
+    if (world::cinematic_playing() || now < g_kill_next)
         return;
     g_kill_next = now + 1;
     g_kill_retries++;
