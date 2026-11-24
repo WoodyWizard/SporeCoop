@@ -79,8 +79,8 @@ def main():
 
     print(' ', guest.call('coop.res add money 777')['out'].strip())
     if income:
-        # Ensure the guest's own city has factories so its 6 s passive city income ticks.
-        for kind in ('house', 'factory', 'factory'):
+        # Ensure the guest's own city has connected factories and entertainment so its 6 s passive city income ticks.
+        for kind in ('house', 'fun', 'factory', 'house', 'fun', 'factory'):
             guest.call(f'coop.civ build 0 {kind} nopay')
     time.sleep(1)
     gm0, hm0 = money(guest), money(host)

@@ -41,9 +41,26 @@ GUEST_CELLS = (0x0625A978, 0x0625A97A)
 _ORIG_RESTORE = twoinst.restore_creations
 
 
+def _spore_game_pkg():
+    cands = []
+    if os.environ.get('SPORE_GAME'):
+        cands.append(os.path.join(os.environ['SPORE_GAME'], 'Data', 'Spore_Game.package'))
+    # Walk up from worktree/repo root to find SPORE-lab/laneN or SPORE/Data.
+    base = lane.ROOT
+    for _ in range(4):
+        cands.append(os.path.join(base, 'SPORE-lab', f'lane{lane.LANE}', 'Data', 'Spore_Game.package'))
+        cands.append(os.path.join(base, 'SPORE-lab', 'lane2', 'Data', 'Spore_Game.package'))
+        cands.append(os.path.join(base, 'Data', 'Spore_Game.package'))
+        base = os.path.dirname(base)
+    for p in cands:
+        if os.path.exists(p):
+            return p
+    raise RuntimeError(f'Spore_Game.package not found (checked {cands[:4]})')
+
+
 def _seed_cells():
     """Extract real .cll cell creations from Spore_Game.package into host and guest EditorSaves.package."""
-    game_pkg = os.path.join(lane.GAME, 'Data', 'Spore_Game.package')
+    game_pkg = _spore_game_pkg()
     want = set(HOST_CELLS) | set(GUEST_CELLS)
     by_inst = {r[2]: r for r in read_pkg(game_pkg) if r[0] == CLL_TYPE and r[1] == CLL_GROUP and r[2] in want}
     if len(by_inst) < len(want):

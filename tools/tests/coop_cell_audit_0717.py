@@ -33,7 +33,7 @@ import time
 
 import settings_lib as sl
 from coop_cell_ko_food import plants, pool
-from coop_cell_ko_poison import maker_pos
+from coop_cell_ko_poison import maker_pos, pos
 from coop_cell_mate_copy import loot_near
 from coop_cell_partner_poison import clouds_near
 from coop_cell_puppet_scale import playing, wait
@@ -123,9 +123,10 @@ def part_own_cloud(ck, host, guest):
     if not ck(sl.force(host, [guest], 'all.friendly_fire', 'on'), 'friendly fire on for both'):
         return
     try:
-        # Stay 6 m away (not 60 m): the host's game must draw the guest's puppet for the poison step to emit clouds,
-        # while 6 m keeps the host's own clouds (> 3 m away) separate from the guest's own clouds.
-        host.call('coop.pool tp 6 0')
+        # Keep the host 10 m away (drawn so the puppet's poison step emits clouds, far enough that the host's own
+        # clouds never touch the guest under friendly fire).
+        host.call('coop.pool invulnfor 120')
+        host.call('coop.pool tp 10 0')
         got = host.call(f'coop.pool borrow poison graft p{gid}')['out'].strip()
         print('  host: ' + got, flush=True)
         if not ck(got.startswith('borrowed'), 'the guest\'s puppet has the poison part in the host\'s game'):
@@ -134,7 +135,14 @@ def part_own_cloud(ck, host, guest):
         hp0 = pool(guest)['hp']
         hp_min, downed, onto, used, t0 = hp0, 0, 0, set(), time.time()
         while time.time() - t0 < 40 and onto < 10:
-            keys = [k for k in clouds_near(guest, far_from=maker_pos(guest, 'host')) if k not in used]
+            hp_host = maker_pos(guest, 'host')
+            keys = []
+            for k in clouds_near(guest):
+                if k in used:
+                    continue
+                cp = pos(guest, k)
+                if cp and (hp_host is None or math.dist(cp, hp_host) > 5.0):
+                    keys.append(k)
             if keys:
                 used.add(keys[0])
                 if 'moved' in guest.call(f'coop.pool swimto {keys[0]} tp 0.2')['out']:
@@ -145,6 +153,7 @@ def part_own_cloud(ck, host, guest):
                 if p['hp'] is not None and hp_min is not None:
                     hp_min = min(hp_min, p['hp'])
                 downed = max(downed, p['downed'] or 0)
+            host.call('coop.pool tp 10 0')
         print(f'  guest: onto {onto} of its own clouds, hp {hp0} -> min {hp_min}, knocked out {downed}; {audit(guest)}', flush=True)
         ck(onto >= 6, f'the guest was put onto its own clouds\' mirrors ({onto} >= 6)')
         ck(hp0 is not None and hp_min is not None and hp_min >= hp0 and not downed,
@@ -157,23 +166,27 @@ def part_own_cloud(ck, host, guest):
 def part_shrink(ck, host, guest):
     host.call('coop.pool invulnfor 120')
     guest.call('coop.pool invulnfor 120')
-    # Level 1 plants are eaten whole (level 0 is out of view range); level up to level 3 so plants are level >= 2
-    # and EatFood shrinks them one level in place.
-    host.call('coop.pool food 200')
-    time.sleep(6)
+    # EatFood shrinks a plant one level in place only when (plant_level - 1) is still inside the current view's level
+    # range (i.e. plant_level > own_level). Scan at the starting level (and nudge if needed) for a plant above own_level.
+    ol_m = field(guest.call('coop.pool tokens')['out'], r'own_level=(-?\d+)')
+    own_lv = int(ol_m) if ol_m is not None else 1
     keys = []
     t0 = time.time()
-    while time.time() - t0 < 15:
-        keys = plants(guest, n=16)
-        if any((cell_line(host, k)[0] or 0) >= 2 for k in keys):
+    while time.time() - t0 < 20:
+        keys = plants(guest, n=24)
+        lvs = [(k, cell_line(host, k)[0]) for k in keys]
+        if any(lv is not None and lv > own_lv for _, lv in lvs):
             break
-        time.sleep(1.5)
+        guest.call('coop.pool tp 12 0')
+        time.sleep(2.5)
+    lvs = [(k, cell_line(host, k)[0]) for k in keys]
+    print(f'  guest own_level={own_lv}, host plant levels={lvs[:10]}', flush=True)
     if not ck(keys, f'plants on the guest\'s screen ({keys})'):
         return
     done = None
     for k in keys:
         lv0, sz0, _, out0 = cell_line(host, k)
-        if lv0 is None or lv0 < 2:
+        if lv0 is None or lv0 <= own_lv:
             continue
         print('  guest: ' + guest.call(f'coop.pool eat {k}')['out'].strip(), flush=True)
         time.sleep(0.5)

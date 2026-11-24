@@ -57,16 +57,18 @@ def run(host, guest, ck):
     ht, gt = table(host), table(guest)
     cands = [k for k, v in ht.items() if v[0] not in (5, 6) and k in gt]
     if not cands:
-        # Fresh fixture saves may have no wild species in the relationship table yet: seed one wild species via a
-        # neutral/social event on the host so both games hold its relationship record before testing solo kills.
+        # Fresh fixture saves may have no wild species in the relationship table yet: kill one wild NPC on the host
+        # so the game's real ApplyEvent(0) inserts its species (relation=1, killed=1) into both tables.
         own = re.search(r'key=0x([0-9A-Fa-f]+)', host.call('coop.avatar')['out'] or '')
         own_sp = own.group(1).upper().zfill(8) if own else ''
-        wild = [m.group(1).upper().zfill(8)
-                for m in re.finditer(r'species=([0-9A-Fa-f]{8})', host.call('coop.npc list')['out'] or '')
-                if m.group(1).upper().zfill(8) != own_sp]
+        wild = [(m.group(1), m.group(2).upper().zfill(8))
+                for m in re.finditer(r'#(\d+) \S+ species=([0-9A-Fa-f]{8}) hp=([\d.]+) dist=[\d.]+(?! DEAD)',
+                                     host.call('coop.npc list')['out'] or '')
+                if m.group(2).upper().zfill(8) != own_sp and float(m.group(3)) > 0]
         if wild:
-            print(f'  seeding wild species {wild[0]} into relationship table: '
-                  + host.call(f'coop.social event {wild[0]} 1')['out'].strip(), flush=True)
+            nid, sp0 = wild[0]
+            print(f'  seeding wild species {sp0} via host kill of #{nid}: '
+                  + host.call(f'coop.npc hosthit {nid} 100000')['out'].strip(), flush=True)
             t0 = time.time()
             while time.time() - t0 < 15:
                 ht, gt = table(host), table(guest)

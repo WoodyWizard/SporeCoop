@@ -140,9 +140,10 @@ def case_main(ck, host, guest, setting_on):
     hc0, _ = civ(host)
     for k, v in hc0.items():
         if v['player']:
-            for kind in ('house', 'factory', 'factory'):
+            for kind in ('house', 'fun', 'factory', 'house', 'fun', 'factory'):
                 host.call(f'coop.civ build {k} {kind} nopay')
     time.sleep(2)
+    wait(lambda: money(guest) is not None and money(host) is not None, 15, 0.5)
     g0, h0 = money(guest), money(host)
     samples = []
     for _ in range(10):

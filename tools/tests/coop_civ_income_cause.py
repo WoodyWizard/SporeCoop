@@ -28,12 +28,12 @@ def card_texts(con, pat):
 
 
 def ensure_income(host):
-    """Ensure the host's starting city has factories so Spore's 6 s passive city income ticks."""
+    """Ensure the host's starting city has connected factories and entertainment so Spore's 6 s passive city income ticks."""
     hc, _ = civ(host)
     p = [k for k, v in hc.items() if v['player']]
     if p:
-        for kind in ('house', 'factory', 'factory'):
-            host.call(f'coop.civ build {p[0]} {kind} nopay')
+        for kind in ('house', 'fun', 'factory', 'house', 'fun', 'factory'):
+            print(f'  host build {kind}:', host.call(f'coop.civ build {p[0]} {kind} nopay')['out'].strip(), flush=True)
         time.sleep(2)
 
 

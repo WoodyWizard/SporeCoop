@@ -65,10 +65,6 @@ def main():
           flush=True)
 
     adopt = '--adopt' in sys.argv
-    if adopt:
-        # Isolate store.owner_names: own_history also writes a per-player record for Bob in Tribe, which would put
-        # Bob's name in the store even when store.owner_names is off.
-        host.call('coop.fix core.own_history off')
     other = (lambda g: print('  guest:', g.call('coop.space keptkey other on')['out'].strip(), flush=True)) if adopt else None
     host, guest, info = session_restart(host, guest, before_join=other)
     ck(info['saved'], 'the host saved its game before quitting')
