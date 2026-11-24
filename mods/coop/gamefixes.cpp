@@ -347,6 +347,38 @@ static void* __fastcall hover_guard(void* wm, void*, void* out, int flag)
     return g_hover_orig(wm, out, flag);
 }
 
+// BUG-9360: a guest loading a host's world crashed in the load (cCreatureAnimal Read 0xC05EA0 -> SetSpecies(profile,
+// 0, true) -> 0xC14010, which puts every held object back on its socket -> SporeCoop::Creature_AttachToSocket 0xC120B0
+// reading [creature+0xB54]+0x17C): a creature of the world that carried something (a hold slot of +0xE40 with a socket)
+// had no animated model (+0xB54) yet at that point. On: the attach of a creature without a model does nothing (returns
+// false, as for a slot without a socket; the caller goes on); off: the game's own code.
+using AttachFn = bool(__thiscall*)(void*, int, void*, int, int);
+static AttachFn g_attach_orig;
+static bool g_attach_fix = true;
+COOP_FIX("game.attach_no_model", "BUG-9360", g_attach_fix,
+         "gamefixes: a creature without its animated model (a world still loading) does not put a held object on a socket");
+static std::atomic<unsigned> g_attach_skipped{0};
+static bool __fastcall attach_guard(void* c, void*, int socket, void* obj, int a3, int a4)
+{
+    if (g_attach_fix && c && !*(void**)((uint8_t*)c + 0xB54)) {
+        if (g_attach_skipped++ < 5)
+            H->log(M, SK_WARN, "game fixes: creature %p has no animated model yet: its held object stays off socket %d (BUG-9360)", c, socket);
+        return false;
+    }
+    return g_attach_orig(c, socket, obj, a3, a4);
+}
+
+// tests (BUG-9360): the attach of a stand-in creature without an animated model (the guest's crash when off)
+std::string attach_test()
+{
+    if (!g_attach_orig)
+        return "no attach guard (symbol missing)\n";
+    static uint8_t fake[0x1000]; // zeros: +0xB54 (the animated model) null
+    const bool r = attach_guard(fake, nullptr, 0, nullptr, 1, 1);
+    return std::string("attach of a creature without a model: ") + (r ? "true" : "false") + " (guard " +
+           (g_attach_fix ? "on" : "off") + ", skipped " + std::to_string(g_attach_skipped.load()) + ")\n";
+}
+
 // tests (BUG-0270): make the window manager's modal window a destroyed object, as the guest had it
 std::string fake_dead_modal(void* wm)
 {
@@ -2037,6 +2069,11 @@ void init(const SkHost* host, SkMod* mod)
         g_code_lo = (uintptr_t)exe;
         g_code_hi = g_code_lo + nt->OptionalHeader.SizeOfImage;
     }
+    uintptr_t ats = H->sym("SporeCoop::Creature_AttachToSocket"); // BUG-9360
+    bool att = ats && H->hook_create(M, (void*)ats, (void*)&attach_guard, (void**)&g_attach_orig) == 0;
+    if (!att)
+        g_attach_orig = nullptr;
+    H->log(M, SK_INFO, "game fixes: held object without a model guard %s (BUG-9360)", att ? "on" : "off");
     uintptr_t uh = H->sym("UTFWin::cWindowManager::UpdateHover");
     bool hover = uh && g_code_hi && H->hook_create(M, (void*)uh, (void*)&hover_guard, (void**)&g_hover_orig) == 0;
     H->log(M, SK_INFO, "game fixes: dead modal window guard %s", hover ? "on" : "off");

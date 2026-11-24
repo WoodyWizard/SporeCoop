@@ -5641,3 +5641,19 @@ does in the host's game, the world everybody shares. The bar rows of the MSI's g
 * The lab tests named above are Linux two-instance tests (tools/tests); they were last run on the Linux PC's lab with
   their fixes. Not re-run here.
 
+## A held object's socket at a world's load: the creature without a model (2026-11-24, feat/lineages-alpha)
+<a id="creature-attach-no-model"></a>
+
+BUG-9360. Ghidra on the GOG 2024 addresses (the Steam game of the report ran 0x180000 lower).
+* ✔ `SporeCoop::Creature_AttachToSocket` 0xC120B0: thiscall(creature, int socket, obj, int, int) ret 0x10, returns
+  AL; socket -1, or obj null with the last argument 0: false at once; else it reads the animated model
+  `[creature+0xB54]+0x17C` (0xC120E0) and attaches through 0x9CB230 / 0x9CA970. Callers: Creature_HoldObject 0xC15B20
+  and 0xC14010.
+* ✔ 0xC14010 (from SetSpecies 0xC03920 when the species profile's +0x590 or +0x594 equals the creature's hold slot
+  count, (+0xE44 - +0xE40) / 0x24) puts every hold slot with a socket (+0 not -1) back on it (0xC120B0(socket, 0, x,
+  x)). cCreatureAnimal Read 0xC05EA0 (a vtable slot, .rdata 0x146A0BC) calls SetSpecies(profile, 0, true) for every
+  creature a load reads: a creature saved while carrying something goes through it during the load.
+* ✔ A creature whose +0xB54 is null there faults at 0xC120E0 reading 0x17C (a guest's load of a host's world,
+  crash-20261123-221524; `coop.attachtest` with the switch off on a stand-in: the same fault).
+* ? Why that creature had no model yet: inferred, the host's own creations installed just before the load. Not seen.
+

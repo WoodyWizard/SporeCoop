@@ -235,6 +235,13 @@ int c_close(void*, int, const char* const*, SkOut* out)
     return 0;
 }
 
+// tests (BUG-9360): a held object's attach on a creature without an animated model (off: the guest's crash)
+int c_attachtest(void*, int, const char* const*, SkOut* out)
+{
+    SAY("%s", gamefixes::attach_test().c_str());
+    return 0;
+}
+
 // tests (BUG-0270): the window manager's modal window becomes a destroyed object
 int c_deadmodal(void*, int argc, const char* const* argv, SkOut* out)
 {
@@ -1190,6 +1197,8 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.deadmodal", "coop.deadmodal [list] - tests (BUG-0270): the window manager's modal window becomes a destroyed object; list (BUG-0956): a destroyed window listed under a modal one that is popped",
                       c_deadmodal, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.attachtest", "tests (BUG-9360): a held object's attach on a creature without an animated model (switch game.attach_no_model off: the crash)",
+                      c_attachtest, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.leavewalk", "tests (BUG-0310): the next citizen walked off-stage is a cleaned-up one",
                       c_leavewalk, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.physorphan", "tests (BUG-0449): the next physics update gets a body of kind 0 without an owner",

@@ -434,3 +434,4 @@ SporeCoop::GGE_DeleteState_ptr ; BUG-9357: the bin's Delete my creature here on 
 SporeCoop::GGE_CameraToGalaxy ; BUG-9356: the galaxy menu's planet pages (alpha, 5Z B) are off on GOG 2016
 SporeCoop::Creature_CalmFrom ; BUG-9361: a partner's Siren Song on the host's animals is off on GOG 2016
 SporeCoop::SummonEvent_ctor ; BUG-9362: a Summon Flock per party (extra summon events) is off on GOG 2016
+SporeCoop::Creature_AttachToSocket ; BUG-9360: the held object guard is off on GOG 2016

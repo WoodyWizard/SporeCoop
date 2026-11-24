@@ -4043,4 +4043,6 @@ Seen once on the MSI: a host made a new galaxy planet from its own old local sav
 Creature save); its partner received the creations and the world, then crashed in Spore's load (SetSpecies ->
 PlayAnimation, 0x00A920E0). Reproduce: `coop.load Game0 Vandh.spo` on the MSISpaceStart profile while connected, enter
 it as a new planet, join it from the other MSI game. docs/tickets/BUG-9360-*.
+  Fixed on feat/lineages-alpha (2026-11-24): the load put a carried object on a creature that had no body yet; that
+  step is now skipped for such a creature (game.attach_no_model). The load crash itself was not seen again.
 

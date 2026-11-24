@@ -18,6 +18,7 @@ void frame(); // every frame: a one-time check of the save areas when the startu
 // tests (BUG-0270): the window manager `wm` gets a destroyed object as its modal window
 std::string fake_dead_modal(void* wm);
 std::string fake_dead_listed(void* wm); // tests (BUG-0956)
+std::string attach_test();               // tests (BUG-9360): a held object's attach on a creature without a model
 // tests (BUG-0310): the next citizen checked outside the Tribe mode gets +0xB54 = 0 (a cleaned-up one)
 std::string arm_leave_walk();
 // tests (BUG-0310): once armed, puts `citizen` through the guard in the first frame Tribe is left
