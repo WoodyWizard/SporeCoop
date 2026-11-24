@@ -1374,17 +1374,17 @@ static void test_manifest()
     for (auto& g : golden0714::kTypes)
         CHECK(msg_info(g.id).known && std::string(msg_info(g.id).name) == g.name);
     CHECK(MSG_HELLO == 1 && MSG_SPACE == 48 && MSG_NPC_ANIM == 59 && MSG_HOST_WORLD == 69);
-    // WP-0 of 0.7.17: the ids 74-78 are reserved; one is unknown, or known under its reserved name and family
+    // WP-0 of 0.7.17 / 0.7.99: ids 74-79 are reserved; each is unknown, or known under its reserved name and family
     {
         std::set<int> rids;
         for (auto& r : kReservedMsgs) {
-            CHECK(rids.insert(r.id).second && r.id >= 74 && r.id <= 78 && reserved_msg(r.id) == &r);
+            CHECK(rids.insert(r.id).second && r.id >= 74 && r.id <= 79 && reserved_msg(r.id) == &r);
             MsgInfo m = msg_info(r.id);
             CHECK(!m.known || (std::string(m.name) == r.name && (r.family == Family::None || m.family == r.family)));
             if (r.family != Family::None)
                 CHECK(family_info((uint8_t)r.family) != nullptr);
         }
-        CHECK(rids.size() == 5 && !reserved_msg(73) && !reserved_msg(79));
+        CHECK(rids.size() == 6 && !reserved_msg(73) && !reserved_msg(80));
     }
     // the classes, the Space directions, the dispatch
     int bad = 0;
