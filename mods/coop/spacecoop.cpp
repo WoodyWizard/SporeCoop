@@ -2876,11 +2876,13 @@ std::string debug(const std::vector<std::string>& a)
                 // On fixtures whose local neighborhood does not match 0x398ACA5E's automatic FindTargetPlanet filter,
                 // construct cMissionColonize (noun 0x02BA2A0E, Cast 0x02BA2A01) the same way CreateMission does,
                 // setting our explicit target planet BEFORE OnCreate (vt+0x78) so OnCreate skips FindTargetPlanet.
-                uintptr_t mk_noun = H->sym("Simulator::cGameNounManager::CreateInstance"),
+                uintptr_t gnm_get = H->sym("Simulator::cGameNounManager::Get"),
+                          mk_noun = H->sym("Simulator::cGameNounManager::CreateInstance"),
                           set_id = H->sym("SporeCoop::cMission_SetID"),
                           set_own_pl = H->sym("SporeCoop::cMission_SetOwnerPlanet"),
                           set_own_emp = H->sym("SporeCoop::cMission_SetOwnerEmpire");
-                void* obj = mk_noun ? cdecl_call<void*>(mk_noun, 0x02BA2A0Eu) : nullptr;
+                void* gnm = gnm_get ? cdecl_call<void*>(gnm_get) : nullptr;
+                void* obj = (gnm && mk_noun) ? thiscall<void*>(mk_noun, gnm, 0x02BA2A0Eu) : nullptr;
                 if (obj && set_id && set_own_pl && set_own_emp) {
                     m = vcall<void*>(obj, 0x0C / 4, 0x02BA2A01u);
                     if (m) {
