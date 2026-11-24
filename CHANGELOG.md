@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.7.17.1] - 2026-11-24
+
+### Fixed
+- Cell, Creature: lingering Cell Swarm particle effects no longer sample the freed Cell fluid/particle pool after leaving Cell (fixes host crash at `0x00E4E454` right after evolving from Cell to Creature). (BUG-1536)
+- Creature: queued world loads now wait while the game window is minimized or the D3D9 graphics device is lost/resetting so terrain heightmaps do not generate mid-reset, and `sync-check` now logs a warning when host and guest Creature terrain heights diverge by 1 m or more. (BUG-1537)
+- Cell: concurrent editor spends (in shared or own-wallet DNA mode) and food rollbacks no longer drive Cell DNA negative, while still preserving extra DNA from selling starting parts. (BUG-1538)
+- Space: when an allied partner colonizes the target planet or finishes the initial colonize-planet tutorial mission, the remaining players' colonize mission now advances automatically without having to destroy the partner's colony. (BUG-1539)
+
 ## [0.7.17] - 2026-11-24
 
 Thanks to IltonBJSilva, whose fork PRs #205, #207, #209, #210, #211, #214 and #217 contributed ideas and
