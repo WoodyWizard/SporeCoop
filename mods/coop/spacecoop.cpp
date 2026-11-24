@@ -2872,6 +2872,26 @@ std::string debug(const std::vector<std::string>& a)
             if (!target_rec || !home_rec)
                 return "colonize_mission: target or home planet record not found";
             void* m = thiscall<void*>(create, mm, spacelogic::kColonizeTutorialId, home_rec, emp, 0);
+            if (!m) {
+                // On fixtures whose local neighborhood does not match 0x398ACA5E's automatic FindTargetPlanet filter,
+                // construct cMissionColonize (noun 0x02BA2A0E, Cast 0x02BA2A01) the same way CreateMission does,
+                // setting our explicit target planet BEFORE OnCreate (vt+0x78) so OnCreate skips FindTargetPlanet.
+                uintptr_t mk_noun = H->sym("Simulator::cGameNounManager::CreateInstance"),
+                          set_id = H->sym("SporeCoop::cMission_SetID"),
+                          set_own_pl = H->sym("SporeCoop::cMission_SetOwnerPlanet"),
+                          set_own_emp = H->sym("SporeCoop::cMission_SetOwnerEmpire");
+                void* obj = mk_noun ? cdecl_call<void*>(mk_noun, 0x02BA2A0Eu) : nullptr;
+                if (obj && set_id && set_own_pl && set_own_emp) {
+                    m = vcall<void*>(obj, 0x0C / 4, 0x02BA2A01u);
+                    if (m) {
+                        thiscall<void>(set_id, m, spacelogic::kColonizeTutorialId);
+                        thiscall<void>(set_own_pl, m, home_rec);
+                        thiscall<void>(set_own_emp, m, emp);
+                        thiscall<void>(set_target, m, target_rec);
+                        (void)vcall<uint8_t>(m, 0x78 / 4); // cMissionColonize::OnCreate
+                    }
+                }
+            }
             if (!m)
                 return "colonize_mission: CreateMission returned null";
             thiscall<void>(set_target, m, target_rec);
