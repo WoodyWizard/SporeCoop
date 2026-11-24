@@ -4034,3 +4034,11 @@ Seen twice on the MSI with TITAN's galaxy server: entering Samuth's stored Creat
 death screen "You were killed in battle!" came during the stage's intro. Reproduce: `coop.galaxy enter "Samuth|Creature"`
 on a galaxy started from out/galaxy_fixtures/worlds_base. Not analysed (docs/tickets/BUG-9359-*).
 
+## BUG-9360: a guest crashes loading a host's world made from its old own save (2026-11-23, feat/lineages-alpha)
+<a id="known-host-own-save-load-crash"></a>
+
+Seen once on the MSI: a host made a new galaxy planet from its own old local save (Vandh.spo, an earlier stage tour's
+Creature save); its partner received the creations and the world, then crashed in Spore's load (SetSpecies ->
+PlayAnimation, 0x00A920E0). Reproduce: `coop.load Game0 Vandh.spo` on the MSISpaceStart profile while connected, enter
+it as a new planet, join it from the other MSI game. docs/tickets/BUG-9360-*.
+

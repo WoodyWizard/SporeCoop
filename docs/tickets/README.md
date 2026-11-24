@@ -1473,3 +1473,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9357](BUG-9357-galaxy-menu-delete-my-creature-here-on-a-server.md) | fixed | feature | galaxy | 2026-11-23 | unreleased | Galaxy menu: Delete my creature here on a server planet's bin |
 | [BUG-9358](BUG-9358-galaxy-menu-play-on-a-server-planet-can-enter-an.md) | fixed | bug | galaxy | 2026-11-23 | unreleased | Galaxy menu: Play on a server planet can enter another planet when the list changes during Play |
 | [BUG-9359](BUG-9359-galaxy-the-host-of-a-stored-creature-world-is-ki.md) | open | bug | galaxy | 2026-11-23 |  | Galaxy: the host of a stored Creature world is killed on arrival |
+| [BUG-9360](BUG-9360-crash-loading-a-host-s-world-made-from-its-own-o.md) | open | crash | creature | 2026-11-23 |  | Crash loading a host's world made from its own old save: SetSpecies with no animation (0x00A920E0) |

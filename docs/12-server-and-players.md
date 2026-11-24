@@ -1944,3 +1944,33 @@ The owner's answer to 8O: "The chat will always be a global chat, we can add fil
 * Test pitfall: Git Bash turns an argument starting with "/" into a Windows path ("/p" became "P:/"): run qa.py with
   MSYS_NO_PATHCONV=1 for chat commands.
 
+## A party's private planet (8N A, 2026-11-23, feat/lineages-alpha)
+<a id="server-private-planets"></a>
+
+The owner's answer: "8NA - Once they exit to Space, they can see players. Space age players can still visit the planet,
+they just can't start there." Read as: a party's own planet; its party (and friends the leader takes into the party) see
+and play every stage of it; other players see and enter only its Space stage, as visitors, and never start a stage
+there; across the planet's stages the party's players and visitors do not see each other.
+* Making one: the Social Menu (F8) on a galaxy server has a row "Private planet" with "New"; a press shows "Start a new
+  game on an empty star: it becomes your party's private planet ..." and the button reads "Waiting" (a press cancels).
+  The next world this player plays that was not loaded at the press (a new game, or a local save) enters the galaxy
+  as a new planet with ENTER's kEnterPrivate flag. `coop.galaxy private [<planet|Era>]` does the same from the console.
+* The server: the players allowed per planet in <worlds>/private.txt (the maker, its party then, and each player that
+  enters later while in a party with an allowed player); the list (PLANETS) shows a private planet's stages to them and
+  its Space stage alone to others; ENTER of another stage by others, a Space stage that does not exist yet, and a start
+  (STARTERA) by others are refused ("a party's private planet: only its Space stage takes visitors"); VISIT and
+  VISITOBJ do not cross between allowed players and visitors. An existing planet cannot become private.
+* Switch `coop.fix galaxy.private_planets off`: no row, no requests (the server rules stay for planets made private).
+* Built with it: the Social Menu's setting rows are one list (SocialState::toggles: the other stages, the chat filter,
+  the private planet) instead of a copy per row.
+* ✔ tools/tests/galaxy_server_check.py "private planets (8N A)": 15 checks (made, seen and entered by the party, not
+  seen or entered by an outsider, no start, the Space stage open to visitors, no visits across, kept in private.txt);
+  FAIL on the server before (out/lab_runs/8n_server_fail.txt: 12 FAILED), PASS (8n_server_pass.txt).
+* ✔ In game (the MSI's two games in one party, TITAN's server): the Social Menu's "Private planet: New" by a real
+  click ("Waiting" and the hint), the host loaded a local save: "planet 'Vandh': a private planet of ... (2 player(s)
+  allowed)"; the partner's galaxy menu showed Vandh (images/8n_private_planet_partner_menu.png), its Play joined the
+  host. The partner then crashed loading that world: BUG-9360 (the load of a world made from an old own save; not the
+  private rules). Not run in game: a third game as the outsider (the server check covers it).
+* ~ The hint behind the open Social Menu: the feed's notice stands under the panel's top (the panel sits at the
+  screen's top right).
+
