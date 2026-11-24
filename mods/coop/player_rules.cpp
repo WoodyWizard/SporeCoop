@@ -444,7 +444,18 @@ typedef int(__cdecl* AbilityTick_t)(void*, int, int, int, int, uint32_t*);
 static AbilityTick_t o_AbilityTick;
 static uintptr_t a_PostStim, a_GoalStart, a_StimClear, a_GoalFind, a_GoalEnd, a_IsEpic;
 static uint32_t g_roar_sent, g_roar_got, g_roar_played, g_roar_hit, g_roar_bad, g_roar_last_type;
-static constexpr uint32_t kRoar = 0x31, kSummon = 0x33;
+static constexpr uint32_t kRoar = 0x31, kSiren = 0x32, kSummon = 0x33;
+// BUG-9361 (5FB, owner 2026-11-23: "it should be all abilities working"): the Siren Song (0x32) goes the roar's way:
+// the partner sends it, the host's game makes the node's calls (BT_SpecialAbilityTick's 0x32 branch, 0xD8E942..0xD8EB1F)
+// on its creatures around the partner's puppet: another species (not the avatar, alive, not epic) gets the stimuli
+// 0x4000000 and 0x400000 (FLT_MAX), 0x10000 (5 s), SporeCoop::Creature_CalmFrom(it, the singer's species), the goal
+// slot (2, 1) with {the ability's +0xA0 seconds} as its data and FLT_MAX, stimulus 0x400 cleared and the roar's slot
+// (1, 1) ended; the singer's own species gets 0x10000 (5 s) and Creature_CalmFrom(it, 0). Off: the song stays in the
+// partner's game (its proxies only)
+static bool g_siren_fix = true;
+COOP_FIX("creature.siren_relay", "BUG-9361", g_siren_fix, "creature: a partner's Siren Song charms the host's animals");
+static uintptr_t a_CalmFrom;
+static uint32_t g_siren_sent, g_siren_played, g_siren_hit, g_siren_calmed;
 static uint32_t g_summon_sent, g_recruit_sent, g_recruit_got;
 static constexpr uint32_t kCreatureNoun = 0x18EB45Eu;
 
@@ -600,16 +611,20 @@ static int __cdecl h_AbilityTick(void* c, int a2, int a3, int a4, int a5, uint32
             C.sess->send_reliable_to(0, net::MSG_PLAYER_RULE, w);
             g_flock_sent++;
         }
-        if (ab && *(uint32_t*)(ab + 8) == kRoar) { // the first tick of the own roar: the host's game plays it too
+        const uint32_t type = ab ? *(uint32_t*)(ab + 8) : 0;
+        if (type == kRoar || (type == kSiren && g_siren_fix)) { // the first tick: the host's game plays it too
             float range = *(float*)(ab + 0xA8) + *(float*)(ab + 0xF4), secs = *(float*)(ab + 0xA0);
             net::Writer w;
             w.u8(K_ROAR);
-            w.u32(kRoar);
+            w.u32(type);
             w.f32(range);
             w.f32(secs);
             C.sess->send_reliable_to(0, net::MSG_PLAYER_RULE, w);
-            g_roar_sent++;
-            g_roar_last_type = kRoar;
+            if (type == kRoar)
+                g_roar_sent++;
+            else
+                g_siren_sent++;
+            g_roar_last_type = type;
         }
     }
     return o_AbilityTick(c, a2, a3, a4, a5, st);
@@ -734,6 +749,57 @@ static bool roar_one(void* o, uint32_t noun, void* u)
         skg::thiscall<void>(a_GoalEnd, goals, h);
     q->hit++;
     return true;
+}
+
+// BUG-9361: the song on one of the host's creatures, as the node does it
+static bool siren_one(void* o, uint32_t noun, void* u)
+{
+    auto* q = (RoarQ*)u;
+    uint8_t* t = (uint8_t*)o;
+    if (noun != kCreatureNoun || o == q->roarer || !game::object_alive(o) || !skg::readable(t, 0xB60))
+        return true;
+    if (net::dist(game::position(o), q->at) > q->range)
+        return true;
+    uint8_t* ai = *(uint8_t**)(t + 0xB4C);
+    void* goals = *(void**)(t + 0xB48);
+    if (!ai || !goals)
+        return true;
+    const uint32_t singer = *(uint32_t*)((uint8_t*)q->roarer + 0xB20);
+    const bool other = !skg::vcall<bool>(t + 0xC0, 0x58 / 4) && !t[0xB5E] && *(uint32_t*)(t + 0xB20) != singer &&
+                       !skg::thiscall<bool>(a_IsEpic, t);
+    if (other) {
+        skg::thiscall<void>(a_PostStim, ai + 8, 0u, 0x4000000u, 3.4028235e38f, q->roarer);
+        skg::thiscall<void>(a_PostStim, ai + 8, 0x400000u, 0u, 3.4028235e38f, q->roarer);
+        skg::thiscall<void>(a_PostStim, ai + 8, 0u, 0x10000u, 5.0f, q->roarer);
+        skg::cdecl_call<void>(a_CalmFrom, (void*)t, singer);
+        float data[8] = {q->secs, 0, 0, 0, 0, 0, 0, 0}; // (the node's local: its first value the song's seconds)
+        skg::thiscall<uint32_t>(a_GoalStart, goals, 2, 1, (void*)nullptr, 3.4028235e38f, (void*)data, (void*)t);
+        skg::thiscall<void>(a_StimClear, ai + 8, 0x400u, 0u);
+        uint32_t h = skg::thiscall<uint32_t>(a_GoalFind, goals, 1, 1, 0, 0);
+        if (h != 0xFFFFFFFFu)
+            skg::thiscall<void>(a_GoalEnd, goals, h);
+        q->hit++;
+    } else if (*(uint32_t*)(t + 0xB20) == singer) { // the singer's own species: calmed
+        skg::thiscall<void>(a_PostStim, ai + 8, 0u, 0x10000u, 5.0f, (void*)nullptr);
+        skg::cdecl_call<void>(a_CalmFrom, (void*)t, 0u);
+        g_siren_calmed++;
+    }
+    return true;
+}
+
+static void siren_on_host(uint8_t from, float range, float secs)
+{
+    void* p = C.puppet_of ? C.puppet_of(from) : nullptr;
+    if (!p || !a_PostStim || !a_GoalStart || !a_StimClear || !a_GoalFind || !a_GoalEnd || !a_IsEpic || !a_CalmFrom ||
+        !game::in_creature_stage() || game::is_dead(p))
+        return;
+    RoarQ q{p, game::position(p), range, secs, 0};
+    game::for_each_object(siren_one, &q);
+    g_siren_played++;
+    g_siren_hit += q.hit;
+    g_roar_last_type = kSiren;
+    H->log(M, SK_INFO, "rules: siren song of player %u (%.0f m, %.1f s): %u creatures of the host's game charmed, %u of "
+           "its species calmed (BUG-9361)", from, range, secs, q.hit, g_siren_calmed);
 }
 
 static void roar_on_host(uint8_t from, float range, float secs)
@@ -1499,13 +1565,15 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (!r.ok() || from == 0 || !is_host())
             return;
         g_roar_got++;
-        if (t != kRoar || !std::isfinite(range) || range <= 0 || range > 100 || !std::isfinite(secs) || secs <= 0 ||
-            secs > 120) {
+        if ((t != kRoar && t != kSiren) || !std::isfinite(range) || range <= 0 || range > 100 || !std::isfinite(secs) ||
+            secs <= 0 || secs > 120) {
             g_roar_bad++;
             return;
         }
-        if (g_roar_fix)
+        if (t == kRoar && g_roar_fix)
             roar_on_host(from, range, secs);
+        else if (t == kSiren && g_siren_fix)
+            siren_on_host(from, range, secs); // BUG-9361
     }
 }
 
@@ -1537,6 +1605,11 @@ std::string status()
              g_roar_sent, g_roar_got, g_roar_played, g_roar_hit, g_roar_bad, g_roar_last_type, (int)(o_AbilityTick != nullptr));
     out += b;
     snprintf(b, sizeof b, "player_rules: ufo fix=%d seen=%u skipped=%u\n", (int)g_ufo_fix, g_ufo_seen, g_ufo_skipped);
+    {
+        const size_t n = strlen(b);
+        snprintf(b + n, sizeof b - n, "player_rules: siren (BUG-9361) fix=%d sent=%u played=%u charmed=%u calmed=%u\n",
+                 (int)g_siren_fix, g_siren_sent, g_siren_played, g_siren_hit, g_siren_calmed);
+    }
     out += b;
     snprintf(b, sizeof b, "player_rules: flock fix=%d sent=%u got=%u\n", (int)drama::g_flock_relay, g_flock_sent, g_flock_got);
     return out + b;
@@ -1856,6 +1929,39 @@ static int c_rules(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, "ability %d ticked: %d phase=%u\n", idx, r, st[1]);
         return 0;
     }
+    if (argc > 4 && !strcmp(argv[1], "slots")) { // tests (BUG-9361): the host's creatures within <m> of player 1's puppet
+        // holding the goal slot <template> <group> (the game's own goal state, creature +0xB48: mask +0x22C, slot i
+        // +0x24 template, +0x28 group), and how many of another species are within it at all
+        struct Q { void* pup; net::Vec3 at; float r; int tid; uint32_t grp; int in = 0, held = 0; } q;
+        q.pup = C.puppet_of ? C.puppet_of(1) : nullptr;
+        q.tid = atoi(argv[2]), q.grp = (uint32_t)atoi(argv[3]), q.r = (float)atof(argv[4]);
+        if (!q.pup) {
+            H->out_printf(out, "no puppet of player 1\n");
+            return 1;
+        }
+        q.at = game::position(q.pup);
+        game::for_each_object([](void* o, uint32_t noun, void* u) {
+            auto* q = (Q*)u;
+            uint8_t* t = (uint8_t*)o;
+            if (noun != kCreatureNoun || o == q->pup || !game::object_alive(o) || !skg::readable(t, 0xB60) ||
+                net::dist(game::position(o), q->at) > q->r || *(uint32_t*)(t + 0xB20) == *(uint32_t*)((uint8_t*)q->pup + 0xB20))
+                return true;
+            q->in++;
+            uint8_t* g = *(uint8_t**)(t + 0xB48);
+            if (!g || !skg::readable(g, 0x230))
+                return true;
+            const uint32_t mask = *(uint32_t*)(g + 0x22C);
+            for (int i = 0; i < 8; i++)
+                if ((mask >> i & 1) && *(int*)(g + i * 0x44 + 0x24) == q->tid && *(uint32_t*)(g + i * 0x44 + 0x28) == q->grp) {
+                    q->held++;
+                    break;
+                }
+            return true;
+        }, &q);
+        H->out_printf(out, "slots %d/%u within %.0f m of player 1: %d of %d creatures of another species\n", q.tid, q.grp,
+                      q.r, q.held, q.in);
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "friendly")) { // tests: the game's vt 0xD4 of NPC / proxy <id> here
         void* c = is_host() ? npc::host_npc((uint16_t)atoi(argv[2])) : npc::proxy((uint16_t)atoi(argv[2]));
         if (!c) {
@@ -1889,6 +1995,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_StimClear = H->sym("SporeCoop::BT_ClearStimulus");
     a_GoalFind = H->sym("SporeCoop::BT_GoalSlotFind");
     a_GoalEnd = H->sym("SporeCoop::BT_GoalSlotEnd");
+    a_CalmFrom = H->sym("SporeCoop::Creature_CalmFrom"); // BUG-9361
     a_IsEpic = H->sym("SporeCoop::cCreatureAnimal_IsEpic");
     a_SpawnEventUFO = H->sym("SporeCoop::UFOAbductionEvent_SpawnUFO");
     savestrip::add_filter(ufo_save_filter); // BUG-0817
