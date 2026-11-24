@@ -1,17 +1,17 @@
 ---
 id: BUG-1535
 title: Tests: campaign_tribe_noclick stuck at goal bar 1/5: the host's raid click fails for 30 min (view stays at its avatar 90 m off its members: 'no member selected', 'the view did not reach the hut'; BUG-1091 class again)
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-23
 source: lab
 role: 
 versions: 0.7.16, 0.7.16.1
-fixed_in:
-branch: fix/w69-triage2
-commits:
-tests: campaign_tribe_noclick (tools/tests/coop_campaign.py)
+fixed_in: 0.7.99
+branch: rel/0.7.99
+commits: 89c2fe81
+tests: campaign_tribe_noclick
 signature:
 docs:
 related: BUG-1091, BUG-1165, BUG-1169, BUG-1460
@@ -50,8 +50,9 @@ twice in a row), re-centre on the members the way a player does (the HUD's home 
 portrait), then box-select; else fall back to the `coop.tribe` host click of BUG-1068's path for that raid.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+PASS: out/lab/20261124-152417 (campaign_tribe_noclick, 0 faults: stuck host Tribe view recovered, all 5 villages conquered, advanced into Civ).
+no-fail-run: test-driver recovery in tools/tests/play_tribe.py (no gameplay fix switch).
 
 ## History
 - 2026-11-23: opened (fix/w69-triage2, triage of the 0.7.16.1 final check); campaign evidence keeps coop.status.
+- 2026-11-24: released in 0.7.99.

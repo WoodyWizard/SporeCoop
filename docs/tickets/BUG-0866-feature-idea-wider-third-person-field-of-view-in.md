@@ -1,20 +1,21 @@
 ---
 id: BUG-0866
 title: Feature idea: wider third-person field of view in Creature and Adventure (Ctrl+Scroll)
-status: open
+status: fixed
 kind: feature
 stage: Creature
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 lineages30..41-dev, BUG-9099 (fov.cpp)
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: 0.7.99
+branch: rel/0.7.99
+commits: 5cb6a3e2, 284cfa3d, 6a4270f5
+tests: fov_third_person, fov_third_person_off, fov_pick_ray_off
 signature:
 docs:
 related:
+switch: camera.fov, camera.fov_pick
 ---
 
 ## Report
@@ -45,3 +46,8 @@ it, to Tribe resets it.
 
 ## History
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (feature idea, fork evidence only).
+
+## Verification
+PASS: out/lab/20261124-145136 (fov_third_person, 0 faults).
+FAIL: out/lab/20261124-145136 (fov_third_person_off, fov_pick_ray_off both fail on their target checks).
+- 2026-11-24: released in 0.7.99.

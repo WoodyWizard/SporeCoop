@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [0.7.99] - 2026-11-24
+
+Final pre-0.8 release bringing co-op Galactic Adventures, display and camera quality-of-life improvements, Creature editor depth handle, persistent shared creations library, extended friendly fire, guest pack recruitment, and stage sync fixes. Thanks to the `SporeCoop-Lineages` and `SporeCoopGA` community forks for design ideas and reverse-engineering notes referenced in this release.
+
+### Added
+- Galactic Adventures: co-op shared run journal (`adventure.shared`, on by default) syncing goals, acts, and mission completion/failure across players, host-authoritative scenario creatures and enemies (`adventure.host_actors`, `adventure.hit_forward`, `adventure.guest_extras`, `adventure.body_side`) with guest hit forwarding and host death mirroring, plus per-captain puppet scale (`adventure.captain_scale`). (BUG-0793, BUG-1474)
+- Display & Camera QoL: local 1-360 FPS waitable-timer cap (`kit.frametarget`), borderless windowed mode (`kit.borderless`), and local Display settings in the Co-op Settings UI (`ui.display_settings`); wider third-person field of view via `Ctrl+Scroll` in Creature and Adventure stages (`camera.fov`) with wide-lens picking ray alignment (`camera.fov_pick`). (BUG-0865, BUG-0866)
+- Creature Editor: depth handle (`editor.depth`, `editor.depth_cube`) for pushing non-spine details and weapons along their outward skin normal with X-mirrored twin support and full Undo/Save history integration. (BUG-0871)
+- Creations: persistent shared creations library (`creations.shared_library`) synced automatically over `creations 1.3`, imported into Sporepedia under its own Shared Creations tab while staying out of My Creations (`creations.library_my_filter`), persisted offline across sessions, with failed-import retry (`creations.library_retry`). (BUG-0873)
+- Friendly Fire: extended `all.friendly_fire` to Cell (`cell.friendly_fire`), Tribe (`tribe.friendly_fire`), and Civilization (`civ.friendly_fire`) stages alongside Creature. (BUG-0899)
+- Creature: guests can now recruit allied or kin creatures into their pack (`social.guest_recruit`) with brain-level capacity enforcement, dismiss sync, and leave cleanup. (BUG-1256)
+- Civilization: standing city citizens on guests now play the host citizens' gestures instead of staying in plain idle (`civ.citizen_gesture`). (BUG-1231)
+- UI: "Report a problem" and `/bug` screenshots now temporarily hide the co-op lobby window for one clean rendered frame so the dialog does not obscure the captured game scene (`ui.report_shot_hide`). (BUG-1541)
+
+### Fixed
+- Cell: kept `WorldScaleStep` recentering anchored at the origin past 1000 m in co-op so host and guest coordinate frames stay aligned across level-up rescales (`cell.rescale_origin`). (BUG-1394)
+- Creature: guests wiping a hostile nest undiscovered by the host now materialize the host species relation and award the full extinction goal DNA (`social.undiscovered_rel`). (BUG-1540)
+- Creature: remade nest proxies on guests now snap cleanly when the host re-places a standing NPC over 3 m in one step (`npc.creature_replace_snap`). (BUG-1388)
+- Tribe: rebound the chief's staff hold modifier onto the live main animation track (`tribe.hold_track`) and synced member hand side (`tribe.hand_side`). (BUG-1347, BUG-1458)
+- Civilization: synced city decorations (trees, fountains, braziers) between host and guests (`civ.city_ornament`), upgraded moving vehicle kinematics to 20 Hz with a burst-loss lead window (`civ.veh_burst`), and opened the guest's own spaceship editor after the Civ-to-Space vote (`civ.guest_ship_editor`). (BUG-1456, BUG-0438, BUG-1531)
+- Space: refined running colony citizen lead extrapolation with latency compensation and a bounded horizon (`space.citizen_lead`). (BUG-1404)
+- Testing: recovered stuck host camera view in `campaign_tribe_noclick` driver. (BUG-1535)
+
 ## [0.7.17.1] - 2026-11-24
 
 ### Fixed

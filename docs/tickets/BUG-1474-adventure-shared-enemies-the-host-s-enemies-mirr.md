@@ -1,20 +1,21 @@
 ---
 id: BUG-1474
 title: Adventure: shared enemies (the host's enemies mirrored on the guest, off-by-default adventure.shared_npcs; RE first)
-status: open
+status: fixed
 kind: feature
 stage: Adventure
 reported: 2026-11-23
 source: plan
 role: 
 versions: 0.7.17
-fixed_in:
-branch: feat/w83-advnpc
-commits: c6d51d00
-tests:
+fixed_in: 0.7.99
+branch: rel/0.7.99
+commits: c6d51d00, ff9422e5, 2aaf5dd6, 40ef2081, f92ec15d, a006bdcd, 251c06c6
+tests: adventure_enemies, adventure_host_actors_off, adventure_hit_forward_off, adventure_guest_extras_off, adventure_body_side_off, adventure_duo
 signature:
 docs: docs/re/adventure.md#adventure-npc-proxies
 related: BUG-0793, BUG-1288, BUG-1254, BUG-1262
+switch: adventure.host_actors, adventure.hit_forward, adventure.guest_extras, adventure.body_side
 ---
 
 ## Report
@@ -63,10 +64,11 @@ Proposal for 0.8 (the fork's E-A + E-B, out/research/lineages-systems.md section
 Credit: the design of the Lineages fork (PR #196, PandizeLive) where it is ported.
 
 ## Verification
-no-fail-run: RE only, no behaviour change in 0.7.17 (moved to 0.8); the static facts are in
-docs/re/adventure.md#adventure-npc-proxies with their confidence words, the runtime checks are step 1 of the proposal.
+PASS: out/lab/20261124-162401 (adventure_enemies, 0 faults), out/lab/20261124-152417 (adventure_duo, 0 faults).
+FAIL: out/lab/20261124-145540 (adventure_host_actors_off, adventure_guest_extras_off), out/lab/20261124-162407 (adventure_hit_forward_off, adventure_body_side_off).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 6 (WP-A1), branch feat/w83-advnpc.
 - 2026-11-23: RE on feat/w83-advnpc (WP-A1, static): the Creature NPC proxies do not work in an adventure (act pass fault at 0xC0714E, the guest's adventure objects removed, goals by class); no setting in 0.7.17, moved to 0.8 with BUG-0793 (proposal above); waits for the owner's answer to question 6.
+- 2026-11-24: released in 0.7.99.

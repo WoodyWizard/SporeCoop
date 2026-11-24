@@ -1,20 +1,21 @@
 ---
 id: BUG-0438
 title: civ: a vehicle on the guest 4-7 m (p90) from the host's under loss bursts (sync_burst, sync_fps15burst)
-status: open
+status: fixed
 kind: desync
 stage: Civ
 reported: 2026-11-01
 source: players suite, lab 20261101-160125 (feat/w33-tests-session)
 role: guest
 versions: main a05d1f6
-fixed_in:
-branch: fix/w46-k3-bodies
-commits: 0f0f32f1, fbeb2cfa, 836b0b5e, 47be862f
-tests: body_trail_civ, body_trail_civ_loss, sync_civ_loss
+fixed_in: 0.7.99
+branch: rel/0.7.99
+commits: 0f0f32f1, fbeb2cfa, 836b0b5e, 47be862f, 6e5a2940
+tests: body_trail_civ_burst, body_trail_civ_burst_off, body_trail_civ, body_trail_civ_loss
 signature:
 docs: docs/re/civ.md#civ-place-now, docs/06-testing.md#testing-bodyrec-diag
 related: BUG-0425, BUG-0186
+switch: civ.place_now, civ.veh_burst
 ---
 
 ## Report
@@ -41,7 +42,8 @@ estimate after a turn (this ticket's inference) is a smaller part: with the long
 No fix for the reported trail is needed at a normal load; one defect found on the way is fixed: `coop.fix civ.place_now` (civ.cpp guest_tick): the mirror goes on with the estimate's velocity and only the rest is glided, aimed one frame ahead; before, it was drawn a frame's glide plus a frame behind its own target (drawn vs target p50 0.98-0.99 m off, 0.25-0.46 m on, same load; docs/re/civ.md#civ-place-now).
 
 ## Verification
-no-fail-run: the reported trail is not reproduced at a lab load under ~15 on 6 cores, with or without the fix. body_trail_civ_loss: on out/lab/20261107-105916 3 of 3 (p90 1.11 / 1.89 / 1.37 m), SPORE_FIX_OFF=civ.place_now at the same time out/lab/20261107-105916-2 3 of 3 (1.50 / 1.36 / 1.35 m; p50 0.69-0.84 against 0.53-0.57 m on). body_trail_civ: on out/lab/20261107-101400 3 of 3 (p90 0.94 / 1.48 / 0.82 m, p50 0.36-0.48), off out/lab/20261107-101450 3 of 3 (1.50 / 1.54 / 1.18 m, p50 0.62-0.67). At a load of 11-16 both fail alike: on out/lab/20261107-082432 0 of 3 (p90 4.31 / 4.00 / 2.97 m), off out/lab/20261107-082632 0 of 2 (4.45 / 3.34 m), also 20261107-074040 (0.7.9 code, 0 of 3): both Civ games at 16 fps, the host's states every 0.14 s (p50) to 0.39 s (p90), the target's error grows with the state's age (coop.bodyrec diag rows, docs/re/civ.md#civ-place-now). That is the host's frame rate, not the mirror's driving; the 0.7.9 final-check failures (20261107-012856, -004042, 20261106-231404) ran at such loads.
+PASS: out/lab/20261124-152417 (body_trail_civ_burst, 0 faults).
+FAIL: out/lab/20261124-161419 (body_trail_civ_burst_off: p90 2.93 m, lag p90 0.330 s).
 
 ## History
 - 2026-11-01: opened.
@@ -79,3 +81,4 @@ no-fail-run: the reported trail is not reproduced at a lab load under ~15 on 6 c
   times: a FAIL whose `over:` lines say BURST with lateness 0.3-0.6 s confirms the extrapolation limit in a burst (fix
   then: send the vehicle's own velocity, or a longer lead only after a gap in the state cycle numbers; the 0.6 s try of
   2026-11-04 had no measurable gain), `good` lines would be a desync to analyse.
+- 2026-11-24: released in 0.7.99.

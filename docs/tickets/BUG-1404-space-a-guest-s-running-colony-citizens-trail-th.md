@@ -1,20 +1,21 @@
 ---
 id: BUG-1404
 title: Space: a guest's running colony citizens trail the host's by 3-4 m (snapshots every 0.5 s; space_planet_citizens 4 of 57 elsewhere)
-status: open
+status: fixed
 kind: desync
 stage: Space
 reported: 2026-11-21
 source: final check 20261121-003202 (space_planet_citizens)
 role: guest
 versions: 0.7.15, unreleased
-fixed_in:
-branch: fix/w62-flake-tcs
-commits: 80ee2745, 84c8f9e6
-tests: space_planet_citizens
+fixed_in: 0.7.99
+branch: rel/0.7.99
+commits: 80ee2745, 84c8f9e6, 587a24de
+tests: space_planet_runners, space_planet_runners_lead_off, space_planet_citizens
 signature:
 docs: docs/re/space.md#space-citizen-lead
 related: BUG-1210, BUG-1227, BUG-0490
+switch: space.citizen_lead
 ---
 
 ## Report
@@ -43,16 +44,12 @@ apart (closer ones keep the last). Switch `coop.fix space.citizen_lead off`: eve
 The test is unchanged (limits 3 m, 5 %); its docstring names the twin.
 
 ## Verification
-FAIL (no change): final check out/lab/20261121-003202 (4 of 57), rel/0.7.15 out/lab/20261117-154911 (6 of 57).
-Open, waiting for the lab run:
-* PASS wanted: `SPORE_DETECTOR=20 python3 tools/lab.py run space_planet_citizens --repeat 4 --until all --lane N --retry 0 --no-build`
-  (4 of 4; the old code failed in about half of the runs).
-* FAIL twin: `SPORE_FIX_OFF=space.citizen_lead ... run space_planet_citizens --repeat 4 --until all` should fail in about half of
-  the runs (a flaky twin: the old failure rate); also space_planet_vehicles and space_colony_spice PASS (same file).
-- Still open (2026-11-23): the fix shipped in 0.7.16 is plausible but not proven. space_planet_citizens PASS in 20261122-194210 and 20261123-023643, but its twin SPORE_FIX_OFF=space.citizen_lead PASSED 4 of 4 in 20261122-192851: the test cannot show the switch (BUG-1454), and BUG-1454's runner case was INCONCLUSIVE in every run (no runners near the guest). The CHANGELOG line was removed; docs/known-issues.md has the entry.
+PASS: out/lab/20261124-152417 (space_planet_runners, 0 faults).
+FAIL: out/lab/20261124-161419 (space_planet_runners_lead_off: 11/263 over 2.5 m, p90 1.89 m).
 
 ## History
 - 2026-11-21: opened; fixed on fix/w62-flake-tcs (space.citizen_lead), waiting for the lab run.
 - 2026-11-23: BUG-1454: the twin passed 4 of 4 (20261122-192851): space_planet_citizens cannot show this switch (2 of 9 runs fail at 0.5 s snapshots, the "about half" was before BUG-1210); the claim moves to the new space_planet_runners (limits to be measured).
 - 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.
 - 2026-11-23: fix/w69-triage2: space_planet_runners shows the switch (BUG-1454): fix on 0-1.4 % of runner samples over 2.5 m and p90 0.90-1.28 m (20261123-111347), off 6.1-9.9 % and p90 2.03-2.48 m (20261123-121417); new limits 3.5 % / p90 1.6 m and twin space_planet_runners_lead_off.
+- 2026-11-24: released in 0.7.99.

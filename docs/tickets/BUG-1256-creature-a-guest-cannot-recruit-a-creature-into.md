@@ -1,20 +1,21 @@
 ---
 id: BUG-1256
 title: Creature: a guest cannot recruit a creature into a pack (no pack recruit for the guest's social games)
-status: open
+status: fixed
 kind: feature
 stage: Creature
 reported: 2026-11-18
 source: owner: players' video, second analysis (split from BUG-1250)
 role: guest
 versions: <0.7.15
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: 0.7.99
+branch: rel/0.7.99
+commits: f76753b8, 46dab65a
+tests: guest_pack_recruit, guest_pack_recruit_off
 signature:
 docs: docs/known-issues.md#issue-guest-pack-recruit
 related: BUG-1250, BUG-1242
+switch: social.guest_recruit
 ---
 
 ## Report
@@ -58,10 +59,11 @@ Not done (too big for the 0.7.15.1 batch). Design sketch, host-authoritative:
    both games, the brain limit, the leave.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+PASS: out/lab/20261124-155436 (guest_pack_recruit, 0 faults: guest recruits, enforces brain limit, dismisses, cleans up on leave).
+FAIL: out/lab/20261124-161419 (guest_pack_recruit_off: my_pack=0, local_count=0).
 
 ## History
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w53-puppet): split from BUG-1250; static analysis of the native recruit and a design sketch; left open.
 - 2026-11-18: planned for 0.8 (the owner's 0.7.15 decision: the guest's own pack is 0.8 work).
+- 2026-11-24: released in 0.7.99.

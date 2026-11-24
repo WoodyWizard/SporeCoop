@@ -1,20 +1,21 @@
 ---
 id: BUG-1231
 title: Civ: a guest's copies of standing city citizens never play the host's citizens' actions (gestures), only the plain idle
-status: open
+status: fixed
 kind: feature
 stage: Civ
 reported: 2026-11-17
 source: lab (fix/w51-citanim, BUG-1229 measurement)
 role: guest
 versions: 0.7.14.1, rel/0.7.15
-fixed_in:
-branch:
-commits:
-tests: civ_citizen_trail (prints `host citizens (moving, animation)` / `guest copies (moving, animation)`)
+fixed_in: 0.7.99
+branch: rel/0.7.99
+commits: 67bf489e
+tests: civ_citizen_trail, civ_citizen_gesture_off
 signature: host standing citizens play 0x04A1DD75 / 0x04A3442D / 0x050B5AB8 / 0x050A3F95 ...; the guest's copies only 0x02481DE5
 docs: docs/re/civ.md#civ-citizen-run
 related: BUG-1229, BUG-1227, BUG-0476
+switch: civ.citizen_gesture
 ---
 
 ## Report
@@ -34,9 +35,10 @@ members' animation relay (docs/re/tribe.md) for city citizens.
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+PASS: out/lab/20261124-152417 (civ_citizen_trail, 0 faults).
+FAIL: out/lab/20261124-161419 (civ_citizen_gesture_off: 0% of 3377 gesture samples match).
 
 ## History
 - 2026-11-17: opened.
 - 2026-11-17: kind feature (orchestrator): relaying the citizens' actions is a new relay (a message or an animation relay as in Tribe), not a fix of an existing path; backlog, not part of 0.7.15.
+- 2026-11-24: released in 0.7.99.

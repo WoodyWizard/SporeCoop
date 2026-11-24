@@ -1,20 +1,21 @@
 ---
 id: BUG-0873
 title: Feature idea: a shared creations library (received creations in their own Sporepedia tab, kept between sessions)
-status: open
+status: fixed
 kind: feature
 stage: All
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 lineages42/43-dev, BUG-9093..9095, 9104..9106, 9112 (library.cpp, net/library_sync.cpp)
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: 0.7.99
+branch: rel/0.7.99
+commits: 0bd1ccc0, 46dab65a, 6f2eae1b
+tests: shared_library, shared_library_off, shared_library_my_filter_off, shared_library_retry_off
 signature:
 docs:
 related:
+switch: creations.shared_library, creations.library_my_filter, creations.library_retry
 ---
 
 ## Report
@@ -46,3 +47,8 @@ survive a restart offline; a PNG made to fail its first decode is imported on th
 
 ## History
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (feature idea, fork evidence only).
+
+## Verification
+PASS: out/lab/20261124-160551 (shared_library, 0 faults: creations 1.3 sync, Pollination ImportPNG, Sporepedia tab, My Creations filter, dedup, offline persistence, failed-import retry).
+FAIL: out/lab/20261124-161419 (shared_library_off, shared_library_my_filter_off, shared_library_retry_off all fail on their target checks).
+- 2026-11-24: released in 0.7.99.

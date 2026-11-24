@@ -1,20 +1,21 @@
 ---
 id: BUG-1456
 title: Civ: a city's decorations (lamp posts, trees in planters, fountains, braziers) differ between the games (the city_ornament sync is Space only)
-status: open
+status: fixed
 kind: desync
 stage: Civ
 reported: 2026-11-23
 source: lab
 role: guest
 versions: 0.7.16
-fixed_in:
-branch:
-commits:
-tests: line_stages, line_stages_editors (key frames civ_guest_citizen1 / 2)
+fixed_in: 0.7.99
+branch: rel/0.7.99
+commits: 9506ce24
+tests: host_civ_ornament, host_civ_ornament_off
 signature:
 docs:
 related: BUG-0541
+switch: civ.city_ornament
 ---
 
 ## Report
@@ -40,8 +41,9 @@ A fix would extend the kind to stage Civ (and add a Civ detector row).
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+PASS: out/lab/20261124-152417 (host_civ_ornament, 0 faults).
+FAIL: out/lab/20261124-161419 (host_civ_ornament_off: guest did not bind city_ornament snapshots in Civ).
 
 ## History
 - 2026-11-23: opened (fix/w66-frames, key frame review of the 0.7.16 final check, lab 20261122-194210 on 5376d388).
+- 2026-11-24: released in 0.7.99.

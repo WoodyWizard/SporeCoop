@@ -1,20 +1,21 @@
 ---
 id: BUG-0793
 title: Feature idea: co-op Galactic Adventures (shared run, lobby, objectives, NPC authority, results)
-status: open
+status: fixed
 kind: feature
 stage: Adventure
 reported: 2026-11-10
 source: fork jwhans0n/SporeCoopGA sync/upstream-0.7.8-main (fork release 0.7.4.0, preview 12)
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: 0.7.99
+branch: rel/0.7.99
+commits: ff9422e5, 2aaf5dd6, 40ef2081, f92ec15d, a006bdcd, 251c06c6
+tests: adventure_shared, adventure_shared_off, adventure_captain_scale_off, adventure_enemies, adventure_duo, adventure_save, adventure_tutorial
 signature:
 docs:
 related: BUG-0789, BUG-0790, BUG-0863
+switch: adventure.shared, adventure.captain_scale
 ---
 
 
@@ -74,6 +75,10 @@ game the goal counter and the NPC's target set by the host's AI.
 
 ## Fix
 ## Verification
+PASS: out/lab/20261124-145540 (adventure_shared, adventure_save, adventure_tutorial), out/lab/20261124-152417 (adventure_duo), out/lab/20261124-162401 (adventure_enemies), all 0 faults.
+FAIL: out/lab/20261124-145540 (adventure_shared_off, adventure_captain_scale_off), out/lab/20261124-162407 (adventure_hit_forward_off, adventure_body_side_off).
+Note: shared Adventure Editor remains tracked separately in BUG-0863.
 
 ## History
 - 2026-11-10: opened.
+- 2026-11-24: released in 0.7.99.

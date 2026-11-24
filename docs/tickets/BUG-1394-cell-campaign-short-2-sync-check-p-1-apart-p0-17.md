@@ -1,20 +1,21 @@
 ---
 id: BUG-1394
 title: Cell: a level change moves the whole world of a game whose camera point is over 1000 m from the origin (the game recentres, the partners do not): campaign_short#2 sync-check p: 1 apart (p0 171.3)
-status: open
+status: fixed
 kind: desync
 stage: Cell
 reported: 2026-11-21
 source: lab
 role: 
 versions: 
-fixed_in:
-branch: fix/w62-core
-commits: 472ea2de
-tests:
+fixed_in: 0.7.99
+branch: rel/0.7.99
+commits: 472ea2de, 79cc9037, 46dab65a
+tests: cell_rescale_origin, cell_rescale_origin_off
 signature: sync-check: MISMATCH with the host (Cell ...): p: 1 apart (p0 171.3) during the end of Cell
 docs: docs/re/cell.md#cell-rescale-centre
 related: BUG-0606, BUG-0519, BUG-0511
+switch: cell.rescale_origin
 ---
 
 ## Report
@@ -48,11 +49,11 @@ scale_centre_note), so the next run that shows it names the camera's state. Symb
 Cell_SnapToGrid and the CORRECTION of cell-world-scale recorded.
 
 ## Verification
-Open, waiting for the lab run: campaign_short (and cell_end_sync, cell_levelup_view) with the new log line; a run that
-shows it gives the camera state for the fix. no-fail-run: diagnostics only so far.
-- Still open (2026-11-23): no game log of the runs 20261122-191140 .. 20261123-075458 (campaign_short x3 in 20261123-013755, the nightly 20261122-194210, the full run 20261123-023643; cell_end_sync and cell_levelup_view PASS) has the BUG-1394 line: the case did not come again. Diagnostics only, no fix.
+PASS: out/lab/20261124-155436 (cell_rescale_origin, 0 faults).
+FAIL: out/lab/20261124-161419 (cell_rescale_origin_off: origin_holds=0, drift=500.2 m, sep 624.9 -> 125.3 m).
 
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: fix/w62-core: cause traced to the game's recentre (0xE6DB70), diagnostics line added; open.
 - 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.
+- 2026-11-24: released in 0.7.99.

@@ -1,20 +1,21 @@
 ---
 id: BUG-0899
 title: Friendly fire in Cell, Tribe and Civilization (all.friendly_fire covers the Creature stage only)
-status: open
+status: fixed
 kind: feature
 stage: All
 reported: 2026-11-10
 source: plan-0.7.12 F3 (BUG-0768 follow-up)
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: 0.7.99
+branch: rel/0.7.99
+commits: 75a6caea, b883f0fc, 46dab65a, 6f2eae1b
+tests: ff_cell, ff_cell_off, ff_tribe, ff_tribe_off, ff_civ, ff_civ_off
 signature:
 docs:
 related:
+switch: cell.friendly_fire, tribe.friendly_fire, civ.friendly_fire
 ---
 
 ## Report
@@ -38,9 +39,10 @@ How players are kept from hurting each other today (read in the code, 2026-11-10
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+PASS: out/lab/20261124-160551 (ff_cell), out/lab/20261124-152417 (ff_tribe), out/lab/20261124-155436 (ff_civ), all 0 faults.
+FAIL: out/lab/20261124-161419 (ff_cell_off, ff_tribe_off, ff_civ_off all fail on their target checks).
 
 ## History
 - 2026-11-10: opened (BUG-0768 follow-up); for the 0.7.13 plan.
 - 2026-11-11: the owner decided: friendly fire in Rivals must work in every stage (required); done with Rivals 0.8, docs/11-rivals.md#rivals-friendly-fire-all-stages.
+- 2026-11-24: released in 0.7.99.

@@ -1,20 +1,21 @@
 ---
 id: BUG-0871
 title: Feature idea: a depth handle in the creature editor that pushes details and weapons into the body
-status: open
+status: fixed
 kind: feature
 stage: Creature
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 lineages42-dev, BUG-9103 (editor_depth.cpp)
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: 0.7.99
+branch: rel/0.7.99
+commits: 0bd1ccc0, 46dab65a, 6f2eae1b, a006bdcd
+tests: editor_depth, editor_depth_off
 signature:
 docs:
 related:
+switch: editor.depth, editor.depth_cube
 ---
 
 ## Report
@@ -49,3 +50,8 @@ twin is mirrored, Undo restores it, reopen keeps it; a partner receives the crea
 
 ## History
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (feature idea, fork evidence only).
+
+## Verification
+PASS: out/lab/20261124-161413 (editor_depth, 0 faults: handle shown on eligible part, hidden on vertebra, real mouse drag along skin normal, Undo restores, Done saves cleanly).
+FAIL: out/lab/20261124-161419 (editor_depth_off: visible=0, along=0.0000).
+- 2026-11-24: released in 0.7.99.

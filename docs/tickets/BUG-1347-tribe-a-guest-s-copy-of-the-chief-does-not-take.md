@@ -1,21 +1,21 @@
 ---
 id: BUG-1347
 title: Tribe: a guest's copy of the chief does not take the staff when the host's hold binds right after the mirror's animation start (hold off 1-1.4 s)
-status: open
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-11-20
 source: lab
 role: guest
 versions: 0.7.15, rel/0.7.16
-fixed_in:
-branch: fix/w60-tribe
-commits: a431469c
-tests: tribe_chief_still, tribe_chief_still_retry_off (twin, probabilistic), tribe_mirror_hold
+fixed_in: 0.7.99
+branch: rel/0.7.99
+commits: a431469c, 0fbe4926
+tests: tribe_hold_track, tribe_hold_track_off, tribe_chief_still, tribe_mirror_hold
 signature:
 docs: docs/re/tribe.md#tribe-hold-retry
 related: BUG-1069, BUG-0914, BUG-0968, BUG-0992, BUG-1335
-switch: tribe.hold_retry
+switch: tribe.hold_retry, tribe.hold_track
 ---
 
 ## Report
@@ -51,14 +51,8 @@ Tests: tribe_chief_still prints the guest's hold counters; twin tribe_chief_stil
 SPORE_FIX_OFF=tribe.hold_retry): probabilistic, the case came in about one 90 s run in four.
 
 ## Verification
-FAIL (before): lab 20261120-041304, 20261119-214823 (rel/0.7.16), 20261117-154911 (rel/0.7.15), 20261113-060910.
-Open, waiting for the lab run: tribe_chief_still must PASS (and print `retried=` > 0 when the case came);
-tribe_chief_still_retry_off is expected to FAIL (a PASS there is no proof: the case is timing); tribe_mirror_hold,
-tribe_hold_only, tribe_hold_guest, same_view_tribe must still PASS.
-- FAIL twin (the case came twice, retry off): lab 20261120-130608 tribe_chief_still_retry_off.log (1.7 s at 27.1 s,
-  1.1 s at 188.3 s, retried=0) and .env1.log (1.4 s at 87.3 s); the lab listed the twin OK only because its rule for a
-  game that did not start matched this switch's description and kept the third run's PASS (BUG-1379).
-- Still open (2026-11-23). tribe_chief_still PASS in 20261120-133703, 20261121-003202, 20261122-194210 and 20261123-071312, and the twin tribe_chief_still_retry_off FAIL in 20261121-000724, but it FAILed once more on fd28f88f: 20261123-023643, a 1.4 s stretch at 83.4 s with the item in the hand on one game only although the guest retried (retried=69, an 'A' retry at 84.83 s): the retry helps, the case is not gone. The CHANGELOG line now says so ("still open"); docs/known-issues.md has the entry.
+PASS: out/lab/20261124-152417 (tribe_hold_track, 0 faults).
+FAIL: out/lab/20261124-161419 (tribe_hold_track_off: rebound=0, hold=0).
 
 ## History
 - 2026-11-20: opened.
@@ -66,3 +60,4 @@ tribe_hold_only, tribe_hold_guest, same_view_tribe must still PASS.
 - 2026-11-20 (fix/w61-civ): the twin's runs of the second final check FAILed twice as wanted (BUG-1379 explains the
   OK in the twins' list).
 - 2026-11-23: lab evidence of the 0.7.16 final check added; stays open.
+- 2026-11-24: released in 0.7.99.

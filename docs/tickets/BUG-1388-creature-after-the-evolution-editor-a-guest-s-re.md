@@ -1,20 +1,21 @@
 ---
 id: BUG-1388
 title: Creature: after the evolution editor a guest's remade nest proxies walk after the host's NPCs that the host's game re-placed 5-6 m in one step (campaign_civ_jump proxies gate)
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-11-20
 source: lab
 role: guest
 versions: rel/0.7.16
-fixed_in:
-branch:
-commits:
-tests: campaign_civ_jump (the lab gate)
+fixed_in: 0.7.99
+branch: rel/0.7.99
+commits: c574a479, 46dab65a
+tests: npc_creature_replace, npc_creature_replace_off
 signature: proxies: guest: 2 NPC proxies over 3 m off the host's NPC (Creature) on 2 lines
 docs:
 related: BUG-0440, BUG-0503, BUG-0842, BUG-1375
+switch: npc.creature_replace_snap
 ---
 
 ## Report
@@ -40,8 +41,9 @@ one audit step while its host speed is 0 (a re-placement, not a walk) is put at 
 path) instead of walked; or the monitor rule's BUG-0440 exemption covers the first seconds after an own editor.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+PASS: out/lab/20261124-155436 (npc_creature_replace, 0 faults).
+FAIL: out/lab/20261124-161419 (npc_creature_replace_off: creature_replaces=0, err 4.16 m).
 
 ## History
 - 2026-11-20: opened (fix/w61-civ, from the campaign_civ_jump triage); not fixed there: Creature area.
+- 2026-11-24: released in 0.7.99.

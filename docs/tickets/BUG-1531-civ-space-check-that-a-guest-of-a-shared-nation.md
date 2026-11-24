@@ -1,20 +1,21 @@
 ---
 id: BUG-1531
 title: Civ -> Space: check that a guest of a shared nation gets its own spaceship editor after the vote (PR #219's question)
-status: open
+status: fixed
 kind: bug
 stage: Civ, Space
 reported: 2026-11-23
 source: plan, PR #219
 role: guest
 versions: 0.7.16.1 and earlier
-fixed_in:
-branch: feat/w68-wallet
-commits: ebe0e45a
-tests: tools/tests/coop_campaign.py ship_editor_check (suite civ_own_money_space, CAMPAIGN_GUEST_SHIP_EDITOR=1)
+fixed_in: 0.7.99
+branch: rel/0.7.99
+commits: ebe0e45a, 3d23c6ca, 46dab65a
+tests: civ_ship_editor, civ_ship_editor_off
 signature:
 docs:
 related: 
+switch: civ.guest_ship_editor
 ---
 
 ## Report
@@ -32,10 +33,11 @@ not open: #219's recipe (level 4 + GameCiv_ShowPlanetWon 0xCF8F60 + PlanetWonPau
 after the vote) is the next step. Closes as not-reproduced when the editor opens.
 
 ## Verification
-pending night run: civ_own_money_space (campaign segment civ -> space, 2 players, ~45 min) and the notes of any
-campaign run that passes Civ -> Space.
+PASS: out/lab/20261124-155436 (civ_ship_editor, 0 faults: guest opens own spaceship editor after Civ->Space vote).
+FAIL: out/lab/20261124-161419 (civ_ship_editor_off: guest never opened spaceship editor).
 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: planned for 0.7.17 in WP-0: docs/plan-0.7.17.md item 12 (WP-M1), branch feat/w68-wallet.
 - 2026-11-23: the lab check written on feat/w68-wallet (coop_campaign.py ship_editor_check, suite civ_own_money_space); waits for the night run.
+- 2026-11-24: released in 0.7.99.

@@ -1,20 +1,21 @@
 ---
 id: BUG-1540
 title: Creature: guest wiping a hostile nest undiscovered by the host misses the extinction goal DNA
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-24
 source: Discord bug report 2026-11-24
 role: guest
 versions: 0.7.16, 0.7.16.1, 0.7.17.1
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: 0.7.99
+branch: rel/0.7.99
+commits: 735102a0, 46dab65a
+tests: creature_hostile_extinct, creature_hostile_extinct_off
 signature:
 docs: docs/re/creature.md
 related: BUG-0205, BUG-0699
+switch: social.undiscovered_rel
 ---
 
 ## Report
@@ -34,8 +35,9 @@ Verified from EP1 disassembly (`SporeApp.exe`, GOG 2024 / Steam):
 (planned in 0.7.99 WP-F1) In `h_RelEvent` (`mods/coop/social.cpp`, gated by a new `coop.fix` switch), on the host when `rec[0] == 0` and `creature != nullptr`, resolve the effective relation via `GetRelationship(mgr, key, creature, nullptr)` and materialize `rec[0]` before/around `o_RelEvent` so `rec[0]` matches what discovery (`0x00BA5130`) would have stored.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+PASS: out/lab/20261124-155436 (creature_hostile_extinct, 0 faults: host materializes undiscovered hostile relation=5 and pays extinction goal DNA).
+FAIL: out/lab/20261124-161419 (creature_hostile_extinct_off: relation stays 4, extinction goal DNA 0).
 
 ## History
 - 2026-11-24: opened from Discord bug report; root cause confirmed in EP1 disassembly (`0x00BA4A00`, `0x00BA5130`, `0x00C2EE80`).
+- 2026-11-24: released in 0.7.99.

@@ -1,17 +1,17 @@
 ---
 id: BUG-1541
 title: UI: hide the co-op lobby window while taking Report a problem and /bug screenshots
-status: open
+status: fixed
 kind: feature
 stage: All
 reported: 2026-11-24
 source: owner request 2026-11-24 (after reviewing Discord bug report screenshots obscured by the lobby dialog)
 role: both
 versions: 0.7.17.1 and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: 0.7.99
+branch: rel/0.7.99
+commits: 87bc2eaf
+tests: report_shot, report_shot_hide_off
 signature:
 docs:
 related: BUG-0442, BUG-1528
@@ -34,4 +34,6 @@ frame renders without the lobby, then calls `support::report_shot_now()` right b
 `report_shot_on_present()` captures that clean backbuffer, and restores `D.root` on the following frame.
 
 ## Verification
-Pending Wine lab verification (`report_shot` PASS + `report_shot_hide_off` FAIL).
+PASS: out/lab/20261124-163100 (report_shot, 0 faults: lobby crop diff to clean=8.8 vs to lobby=54.1, lobby restored immediately).
+FAIL: out/lab/20261124-163106 (report_shot_hide_off: diff to clean=53.2 vs to lobby=3.3).
+- 2026-11-24: released in 0.7.99.

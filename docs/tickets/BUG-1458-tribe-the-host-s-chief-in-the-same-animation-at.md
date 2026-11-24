@@ -1,20 +1,21 @@
 ---
 id: BUG-1458
 title: Tribe: the host's chief in the same animation at the same moment stands another way on the guest, the staff on the other side (BUG-1072 seen again)
-status: open
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-11-23
 source: lab
 role: guest
 versions: 0.7.16
-fixed_in:
-branch:
-commits:
-tests: tribe_mirror_stale (chief_t3), tribe_chief_tracks (chief2)
+fixed_in: 0.7.99
+branch: rel/0.7.99
+commits: 0fbe4926
+tests: tribe_chief_hand, tribe_chief_hand_off
 signature:
 docs:
 related: BUG-1072, BUG-0988, BUG-1069, BUG-1347
+switch: tribe.hand_side
 ---
 
 ## Report
@@ -37,8 +38,9 @@ hand that holds the staff, or a blend / layer the track sync does not carry.
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+PASS: out/lab/20261124-152417 (tribe_chief_hand, 0 faults).
+FAIL: out/lab/20261124-161419 (tribe_chief_hand_off: hand slot 1 != 2, side 1 != 0).
 
 ## History
 - 2026-11-23: opened (fix/w66-frames, key frame review of the 0.7.16 final check, lab 20261122-194210 on 5376d388).
+- 2026-11-24: released in 0.7.99.
