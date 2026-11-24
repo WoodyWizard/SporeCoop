@@ -9427,3 +9427,15 @@ BUG-9326 (docs/re/tribe.md#tribe-partner-pens). Follows #testing-tribe-final-qa 
   <planet>` opens the panel the game's way; panels then stand where the star is (crop by its place).
 * A creation the creation store sent stays in that profile: a picture test's "before" needs a profile that never got it.
 
+## Galaxy encryption tests and the MSI console (2026-11-23, feat/lineages-alpha)
+<a id="testing-galaxy-encryption"></a>
+
+* `py tools/tests/galaxy_server_check.py` includes the encrypted game (tools/tests/galaxy_crypto_py.py, pure Python,
+  slow: the X25519 steps take a second or two). The encrypted test game binds 127.0.0.2: the players-per-address limit
+  of 127.0.0.1 is full by then. `py tools/tests/galaxy_encrypted_only_check.py` starts its own server.
+* The crypto unit tests on Windows: `i686-w64-mingw32-clang++ -std=c++20 -static -Imods/coop tests/galaxy_crypto_tests.cpp
+  mods/coop/net/galaxy_crypto.cpp` (the llvm-mingw here has the 32-bit sysroot only).
+* The MSI's console tunnel can die while its local ssh keeps the ports ("Could not request local forwarding"); a new
+  tunnel then reaches the console, but a game whose main thread is stuck accepts and never answers (the MSI shows its
+  connections in CloseWait). Check the game's CPU time first (a stuck loop grows it a second a second).
+

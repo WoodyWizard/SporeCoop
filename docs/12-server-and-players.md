@@ -1883,3 +1883,36 @@ checked yet" list). Leaving the galaxy from the Co-op window was done already ("
 * Tests: `coop.gmenu open <planet>` (a planet's panel without a click: Spore's galaxy view drifts at 10 FPS and clicks
   on stars miss), `page`, `delete <planet>`, `deletepick 1|0`, `worlds <planet>`.
 
+## The galaxy traffic is encrypted (8Q A, 2026-11-23, feat/lineages-alpha)
+<a id="server-encryption"></a>
+
+The owner's answer "8QA" (docs/ROADMAP.md row 8Q). Code e70d3900: mods/coop/net/galaxy_crypto.h (the wire format),
+Monocypher 4.0.2 vendored in third_party/monocypher (BSD-2 / CC0, the release's SHA-512 checked).
+* Before HELLO the game and the server exchange keys ('K'): the game's ephemeral X25519 key with the server's static
+  key (made once, kept in the worlds folder as galaxy_server.key) and an ephemeral one; BLAKE2b gives one key per
+  direction. Then every datagram both ways is sealed ('E', a counter, XChaCha20-Poly1305), a counter seen before is
+  dropped. Overhead 25 bytes: a relay frame stays under Tailscale's 1252-byte datagrams (kMaxPacket 1200 + 3 + 25).
+* The game keeps each server's key (coop.ini [galaxy_keys], by address) and refuses another key later ("answers with
+  another key than before ... coop.galaxy forgetkey"): nobody between them can stand in for a server it knew, and such
+  a server is never played in clear. A new server that does not answer in 6 s (an older one) is played in clear.
+* The server hears an older game in clear beside the encrypted ones; `--encrypted-only` refuses it ("takes encrypted
+  games only: update"). A datagram in clear from an address with keys is dropped. A sealed datagram from an address it
+  has no keys for (it restarted) gets 'K' 3, two bytes: the game exchanges keys again and reconnects.
+* Switch `coop.fix galaxy.encrypt off`: in clear, as before; server `--no-encryption`: no answer to the exchange.
+* Status: `coop.galaxy status` "encryption (8Q A): encrypted (the server's key <fingerprint>)"; the server log's
+  "connected from ... (encrypted)" and a line "encryption: N of M player(s) encrypted" every 30 s.
+* ✔ Tests: tests/galaxy_crypto_tests.cpp (exchange, seal and open, tampering, replays, the window, a low-order key);
+  tools/tests/galaxy_crypto_py.py (the same crypto written from the RFCs, known answers); galaxy_server_check.py: a
+  game encrypted from Python: no name on the wire, replays, changed and clear datagrams get nothing, an older game
+  beside it, 'K' 3; FAIL against the server before (out/lab_runs/8qa_server_fail.txt), PASS (8qa_server_pass.txt);
+  galaxy_encrypted_only_check.py.
+* ✔ In game (the MSI's two games, TITAN's server): both "encrypted" ("2 of 2 player(s) encrypted"); one hosted
+  Samuth, the other joined it through the relay (the 4 MB world and the session sealed: 8444 datagrams opened, none
+  refused; the guest sees the host, images/8qa_guest_encrypted.png); a server restart: both reconnected by themselves
+  (a second exchange) and stayed on Samuth; the server's key changed: both refused it, then `forgetkey` and connect:
+  encrypted with the new key; a server with `--no-encryption`: both kept trying, nothing in clear; switch off: "in
+  clear", the server log "(clear)"; a game that forgot the key: in clear after 6 s.
+* Found on the way (fixed before the commit): a refused key closed the socket inside the receive loop, whose
+  recv_from then failed at once every time: the game spun a core and its console never answered.
+* Not done: the game's own planet sessions on a LAN or direct (not through the galaxy server) stay as they were.
+
