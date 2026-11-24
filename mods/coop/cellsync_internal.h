@@ -130,6 +130,7 @@ struct Counters {
     uint32_t joins_load = 0;     // tests: guest moved next to the host after a new avatar
     uint32_t bg_culled = 0;
     uint32_t leave_writes = 0, leave_dropped = 0; // BUG-0308: our pool work while the stage was left (off) / skipped (on)
+    uint32_t pvp_out = 0, pvp_in = 0, pvp_relayed = 0, pvp_refused = 0; // BUG-0899: Cell friendly fire
 };
 
 struct Mirror {
@@ -603,6 +604,15 @@ void kin_pop_enter();
 void kin_pop_leave();
 void kin_before_pass();
 std::string kin_report(float r);
+
+// BUG-0899 (cellsync_combat.cpp): Cell friendly fire
+extern bool g_fix_cell_ff;
+bool cell_ff_on();
+void cell_ff_sync_flag();
+bool send_pvp_hit(int target_id, int dmg, int type);
+void pvp_reset();
+void cell_ff_install_hook();
+std::string cell_ff_status();
 
 // cellsync_debug.cpp
 const char* kind_of(uint8_t* c);

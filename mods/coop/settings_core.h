@@ -37,7 +37,7 @@ enum Id : int {
     kJointHunt,      // Creature: a target another player hit deals +25 % (teamplay.cpp on_player_hit)
     // step 3 of F3 (feat/w46-settings-all): every other co-op mechanic of the plan's table, defaults = 0.7.11
     kNameTags,       // all stages: the name tag over every partner (coop.cpp on_overlay)
-    kFriendlyFire,   // Creature: players can hurt each other (npc.cpp damage_filter; Space keeps its rivals mode)
+    kFriendlyFire,   // Cell, Creature, Tribe, Civ: players can hurt each other (Space keeps its rivals mode)
     kPlayerLimit,     // the players a session takes (2..4, the host counted; net/session.cpp admit)
     kPartyDifficulty, // all stages: the hits between players and NPCs scaled on the host (party_difficulty.h, BUG-1473)
     kLateJoin,       // a player may join a session whose host plays its world already
@@ -134,7 +134,7 @@ inline const Def kDefs[kCount] = {
      "on: every partner's name shows over its creature, tribe chief, vehicle or ship; off: no name tags",
      1, 0, 1, Scope::Live, nullptr, false},
     {"all.friendly_fire", "All stages", "Friendly fire",
-     "on: players' creatures can hurt each other in the Creature stage (Space keeps its rivals mode; Cell, Tribe, Civ: not yet); off: no player hurts another",
+     "on: players can hurt each other in Cell, Creature, Tribe, and Civilization (Space keeps its rivals mode); off: no player hurts another",
      0, 0, 1, Scope::Session, nullptr, false},
     {"all.max_players", "All stages", "Players who can join",
      "how many players the session takes, the host counted (2 to 4); a player over it is told the session is full",

@@ -258,6 +258,7 @@ void host_tick(double now)
     g_last_send = now;
     gameover_host_tick(now); // BUG-0960
     baby_tick(now); // BUG-0671
+    ff_host_tick(now); // BUG-0899
     void* pt = player_tribe();
     auto tribes = all_tribes();
     std::vector<uint8_t> players;
@@ -467,6 +468,93 @@ static bool hm_live(void* c)
     return false;
 }
 
+// BUG-0899: Host-side friendly fire attack orders between members of different players inside the shared player tribe.
+struct FfOrder {
+    uint16_t victim_id = 0;
+    double next_walk = 0, next_hit = 0;
+};
+static std::unordered_map<uint16_t, FfOrder> g_ff_orders;
+static uint32_t g_ff_orders_total;
+
+void ff_clear_orders()
+{
+    g_ff_orders.clear();
+    ff_note_counts(g_ff_orders_total, 0);
+}
+
+void ff_cancel_member(uint16_t id)
+{
+    g_ff_orders.erase(id);
+    ff_note_counts(g_ff_orders_total, (uint32_t)g_ff_orders.size());
+}
+
+bool ff_try_order(uint16_t att_id, uint8_t att_owner, void* target, int action)
+{
+    void* pt = player_tribe();
+    if (!pt || action != 7 || !target || !is_citizen(target) || F<void*>(target, kOwnerTribeOff) != pt) {
+        ff_cancel_member(att_id);
+        return false;
+    }
+    HEntry* vh = hm_of(target);
+    if (!vh || vh->data.owner >= tribe_logic::kNobody || vh->data.owner == att_owner) {
+        ff_cancel_member(att_id);
+        return false;
+    }
+    if (!tribe_logic::can_ff_target(ff_on(), att_owner, vh->data.owner)) {
+        ff_cancel_member(att_id);
+        return true; // refuse same-tribe cross-player attack while FF is off
+    }
+    double now = H->time_seconds();
+    g_ff_orders[att_id] = {vh->id, 0.0, now + 0.15};
+    g_ff_orders_total++;
+    ff_note_counts(g_ff_orders_total, (uint32_t)g_ff_orders.size());
+    return true;
+}
+
+void ff_host_tick(double now)
+{
+    if (g_ff_orders.empty())
+        return;
+    if (!ff_on() || !is_host() || !active()) {
+        ff_clear_orders();
+        return;
+    }
+    void* pt = player_tribe();
+    if (!pt) {
+        ff_clear_orders();
+        return;
+    }
+    for (auto it = g_ff_orders.begin(); it != g_ff_orders.end();) {
+        HEntry* ah = g_host.members.find(it->first);
+        HEntry* vh = g_host.members.find(it->second.victim_id);
+        void* ac = ah ? ah->ref.p : nullptr;
+        void* vc = vh ? vh->ref.p : nullptr;
+        bool ok = ac && vc && hm_live(ac) && hm_live(vc) && F<void*>(ac, kOwnerTribeOff) == pt &&
+                  F<void*>(vc, kOwnerTribeOff) == pt && !game::is_dead(ac) && !game::is_dead(vc) &&
+                  game::health(ac) > 0 && game::health(vc) > 0 &&
+                  tribe_logic::can_ff_target(true, ah->data.owner, vh->data.owner);
+        if (!ok) {
+            it = g_ff_orders.erase(it);
+            continue;
+        }
+        net::Vec3 ap = game::position(ac), vp = game::position(vc);
+        float d = net::dist(ap, vp);
+        auto step = tribe_logic::ff_combat_step(d, now, it->second.next_walk, it->second.next_hit);
+        if (step == tribe_logic::FfStep::Walk) {
+            void* rec = thiscall<void*>(a_DoAction, ac, 4, (void*)nullptr, (void*)nullptr);
+            float p[3] = {vp.x, vp.y, vp.z};
+            if (rec)
+                thiscall<void>(a_SetValueVector3, (uint8_t*)rec + 0x39, (const float*)p);
+            it->second.next_walk = now + 0.5;
+        } else if (step == tribe_logic::FfStep::Hit) {
+            ff_deal_hit(vc, ac, 8.f);
+            it->second.next_hit = now + 1.2;
+        }
+        ++it;
+    }
+    ff_note_counts(g_ff_orders_total, (uint32_t)g_ff_orders.size());
+}
+
 static void* resolve_target(const Target& t)
 {
     if (t.kind == 1) {
@@ -603,11 +691,12 @@ void host_command(uint8_t from, net::Reader& r)
             continue;
         }
         if (kind == CMD_WALK) {
+            ff_cancel_member(id);
             void* rec = thiscall<void*>(a_DoAction, c, 4, (void*)nullptr, (void*)nullptr);
             float p[3] = {pos.x, pos.y, pos.z};
             if (rec)
                 thiscall<void>(a_SetValueVector3, (uint8_t*)rec + 0x39, (const float*)p);
-        } else
+        } else if (!ff_try_order(id, hm->data.owner, target, action))
             thiscall<void*>(a_DoAction, c, action, target, (void*)nullptr);
         g_cmds_done++;
         ran++;

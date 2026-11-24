@@ -1147,6 +1147,12 @@ std::string debug(const std::vector<std::string>& a)
         int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, 12, pit, (void*)nullptr);
         return "party ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) + ")";
     }
+    if (a.size() >= 2 && a[0] == "choose") { // tests (BUG-0899): ChooseInputActionID for member <id>
+        void* t = local_of((uint16_t)atoi(a[1].c_str()));
+        if (!t)
+            return "no such member";
+        return "action=" + std::to_string(choose_action_for(t));
+    }
     if (a.size() >= 3 && (a[0] == "act" || a[0] == "act_npc")) { // act <action> <member id | npc id>
         void* t = a[0] == "act" ? local_of((uint16_t)atoi(a[2].c_str())) : npc::proxy((uint16_t)atoi(a[2].c_str()));
         int action = atoi(a[1].c_str());

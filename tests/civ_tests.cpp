@@ -328,6 +328,26 @@ static void test_citizen_gestures()
     CHECK(citizen_gesture_step(true, false, kCitizenIdleAnim, kCheer, last, at, 14.5) == CitizenAnimAction::PlayGesture);
 }
 
+static void test_friendly_fire()
+{
+    printf("friendly_fire\n");
+    CHECK(ff_damage_gate(false, 0, 1) == FfGate::Block);
+    CHECK(ff_damage_gate(true, 0, 1) == FfGate::Allow);
+    CHECK(ff_damage_gate(false, 1, 1) == FfGate::Normal);
+    CHECK(ff_damage_gate(false, 0, kShared) == FfGate::Normal);
+    CHECK(ff_damage_gate(false, 0, kNpc) == FfGate::Normal);
+    CHECK(can_ff_order(true, 0, 1, 0));
+    CHECK(!can_ff_order(false, 0, 1, 0));
+    CHECK(!can_ff_order(true, 0, 1, 1)); // religious vehicle does not shoot
+    CHECK(!can_ff_order(true, 0, 1, 2)); // economic vehicle does not shoot
+    CHECK(!can_ff_order(true, 0, 0, 0));
+    CHECK(!can_ff_order(true, 0, kShared, 0));
+    CHECK(ff_combat_step(60.f, 45.f, 10.0, 9.0, 9.0) == FfStep::Move);
+    CHECK(ff_combat_step(60.f, 45.f, 10.0, 10.5, 9.0) == FfStep::Wait);
+    CHECK(ff_combat_step(30.f, 45.f, 10.0, 10.5, 9.0) == FfStep::Fire);
+    CHECK(ff_combat_step(30.f, 45.f, 10.0, 9.0, 10.5) == FfStep::Wait);
+}
+
 int main()
 {
     test_money();
@@ -339,6 +359,7 @@ int main()
     test_local_play_gate();
     test_passive_income_cause();
     test_citizen_gestures();
+    test_friendly_fire();
     printf(g_fail ? "civ_tests: %d FAILED\n" : "civ_tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

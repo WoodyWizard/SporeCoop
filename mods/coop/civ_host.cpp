@@ -738,6 +738,7 @@ void host_tick(double now)
     host_send_shots(now); // BUG-0477
     host_send_tribes(now); // BUG-0539
     influence_host_tick(now); // BUG-1285, BUG-1287
+    ff_host_tick(now); // BUG-0899
     if (now - g_last_send < 0.1)
         return;
     g_last_send = now;
@@ -1053,6 +1054,124 @@ static void* resolve_target(const Target& t)
     return nullptr;
 }
 
+// BUG-0899: Host-side friendly fire attack orders between different players' vehicles and cities.
+struct CivFfOrder {
+    uint8_t target_kind = 0; // 1 = vehicle id, 2 = host city index
+    uint16_t target_id = 0;
+    double next_move = 0, next_fire = 0;
+};
+static std::unordered_map<uint16_t, CivFfOrder> g_ff_orders;
+LIFECYCLE_STATE("civ.ff_orders", lifecycle::kSession | lifecycle::kWorld, nullptr, [] { g_ff_orders.clear(); },
+                []() -> size_t { return g_ff_orders.size(); });
+
+void ff_clear_orders() { g_ff_orders.clear(); }
+void ff_cancel_vehicle(uint16_t id) { g_ff_orders.erase(id); }
+
+std::string ff_status()
+{
+    char b[160];
+    snprintf(b, sizeof b, "civ_ff: on=%d fix=%d orders=%u active=%u hits=%u blocked=%u\n",
+             (int)ff_on(), (int)g_fix_civ_ff, g_n.ff_orders, (unsigned)g_ff_orders.size(), g_n.ff_hits, g_n.ff_blocked);
+    return b;
+}
+
+bool ff_try_order(uint16_t vid, void* v, uint8_t owner, void* target, int type)
+{
+    if (!v || !target || (type != 1 && type != 2)) {
+        ff_cancel_vehicle(vid);
+        return false;
+    }
+    uint8_t tk = 0;
+    uint16_t tid = 0;
+    uint8_t vic_owner = 0xFF;
+    if (HvRef tv = hv_find(target)) {
+        tk = 1;
+        tid = tv.id;
+        vic_owner = tv.h->owner;
+    } else {
+        int ci = host_index_of_city(target);
+        if (ci >= 0) {
+            tk = 2;
+            tid = (uint16_t)ci;
+            vic_owner = owner_of_city(target);
+        }
+    }
+    if (!tk || vic_owner >= net::kMaxPlayers || vic_owner == owner) {
+        ff_cancel_vehicle(vid);
+        return false;
+    }
+    if (!civlogic::can_ff_order(ff_on(), owner, vic_owner, F<int>(v, kVPurpose), (uint8_t)net::kMaxPlayers)) {
+        ff_cancel_vehicle(vid);
+        return true; // refuse cross-player attack while FF is off (or non-military vehicle)
+    }
+    double now = H->time_seconds();
+    g_ff_orders[vid] = {tk, tid, 0.0, now + 0.25};
+    g_n.ff_orders++;
+    return true;
+}
+
+void ff_host_tick(double now)
+{
+    if (g_ff_orders.empty())
+        return;
+    if (!ff_on() || !is_host() || !active()) {
+        g_ff_orders.clear();
+        return;
+    }
+    for (auto it = g_ff_orders.begin(); it != g_ff_orders.end();) {
+        HvRef av = hv_by_id(it->first);
+        if (!av || !hv_live(av) || F<uint8_t>(av.v, kVDead) || F<float>(av.v, kVHp) <= 0 ||
+            F<int>(av.v, kVPurpose) != 0) {
+            it = g_ff_orders.erase(it);
+            continue;
+        }
+        net::Vec3 ap{}, tp{};
+        if (!game::object_position(av.v, ap)) {
+            it = g_ff_orders.erase(it);
+            continue;
+        }
+        void* tveh = nullptr;
+        void* thall = nullptr;
+        uint8_t vo = 0xFF;
+        float range = 45.f;
+        if (it->second.target_kind == 1) {
+            HvRef tv = hv_by_id(it->second.target_id);
+            if (tv && hv_live(tv) && !F<uint8_t>(tv.v, kVDead) && F<float>(tv.v, kVHp) > 0 &&
+                game::object_position(tv.v, tp)) {
+                tveh = tv.v;
+                vo = tv.h->owner;
+            }
+        } else if (it->second.target_kind == 2) {
+            void* city = host_city(it->second.target_id);
+            void* hall = city ? F<void*>(city, 0x320) : nullptr;
+            if (city && hall && F<int>(hall, kBuildingState) != 2 && F<float>(hall, kBuildingState + 4) > 0 &&
+                game::object_position(city, tp)) {
+                thall = hall;
+                vo = owner_of_city(city);
+                range = 65.f;
+            }
+        }
+        if ((!tveh && !thall) || !civlogic::can_ff_order(true, av.h->owner, vo, 0, (uint8_t)net::kMaxPlayers)) {
+            it = g_ff_orders.erase(it);
+            continue;
+        }
+        float d = net::dist(ap, tp);
+        auto step = civlogic::ff_combat_step(d, range, now, it->second.next_move, it->second.next_fire);
+        if (step == civlogic::FfStep::Move) {
+            o_SetMoveOrder(av.v, tp.x, tp.y, tp.z, 0);
+            thiscall<void>(a_OrderStamp, av.v, 0);
+            it->second.next_move = now + 0.6;
+        } else if (step == civlogic::FfStep::Fire) {
+            if (tveh)
+                ff_deal_vehicle_hit(tveh, av.v, 35.f);
+            else
+                ff_deal_hall_hit(thall, av.v, 40.f);
+            it->second.next_fire = now + 1.5;
+        }
+        ++it;
+    }
+}
+
 void host_command(uint8_t from, net::Reader& r)
 {
     uint8_t kind = r.u8();
@@ -1163,8 +1282,10 @@ void host_command(uint8_t from, net::Reader& r)
                    (unsigned)id, t.noun, t.pos.x, t.pos.y, t.pos.z,
                    std::sqrt((tp.x - t.pos.x) * (tp.x - t.pos.x) + (tp.y - t.pos.y) * (tp.y - t.pos.y) +
                              (tp.z - t.pos.z) * (tp.z - t.pos.z)));
-        o_SetOrder(v, target, type, flag);
-        thiscall<void>(a_OrderStamp, v, 0);
+        if (!ff_try_order(id, v, from, target, type)) {
+            o_SetOrder(v, target, type, flag);
+            thiscall<void>(a_OrderStamp, v, 0);
+        }
     } else if (kind == CMD_MOVE) {
         uint16_t id = r.u16();
         float x = r.f32(), y = r.f32(), z = r.f32();
@@ -1172,6 +1293,7 @@ void host_command(uint8_t from, net::Reader& r)
         void* v = own_vehicle(id);
         if (!r.ok() || !v)
             return reject();
+        ff_cancel_vehicle(id);
         o_SetMoveOrder(v, x, y, z, flag);
         thiscall<void>(a_OrderStamp, v, 0);
     } else if (kind == CMD_BUY) {

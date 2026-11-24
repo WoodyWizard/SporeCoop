@@ -224,4 +224,31 @@ inline CitizenAnimAction citizen_gesture_step(bool fix, bool moving, uint32_t lo
         return CitizenAnimAction::EndToIdle;
     return CitizenAnimAction::Keep;
 }
+
+// ---------------- friendly fire (BUG-0899) ----------------
+
+enum class FfGate : uint8_t { Normal = 0, Allow = 1, Block = 2 };
+
+// Cross-player damage gate for vehicles and cities inside the shared player civilization.
+inline FfGate ff_damage_gate(bool ff_on, uint8_t att_owner, uint8_t vic_owner, uint8_t max_players = 8)
+{
+    if (att_owner < max_players && vic_owner < max_players && att_owner != vic_owner)
+        return ff_on ? FfGate::Allow : FfGate::Block;
+    return FfGate::Normal;
+}
+
+// True when a military vehicle (purpose == 0) of `att_owner` may take an FF attack order against `vic_owner`.
+inline bool can_ff_order(bool ff_on, uint8_t att_owner, uint8_t vic_owner, int purpose, uint8_t max_players = 8)
+{
+    return ff_on && purpose == 0 && att_owner < max_players && vic_owner < max_players && att_owner != vic_owner;
+}
+
+enum class FfStep : uint8_t { Wait = 0, Move = 1, Fire = 2 };
+
+inline FfStep ff_combat_step(float dist, float range, double now, double next_move, double next_fire)
+{
+    if (dist > range)
+        return now >= next_move ? FfStep::Move : FfStep::Wait;
+    return now >= next_fire ? FfStep::Fire : FfStep::Wait;
+}
 } // namespace civlogic

@@ -504,6 +504,24 @@ static void audit_tr()
     CHECK(took_goes_back(false, false, false, false, true));
 }
 
+static void friendly_fire()
+{
+    printf("friendly fire (BUG-0899)\n");
+    CHECK(!can_ff_target(false, 0, 1));
+    CHECK(can_ff_target(true, 0, 1));
+    CHECK(can_ff_target(true, 1, 0));
+    CHECK(!can_ff_target(true, 1, 1));
+    CHECK(!can_ff_target(true, 0, kNobody));
+    CHECK(ff_damage_gate(false, 0, 1) == FfGate::Block);
+    CHECK(ff_damage_gate(true, 0, 1) == FfGate::Allow);
+    CHECK(ff_damage_gate(false, 0, 0) == FfGate::Normal);
+    CHECK(ff_damage_gate(false, 0, kNobody) == FfGate::Normal);
+    CHECK(ff_combat_step(10.f, 5.0, 4.0, 4.0) == FfStep::Walk);
+    CHECK(ff_combat_step(10.f, 5.0, 5.5, 4.0) == FfStep::Wait);
+    CHECK(ff_combat_step(2.f, 5.0, 5.5, 4.0) == FfStep::Hit);
+    CHECK(ff_combat_step(2.f, 5.0, 4.0, 5.5) == FfStep::Wait);
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && !strcmp(argv[1], "--nofix");
@@ -521,6 +539,7 @@ int main(int argc, char** argv)
     late_catch();
     body_rules();
     audit_tr();
+    friendly_fire();
     if (g_fail) {
         printf("tribe_tests: %d FAILED\n", g_fail);
         return 1;

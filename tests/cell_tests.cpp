@@ -544,6 +544,29 @@ static void dna_nonneg()
     CHECK(food_drop == 20 && clamped);
 }
 
+static void friendly_fire()
+{
+    // BUG-0899: Cell friendly fire PvP sentinel encoding, damage clamp, cooldown, and host routing
+    uint8_t target = 99;
+    CHECK(!decode_pvp_target(0xFFFFFFFFu, &target)); // host -> guest hurt_avatar sentinel
+    CHECK(!decode_pvp_target(0u, &target));          // regular cell index
+    CHECK(!decode_pvp_target(0x00010005u, &target)); // regular cell index with generation
+    for (uint8_t p = 0; p < 7; p++) {
+        uint32_t enc = encode_pvp_target(p);
+        CHECK(decode_pvp_target(enc, &target) && target == p);
+    }
+    CHECK(pvp_damage(-5) == 1 && pvp_damage(0) == 1 && pvp_damage(3) == 3 && pvp_damage(999) == 255);
+    CHECK(pvp_hit_ready(10.0, 0.0));
+    CHECK(!pvp_hit_ready(10.2, 10.0));
+    CHECK(pvp_hit_ready(10.5, 10.0));
+    CHECK(route_pvp_hit(false, false, 1, 0, true) == PvpRoute::Refuse);
+    CHECK(route_pvp_hit(true, true, 1, 0, true) == PvpRoute::Refuse);
+    CHECK(route_pvp_hit(true, false, 1, 1, true) == PvpRoute::Refuse);
+    CHECK(route_pvp_hit(true, false, 1, 0, false) == PvpRoute::HurtHost);
+    CHECK(route_pvp_hit(true, false, 1, 2, true) == PvpRoute::ForwardGuest);
+    CHECK(route_pvp_hit(true, false, 1, 2, false) == PvpRoute::Refuse);
+}
+
 int main(int argc, char** argv)
 {
     for (int i = 1; i < argc; i++)
@@ -569,6 +592,7 @@ int main(int argc, char** argv)
     lineage_rules();
     solo_refill();
     dna_nonneg();
+    friendly_fire();
     if (g_fail) {
         printf("cell_tests: %d FAILED\n", g_fail);
         return 1;
