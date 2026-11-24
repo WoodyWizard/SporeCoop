@@ -1243,6 +1243,10 @@ std::string connect(const std::string& address)
     return "Connecting to the galaxy server at " + ep.masked() + "...";
 }
 
+static bool g_direct_after_fix = true;
+COOP_FIX("galaxy.direct_after_disconnect", "BUG-9369", g_direct_after_fix,
+         "galaxy: disconnecting from a galaxy server gives the session its plain network back (a direct game could not be hosted or joined after it)");
+static unsigned g_direct_restored;
 std::string disconnect()
 {
     if (!g_sock.is_open())
@@ -1252,6 +1256,16 @@ std::string disconnect()
         return leave();
     }
     leave_now();
+    // BUG-9369: leave_now leaves the planet session's relay transport on "until the session is closed, tick switches it
+    // off", but tick does nothing once the socket is closed: the session kept the relay for good and every later direct
+    // game of this run failed (`coop.host`: "host failed: not connected to a galaxy server"; a join never connected).
+    // On: the session ends here and goes back to the plain network. Off: as before (a restart was needed).
+    if (g_direct_after_fix && C.sess && g_relay_on) {
+        if (C.sess->role() != net::Role::None)
+            C.sess->leave("left the galaxy");
+        use_relay(false);
+        g_direct_restored++;
+    }
     g_sock.close();
     g_welcomed = false;
     g_planets.clear();
