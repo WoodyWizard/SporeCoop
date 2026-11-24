@@ -10,6 +10,7 @@
 #include "space_kept.h"
 #include "space_logic.h"
 #include "squadron_logic.h"
+#include "worldobj_space.h"
 #include <string>
 
 static int g_fail = 0;
@@ -617,6 +618,40 @@ static void test_colonize_mission()
     CHECK(!colonize_mission_done_by_partner(true, true, false, false, 3, 0, kColonizeTutorialId, true, true));
 }
 
+static void test_space_citizen_lead()
+{
+    printf("space citizen lead (BUG-1404)\n");
+    using namespace wobj_space;
+    // Tick cadence and velocity min-dt switch cleanly with space.citizen_lead
+    CHECK(std::fabs(citizen_tick_every(true) - 0.25) < 1e-9);
+    CHECK(std::fabs(citizen_tick_every(false) - 0.50) < 1e-9);
+    CHECK(std::fabs(citizen_vel_min_dt(true) - 0.15) < 1e-9);
+    CHECK(std::fabs(citizen_vel_min_dt(false) - 0.30) < 1e-9);
+
+    // Steady-state lead with latency: adds one-way latency below the knee
+    CHECK(std::fabs(citizen_extrap_time(0.10, 0.05, true) - 0.15) < 1e-9);
+    // Negative / excessive one_way latency is clamped cleanly
+    CHECK(std::fabs(citizen_extrap_time(-0.20, -0.10, true) - 0.0) < 1e-9);
+    CHECK(citizen_extrap_time(0.10, 5.0, true) <= kLeadMax + 1e-9);
+
+    // Past the knee (0.30 s): damped and capped at kLeadMax (0.50 s) instead of 1.0 s linear overshoot
+    double damped = citizen_extrap_time(0.80, 0.04, true);
+    double old_lin = citizen_extrap_time(0.80, 0.04, false);
+    CHECK(damped > kLeadKnee && damped <= kLeadMax + 1e-9);
+    CHECK(std::fabs(old_lin - 0.80) < 1e-9);
+    CHECK(std::fabs(citizen_extrap_time(2.0, 0.0, false) - kOldMax) < 1e-9);
+    CHECK(std::fabs(citizen_extrap_time(2.0, 0.0, true) - (kLeadKnee + kLeadTau)) < 1e-4);
+    CHECK(std::fabs(citizen_extrap_time(2.0, 0.10, true) - kLeadMax) < 1e-9);
+
+    // On a 5 m/s runner that stopped 0.8 s ago, OFF overshoots by 4.0 m while ON stays <= 2.5 m
+    net::Vec3 hp{10.f, 20.f, 30.f}, vel{5.f, 0.f, 0.f};
+    net::Vec3 t_on = citizen_target(hp, vel, 0.80, 0.04, true);
+    net::Vec3 t_off = citizen_target(hp, vel, 0.80, 0.04, false);
+    CHECK(t_on.x - hp.x <= 2.5f + 1e-4f);
+    CHECK(t_off.x - hp.x >= 3.99f);
+    CHECK(t_on.y == hp.y && t_on.z == hp.z);
+}
+
 int main()
 {
     test_jump_target();
@@ -632,6 +667,7 @@ int main()
     test_fleet_leads();
     test_audit_0717();
     test_colonize_mission();
+    test_space_citizen_lead();
     printf(g_fail ? "space_tests: %d FAILED\n" : "space_tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }
