@@ -3263,6 +3263,7 @@ static void late_tick(double now)
 void tick(double now)
 {
     close_tick(now); // BUG-0996 (also after the session: its end drops the world packages)
+    library_tick(now); // BUG-0873: persistent shared creations library (disk load, tab sync, and retries also run offline)
     if (!C.sess || !C.sess->connected())
         return;
     if (adopt_after_editor(now))
@@ -3281,7 +3282,6 @@ void tick(double now)
     player_species_tick(); // BUG-0508
     bar_tick(); // BUG-0358
     captain_tick(now); // BUG-1279, BUG-1262
-    library_tick(now); // BUG-0873: persistent shared creations library
 }
 
 void on_message(uint8_t type, uint8_t from, net::Reader& r)

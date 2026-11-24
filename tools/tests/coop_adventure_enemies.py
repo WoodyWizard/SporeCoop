@@ -120,12 +120,13 @@ def main():
 
             # 4. Guest hit forwarding -> host HP drops
             hp_before = h_match['hp']
-            hit_dmg = 20 if hp_before >= 40.0 else max(5, int(hp_before * 0.4))
+            hit_dmg = max(50, int(hp_before * 0.25)) if hp_before >= 100.0 else max(5, int(hp_before * 0.4))
+            min_drop = max(3.0, hit_dmg * 0.1)
             print(f'  guest hit {hk} {hit_dmg}: ' +
                   safe_call(g, f'coop.adventure hit {hk} {hit_dmg}').replace('\n', ' | '), flush=True)
             def host_hp_dropped():
                 cur = next((a for a in parse_actors(h) if a['serial'] == hk), None)
-                return cur if (cur and cur['hp'] <= hp_before - 3.0) else None
+                return cur if (cur and cur['hp'] <= hp_before - min_drop) else None
             after_hit = wait_until(host_hp_dropped, 10, step=0.5, what='host HP drop from guest hit')
             print(f'  host target hp before={hp_before} after={after_hit and after_hit["hp"]}', flush=True)
             print('  adv host: ' + safe_call(h, 'coop.adventure').replace('\n', ' | '), flush=True)

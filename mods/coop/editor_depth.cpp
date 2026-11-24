@@ -569,7 +569,22 @@ std::string debug(const std::vector<std::string>& args)
         size_t idx = (size_t)std::strtoul(args[1].c_str(), nullptr, 10);
         if (idx >= all.size())
             return "editor_depth: index out of range";
-        *(void**)((uint8_t*)ed + 0xD4) = all[idx];
+        // cEditor +0xD4 is an intrusive_ptr<EditorRigblock> (Object vtable: +0x04 AddRef, +0x08 Release)
+        void* old_sel = *(void**)((uint8_t*)ed + 0xD4);
+        void* new_sel = all[idx];
+        if (old_sel != new_sel) {
+            if (new_sel && skg::readable(new_sel, 4)) {
+                auto* vt = *(uintptr_t**)new_sel;
+                if (vt && skg::readable(vt, 12) && vt[1])
+                    skg::thiscall<int>(vt[1], new_sel);
+            }
+            *(void**)((uint8_t*)ed + 0xD4) = new_sel;
+            if (old_sel && skg::readable(old_sel, 4)) {
+                auto* vt = *(uintptr_t**)old_sel;
+                if (vt && skg::readable(vt, 12) && vt[2])
+                    skg::thiscall<int>(vt[2], old_sel);
+            }
+        }
         refresh_handle();
         char buf[192];
         snprintf(buf, sizeof(buf), "editor_depth: selected [%u] part=%08X visible=%d pos=(%.4f,%.4f,%.4f)",

@@ -198,7 +198,7 @@ def main():
 
     # Ctrl+Z must undo the committed depth edit
     host.call('key ctrl down')
-    host.call('key z tap')
+    host.call('key z')
     host.call('key ctrl up')
     host.call('wait.frames 25 10000')
     host.call(f'coop.depth select {elig["idx"]}')
@@ -210,8 +210,10 @@ def main():
     # Apply one more nudge and leave via Done to prove the saved creature does not crash
     host.call('coop.depth nudge 0.06')
     host.call('wait.frames 12 10000')
-    host.call('click %d %d' % DONE)
     guest.call('click %d %d' % DONE)
+    host.call('click %d %d' % DONE)
+    from coop_editor_sync import confirm_captions
+    confirm_captions((host, guest), 20)
     back = wait_until(lambda: mode(host) == m0 and mode(guest) == m0, 90, 1.0, 'both return to Creature stage')
     ck(back, f'both games saved and left the editor cleanly ({mode(host).strip()})')
 
