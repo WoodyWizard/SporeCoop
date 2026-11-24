@@ -5601,3 +5601,43 @@ Adds to #creature-roar-relay.
 * ? The local's other seven floats are not written in this function (0 used); the charmed creature's behaviour not
   watched yet.
 
+## A Summon Flock per party: extra summon events (2026-11-24, feat/lineages-alpha)
+<a id="creature-summon-per-party"></a>
+
+BUG-9362, decision 5FB with 8RB. Ghidra on the Steam 3010a413 dump (GOG 2024 addresses), runtime on the MSI.
+* ✔ The drama manager's factory table (.rdata 0x147AFB0, {fn, factory} pairs) holds the summon event's factory
+  0xD4D4B0: GeneralAllocator::new_(0x74, "SP_Simulator/cSummonCreatureEvent/COM") and `SporeCoop::SummonEvent_ctor`
+  0xD4C8D0 (fastcall: vtables 0x147B398 / 0x147B058, +0xC 0, +0x30 1, the rest of +0x14..+0x64 cleared). The events
+  are serialised (vt+0x10 write, vt+0x14 read; ClassSerializer); the manager keeps them in an rb-tree (+0x54..+0x5C).
+* ✔ The manager's tick (0xD4E450, thiscall(manager, float dt)): an idle event (+0xC 0) runs vt+0x44(dt), counts +0x28
+  down and starts by its trigger (+0x1C: 1 the avatar's level, 2 DNA, 3 hours +0x20..+0x24, 4 never) when vt+0x38
+  agrees; an active one: +0x2C -= dt; it ends (+0xC = 0, vt+0x34) when +0x30 is set and the avatar is dead (+0xB5E),
+  out of its hours, or vt+0x3C "done?"; else vt+0x40 update(dt as a float).
+* ✔ The world's summon event, read live: +0x14 kind 8, +0x18 uses -1, +0x40 its property list (an object), +0x44 the
+  key 0x614A7EA (not an object: read as one it faulted), +0x10 0x7C9F5901.
+* ✔ A second event made that way (the world event's +0x10..+0x24, +0x30, +0x40..+0x4C copied, +0x18 -1), started as
+  StartEvent does (+0xC 1, +0x2C from property 0xB1F42539: 120 s, vt+0x30 with the partner's puppet as the avatar inside
+  its pack) and run by the mod's tick made a flock of 3 into the partner's pack while the world's own event ran the
+  host's flock; it ended by itself after its time. Never in the manager's tree: not saved.
+
+## Every Creature ability for a partner (2026-11-24, feat/lineages-alpha)
+<a id="creature-abilities-partner"></a>
+
+Owner 2026-11-23 (5FB): "it should be all abilities working". What a partner's (a guest's) use of each kind of ability
+does in the host's game, the world everybody shares. The bar rows of the MSI's guest creature: social (row 0: 0x23,
+0x25), attack (row 1: 0x1E, 0x1F, 0x20), moves (row 2: 0x10, 0xD, 0x27), the special row (row 4: 0x31 roar, 0x32 song,
+0x33 flock); 0xE, 0x1D (the social game's start, 100 m) and 0x28 not on the bar.
+| ability | the partner's use reaches the host's game | how it was checked |
+|---|---|---|
+| bite, strike, charge, spit (attacks) | ✔ hits land on the host's creatures (kills, credit) | coop_creature_kills (BUG-0345, 0618, 0690), coop_creature_aggression; 5EA pack bites |
+| stun (a charge's, both ways) | ✔ | coop_creature_stun (BUG-0554), coop_creature_stun_proxy (BUG-0700) |
+| sing, dance, charm, pose (social) | ✔ the social game with the host's creatures, allies made | coop_creature_social, _social_bar (BUG-0179), _social_ally (BUG-0021, 0168) |
+| sneak | ✔ shown sneaking on the partner's game | coop_creature_sneak (BUG-0463) |
+| jump, glide (in the air) | ✔ not bitten or charged while in the air | coop_creature_air (BUG-0555) |
+| Raging Roar | ✔ the host's animals flee | coop_creature_roar (BUG-0501) |
+| Siren Song | ✔ the host's animals charmed (2026-11-23) | BUG-9361, the MSI |
+| Summon Flock | ✔ one per party, two parties at once on one planet (2026-11-24) | BUG-9362, the MSI; coop_creature_flock (BUG-0556) |
+| impress help (the pack joining a social game) | ? not run | the partner's pack runs in its own game (5EA): the game's own help there, not watched |
+* The lab tests named above are Linux two-instance tests (tools/tests); they were last run on the Linux PC's lab with
+  their fixes. Not re-run here.
+
