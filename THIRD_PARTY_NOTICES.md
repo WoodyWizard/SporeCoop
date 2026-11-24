@@ -14,6 +14,14 @@ Copyright (C) 2009-2017 Tsuda Kageyu, BSD 2-Clause license (see
 `sporekit.dll`. The vendored copy keeps thread freezing off (`MH_SetFreezeThreads(FALSE)`) because
 it deadlocks under Wine.
 
+## Monocypher
+
+`third_party/monocypher/`: Monocypher 4.0.2, Copyright (c) 2017-2023 Loup Vaillant, Michael Savage
+and Fabio Scotoni, dual-licensed BSD 2-Clause or CC0 1.0 (see
+[`third_party/monocypher/LICENCE.md`](third_party/monocypher/LICENCE.md)); the release archive from
+monocypher.org, its SHA-512 checked against the published one (2026-11-23). It is compiled into
+`coop.dll` and the galaxy server (`mods/coop/net/galaxy_crypto.cpp`): the galaxy traffic's encryption.
+
 ## Spore ModAPI
 
 The function names and addresses in `data/symbols/gog2016_922af7c7.sym` were ported to the GOG

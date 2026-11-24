@@ -110,6 +110,59 @@ class Player:
         self.send(ENTER, s8(planet))
 
 
+class EncPlayer(Player):
+    """8Q A: a game that exchanged keys with the server; everything it sends and gets is sealed
+    (tools/tests/galaxy_crypto_py.py, written from the RFCs)."""
+
+    def __init__(self, port, name, identity):
+        super().__init__(port, name, identity)
+        self.s.close()  # (another loopback address: the players-per-address limit is full by then)
+        self.s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.s.bind(('127.0.0.2', 0))
+        self.s.settimeout(0.05)
+        import galaxy_crypto_py
+        self.ch = galaxy_crypto_py.GameChannel()
+        self.raw_in = []  # every datagram as it arrived
+        self.sent = []    # every sealed datagram sent
+
+    def exchange(self):
+        q = self.ch.question()
+        self.raw(q)
+        end = time.time() + 2.0
+        while time.time() < end:
+            try:
+                d, _ = self.s.recvfrom(65536)
+            except socket.timeout:
+                continue
+            self.raw_in.append(d)
+            if d[0:1] == b'K':
+                return len(d) <= len(q) and self.ch.answer(d)
+        return False
+
+    def send(self, t, body=b''):
+        d = self.ch.seal(b'G' + bytes([t]) + body)
+        self.sent.append(d)
+        self.s.sendto(d, self.to)
+
+    def clear(self, t, body=b''):
+        self.s.sendto(b'G' + bytes([t]) + body, self.to)
+
+    def pump(self, secs=0.3):
+        end = time.time() + secs
+        while time.time() < end:
+            try:
+                d, _ = self.s.recvfrom(65536)
+            except socket.timeout:
+                continue
+            self.raw_in.append(d)
+            if d[0:1] == b'E':
+                o = self.ch.open(d)
+                if o is not None:
+                    self.inbox.append(o)
+            else:
+                self.inbox.append(b'clear:' + d)
+
+
 def upload(p, xid, planet, data, era=None):
     """An upload of `data` as `planet`'s world; era: the protocol 7 facts (tech 0, no species, the era byte)."""
     head = struct.pack('<I', xid) + s8(planet) + struct.pack('<II', len(data), zlib.crc32(data))
@@ -540,6 +593,50 @@ def main():
         more = [Player(port, 'p%d' % i, 0x100 + i) for i in range(5)]
         res = [p.hello() for p in more]
         check(sum(res) == 3 and more[-1].take(REFUSED, 0.3) is not None, 'the players-per-address limit refuses the seventh (6 allowed)')
+        if not os.environ.get('GALAXY_CHECK_OLD'):
+            print('encryption (8Q A)')
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import galaxy_crypto_py
+            time.sleep(0.1)
+            e = EncPlayer(port, 'Sealed Name', 0x5EA1)
+            exchanged = e.exchange()
+            check(exchanged, 'the key exchange: the server answers, no bigger than the question')
+        if not os.environ.get('GALAXY_CHECK_OLD') and not exchanged:
+            check(False, 'the encrypted game connects (no key exchange: not run)')
+        elif not os.environ.get('GALAXY_CHECK_OLD'):
+            key_file = os.path.join(worlds, 'galaxy_server.key')
+            st = open(key_file, 'rb').read() if os.path.exists(key_file) else b''
+            check(len(st) == 32 and galaxy_crypto_py.x25519_public(st) == e.ch.server_static,
+                  "the answer carries the server's static key (kept in its worlds folder)")
+            check(e.hello(), 'HELLO, CHALLENGE and WELCOME sealed: the encrypted game is connected')
+            leaked = any(b'Sealed Name' in d or b'Lineages' in d or b'check' in d for d in e.raw_in + e.sent)
+            check(not leaked, 'no name in clear on the wire (its own, the galaxy\'s)')
+            e.inbox.clear()
+            e.send(LIST)
+            first = e.sent[-1]
+            check(e.take(PLANETS) is not None, 'LIST and PLANETS sealed')
+            e.inbox.clear()
+            e.raw(first)
+            check(e.take(PLANETS, 0.6) is None, 'a sealed datagram sent again (a replay) gets no answer')
+            t = bytearray(e.ch.seal(b'G' + bytes([LIST])))  # (sealed, not sent: one byte changed, then sent)
+            t[-1] ^= 1
+            e.inbox.clear()
+            e.raw(bytes(t))
+            check(e.take(PLANETS, 0.6) is None, 'a changed sealed datagram gets no answer')
+            e.inbox.clear()
+            e.clear(LIST)
+            check(e.take(PLANETS, 0.6) is None, 'a datagram in clear from an encrypted address is dropped')
+            b.inbox.clear()
+            b.send(WHO)
+            pl = b.take(PLAYERS)
+            check(pl is not None and b'Sealed Name' in pl, 'a game in clear (an older mod) still plays beside it and sees it')
+            stranger = EncPlayer(port, 'Stranger', 0x5EA2)  # (keys the server never made: as after a server restart)
+            stranger.ch.tx = stranger.ch.rx = bytes(32)
+            stranger.raw(stranger.ch.seal(b'G' + bytes([PING]) + s8('') + bytes([0])))
+            stranger.pump(0.5)
+            check(stranger.raw_in[-1:] == [bytes([75, 3])], "a sealed datagram from an address without keys gets 'K' 3 (two bytes): exchange again")
+            e.send(LEAVE)
+
     finally:
         srv.kill()
     print('galaxy_server_check: %s' % ('all passed' if not fails else '%d FAILED' % len(fails)))

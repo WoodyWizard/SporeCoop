@@ -134,6 +134,9 @@ unit-net:
 	@mkdir -p $(B)/host
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -Imods/coop -o $(B)/host/net_tests mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/net_tests.cpp
 	python3 tools/tests/shards.py $(NET_SHARDS) $(B)/host/net_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/galaxy_crypto_tests tests/galaxy_crypto_tests.cpp mods/coop/net/galaxy_crypto.cpp
+	$(B)/host/galaxy_crypto_tests
+	python3 tools/tests/galaxy_crypto_py.py
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -DLINEAGES_BULK_ACKS -Imods/coop -o $(B)/host/world_transfer_tests tests/world_transfer_tests.cpp mods/coop/net/connection.cpp
 	$(B)/host/world_transfer_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/library_sync_tests tests/library_sync_tests.cpp mods/coop/net/library_sync.cpp updater/sha256.cpp

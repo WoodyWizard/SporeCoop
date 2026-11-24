@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "../../mods/coop/net/galaxy.h"
+#include "../../mods/coop/net/galaxy_crypto.h"
 #include "../../mods/coop/parties.h"
 
 using namespace net;
@@ -200,7 +201,40 @@ static void say(const char* fmt, ...)
     fflush(stdout);
 }
 
-static void send(const Client& c, const Writer& w) { g_sock.send_to(c.ep, w.data.data(), w.data.size()); }
+// decision 8Q A (net/galaxy_crypto.h): the server's static key (<worlds>/galaxy_server.key, made on the first start) and
+// one sealed channel per address, made by the game's key exchange before its HELLO. A game with a channel is only heard
+// sealed (a datagram in clear from its address is dropped: no way back to clear for anyone between them); a game
+// without one (an older mod) is heard in clear, unless --encrypted-only
+namespace gc = net::galaxy::crypto;
+static gc::KeyPair g_static;
+static bool g_crypto_on = true;     // --no-encryption: no answer to a key exchange (as an older server: tests)
+static bool g_encrypted_only = false;
+struct Chan {
+    gc::Channel ch;
+    uint32_t made_ms = 0, last_ms = 0;
+};
+static std::map<uint64_t, Chan> g_chans; // by address
+constexpr size_t kMaxChans = 4096;
+static uint64_t g_keyx_answers, g_keyx_refused, g_clear_dropped, g_sealed_refused, g_clear_refused;
+static uint64_t ep_key(const Endpoint& e) { return ((uint64_t)e.ip << 16) | e.port; }
+static Chan* chan_of(const Endpoint& e)
+{
+    auto it = g_chans.find(ep_key(e));
+    return it != g_chans.end() && it->second.ch.on ? &it->second : nullptr;
+}
+// every datagram to a game goes here: sealed when the game has a channel
+static void send_raw(const Endpoint& to, const uint8_t* d, size_t n)
+{
+    if (Chan* ch = chan_of(to)) {
+        std::vector<uint8_t> sealed;
+        if (ch->ch.seal(d, n, sealed))
+            g_sock.send_to(to, sealed.data(), sealed.size());
+        return;
+    }
+    g_sock.send_to(to, d, n);
+}
+static void send(const Client& c, const Writer& w) { send_raw(c.ep, w.data.data(), w.data.size()); }
+static const char* sealed_word(const Endpoint& e) { return chan_of(e) ? "encrypted" : "clear"; }
 
 static Client* by_endpoint(const Endpoint& e)
 {
@@ -766,7 +800,8 @@ static void on_control(const Endpoint& from, Reader& r)
         w.u32(g_refresh_minutes * 60u); // (BUG-9285)
         w.u32(g_rotate_hours * 3600u);  // (BUG-9286)
         send(*c, w);
-        say("player %u '%s' connected from %s (%s)", c->slot, c->name.c_str(), from.masked().c_str(), version.c_str());
+        say("player %u '%s' connected from %s (%s, %s)", c->slot, c->name.c_str(), from.masked().c_str(), version.c_str(),
+            sealed_word(from));
         party_player_in(*c); // 6K
         return;
     }
@@ -1553,7 +1588,7 @@ static void on_relay(const Endpoint& from, const uint8_t* data, size_t n)
     }
     std::vector<uint8_t> out(data, data + n);
     std::memcpy(out.data() + 1, &c->slot, 2); // (to the receiver: where it came from)
-    g_sock.send_to(it->second.ep, out.data(), out.size());
+    send_raw(it->second.ep, out.data(), out.size());
     g_relay_bytes += n;
     g_relay_packets++;
 }
@@ -1598,10 +1633,55 @@ static void on_fan(const Endpoint& from, const uint8_t* data, size_t n)
             g_fan_dropped++;
             continue;
         }
-        g_sock.send_to(it->second.ep, out.data(), out.size());
+        send_raw(it->second.ep, out.data(), out.size());
         g_fan_out_bytes += out.size();
         g_fan_packets++;
     }
+}
+
+// 8Q A: a game's question -> the server's answer (in clear) and a channel for its address
+static void on_keyx(const Endpoint& from, const uint8_t* d, size_t n)
+{
+    if (!g_crypto_on)
+        return; // (as an older server: no answer, the game goes on in clear)
+    if (!g_chans.count(ep_key(from)) && g_chans.size() >= kMaxChans) {
+        g_keyx_refused++;
+        return;
+    }
+    Chan c;
+    std::vector<uint8_t> answer;
+    if (!gc::keyx_server(g_static, d, n, answer, c.ch)) {
+        g_keyx_refused++;
+        return;
+    }
+    c.made_ms = c.last_ms = now_ms();
+    if (auto old = g_chans.find(ep_key(from)); old != g_chans.end())
+        old->second.ch.wipe();
+    g_chans[ep_key(from)] = c;
+    g_sock.send_to(from, answer.data(), answer.size());
+    g_keyx_answers++;
+}
+
+// 8Q A: the server's static key, made once and kept with the worlds (losing it makes every game that knew the server
+// refuse it, as a stranger standing in for it would be refused)
+static bool load_static_key()
+{
+    const std::string path = g_worlds_dir + "/galaxy_server.key";
+    if (FILE* f = fopen(path.c_str(), "rb")) {
+        const size_t got = fread(g_static.secret, 1, 32, f);
+        fclose(f);
+        if (got == 32) {
+            g_static.from_secret();
+            return true;
+        }
+    }
+    if (!g_static.make())
+        return false;
+    FILE* f = fopen(path.c_str(), "wb");
+    if (!f)
+        return false;
+    const bool ok = fwrite(g_static.secret, 1, 32, f) == 32;
+    return fclose(f) == 0 && ok;
 }
 
 int main(int argc, char** argv)
@@ -1623,6 +1703,10 @@ int main(int argc, char** argv)
             g_max_worlds = (size_t)std::max(1, atoi(argv[++i]));
         else if (!strcmp(argv[i], "--no-bans")) // 8D A: no creation ban list
             g_bans_on = false;
+        else if (!strcmp(argv[i], "--no-encryption")) // 8Q A (tests): games go on in clear, as with an older server
+            g_crypto_on = false;
+        else if (!strcmp(argv[i], "--encrypted-only")) // 8Q A: older games (in clear) are refused
+            g_encrypted_only = true;
         else if (!strcmp(argv[i], "--list-page") && i + 1 < argc) // S10 (tests): small pages of the lists
             g_list_page = (size_t)std::min(40, std::max(1, atoi(argv[++i])));
         else if (!strcmp(argv[i], "--no-visitors")) // BUG-9287: no visitors across eras
@@ -1639,7 +1723,8 @@ int main(int argc, char** argv)
             printf("usage: galaxy_server [--local] [--worlds <dir>] [--warm-handover] [--planet-players <n>]\n"
                    "                     [--max-players <n>] [--max-per-address <n>] [--max-worlds <n>] [--max-world-mb <n>]\n"
                    "                     [--refresh-minutes <n>] [--rotate-hours <n>] [--no-visitors] [--visit-radius <m>]\n"
-                   "                     [--no-bans] [--list-page <n>] [port] [galaxy name]\n");
+                   "                     [--no-bans] [--list-page <n>] [--no-encryption | --encrypted-only]\n"
+                   "                     [port] [galaxy name]\n");
             return 0;
         }
         else if (!strcmp(argv[i], "--planet-players") && i + 1 < argc) { // 6E B: the players a planet takes
@@ -1675,6 +1760,16 @@ int main(int argc, char** argv)
         g_cookie_secret[1] = ((uint64_t)rd() << 32) ^ rd() ^ ((uint64_t)now_ms() << 20);
     }
     load_keys();
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(g_worlds_dir, ec);
+    }
+    if (!load_static_key()) {
+        fprintf(stderr, "cannot read or make %s/galaxy_server.key\n", g_worlds_dir.c_str());
+        return 1;
+    }
+    say("encryption (8Q A): %s, the server's key %s", !g_crypto_on ? "off (--no-encryption)" : g_encrypted_only ?
+        "on, encrypted games only" : "on (older games in clear)", net::galaxy::crypto::fingerprint(g_static.pub).c_str());
     say("galaxy server '%s' on UDP port %u (protocol %u), worlds in '%s', %u players a planet", g_name.c_str(),
         g_sock.local_port(), kProto, g_worlds_dir.c_str(), (unsigned)g_planet_players);
     say("limits: %zu players (%zu an address), %zu stored worlds of %u MB at most", g_max_players, g_max_per_address,
@@ -1696,12 +1791,54 @@ int main(int argc, char** argv)
                 continue; // (an error or a dropped datagram: go on)
             any = true;
             try { // (a datagram never ends the server: out of memory on a world, anything thrown below)
-                if (buf[0] == kRelay)
-                    on_relay(from, buf.data(), (size_t)n);
-                else if (buf[0] == kFan)
-                    on_fan(from, buf.data(), (size_t)n);
-                else if (buf[0] == kControl && n >= 2) {
-                    Reader r(buf.data() + 1, (size_t)n - 1);
+                const uint8_t* d = buf.data();
+                size_t dn = (size_t)n;
+                std::vector<uint8_t> plain;
+                if (d[0] == gc::kKeyx) { // 8Q A: a game's key exchange
+                    on_keyx(from, d, dn);
+                    continue;
+                }
+                if (d[0] == gc::kSealed) {
+                    auto it = g_chans.find(ep_key(from));
+                    if (it == g_chans.end() || !it->second.ch.open(d, dn, plain)) {
+                        g_sealed_refused++;
+                        if (it == g_chans.end()) { // (a server restarted: 'K' 3, two bytes, never more than came
+                                                   // in: the game exchanges keys again and connects)
+                            const uint8_t none[2] = {gc::kKeyx, gc::kKeyxNone};
+                            g_sock.send_to(from, none, sizeof none);
+                        }
+                        continue;
+                    }
+                    it->second.last_ms = now_ms();
+                    d = plain.data();
+                    dn = plain.size();
+                    if (!dn)
+                        continue;
+                } else if (Chan* ch = chan_of(from)) {
+                    // in clear from an address with a channel: dropped, unless nothing sealed ever came from it (its
+                    // game gave up waiting for the answer and went on in clear: the channel goes)
+                    if (ch->ch.opened) {
+                        g_clear_dropped++;
+                        continue;
+                    }
+                    ch->ch.wipe();
+                    g_chans.erase(ep_key(from));
+                }
+                if (g_encrypted_only && d[0] != gc::kSealed && !chan_of(from) && d == buf.data()) {
+                    g_clear_refused++;
+                    if (d[0] == kControl && dn >= 2 && d[1] == HELLO) {
+                        Writer w = control(REFUSED);
+                        w.str8("This galaxy server takes encrypted games only: update SporeCoop Lineages.");
+                        g_sock.send_to(from, w.data.data(), w.data.size());
+                    }
+                    continue;
+                }
+                if (d[0] == kRelay)
+                    on_relay(from, d, dn);
+                else if (d[0] == kFan)
+                    on_fan(from, d, dn);
+                else if (d[0] == kControl && dn >= 2) {
+                    Reader r(d + 1, dn - 1);
                     on_control(from, r);
                 }
             } catch (const std::exception& e) {
@@ -1728,6 +1865,16 @@ int main(int argc, char** argv)
             for (auto& [s, c] : g_clients)
                 if (now - c.last_ms > 20000)
                     gone.push_back(s);
+            for (auto it = g_chans.begin(); it != g_chans.end();) { // 8Q A: an address quiet for 30 s with no player
+                bool player = false;
+                for (auto& [s, c] : g_clients)
+                    player |= ep_key(c.ep) == it->first;
+                if (!player && now - it->second.last_ms > 30000) {
+                    it->second.ch.wipe();
+                    it = g_chans.erase(it);
+                } else
+                    ++it;
+            }
             for (uint16_t s : gone) {
                 say("player %u '%s' timed out", s, g_clients[s].name.c_str());
                 leave_planet(g_clients[s], "timed out");
@@ -1743,6 +1890,14 @@ int main(int argc, char** argv)
         if (now - last_status > 30000) {
             const double kbs = (g_relay_bytes - status_bytes) / 1024.0 / ((now - last_status) / 1000.0);
             const double secs = (now - last_status) / 1000.0;
+            size_t sealed_players = 0;
+            for (auto& [s, c] : g_clients)
+                sealed_players += chan_of(c.ep) != nullptr;
+            say("encryption: %zu of %zu player(s) encrypted, %zu channel(s), %llu exchanges (%llu refused), %llu sealed "
+                "datagrams refused, %llu clear ones dropped from encrypted addresses, %llu clear ones refused (encrypted only)",
+                sealed_players, g_clients.size(), g_chans.size(), (unsigned long long)g_keyx_answers,
+                (unsigned long long)g_keyx_refused, (unsigned long long)g_sealed_refused, (unsigned long long)g_clear_dropped,
+                (unsigned long long)g_clear_refused);
             say("status: %zu player(s), %zu planet(s), relay %.1f KB/s (%llu packets, %llu dropped in all), "
                 "copies: in %.1f KB/s out %.1f KB/s (%llu sent, %llu dropped in all), parties %zu (%llu requests, %llu views), "
                 "eras: %u migrated, %u uploads of another stage and %u of another planet refused, crossings %u (arrived %u, became the era %u), stage starts %u, bans: %llu list sends, %llu puts and %llu gets of banned players refused",

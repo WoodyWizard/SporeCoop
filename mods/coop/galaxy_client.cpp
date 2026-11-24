@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "galaxy_crt.h"
+#include "net/galaxy_crypto.h"
 #include "net/galaxy.h"
 #include "net/protocol.h"
 #include "net/transport.h"
@@ -164,17 +165,183 @@ static void downloaded();
 static void upload_done(bool ok, const std::string& why);
 static std::string leave_now();
 
+// decision 8Q A (net/galaxy_crypto.h): the galaxy traffic is encrypted. connect() exchanges keys with the server first
+// (its answer carries the server's static key, kept per server in coop.ini [galaxy_keys]: another key later is refused),
+// then everything goes sealed. A server that does not answer in 6 s (an older one) is played in clear, unless this game
+// knew its key (then nothing goes in clear). Switch `coop.fix galaxy.encrypt off`: in clear, as before
+namespace gc = net::galaxy::crypto;
+static bool g_encrypt = true;
+COOP_FIX("galaxy.encrypt", "8Q A", g_encrypt, "galaxy: the galaxy traffic is encrypted (a key exchange before HELLO)");
+enum { kKxOff, kKxAsking, kKxOn, kKxClear };
+static int g_kx = kKxOff;
+static gc::KeyPair g_kx_eph;
+static gc::Channel g_chan;
+static double g_kx_started, g_kx_sent;
+static bool g_kx_pinned, g_kx_new, g_kx_told;
+static std::string g_kx_fp; // the server key's fingerprint
+static unsigned g_kx_exchanges, g_kx_mismatch, g_kx_fallbacks, g_kx_clear_dropped, g_kx_bad;
+static std::string pin_name() { return g_server.str(); }
+static std::string pinned_key()
+{
+    char b[80] = {};
+    H->config_str(M, "galaxy_keys", pin_name().c_str(), "", b, sizeof b);
+    return b;
+}
+// every datagram to the galaxy server goes here: sealed once the keys are exchanged, nothing while they are
+static bool raw_send(const uint8_t* d, size_t n)
+{
+    if (!g_sock.is_open())
+        return false;
+    if (g_kx == kKxOn) {
+        std::vector<uint8_t> sealed;
+        return g_chan.seal(d, n, sealed) && g_sock.send_to(g_server, sealed.data(), sealed.size());
+    }
+    if (g_kx == kKxAsking)
+        return false;
+    return g_sock.send_to(g_server, d, n);
+}
+static void hello_now();
+static void say(const std::string& s);
+static void keyx_start()
+{
+    g_chan.wipe();
+    g_kx_eph.wipe();
+    g_kx_told = false;
+    if (!g_encrypt || !g_kx_eph.make()) { // (off, or no random generator: in clear)
+        g_kx = kKxClear;
+        hello_now();
+        return;
+    }
+    g_kx = kKxAsking;
+    g_kx_started = g_kx_sent = g_hello_at = g_last_rx = H->time_seconds();
+    g_kx_pinned = !pinned_key().empty();
+    const std::vector<uint8_t> q = gc::keyx_question(g_kx_eph);
+    g_sock.send_to(g_server, q.data(), q.size());
+}
+static void keyx_answer(const uint8_t* d, size_t n)
+{
+    if (g_kx != kKxAsking)
+        return;
+    uint8_t st[32];
+    gc::Channel ch;
+    if (!gc::keyx_game(g_kx_eph, d, n, st, ch)) {
+        g_kx_bad++;
+        return;
+    }
+    const std::string have = pinned_key(), got = gc::hex(st, 32);
+    g_kx_fp = gc::fingerprint(st);
+    if (!have.empty() && have != got) {
+        g_kx_mismatch++;
+        g_kx = kKxOff;
+        ch.wipe();
+        H->log(M, SK_WARN, "galaxy: the server %s answered with key %s, not the one this game knew: refused (8Q A)",
+               g_server.masked().c_str(), g_kx_fp.c_str());
+        say("This galaxy server answers with another key than before, so it was not joined (someone may stand between "
+            "you and it). If its owner set it up again: coop.galaxy forgetkey, then connect.");
+        g_sock.close();
+        g_welcomed = false;
+        return;
+    }
+    g_kx_new = have.empty();
+    if (g_kx_new)
+        H->config_set_str(M, "galaxy_keys", pin_name().c_str(), got.c_str());
+    g_chan = ch;
+    ch.wipe();
+    g_kx_eph.wipe();
+    g_kx = kKxOn;
+    g_kx_exchanges++;
+    H->log(M, SK_INFO, "galaxy: encrypted with %s, its key %s%s (8Q A)", g_server.masked().c_str(), g_kx_fp.c_str(),
+           g_kx_new ? " (new: kept)" : "");
+    hello_now();
+}
+static void keyx_tick(double now)
+{
+    if (g_kx != kKxAsking)
+        return;
+    if (now - g_kx_started > 6) {
+        if (g_kx_pinned) { // (it answered encrypted before: never in clear)
+            if (!g_kx_told) {
+                g_kx_told = true;
+                say("The galaxy server does not answer the encrypted connect (it did before): still trying.");
+            }
+        } else {
+            g_kx = kKxClear;
+            g_kx_fallbacks++;
+            H->log(M, SK_WARN, "galaxy: no answer to the key exchange from %s in 6 s: in clear (an older server, 8Q A)",
+                   g_server.masked().c_str());
+            hello_now();
+            return;
+        }
+    }
+    if (now - g_kx_sent >= 1.0) {
+        g_kx_sent = now;
+        const std::vector<uint8_t> q = gc::keyx_question(g_kx_eph);
+        g_sock.send_to(g_server, q.data(), q.size());
+    }
+}
+static std::string encryption_word()
+{
+    switch (g_kx) {
+    case kKxOn: return "encrypted (the server's key " + g_kx_fp + (g_kx_new ? ", new" : "") + ")";
+    case kKxAsking: return "exchanging keys";
+    case kKxClear: return g_encrypt ? "in clear (an older server)" : "in clear (galaxy.encrypt off)";
+    default: return "-";
+    }
+}
+std::string forget_key()
+{
+    if (!g_server.port)
+        return "Connect to a galaxy server first (its key is kept by its address).";
+    if (pinned_key().empty())
+        return "No key kept for " + g_server.masked() + ".";
+    H->config_set_str(M, "galaxy_keys", pin_name().c_str(), "");
+    return "The key kept for " + g_server.masked() + " is forgotten: the next connect keeps the key it answers with.";
+}
+
+static void datagram(const uint8_t* buf, int n);
 // everything the galaxy server sent: control messages handled, relay packets queued for the session
 static void pump()
 {
     if (!g_sock.is_open())
         return;
-    uint8_t buf[65536];
+    uint8_t raw[65536];
     net::Endpoint from;
-    int n;
-    while ((n = g_sock.recv_from(from, buf, sizeof buf)) != 0) {
-        if (n < 0 || from != g_server)
+    int got;
+    std::vector<uint8_t> plain;
+    // (the socket can close inside the loop: a refused server key. A closed socket's recv_from fails at once, every
+    // time: the loop spun forever, seen on the MSI 2026-11-23)
+    while (g_sock.is_open() && (got = g_sock.recv_from(from, raw, sizeof raw)) != 0) {
+        if (got < 0 || from != g_server)
             continue;
+        if (raw[0] == gc::kKeyx) { // 8Q A: the server's answer (in clear)
+            if (got == 2 && raw[1] == gc::kKeyxNone && g_kx == kKxOn) { // it has no keys for this game (a restart): as
+                net::Writer w = control(REFUSED);                         // its "not connected" (a new exchange)
+                w.str8(kNotConnected);
+                datagram(w.data.data(), (int)w.data.size());
+                continue;
+            }
+            keyx_answer(raw, (size_t)got);
+            continue;
+        }
+        if (raw[0] == gc::kSealed) {
+            if (g_kx != kKxOn || !g_chan.open(raw, (size_t)got, plain) || plain.empty())
+                continue;
+            datagram(plain.data(), (int)plain.size());
+            continue;
+        }
+        // in clear while encrypted: only the server's "not connected" (it restarted and lost the keys) gets through
+        if (g_kx == kKxOn && !(raw[0] == kControl && got >= 2 && raw[1] == REFUSED)) {
+            g_kx_clear_dropped++;
+            continue;
+        }
+        if (g_kx == kKxAsking)
+            continue;
+        datagram(raw, got);
+    }
+}
+static void datagram(const uint8_t* buf, int n)
+{
+    {
         g_last_rx = H->time_seconds();
         if (buf[0] == kRelay && n >= 3) {
             uint16_t slot;
@@ -195,7 +362,7 @@ static void pump()
             if (slot != g_host_slot || g_role != kGuestRole || !g_relay_on || !C.sess ||
                 C.sess->role() != net::Role::Client || !C.sess->connected() || !C.fan_in) {
                 g_fan_refused++;
-                continue;
+                return;
             }
             net::Reader r(buf + 4, (size_t)n - 4);
             C.fan_in(buf[3], r);
@@ -227,7 +394,7 @@ public:
         memcpy(f.data() + 3, data, n);
         g_tx++;
         g_tx_bytes += f.size();
-        return g_sock.send_to(g_server, f.data(), f.size());
+        return raw_send(f.data(), f.size());
     }
     int recv_from(net::Endpoint& from, void* buf, size_t cap) override
     {
@@ -252,8 +419,7 @@ static RelayTransport g_relay;
 
 static void send_control(const net::Writer& w)
 {
-    if (g_sock.is_open())
-        g_sock.send_to(g_server, w.data.data(), w.data.size());
+    raw_send(w.data.data(), w.data.size()); // (8Q A: sealed once the keys are exchanged)
 }
 static std::map<uint8_t, std::function<void(net::Reader&)>> g_handlers; // BUG-9287: on_message
 
@@ -614,6 +780,8 @@ static void on_control(net::Reader& r)
                 g_role = 0;
             }
             g_welcomed = false;
+            if (g_kx == kKxOn) // 8Q A: it lost this game's keys too (a restart): a new exchange
+                g_kx = kKxOff;
             send_hello();
             return;
         }
@@ -996,7 +1164,18 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     C = std::move(ctx);
 }
 
+// HELLO goes after the key exchange (8Q A): while it runs, the exchange's end sends it
 static void send_hello()
+{
+    if (g_kx == kKxAsking)
+        return;
+    if (g_kx == kKxOff) {
+        keyx_start();
+        return;
+    }
+    hello_now();
+}
+static void hello_now()
 {
     net::Writer w = control(HELLO);
     w.u32(kProto);
@@ -1023,6 +1202,7 @@ std::string connect(const std::string& address)
     g_sock.set_buffers(1 << 20); // (the relay carries the whole session: a world arrives in bursts)
     g_server = ep;
     g_welcomed = false;
+    g_kx = kKxOff; // 8Q A: a new connection exchanges keys first
     send_hello();
     return "Connecting to the galaxy server at " + ep.masked() + "...";
 }
@@ -1039,6 +1219,8 @@ std::string disconnect()
     g_sock.close();
     g_welcomed = false;
     g_planets.clear();
+    g_chan.wipe(); // 8Q A
+    g_kx = kKxOff;
     return "Disconnected from the galaxy server.";
 }
 
@@ -1184,6 +1366,7 @@ void tick(double now)
         return;
     if (!g_relay_on || !C.sess || C.sess->role() == net::Role::None)
         pump(); // (while a planet session runs, its transport reads)
+    keyx_tick(now); // 8Q A
     fetch_tick(now);
     loading_tick(now);
     upload_tick(now);
@@ -1383,9 +1566,9 @@ bool fan_out(const std::vector<uint16_t>& slots, uint8_t type, const net::Writer
     }
     f.push_back(type);
     f.insert(f.end(), body.data.begin(), body.data.end());
-    if (f.size() > 1400)
+    if (f.size() > 1400 - gc::kOverhead)
         return false;
-    if (!g_sock.send_to(g_server, f.data(), f.size()))
+    if (!raw_send(f.data(), f.size()))
         return false;
     g_fan_tx++;
     g_fan_tx_bytes += f.size();
@@ -1463,6 +1646,11 @@ std::string status()
              (unsigned long long)g_fan_tx, (unsigned long long)(g_fan_tx_bytes >> 10), (unsigned long long)g_fan_rx,
              (unsigned long long)(g_fan_rx_bytes >> 10), (unsigned long long)g_fan_refused, g_reconnects,
              g_stored_joins, g_stored_accepted, g_stored_refused);
+    s += b;
+    snprintf(b, sizeof b, "\nencryption (8Q A): %s; exchanges %u, refused keys %u, in clear after no answer %u, sealed sent "
+             "%llu opened %llu refused %llu replays %llu, clear dropped %u", encryption_word().c_str(), g_kx_exchanges,
+             g_kx_mismatch, g_kx_fallbacks, (unsigned long long)g_chan.sealed, (unsigned long long)g_chan.opened,
+             (unsigned long long)g_chan.refused, (unsigned long long)g_chan.replays, g_kx_clear_dropped);
     s += b;
     static const char* steps[] = {"-", "downloading", "loading", "hosting"};
     snprintf(b, sizeof b,

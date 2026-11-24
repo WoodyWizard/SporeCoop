@@ -12128,6 +12128,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        else if (sub == "save") r = galaxy::save();
                        else if (sub == "every") { galaxy::set_upload_every(atof(arg.c_str())); r = "upload every " + arg + " s"; }
                        else if (sub == "disconnect") r = galaxy::disconnect();
+                       else if (sub == "forgetkey") r = galaxy::forget_key(); // 8Q A
                        else r = galaxy::status();
                        H->out_printf(out, "%s\n", r.c_str());
                        return 0;

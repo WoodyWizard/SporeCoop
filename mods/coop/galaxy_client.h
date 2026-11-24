@@ -103,6 +103,7 @@ bool stage_start_on(); // the switch galaxy.stage_start
 std::string leave();
 std::string save(); // host: save the planet's world to the galaxy server now (also every few minutes and when leaving)
 std::string status();
+std::string forget_key();                   // 8Q A: forget the key kept for this server's address
 void set_upload_every(double seconds); // tests (300 by default)
 
 } // namespace galaxy

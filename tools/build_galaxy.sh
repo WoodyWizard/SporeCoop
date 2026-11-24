@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p build
-SRC=(server/galaxy/main.cpp mods/coop/net/udp.cpp)
+SRC=(server/galaxy/main.cpp mods/coop/net/udp.cpp mods/coop/net/galaxy_crypto.cpp)
 if [[ -n "${LLVM_MINGW:-}" ]]; then
     CXX="$(cygpath -u "$LLVM_MINGW" 2>/dev/null || echo "$LLVM_MINGW")/bin/i686-w64-mingw32-clang++"
     "$CXX" -std=c++17 -O2 -static -o build/galaxy_server.exe "${SRC[@]}" -lws2_32 -liphlpapi
