@@ -297,7 +297,9 @@ bool waiting() { return coop_core::g_hold != coop_core::Hold::None; }
 bool host_stands()
 {
     using namespace coop_core;
-    return g_sess.role() == net::Role::Client && g_view.heard && g_view.last.state != busy_model::State::None &&
+    return g_sess.role() == net::Role::Client && g_view.heard &&
+           (g_view.last.state != busy_model::State::None ||
+            (g_view.last.why & (busy_model::kWhyCaption | busy_model::kWhyStill)) != 0) &&
            in_host_world();
 }
 bool takes_tribe_pause() { return coop_core::g_host_busy_fix && coop_core::g_tribe_fix && coop_core::g_view.heard; }
