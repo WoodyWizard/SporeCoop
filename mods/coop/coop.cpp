@@ -10489,6 +10489,7 @@ static void on_social_action(int action, const coop_ui::SocialRow& row, float x,
     case coop_ui::kSocMenu: open_menu_for(row.session_id, row.identity, row.name, x, y); break;
     case coop_ui::kSocEras: r = era_visitors::set_other_eras(!era_visitors::other_eras()); break; // BUG-9334
     case coop_ui::kSocChat: r = set_chat_filter(!g_chat_party_only); break; // 8O
+    case coop_ui::kSocPrivate: r = galaxy::private_request(!galaxy::private_pending()); break; // 8N A
     default: break;
     }
     if (!r.empty())
@@ -10504,8 +10505,15 @@ static void social_tick(double now)
     const bool gx = parties::galaxy();
     st.galaxy = gx;
     st.stage = g_mode;
-    st.eras = gx ? (era_visitors::other_eras() ? 1 : 0) : -1; // BUG-9334: the Social Menu's eras row
-    st.chat = gx && g_gchat ? (g_chat_party_only ? 0 : 1) : -1; // 8O: the "Chat shows" row
+    if (gx) { // the setting rows: BUG-9334 the other eras, 8O the chat filter, 8N A the private planet
+        const bool eras = era_visitors::other_eras();
+        st.toggles.push_back({"Players in other stages", eras ? "Shown" : "Hidden", eras, coop_ui::kSocEras});
+        if (g_gchat)
+            st.toggles.push_back({"Chat shows", g_chat_party_only ? "Party" : "Everyone", !g_chat_party_only, coop_ui::kSocChat});
+        if (galaxy::private_on())
+            st.toggles.push_back({"Private planet", galaxy::private_pending() ? "Waiting" : "New", !galaxy::private_pending(),
+                                  coop_ui::kSocPrivate});
+    }
     const bool in_stage = g_mode >= modes::kCell && g_mode <= modes::kSpace;
     st.button = in_stage && (g_sess.connected() || galaxy::welcomed()) && !(game_busy() & (busy::kPaused | busy::kInputLock));
     if (coop_ui::social_open() && gx && now >= s_ask) {
@@ -12230,6 +12238,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        else if (sub == "every") { galaxy::set_upload_every(atof(arg.c_str())); r = "upload every " + arg + " s"; }
                        else if (sub == "disconnect") r = galaxy::disconnect();
                        else if (sub == "forgetkey") r = galaxy::forget_key(); // 8Q A
+                       else if (sub == "private") r = arg.empty() ? galaxy::private_request(!galaxy::private_pending())
+                                                                  : galaxy::enter_private(arg); // 8N A
                        else r = galaxy::status();
                        H->out_printf(out, "%s\n", r.c_str());
                        return 0;

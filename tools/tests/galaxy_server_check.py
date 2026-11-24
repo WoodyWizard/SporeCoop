@@ -692,6 +692,67 @@ def main():
             gx = lines(x, 1.0)
             check(len(gx) == 5, 'at most 5 lines at once from one player (then one a second): %d passed' % len(gx))
 
+        if not os.environ.get('GALAXY_CHECK_OLD'):
+            print('private planets (8N A)')
+            ow, pa, out = (Player(port, n, i, '127.0.0.4') for n, i in
+                           (('Vault Maker', 0xF1), ('Vault Friend', 0xF2), ('Outsider', 0xF3)))
+            check(all(p.hello() for p in (ow, pa, out)), 'three players connect')
+            ow.send(PARTY, struct.pack('<BQBI', 1, pa.identity, 0, 0))
+            time.sleep(0.2)
+            pa.send(PARTY, struct.pack('<BQBI', 2, ow.identity, 1, 0))
+            time.sleep(0.4)
+            for p in (ow, pa, out):
+                p.pump(0.2)
+                p.inbox.clear()
+            ow.send(ENTER, s8('Mars|Creature') + bytes([1]))
+            ref = ow.take(REFUSED)
+            check(ref is not None and b'already' in ref, 'a private planet is a new one: an existing planet is refused')
+            ow.send(ENTER, s8('Vault|Creature') + bytes([1]))
+            ro = ow.take(ROLE)
+            check(ro is not None and role_of(ro)[:2] == ('Vault|Creature', 1), 'the maker hosts its new private planet')
+            ready(ow, 'Vault|Creature')
+
+            def listed(p):
+                p.inbox.clear()
+                p.send(LIST)
+                lst = p.take(PLANETS) or b''
+                return lst
+
+            check(b'Vault|Creature' in listed(pa), "its party's player sees it")
+            check(b'Vault' not in listed(out), 'an outsider does not see it')
+            out.send(ENTER, s8('Vault|Creature'))
+            check(out.take(REFUSED) is not None and out.take(ROLE, 0.3) is None, 'an outsider cannot enter it')
+            out.send(STARTERA, s8('Vault|Creature') + bytes([3]))
+            check(out.take(REFUSED) is not None and out.take(ROLE, 0.3) is None, 'an outsider cannot start a stage there')
+            out.send(ENTER, s8('Vault|Space'))
+            check(out.take(REFUSED) is not None, 'nor its Space stage before there is one')
+            pa.send(ENTER, s8('Vault|Creature'))
+            rp = pa.take(ROLE)
+            check(rp is not None and role_of(rp)[:3] == ('Vault|Creature', 2, ow.slot), "its party's player joins it")
+            ow.send(LEAVE)
+            time.sleep(0.2)
+            ow.inbox.clear()
+            ow.send(ENTER, s8('Vault|Space'))
+            check(ow.take(ROLE) is not None, 'the party makes its Space stage')
+            ready(ow, 'Vault|Space')
+            lo = listed(out)
+            check(b'Vault|Space' in lo and b'Vault|Creature' not in lo, 'an outsider sees its Space stage only')
+            out.send(ENTER, s8('Vault|Space'))
+            ro = out.take(ROLE)
+            check(ro is not None and role_of(ro)[:2] == ('Vault|Space', 2), 'an outsider visits its Space stage')
+            for p in (ow, pa, out):
+                p.pump(0.3)
+                p.inbox.clear()
+            visit = bytes([5]) + struct.pack('<III', 1, 2, 3) + struct.pack('<fff', 0, 0, 0)
+            out.send(VISIT, visit)
+            check(pa.take(VISITOR, 0.6) is None, "an outsider's ship is not seen by the party's other stages")
+            time.sleep(0.6)
+            ow.send(VISIT, visit)
+            check(pa.take(VISITOR, 0.6) is not None, "the party's own players still see each other across stages")
+            kept = open(os.path.join(worlds, 'private.txt')).read() if os.path.exists(os.path.join(worlds, 'private.txt')) else ''
+            check('%016x\tVault' % ow.identity in kept and '%016x\tVault' % pa.identity in kept,
+                  'the players allowed are kept with the worlds (private.txt)')
+
     finally:
         srv.kill()
     print('galaxy_server_check: %s' % ('all passed' if not fails else '%d FAILED' % len(fails)))

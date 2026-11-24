@@ -725,6 +725,58 @@ static std::string clean_name(std::string s, size_t max)
 static void move_on(Client& c);
 static void arrive(Client& c, uint8_t era);
 static bool party_chat(const Client& c, const Writer& w); // 8O (below, with the parties)
+// decision 8N A (owner 2026-11-23: "8NA - Once they exit to Space, they can see players. Space age players can still
+// visit the planet, they just can't start there."): a party's private planet. A party's player makes it new (ENTER
+// with kEnterPrivate); the players allowed are kept by planet (<worlds>/private.txt: "<identity hex>\t<planet>"):
+// the maker, its party then, and whoever enters later while in a party with an allowed player (the leader invites a
+// friend into the party). Others see and enter only the planet's Space era (visitors: never a start there) and its
+// worlds' players and theirs never see each other across eras
+struct PrivatePlanet {
+    std::set<uint64_t> allowed;
+};
+static std::map<std::string, PrivatePlanet> g_private; // by planet (no era)
+static uint64_t g_private_refused;
+static bool private_allowed(const Client& c, const std::string& planet); // (below, with the parties)
+static const std::vector<uint16_t>* g_parties_find(uint16_t slot);
+static bool is_private(const std::string& planet) { return g_private.count(era_planet(crossing_planet(planet))) != 0; }
+static std::string private_path() { return g_worlds_dir + "/private.txt"; }
+static void private_keep(const std::string& planet, uint64_t identity)
+{
+    if (!g_private[planet].allowed.insert(identity).second)
+        return;
+    if (FILE* f = fopen(private_path().c_str(), "a")) {
+        fprintf(f, "%016llx\t%s\n", (unsigned long long)identity, planet.c_str());
+        fclose(f);
+    }
+}
+static void load_private()
+{
+    FILE* f = fopen(private_path().c_str(), "r");
+    if (!f)
+        return;
+    char line[512];
+    while (fgets(line, sizeof line, f)) {
+        char* tab = strchr(line, '\t');
+        if (!tab)
+            continue;
+        *tab = 0;
+        std::string planet = tab + 1;
+        while (!planet.empty() && (planet.back() == '\n' || planet.back() == '\r'))
+            planet.pop_back();
+        const uint64_t id = strtoull(line, nullptr, 16);
+        if (id && !planet.empty())
+            g_private[planet].allowed.insert(id);
+    }
+    fclose(f);
+}
+// visits between two players of one planet: none across the private line (an allowed player and a visitor)
+static bool private_split(const Client& a, const Client& b)
+{
+    const std::string planet = era_planet(crossing_planet(a.planet));
+    return g_private.count(planet) && private_allowed(a, planet) != private_allowed(b, planet);
+}
+// the planet is known to the server under any era (stored or played)
+static bool planet_known(const std::string& planet);
 static uint64_t g_chat_lines, g_chat_dropped, g_chat_muted;
 static void start_era(Client& c, const std::string& from, uint8_t era);
 
@@ -846,6 +898,8 @@ static void on_control(const Endpoint& from, Reader& r)
             w.u8(r.u8());
         for (auto& [s, o] : g_clients)
             if (s != c->slot && o.eras && !o.planet.empty() && o.planet != c->planet && crossing_planet(o.planet) == mine) {
+                if (private_split(*c, o)) // 8N A
+                    continue;
                 if (g_visit_radius > 0 && c->visit_known && o.visit_known && now - o.visit_ms < 5000) {
                     const float dx = c->visit_pos[0] - o.visit_pos[0], dy = c->visit_pos[1] - o.visit_pos[1],
                                 dz = c->visit_pos[2] - o.visit_pos[2];
@@ -873,7 +927,8 @@ static void on_control(const Endpoint& from, Reader& r)
         while (r.left())
             w.u8(r.u8());
         for (auto& [s, o] : g_clients)
-            if (s != c->slot && o.eras && !o.planet.empty() && o.planet != c->planet && crossing_planet(o.planet) == mine)
+            if (s != c->slot && o.eras && !o.planet.empty() && o.planet != c->planet && crossing_planet(o.planet) == mine &&
+                !private_split(*c, o)) // (8N A)
                 send(o, w);
         return;
     }
@@ -996,6 +1051,12 @@ static void on_control(const Endpoint& from, Reader& r)
         for (auto& [name, st] : g_stored)
             if (!g_planets.count(name))
                 names.push_back(name);
+        // 8N A: a private planet's eras for its party; for the others its Space era alone (visitors)
+        names.erase(std::remove_if(names.begin(), names.end(), [&](const std::string& n) {
+                        const std::string base = era_planet(n);
+                        return g_private.count(base) && era_of(n) != kEraSpace && !private_allowed(*c, base);
+                    }),
+                    names.end());
         // S10: a page of at most 40 planets (and one datagram); the player asks for the next from the trailer
         const uint16_t from = r.left() >= 2 ? r.u16() : 0;
         const size_t first = from < names.size() ? from : names.size();
@@ -1048,6 +1109,34 @@ static void on_control(const Endpoint& from, Reader& r)
             send(*c, w);
             return;
         }
+        const uint8_t flags = r.left() >= 1 ? r.u8() : 0; // 8N A
+        const std::string base = era_planet(name);
+        if (g_private.count(base) && !private_allowed(*c, base)) { // 8N A: its Space era only, an existing one
+            const bool space_there = era_of(name) == kEraSpace && (g_planets.count(name) || g_stored.count(name));
+            if (!space_there) {
+                g_private_refused++;
+                Writer w = control(REFUSED);
+                w.str8(base + " is a party's private planet: only its Space stage takes visitors.");
+                send(*c, w);
+                return;
+            }
+        }
+        if ((flags & kEnterPrivate) && !g_private.count(base)) {
+            if (planet_known(base) || !era_of(name)) {
+                Writer w = control(REFUSED);
+                w.str8(base + " is on the galaxy already: a private planet is a new one (start a new game).");
+                send(*c, w);
+                return;
+            }
+            private_keep(base, c->identity);
+            if (const auto* party = g_parties_find(c->slot))
+                for (uint16_t m : *party)
+                    if (auto it = g_clients.find(m); it != g_clients.end())
+                        private_keep(base, it->second.identity);
+            say("planet '%s': a private planet of %u '%s' (%zu player(s) allowed)", base.c_str(), c->slot, c->name.c_str(),
+                g_private[base].allowed.size());
+        } else if (g_private.count(base) && private_allowed(*c, base))
+            private_keep(base, c->identity); // (a friend the party took in: allowed from now on)
         c->ping_off = 0;
         auto ex = g_planets.find(name);
         if (ex != g_planets.end() && ex->second.host && !ex->second.ready && ex->second.host != c->slot) {
@@ -1238,6 +1327,32 @@ static void on_control(const Endpoint& from, Reader& r)
 
 // ---------------- decision 6K: the parties, kept here (parties.h) ----------------
 static parties::BasicBook<uint16_t> g_parties;
+static const std::vector<uint16_t>* g_parties_find(uint16_t slot) // 8N A: the slot's party (two or more), else none
+{
+    const auto* p = g_parties.find(slot);
+    return p && p->members.size() >= 2 ? &p->members : nullptr;
+}
+static bool private_allowed(const Client& c, const std::string& planet)
+{
+    auto it = g_private.find(planet);
+    if (it == g_private.end() || it->second.allowed.count(c.identity))
+        return true;
+    if (const auto* m = g_parties_find(c.slot)) // (in a party with an allowed player: the leader took it in)
+        for (uint16_t s : *m)
+            if (auto o = g_clients.find(s); o != g_clients.end() && it->second.allowed.count(o->second.identity))
+                return true;
+    return false;
+}
+static bool planet_known(const std::string& planet)
+{
+    for (auto& [k, p] : g_planets)
+        if (era_planet(crossing_planet(k)) == planet)
+            return true;
+    for (auto& [k, st] : g_stored)
+        if (era_planet(k) == planet)
+            return true;
+    return false;
+}
 // 8O: a party line to the sender's party (the sender too); false: it has no party
 static bool party_chat(const Client& c, const Writer& w)
 {
@@ -1375,6 +1490,13 @@ static void move_on(Client& c)
 // Only the next stage up, only where nobody plays or keeps that stage yet (else the player enters it as any era)
 static void start_era(Client& c, const std::string& from, uint8_t era)
 {
+    if (g_private.count(era_planet(from)) && !private_allowed(c, era_planet(from))) { // 8N A: visitors never start one
+        g_private_refused++;
+        Writer w = control(REFUSED);
+        w.str8(era_planet(from) + " is a party's private planet: a stage starts there for its party only.");
+        send(c, w);
+        return;
+    }
     const uint8_t below = era_of(from);
     if (!below || is_crossing(from) || era != below + 1 || era > kEraLast || below < kEraCreature)
         return refuse(c, "That stage cannot be started there.");
@@ -1822,6 +1944,7 @@ int main(int argc, char** argv)
         std::error_code ec;
         std::filesystem::create_directories(g_worlds_dir, ec);
     }
+    load_private(); // 8N A
     if (!load_static_key()) {
         fprintf(stderr, "cannot read or make %s/galaxy_server.key\n", g_worlds_dir.c_str());
         return 1;
@@ -1951,8 +2074,9 @@ int main(int argc, char** argv)
             size_t sealed_players = 0;
             for (auto& [s, c] : g_clients)
                 sealed_players += chan_of(c.ep) != nullptr;
-            say("chat (8O): %llu line(s) passed on, %llu dropped (too fast), %llu muted", (unsigned long long)g_chat_lines,
-                (unsigned long long)g_chat_dropped, (unsigned long long)g_chat_muted);
+            say("chat (8O): %llu line(s) passed on, %llu dropped (too fast), %llu muted; private planets (8N A): %zu, %llu "
+                "visitors refused", (unsigned long long)g_chat_lines, (unsigned long long)g_chat_dropped,
+                (unsigned long long)g_chat_muted, g_private.size(), (unsigned long long)g_private_refused);
             say("encryption: %zu of %zu player(s) encrypted, %zu channel(s), %llu exchanges (%llu refused), %llu sealed "
                 "datagrams refused, %llu clear ones dropped from encrypted addresses, %llu clear ones refused (encrypted only)",
                 sealed_players, g_clients.size(), g_chans.size(), (unsigned long long)g_keyx_answers,

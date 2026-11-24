@@ -105,6 +105,10 @@ std::string save(); // host: save the planet's world to the galaxy server now (a
 std::string status();
 std::string forget_key();                   // 8Q A: forget the key kept for this server's address
 bool chat(uint8_t channel, const std::string& text); // 8O: a line to the galaxy's chat (net::galaxy::kChatAll / kChatParty)
+bool private_on();                          // 8N A: private planets can be asked for (a galaxy server, the switch)
+bool private_pending();                     // 8N A: the next new game becomes the party's private planet
+std::string private_request(bool on);       // 8N A: the Social Menu's "Private planet" button
+std::string enter_private(const std::string& planet); // 8N A (tests): enter a new planet as the party's private one
 void set_upload_every(double seconds); // tests (300 by default)
 
 } // namespace galaxy

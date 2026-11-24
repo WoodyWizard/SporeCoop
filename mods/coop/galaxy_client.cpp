@@ -1264,7 +1264,61 @@ static std::string era_for(const std::string& planet, std::string& why)
     return "";
 }
 
-std::string enter(const std::string& planet_in)
+static std::string enter_with(const std::string& planet_in, uint8_t flags);
+std::string enter(const std::string& planet_in) { return enter_with(planet_in, 0); }
+
+// decision 8N A (owner 2026-11-23: "8NA - Once they exit to Space, they can see players. Space age players can still
+// visit the planet, they just can't start there."): a party's private planet. The Social Menu's "Private planet: New"
+// waits for the next new game this player starts on an empty star (a world it was not playing at the press); that
+// world enters the galaxy as a new planet with kEnterPrivate: the server lets its party (and friends the leader takes
+// into the party) see and enter it, others only its Space era. Off: no row, no private planets
+static bool g_private_fix = true;
+COOP_FIX("galaxy.private_planets", "8N A", g_private_fix, "galaxy: a party's private planet (Social Menu: Private planet, New, then a new game)");
+static bool g_private_pending;
+static std::string g_private_old_world; // the world played at the press (not the new game)
+static std::string g_private_seen;
+static double g_private_seen_at;
+static unsigned g_private_made;
+bool private_on() { return g_private_fix && g_welcomed; }
+bool private_pending() { return g_private_pending; }
+std::string private_request(bool on)
+{
+    if (!private_on())
+        return "Private planets need a galaxy server.";
+    g_private_pending = on;
+    if (!on)
+        return "No private planet then.";
+    g_private_old_world = modes::current_world_name();
+    g_private_seen.clear();
+    return "Start a new game on an empty star: it becomes your party's private planet. Only your party (and friends you "
+           "invite to it) can play there; others can visit its Space stage.";
+}
+static void private_tick(double now)
+{
+    if (!g_private_pending || !g_welcomed || !g_planet.empty() || (C.sess && C.sess->role() != net::Role::None))
+        return;
+    const uint8_t era = era_of_mode(game::mode_id());
+    const std::string w = modes::current_world_name();
+    if (!era || w.size() < 5 || w.compare(w.size() - 4, 4, ".spo") || w == g_private_old_world) {
+        g_private_seen.clear();
+        return;
+    }
+    if (w != g_private_seen) { // (the new game settled for 5 s: its name is its own)
+        g_private_seen = w;
+        g_private_seen_at = now;
+        return;
+    }
+    if (now - g_private_seen_at < 5)
+        return;
+    g_private_pending = false;
+    g_private_made++;
+    const std::string key = era_key(w.substr(0, w.size() - 4), era);
+    H->log(M, SK_INFO, "galaxy: '%s' becomes this party's private planet (8N A)", key.c_str());
+    say(enter_with(key, kEnterPrivate) + " (your party's private planet)");
+}
+std::string enter_private(const std::string& planet) { return enter_with(planet, kEnterPrivate); } // tests
+
+static std::string enter_with(const std::string& planet_in, uint8_t flags)
 {
     if (!g_welcomed)
         return "Not connected to a galaxy server.";
@@ -1288,6 +1342,8 @@ std::string enter(const std::string& planet_in)
     }
     net::Writer w = control(ENTER);
     w.str8(planet);
+    if (flags)
+        w.u8(flags); // 8N A
     send_control(w);
     return "Entering " + era_display(planet) + "...";
 }
@@ -1381,6 +1437,7 @@ void tick(double now)
     upload_tick(now);
     hosted_stored_tick(now);
     start_tick(now);
+    private_tick(now); // 8N A
     if (g_welcomed && game::mode_id() == modes::kMenu && now >= g_next_list) { // the galaxy menu's list (5X B)
         g_next_list = now + 10;
         send_control(control(LIST));

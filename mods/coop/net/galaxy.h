@@ -133,7 +133,8 @@ enum Type : uint8_t {
     PLANETS = 4,  // server -> player: u8 n, n x {str8 planet, u16 players, u16 host slot (0 none), u32 stored world bytes,
                   //   u8 tech level, u32 x3 its creature's species key} (the last two: the galaxy menu, 5X B);
                   //   S10: + u16 the planets in all, u16 this page's first (an older server: none, one page)
-    ENTER = 5,    // player -> server: str8 planet (made when it does not exist yet)
+    ENTER = 5,    // player -> server: str8 planet (made when it does not exist yet); 8N A: + u8 flags, kEnterPrivate:
+                  //   make the new planet its party's private planet (older servers read no flags)
     ROLE = 6,     // server -> player: str8 planet, u8 role (kHostRole / kGuestRole), u16 the host's slot,
                   //   u32 the planet's stored world (bytes, 0 none: a host then FETCHes it, loads it and hosts it),
                   //   u64 the hand-over token (0 none; 6B C: a player still in the planet's world rejoins with it),
@@ -226,6 +227,7 @@ enum Type : uint8_t {
     GCHAT = 40,
 };
 constexpr uint8_t kChatAll = 0, kChatParty = 1, kChatNote = 2;
+constexpr uint8_t kEnterPrivate = 1; // 8N A (ENTER's flags)
 constexpr size_t kChatMaxBytes = 400;
 constexpr int kChatBurst = 5;
 constexpr uint32_t kBansMaxBytes = 1u << 20;

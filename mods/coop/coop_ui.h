@@ -230,10 +230,17 @@ struct SocialState {
     std::vector<SocialRow> rows;
     int party_n = 0, friends_online = 0, online_n = 0;
     uint32_t stage = 0;  // this player's game mode (the button's art)
-    int eras = -1;       // BUG-9334: the "Players in other stages" row: 1 shown, 0 hidden, -1 no row (not on a galaxy)
-    int chat = -1;       // 8O: the "Chat shows" row: 1 everyone's lines, 0 the party's only, -1 no row
+    // the setting rows under the lists, each a label and a button that says what is set now (gold or grey; a press:
+    // the row's action): BUG-9334 "Players in other stages", 8O "Chat shows", 8N A "Private planet"
+    struct Toggle {
+        std::string label, caption;
+        bool gold = true;
+        int action = 0;
+        bool operator==(const Toggle&) const = default;
+    };
+    std::vector<Toggle> toggles;
 };
-enum SocialAction { kSocLeave = 1, kSocWhisper, kSocInvite, kSocMenu, kSocEras, kSocChat };
+enum SocialAction { kSocLeave = 1, kSocWhisper, kSocInvite, kSocMenu, kSocEras, kSocChat, kSocPrivate };
 void set_social(const SocialState& s, void (*on_action)(int action, const SocialRow& row, float x, float y));
 void toggle_social();
 bool social_open();
