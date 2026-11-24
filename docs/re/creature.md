@@ -5584,3 +5584,20 @@ TITAN's QA copy. Follows #creature-ufo-abduction-event and #creature-ufo-mirror.
   Cache hash of that creation; on a guest every ship of the event's spawn function takes the host's ship (by the hash
   for a cached creation, by the key otherwise) when the guest has it, else the Grox ship. `coop.drama ship` shows the
   keys and the model of every live ship.
+
+## The siren song's calls (2026-11-23, feat/lineages-alpha)
+<a id="creature-siren-relay"></a>
+
+BUG-9361. Ghidra on the Steam 3010a413 dump (BT_SpecialAbilityTick's start is the mod's hook jump: `fasm 0xD8E900`).
+Adds to #creature-roar-relay.
+* ✔ The 0x32 branch (0xD8E942..0xD8EB1F) walks the same creatures as the roar. One of another species (not the
+  avatar, alive, not epic) gets, in order: BT_PostStimulus(ai+8, 0, 0x4000000, FLT_MAX, singer), (0x400000, 0,
+  FLT_MAX, singer), (0, 0x10000, 5.0 [0x14852F8], singer); `SporeCoop::Creature_CalmFrom` 0xD79FF0 (cdecl: creature,
+  the singer's species); BT_GoalSlotStart(+0xB48, 2, 1, 0, FLT_MAX, &local, creature) where the local's first float is
+  the ability's +0xA0 seconds (the roar passes its seconds as the float and no data); BT_ClearStimulus(0x400, 0); the
+  roar's slot (1, 1) found and ended. One of the singer's own species gets (0, 0x10000, 5.0, none) and
+  Creature_CalmFrom(it, 0). Constants: [0x147BF80] = FLT_MAX, [0x14852F8] = 5.0.
+* ✔ (runtime, the MSI) Made by the host's game for a partner's song, the slot (2, 1) shows in the creature's goal mask.
+* ? The local's other seven floats are not written in this function (0 used); the charmed creature's behaviour not
+  watched yet.
+

@@ -1474,3 +1474,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9358](BUG-9358-galaxy-menu-play-on-a-server-planet-can-enter-an.md) | fixed | bug | galaxy | 2026-11-23 | unreleased | Galaxy menu: Play on a server planet can enter another planet when the list changes during Play |
 | [BUG-9359](BUG-9359-galaxy-the-host-of-a-stored-creature-world-is-ki.md) | open | bug | galaxy | 2026-11-23 |  | Galaxy: the host of a stored Creature world is killed on arrival |
 | [BUG-9360](BUG-9360-crash-loading-a-host-s-world-made-from-its-own-o.md) | open | crash | creature | 2026-11-23 |  | Crash loading a host's world made from its own old save: SetSpecies with no animation (0x00A920E0) |
+| [BUG-9361](BUG-9361-a-partner-s-siren-song-does-not-charm-the-host-s.md) | fixed | bug | creature | 2026-11-23 | unreleased | A partner's Siren Song does not charm the host's animals |
