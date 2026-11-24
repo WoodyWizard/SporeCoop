@@ -504,12 +504,37 @@ static void SK_THISCALL h_CreditGoal(void* play, void* goal, void* spatial1, voi
             o_CreditGoal(play, goal, spatial1, spatial2);
             return;
         }
-        // Hold non-defeat local credit and propose it to host so host commits and replays in sequence order.
-        gd.count = (uint32_t)(skg::field<int32_t>(goal, 0x04) + 1);
-        wire::adventure::Propose msg{{g_guest_journal.mission, g_guest_journal.run_id}, gd};
-        send_to_peer(0, wire::adventure::K_PROPOSE, msg, true);
-        H->log(M, SK_INFO, "adventure: guest proposed goal act=%u slot=%u kind=%u count=%u/%u",
-               gd.act, gd.slot, gd.kind, gd.count, gd.required);
+        // Infinite-loop guard: callers such as ScenarioPlay_JumpToAct loop until goal->done/count advances within a
+        // single frame. If the exact same (goal, count) is re-entered within the same tick, pass through natively.
+        int32_t cur_count = skg::field<int32_t>(goal, 0x04);
+        static double s_hold_t = -1.0;
+        static void* s_hold_goal = nullptr;
+        static int32_t s_hold_count = -1;
+        if (s_hold_goal == goal && s_hold_count == cur_count && s_hold_t == g_now) {
+            o_CreditGoal(play, goal, spatial1, spatial2);
+            return;
+        }
+        s_hold_t = g_now;
+        s_hold_goal = goal;
+        s_hold_count = cur_count;
+
+        // Hold non-defeat local credit and propose it to host (deduped so continuous triggers do not flood).
+        gd.count = (uint32_t)(cur_count + 1);
+        static uint32_t s_prop_run = 0, s_prop_act = 0, s_prop_slot = 0, s_prop_cnt = 0;
+        static double s_prop_t = -10.0;
+        bool dup = (s_prop_run == g_guest_journal.run_id && s_prop_act == gd.act && s_prop_slot == gd.slot &&
+                    s_prop_cnt == gd.count && (g_now - s_prop_t) < 1.5);
+        if (!dup) {
+            s_prop_run = g_guest_journal.run_id;
+            s_prop_act = gd.act;
+            s_prop_slot = gd.slot;
+            s_prop_cnt = gd.count;
+            s_prop_t = g_now;
+            wire::adventure::Propose msg{{g_guest_journal.mission, g_guest_journal.run_id}, gd};
+            send_to_peer(0, wire::adventure::K_PROPOSE, msg, true);
+            H->log(M, SK_INFO, "adventure: guest proposed goal act=%u slot=%u kind=%u count=%u/%u",
+                   gd.act, gd.slot, gd.kind, gd.count, gd.required);
+        }
         return;
     }
 
@@ -600,7 +625,13 @@ static void SK_THISCALL h_SetState(void* play, int state)
         bool has_outcome = g_guest_journal.outcome_applied != 0;
         if (should_hold_guest_state(state, in_run, has_outcome)) {
             g_guest_fail_held++;
-            H->log(M, SK_INFO, "adventure: held local guest SetState(6) while host run %08X is active", g_guest_journal.run_id);
+            static uint32_t s_held_run = 0;
+            static double s_held_log_t = -10.0;
+            if (s_held_run != g_guest_journal.run_id || (g_now - s_held_log_t) >= 5.0) {
+                s_held_run = g_guest_journal.run_id;
+                s_held_log_t = g_now;
+                H->log(M, SK_INFO, "adventure: held local guest SetState(6) while host run %08X is active", g_guest_journal.run_id);
+            }
             return;
         }
     }
@@ -1455,8 +1486,14 @@ std::string command(const std::vector<std::string>& args)
         H->run_outside_frame(
             [](void*) {
                 void* pm2 = modes::adventure_play_mode();
-                if (pm2)
-                    skg::thiscall<void>(a_JumpToAct, pm2, s_act);
+                if (!pm2)
+                    return;
+                bool apply_guard = is_guest();
+                if (apply_guard)
+                    g_adv_applying = true;
+                skg::thiscall<void>(a_JumpToAct, pm2, s_act);
+                if (apply_guard)
+                    g_adv_applying = false;
             },
             nullptr);
         return std::string(head) + "jump to act " + std::to_string(s_act) + " queued\n";

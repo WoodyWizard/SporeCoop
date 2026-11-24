@@ -100,24 +100,36 @@ def main():
     keyframe('enemies_act1', 'WP-A Act 1 paired adventure creatures on host and guest', {'host': h, 'guest': g}, settle=3)
 
     if ga_paired:
-        target = ga_paired[0]
+        # Prefer a normal killable enemy (not an invincible/51000-HP scenario NPC whose HP regens/ignores small hits).
+        by_host = {a['serial']: a for a in ha_all if not a['dead']}
+        candidates = [(a, by_host[a['host_key']]) for a in ga_paired if a['host_key'] in by_host]
+        normal = [(g_a, h_a) for g_a, h_a in candidates if 10.0 <= h_a['hp'] <= 5000.0]
+        if normal:
+            target, h_match = min(normal, key=lambda p: p[1]['hp'])
+        elif candidates:
+            target, h_match = min(candidates, key=lambda p: p[1]['hp'])
+        else:
+            target, h_match = ga_paired[0], None
         hk = target['host_key']
-        h_match = next((a for a in ha_all if a['serial'] == hk and not a['dead']), None)
         ck(h_match is not None, f'3b. host has living actor serial={hk}')
         if h_match:
             d = dist3(target['pos'], h_match['pos'])
-            print(f'  paired target host_key={hk}: guest_pos={target["pos"]} host_pos={h_match["pos"]} dist={d:.2f} m',
-                  flush=True)
+            print(f'  paired target host_key={hk}: hp={h_match["hp"]:.1f}/{h_match["max_hp"]:.1f} '
+                  f'guest_pos={target["pos"]} host_pos={h_match["pos"]} dist={d:.2f} m', flush=True)
             ck(d < 4.0, f'3c. paired guest creature tracks host position within 4 m ({d:.2f} m)')
 
             # 4. Guest hit forwarding -> host HP drops
             hp_before = h_match['hp']
-            print(f'  guest hit {hk} 5: ' + safe_call(g, f'coop.adventure hit {hk} 5').replace('\n', ' | '), flush=True)
+            hit_dmg = 20 if hp_before >= 40.0 else max(5, int(hp_before * 0.4))
+            print(f'  guest hit {hk} {hit_dmg}: ' +
+                  safe_call(g, f'coop.adventure hit {hk} {hit_dmg}').replace('\n', ' | '), flush=True)
             def host_hp_dropped():
                 cur = next((a for a in parse_actors(h) if a['serial'] == hk), None)
                 return cur if (cur and cur['hp'] <= hp_before - 3.0) else None
             after_hit = wait_until(host_hp_dropped, 10, step=0.5, what='host HP drop from guest hit')
             print(f'  host target hp before={hp_before} after={after_hit and after_hit["hp"]}', flush=True)
+            print('  adv host: ' + safe_call(h, 'coop.adventure').replace('\n', ' | '), flush=True)
+            print('  adv guest: ' + safe_call(g, 'coop.adventure').replace('\n', ' | '), flush=True)
             ck(after_hit is not None,
                f'4. guest hit forwarded and lowered host creature HP ({hp_before:.1f} -> {after_hit and after_hit["hp"]})')
 
