@@ -1242,6 +1242,19 @@ std::string debug(const std::vector<std::string>& a)
         F<int>(c, kHp) = atoi(a[2].c_str());
         return "hp " + std::to_string(F<int>(c, kHp));
     }
+    if (a.size() >= 3 && a[0] == "celllevel") { // tests (BUG-1514): celllevel c<idx> <lv>: a cell's level
+        uint32_t key = (uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10);
+        uint8_t* c = nullptr;
+        if (is_guest()) {
+            auto it = g_mirrors.find(key);
+            c = it != g_mirrors.end() && it->second.local ? modes::cell_at(it->second.local) : nullptr;
+        } else
+            c = modes::cell_at(key);
+        if (!c || c == av || modes::cell_is_puppet(c))
+            return "no such cell";
+        F<int>(c, kLevel) = std::clamp(atoi(a[2].c_str()), 0, 16);
+        return "level " + std::to_string(F<int>(c, kLevel));
+    }
     if (a.size() >= 2 && a[0] == "hp") {
         F<int>(av, kHp) = atoi(a[1].c_str());
         return "hp set";

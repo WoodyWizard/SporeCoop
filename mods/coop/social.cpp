@@ -1249,6 +1249,74 @@ static void send_solo(double now)
     g_solo_sent_at = now;
 }
 
+// ApplyEvent (0xBA4A00) bails out on creature == nullptr for event 0 (adult kill) and dereferences creature
+// unconditionally for events 3 (impressed) and 5 (young kill): find a live non-avatar, non-puppet creature of that
+// species when one is loaded, or fall back to updating the relationship table record directly and refreshing cards.
+static void* find_species_creature(uint32_t inst)
+{
+    struct Q {
+        uint32_t inst;
+        void* av;
+        void* found;
+        bool guest;
+    } q{inst, game::avatar(), nullptr, is_guest()};
+    game::for_each_object(
+        [](void* c, uint32_t noun, void* u) {
+            auto* q = (Q*)u;
+            if (noun != 0x18EB45Eu || !c || c == q->av || !skg::readable(c, 0x1680) ||
+                !game::species_profile(c) || game::is_puppet(c) || (q->guest && npc::proxy_id(c) >= 0))
+                return true;
+            if (game::species_key(c).instance == q->inst) {
+                q->found = c;
+                if (!game::is_dead(c))
+                    return false;
+            }
+            return true;
+        },
+        &q);
+    return q.found;
+}
+
+// returns true if ApplyEvent itself ran (h_RelEvent saw it), false if the direct record fallback ran instead
+static bool apply_species_event(void* mgr, int event, const ResourceKey& k)
+{
+    if (!mgr || !a_RelEvent)
+        return false;
+    void* c = (event == 0 || event == 3 || event == 5) ? find_species_creature(k.instance) : nullptr;
+    if (c || (event != 0 && event != 3 && event != 5)) {
+        thiscall<void>(a_RelEvent, mgr, event, &k, c);
+        return true;
+    }
+    uint32_t* rec = a_RelRecord ? thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, &k) : nullptr;
+    if (!rec)
+        return false;
+    int32_t r0 = (int32_t)rec[0];
+    uint32_t i0 = rec[2], k0 = rec[3];
+    if (event == 0 || event == 5) {
+        rec[3]++;
+        if ((int32_t)rec[0] != 5) {
+            void* sp = game::species_by_key({k.instance, k.type, k.group});
+            uint32_t ext_need = (sp && skg::readable(sp, 0x404)) ? field<uint32_t>(sp, 0x400) : 3u;
+            if (ext_need > 0 && rec[3] >= ext_need)
+                rec[0] = 5;
+            else if (rec[0] == 0)
+                rec[0] = 1;
+        }
+    } else if (event == 3) {
+        rec[2]++;
+        if ((int32_t)rec[0] != 6) {
+            if (rec[2] >= 3)
+                rec[0] = 6;
+            else if ((int32_t)rec[0] < 3)
+                rec[0] = 3;
+        }
+    }
+    H->run_outside_frame(refresh_cards, nullptr);
+    H->log(M, SK_INFO, "social: species event %d species %08X (no live creature loaded): relation %d -> %d, impressed %u -> %u, killed %u -> %u",
+           event, k.instance, r0, (int32_t)rec[0], i0, rec[2], k0, rec[3]);
+    return false;
+}
+
 // host: a guest's own events replayed through the game's ApplyEvent (the extinction, the alliance, the cards follow)
 static void host_solo(uint8_t from, net::Reader& r)
 {
@@ -1273,7 +1341,7 @@ static void host_solo(uint8_t from, net::Reader& r)
         }
         ResourceKey k{e.key[0], e.key[1], e.key[2]};
         for (uint16_t i = 0; i < e.count; i++)
-            thiscall<void>(a_RelEvent, mgr, (int)e.event, &k, (void*)nullptr);
+            apply_species_event(mgr, (int)e.event, k);
         g_solo_applied += e.count;
         H->log(M, SK_INFO, "social: player %u's own event %u x%u on species %08X while this host was away (BUG-1527)", from,
                e.event, e.count, e.key[0]);
@@ -1554,7 +1622,12 @@ bool debug_event(uint32_t inst, int event)
     if (!mgr || !a_RelEvent || event < 0 || event > 7)
         return false;
     ResourceKey k{inst, 0x2B978C46u, 0x40626200u};
-    thiscall<void>(a_RelEvent, mgr, event, &k, (void*)nullptr);
+    bool native = apply_species_event(mgr, event, k);
+    if (!native && social_logic::keep_own(g_solo_fix, is_guest(), host_away(), false)) {
+        const uint32_t raw[3] = {k.instance, k.type, k.group};
+        if (g_solo.add(raw, event))
+            g_solo_kept++;
+    }
     return true;
 }
 
