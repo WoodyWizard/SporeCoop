@@ -45,10 +45,10 @@ def main():
     print(' ', host.call(f'coop.wsync civmoney {other["pol"]} 1500')['out'].strip(), flush=True)
     time.sleep(1)
     reads = []
-    for _ in range(8):
+    for _ in range(16):
         h, g = nation(host, other['pol']), nation(guest, other['pol'])
         reads.append((h and round(h['money']), g and round(g['money'])))
-        time.sleep(0.5)
+        time.sleep(0.25)
     print(f'  nation {other["pol"]} money (host, guest) while the host stands: {reads}', flush=True)
     st = next((ln for ln in guest.call('coop.civ')['out'].splitlines() if ln.startswith('money:')), '')
     print('  guest:', st, flush=True)

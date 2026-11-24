@@ -125,10 +125,10 @@ def t_goal(host, guest, ck):
 
 
 def t_stages(host, guest, ck):
-    # BUG-1470 (history.own) gives guests their own stage cards and intentionally disables wsync's stages row;
-    # test wsync's fallback stages row with history.own off.
-    host.call('coop.fix history.own off')
-    guest.call('coop.fix history.own off')
+    # BUG-1470 (core.own_history) gives guests their own stage cards and intentionally disables wsync's stages row;
+    # test wsync's fallback stages row with core.own_history off.
+    host.call('coop.fix core.own_history off')
+    guest.call('coop.fix core.own_history off')
     try:
         h = dump(host, 'stages')
         ck(bool(h.get('stages')), 'the host has a cPlayer')
@@ -154,8 +154,8 @@ def t_stages(host, guest, ck):
         print(f'  after the rejoin: guest {dump(guest, "stages").get("stages")}', flush=True)
         ck(bool(got), 'after its rejoin the guest\'s game has the host\'s stages done again')
     finally:
-        host.call('coop.fix history.own on')
-        guest.call('coop.fix history.own on')
+        host.call('coop.fix core.own_history on')
+        guest.call('coop.fix core.own_history on')
 
 
 def t_villages(host, guest, ck):
