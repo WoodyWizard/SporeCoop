@@ -298,6 +298,7 @@ constexpr uint32_t kHerdNoun = 0x01BE418E;      // cHerd (runtime: nest herds of
 inline void* herd_species(void* herd) { return *(void**)((uint8_t*)herd + 0xA4); } // cSpeciesProfile*
 inline void* herd_nest(void* herd) { return *(void**)((uint8_t*)herd + 0x160); }    // cNest* (mpNest)
 uint32_t political_id(void* c);
+void set_political_id(void* c, uint32_t pol); // cGameData::SetPoliticalID (vt 0x48, writes +0x30)
 
 // ---- combat ----
 // filter for cCreatureAnimal::TakeDamage: return true to let the game apply it
@@ -404,6 +405,9 @@ void* find_object(uint32_t noun, const net::Vec3& pos, float max_dist);
 // During the swap avatar() still returns the real avatar.
 using AiTargetPicker = void* (*)(void* npc);
 void set_ai_target_picker(AiTargetPicker fn);
+// Extra AI suppression predicate for NPCTickAI (adventure.cpp: paired guest scenario creatures only)
+using AiSkipFn = bool (*)(void* creature);
+void set_ai_skip(AiSkipFn fn);
 uint32_t ai_swaps(); // NPC ticks run with a puppet as the player (diagnostics)
 void swap_guard_tick();          // once per frame: undo an NPC tick's avatar swap a fault left open (BUG-0110)
 bool lend_ledger_on();           // BUG-0882 (game.lend_ledger): lent state in the ledger, call guards reset per frame

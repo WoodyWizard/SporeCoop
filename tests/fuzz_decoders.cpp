@@ -36,6 +36,7 @@
 #include "net/utf8.h"
 #include "net/validate.h"
 #include "fields_wire.h"
+#include "wire/adventure.h"
 #include "wire/common.h"
 #include "wire/history.h"
 #include "wire/shared_res.h"
@@ -1108,6 +1109,10 @@ static const WireDec kWireDecoders[] = {
     wire_dec<wire::shared_res::Res>, wire_dec<wire::shared_res::ResAdd>, wire_dec<FieldsPacket>,
     // wire/history.h (MSG_PLAYER_HISTORY, WP-H1)
     wire_dec<wire::history::Record>, wire_dec<wire::history::Cell>,
+    // wire/adventure.h (MSG_ADVENTURE, WP-A of 0.7.99)
+    wire_dec<wire::adventure::Hello>, wire_dec<wire::adventure::Welcome>, wire_dec<wire::adventure::Propose>,
+    wire_dec<wire::adventure::Commit>, wire_dec<wire::adventure::ActChange>, wire_dec<wire::adventure::Outcome>,
+    wire_dec<wire::adventure::Death>, wire_dec<wire::adventure::Hit>, wire_dec<wire::adventure::ActorBatch>,
 };
 
 // fuzz_struct with a rule per prefix length instead of one base length (MSG_RES: the head alone is an older host's
@@ -1460,6 +1465,75 @@ static void fuzz_wire_space_rivalry(Rng& R, int iters)
     fuzz_struct<v::Set>("rivalry Set", R, iters, [](Rng& R) { v::Set x; x.to = R.u8(); x.have = R.u8(); x.v = (int)R.u32(); return x; });
 }
 
+// wire/adventure.h (MSG_ADVENTURE 79, WP-A)
+static void fuzz_wire_adventure(Rng& R, int iters)
+{
+    namespace a = wire::adventure;
+    auto hdr = [](Rng& R) {
+        a::RunHeader h;
+        h.mission.v[0] = R.u32();
+        h.mission.v[1] = R.u32();
+        h.mission.v[2] = R.u32();
+        h.run_id = R.u32() | 1u;
+        return h;
+    };
+    auto goal = [](Rng& R) {
+        a::GoalData g;
+        g.act = R.below(a::kMaxAct + 1);
+        g.slot = R.below(a::kMaxGoalSlot + 1);
+        g.kind = R.below(16);
+        g.target = R.u32();
+        g.secondary = R.u32();
+        g.required = R.below(1000);
+        g.object_id = R.u32();
+        g.count = R.below(1000);
+        return g;
+    };
+    fuzz_struct<a::Hello>("adventure Hello", R, iters, [&](Rng& R) {
+        a::Hello x; x.hdr = hdr(R); if (R.below(4) == 0) x.hdr.run_id = 0; x.visitor_id = R.u32(); x.last_seq = R.u32(); return x;
+    });
+    fuzz_struct<a::Welcome>("adventure Welcome", R, iters, [&](Rng& R) {
+        a::Welcome x; x.hdr = hdr(R); x.visitor_id = R.u32(); x.act = R.below(a::kMaxAct + 1); x.state = R.below(7); x.seq = R.u32(); return x;
+    });
+    fuzz_struct<a::Propose>("adventure Propose", R, iters, [&](Rng& R) {
+        a::Propose x; x.hdr = hdr(R); x.goal = goal(R); return x;
+    });
+    fuzz_struct<a::Commit>("adventure Commit", R, iters, [&](Rng& R) {
+        a::Commit x; x.hdr = hdr(R); x.seq = R.u32() | 1u; x.goal = goal(R); return x;
+    });
+    fuzz_struct<a::ActChange>("adventure ActChange", R, iters, [&](Rng& R) {
+        a::ActChange x; x.hdr = hdr(R); x.seq = R.u32() | 1u; x.act = R.below(a::kMaxAct + 1); return x;
+    });
+    fuzz_struct<a::Outcome>("adventure Outcome", R, iters, [&](Rng& R) {
+        a::Outcome x; x.hdr = hdr(R); x.seq = R.u32() | 1u; x.state = R.below(2) ? 5 : 6; return x;
+    });
+    fuzz_struct<a::Death>("adventure Death", R, iters, [&](Rng& R) {
+        a::Death x; x.hdr = hdr(R); x.seq = R.u32(); x.object_id = R.u32() | 1u; x.deaths = (uint8_t)(1 + R.below(a::kMaxDeaths)); return x;
+    });
+    fuzz_struct<a::Hit>("adventure Hit", R, iters, [&](Rng& R) {
+        a::Hit x; x.hdr = hdr(R); x.marker_hash = R.u32(); x.class_id = (int32_t)R.below(1000);
+        x.host_key = R.u32() | 1u; x.damage = 0.5f + (float)R.below(10000); x.dmg_type = (int32_t)R.u32(); return x;
+    });
+    fuzz_struct<a::ActorBatch>("adventure ActorBatch", R, iters / 2, [&](Rng& R) {
+        a::ActorBatch x; x.hdr = hdr(R); x.time_ms = R.u32();
+        int n = (int)R.below(a::kMaxActorsPerBatch + 1);
+        for (int i = 0; i < n; i++) {
+            a::ActorSample s;
+            s.host_key = R.u32() | 1u;
+            s.marker_hash = R.u32();
+            s.class_id = (int32_t)R.below(200);
+            for (float& f : s.pos) f = (float)((int)R.below(20001) - 10000) / 7.f;
+            for (float& f : s.rot) f = (float)((int)R.below(201) - 100) / 100.f;
+            for (float& f : s.vel) f = (float)((int)R.below(2001) - 1000) / 10.f;
+            s.hp = (float)R.below(5000);
+            s.max_hp = (float)R.below(5000);
+            s.flags = R.below(2) ? a::kActorFlagDead : 0;
+            x.actors.push_back(s);
+        }
+        return x;
+    });
+}
+
 static void fuzz_wire(uint64_t seed, int iters)
 {
     printf("game module payloads, mods/coop/wire (%d mutations each)\n", iters);
@@ -1469,6 +1543,7 @@ static void fuzz_wire(uint64_t seed, int iters)
     fuzz_wire_space_badges(R, iters);
     fuzz_wire_space_rivalry(R, iters);
     fuzz_wire_modules(R, iters);
+    fuzz_wire_adventure(R, iters);
 }
 
 #ifdef FUZZ_LIBFUZZER

@@ -63,6 +63,7 @@ enum Id : int {
     kSpaceFinale,    // Space: the galaxy's core together (space_finale.cpp)
     kSpaceRivals,    // Space: the host may switch to the rivals mode (space_rivalry.cpp)
     kAutosave,       // all stages: the host's game saves itself every N minutes and after milestones (E2, autosave.h)
+    kAdventureShared, // Adventure: shared Galactic Adventures run journal and host-authoritative creatures (WP-A, BUG-1474 / BUG-0793)
     kCount
 };
 
@@ -211,6 +212,9 @@ inline const Def kDefs[kCount] = {
     {"all.autosave", "All stages", "Host autosave",
      "every N minutes and after a milestone (a new stage, a colony founded, a city captured, an epic killed) the host's game saves itself into its own save, as the pause menu's Save; off: only the players' own saves",
      2, 0, 5, Scope::Live, "autosave", false, "off|5 min|10 min|15 min|30 min|60 min"},
+    {"adventure.shared", "Adventure", "Shared adventure run",
+     "on: Galactic Adventures share goals, act changes, outcome, and host-simulated enemies across players; off: each game plays its own copy with captain puppets only",
+     1, 0, 1, Scope::Session, nullptr, true},
 };
 
 // all.autosave (E2): the minutes of a choice (0 = off)

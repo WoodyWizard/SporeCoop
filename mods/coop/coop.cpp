@@ -1232,6 +1232,7 @@ static void frame_stage_ticks(double now)
         teamplay::tick(game::avatar(), now);
     revive::tick(now); // WP-R1 of 0.7.17 (BUG-1472): a downed creature, its revive, the party wipe
     fov::tick(g_mode); // WP-Q1 of 0.7.99 (BUG-0866): reset widened third-person FOV when leaving Creature/Adventure
+    adventure::tick(now); // WP-A of 0.7.99 (BUG-1474, BUG-0793): co-op Galactic Adventures shared run and host actors
 }
 
 // on_frame, phase: our player state (net::state_due: every 0.05 s, a stop at once) and the echo test remote
@@ -3005,6 +3006,17 @@ static void init_tribe_and_creations()
     creations::init(H, M, std::move(crc));
     species::init(H, M, &g_sess); // WP-0 (BUG-1270)
     history::init(H, M, &g_sess); // WP-H1 (BUG-1470, BUG-1471)
+    {
+        adventure::Ctx ac; // WP-A of 0.7.99 (BUG-1474, BUG-0793): co-op Galactic Adventures
+        ac.sess = &g_sess;
+        ac.puppet_of = [](uint8_t id) -> void* {
+            auto it = g_remotes.find(id);
+            return it != g_remotes.end() ? puppet_now(it->second) : nullptr;
+        };
+        ac.notice = [](const std::string& t) { notice(t, -1); };
+        ac.feed = feed;
+        adventure::init(H, M, std::move(ac));
+    }
     own_captain::init(H, M, &g_sess); // WP-K1 (BUG-1475)
     civedit::init(H, M, &g_sess); // WP-C3 (BUG-1275)
     civ_arrival_init();           // WP-X1 (BUG-1276)

@@ -1,4 +1,5 @@
 #include "npc.h"
+#include "adventure.h"
 #include "party_difficulty.h"
 #include "lifecycle.h"
 #include "player_rules.h"
@@ -643,8 +644,10 @@ void set_partner_targets(bool on) { g_partner_targets = on; }
 static void* ai_target(void* c)
 {
     // (the session setting creature.npcs_target_partners, coop.ini npcs_target_partners its default; the fix switch
-    // and `coop.npc partners off` stay the test seams)
-    if (!g_enabled || !g_partner_targets || !settings::on(settings::kNpcTargets) || !is_host() || !game::in_creature_stage())
+    // and `coop.npc partners off` stay the test seams; in kScenario, adventure.body_side + host_actors enables it)
+    const bool adv = adventure::host_ai_targets_partners();
+    if (!g_enabled || !g_partner_targets || !settings::on(settings::kNpcTargets) || !is_host() ||
+        (!game::in_creature_stage() && !adv))
         return nullptr;
     void* av = game::avatar();
     auto prev = g_ai_target.find(c);
@@ -3512,6 +3515,8 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
 {
     if (!g_enabled || !C.sess || !C.sess->connected())
         return true;
+    if (game::mode_id() == modes::kScenario && !adventure::damage_filter(c, damage, type, attacker))
+        return false;
     void* av = game::avatar();
     if (is_guest()) {
         uint16_t pid;

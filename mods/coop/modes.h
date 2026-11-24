@@ -68,6 +68,11 @@ uint32_t current_place(const Adapter* a); // adapter place() or current_world()
 // tests (BUG-0845): the adventure's resource key (instance, group) the place id is made of; a place id forced for every
 // adventure (0: off) so that two games in their own copies of one adventure count as the same place (puppets)
 bool adventure_key(uint32_t& instance, uint32_t& group);
+// Full 3-dword adventure mission key (instance, type, group); when adventure_force_place is set, returns {forced, 0, 0}
+// so two games with distinct local tutorial copies still match under the forced place id.
+bool adventure_mission_key(uint32_t out[3]);
+// cScenarioPlayMode* (cScenarioMode +0x78) when in kScenario, else nullptr
+void* adventure_play_mode();
 void adventure_force_place(uint32_t id);
 std::string current_world_name(); // the planet file being played, UTF-8 ("Name.spo"; "SaveGame" in menus)
 std::string raw_world_name(); // the game's CurrentGameName as is (may be "snapshot.spo", BUG-0258)

@@ -1368,6 +1368,7 @@ typedef void(SK_THISCALL* NPCTickAI_t)(void*, float);
 static NPCTickAI_t o_NPCTickAI;
 
 static AiTargetPicker g_ai_picker;
+static AiSkipFn g_ai_skip;
 static void* g_swap_real; // the real avatar while an NPC ticks with a puppet as mpAvatar
 static void* g_swap_puppet; // ... the puppet written into mpAvatar, and the tuning lent to it
 static void* g_swap_lent;
@@ -1376,12 +1377,15 @@ static bool g_swap_guard = true;      // coop.npc swapguard off: no restore afte
 COOP_FIX("npc.swapguard", "BUG-0110", g_swap_guard, "creature: a fault in the NPC AI tick does not leave the puppet as the avatar");
 static bool g_swap_fault_test = false; // tests: the next swapped tick leaves like a fault would
 void set_ai_target_picker(AiTargetPicker fn) { g_ai_picker = fn; }
+void set_ai_skip(AiSkipFn fn) { g_ai_skip = fn; }
 uint32_t ai_swaps() { return g_ai_swaps; }
 
 static void SK_THISCALL h_NPCTickAI(void* self, float dt)
 {
     if (is_puppet(self))
         return; // remote players drive their puppets, no local AI
+    if (g_ai_skip && g_ai_skip(self))
+        return; // adventure host-authoritative creatures (paired guest creatures only)
     void* t = g_ai_picker && !g_swap_real ? g_ai_picker(self) : nullptr;
     void* nm = t ? cdecl_call<void*>(a_NounGet) : nullptr;
     void* real = nm ? field<void*>(nm, kNounAvatarOff) : nullptr;
@@ -2614,6 +2618,7 @@ bool nest_position(void* c, net::Vec3& out)
 }
 
 uint32_t political_id(void* c) { return vcall<uint32_t>(c, 0x4C / 4); } // cGameData::GetPoliticalID
+void set_political_id(void* c, uint32_t pol) { vcall<void>(c, 0x48 / 4, pol); } // cGameData::SetPoliticalID (+0x30)
 
 float dna()
 {

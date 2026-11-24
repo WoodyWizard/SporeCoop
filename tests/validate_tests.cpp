@@ -1332,8 +1332,9 @@ static void test_manifest()
     // types added after 0.7.14 (a 0.7.14 peer ignores them, B6): MSG_HOST_BUSY 70 (BUG-1142), MSG_TRIBE_ANIM 71 (C7,
     // BUG-1160), MSG_CELL_MATE 72 (BUG-1246), MSG_SPECIES_LINE 73 (WP-0 of 0.7.16, BUG-1270)
     // MSG_CIV_WALLET 74 (WP-M1 of 0.7.17, BUG-1468), MSG_PLAYER_HISTORY 75 (WP-H1, BUG-1470), MSG_PROGRESS 76 (WP-P1 / P2,
-    // BUG-1469), MSG_RESCUE 77 (WP-R1, BUG-1472), MSG_UFO_LEAD 78 (WP-S1 of 0.7.17, BUG-1288)
-    const std::set<int> added_types = {70, 71, 72, 73, 74, 75, 76, 77, 78};
+    // BUG-1469), MSG_RESCUE 77 (WP-R1, BUG-1472), MSG_UFO_LEAD 78 (WP-S1 of 0.7.17, BUG-1288),
+    // MSG_ADVENTURE 79 (WP-A of 0.7.99, BUG-1474 / BUG-0793)
+    const std::set<int> added_types = {70, 71, 72, 73, 74, 75, 76, 77, 78, 79};
     CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0] + added_types.size()));
     CHECK(MSG_HOST_BUSY == 70 && msg_info(70).known && msg_dir(70) == MsgDir::Host &&
           host_world::msg_class(70) == host_world::MsgClass::Session && dispatch_route(70, false) == Route::HostBusy &&
@@ -1368,6 +1369,11 @@ static void test_manifest()
           msg_dir(77) == MsgDir::Any && host_world::msg_class(77) == host_world::MsgClass::HostWorld &&
           dispatch_route(77, true) == Route::Rescue && dispatch_route(77, false) == Route::Rescue &&
           reserved_msg(77) && std::string(reserved_msg(77)->name) == "RESCUE");
+    // WP-A of 0.7.99 (BUG-1474 / BUG-0793): co-op Galactic Adventures, Module-gated by mission key, creature 1.4
+    CHECK(MSG_ADVENTURE == 79 && std::string(msg_info(79).name) == "ADVENTURE" && msg_info(79).family == Family::creature &&
+          msg_dir(79) == MsgDir::Any && host_world::msg_class(79) == host_world::MsgClass::Module &&
+          dispatch_route(79, true) == Route::Adventure && dispatch_route(79, false) == Route::Adventure &&
+          reserved_msg(79) && std::string(reserved_msg(79)->name) == "ADVENTURE");
     for (int t : added_types)
         for (auto& g : golden0714::kTypes)
             CHECK(g.id != t);
