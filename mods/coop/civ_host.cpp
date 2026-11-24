@@ -3,6 +3,7 @@
 // civ.cpp (C8 of 0.7.15, BUG-1164).
 #include "civ_internal.h"
 #include "civ_wallet.h"
+#include "net/compat.h"
 #include "own_world.h"
 
 namespace civ {
@@ -714,6 +715,91 @@ static void claims_opened()
         claims_refresh();
 }
 
+static double g_last_kin_send = 0.0;
+static uint16_t g_kin_tx_seq = 0;
+
+// BUG-0438: 20 Hz kinematics stream for moving vehicles (chunk kVehKinChunk 0xF8, chunks 0), sent only to civ 1.3+ peers.
+static void host_send_veh_kin(double now)
+{
+    if (!g_veh_burst_fix || !C.sess)
+        return;
+    if (!net::state_due(now, g_last_kin_send, 0.f, 0.f, civlogic::kVehKinPeriod))
+        return;
+    std::vector<uint8_t> peers;
+    for (auto& pl : C.sess->players()) {
+        if (pl.id == 0)
+            continue;
+        bool has = false;
+        std::vector<net::FamilyRev> fam;
+        if (C.sess->peer_families(pl.id, has, fam) &&
+            net::compat::has_minor(fam, has, (uint8_t)net::Family::civ, 1, 3))
+            peers.push_back(pl.id);
+    }
+    if (peers.empty())
+        return;
+    struct KinRow {
+        uint16_t id;
+        net::Vec3 pos;
+        net::Quat rot;
+        net::Vec3 vel;
+        float top;
+    };
+    std::vector<KinRow> rows;
+    auto vehicles = all_vehicles();
+    for (void* v : vehicles) {
+        HvRef x = hv_find(v);
+        if (!x || F<uint8_t>(v, kVDead))
+            continue;
+        HV& hv = *x.h;
+        net::Vec3 p = veh_pos(v);
+        float top = F<float>(v, 0x218);
+        if (!std::isfinite(top) || top < 0.f || top > 10000.f)
+            top = 0.f;
+        float loco[3] = {F<float>(v, kVVel), F<float>(v, kVVel + 4), F<float>(v, kVVel + 8)};
+        float pf[3] = {p.x, p.y, p.z};
+        float prev[3] = {hv.prev_pos.x, hv.prev_pos.y, hv.prev_pos.z};
+        float vf[3] = {};
+        civlogic::veh_vel_pick(loco, pf, prev, hv.have_prev, now - hv.prev_t, 2.f * top + 10.f, vf);
+        hv.prev_pos = p;
+        hv.prev_t = now;
+        hv.have_prev = true;
+        float sp2 = vf[0] * vf[0] + vf[1] * vf[1] + vf[2] * vf[2];
+        if (sp2 > 0.09f)
+            hv.last_moving_at = now;
+        float lp[3] = {hv.last_kin_pos.x, hv.last_kin_pos.y, hv.last_kin_pos.z};
+        if (!civlogic::veh_kin_send(vf, pf, lp, hv.have_kin, now, hv.last_moving_at))
+            continue;
+        hv.last_kin_pos = p;
+        hv.have_kin = true;
+        rows.push_back({x.id, p, veh_rot(v), {vf[0], vf[1], vf[2]}, top});
+    }
+    if (rows.empty())
+        return;
+    const uint32_t ms = net::now_ms();
+    constexpr size_t kMaxPerKin = 24; // 9 + 24 * 46 = 1113 <= kMaxPacket
+    for (size_t off = 0; off < rows.size(); off += kMaxPerKin) {
+        size_t cnt = std::min(kMaxPerKin, rows.size() - off);
+        g_kin_tx_seq++;
+        net::Writer w;
+        w.u16(g_kin_tx_seq);
+        w.u8(kVehKinChunk);
+        w.u8(0);
+        w.u32(ms);
+        w.u8((uint8_t)cnt);
+        for (size_t i = off; i < off + cnt; i++) {
+            const KinRow& r = rows[i];
+            w.u16(r.id);
+            w.f32(r.pos.x); w.f32(r.pos.y); w.f32(r.pos.z);
+            w.f32(r.rot.x); w.f32(r.rot.y); w.f32(r.rot.z); w.f32(r.rot.w);
+            w.f32(r.vel.x); w.f32(r.vel.y); w.f32(r.vel.z);
+            w.f32(r.top);
+        }
+        for (uint8_t pid : peers)
+            C.sess->send_unreliable_to(pid, net::MSG_CIV_STATE, w);
+        g_n.kin_tx++;
+    }
+}
+
 void host_tick(double now)
 {
     if (!g_held_builds.empty() && !planner_city()) {
@@ -738,9 +824,15 @@ void host_tick(double now)
     host_send_shots(now); // BUG-0477
     host_send_tribes(now); // BUG-0539
     influence_host_tick(now); // BUG-1285, BUG-1287
-    if (now - g_last_send < 0.1)
-        return;
-    g_last_send = now;
+    host_send_veh_kin(now); // BUG-0438: 20 Hz moving-vehicle kinematics
+    if (g_veh_burst_fix) {
+        if (!net::state_due(now, g_last_send, 0.f, 0.f, 0.1))
+            return;
+    } else {
+        if (now - g_last_send < 0.1)
+            return;
+        g_last_send = now;
+    }
     drop_foreign_selection();
     std::vector<uint8_t> players;
     for (auto& p : C.sess->players())
