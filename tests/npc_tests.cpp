@@ -979,6 +979,30 @@ static void test_social_logic()
     CHECK(!should_materialize_rel(true, true, true, true, 5, 5));   // already materialized
     CHECK(!should_materialize_rel(true, true, true, true, 0, 0));   // unknown default
     CHECK(!should_materialize_rel(true, true, true, true, 0, 6));   // player species / allied
+
+    // BUG-1256: guest pack recruit brain limits, eligibility, and PackOwners lifecycle
+    CHECK(pack_limit_for_brain(-1) == 0 && pack_limit_for_brain(0) == 0 && pack_limit_for_brain(1) == 1 &&
+          pack_limit_for_brain(2) == 2 && pack_limit_for_brain(3) == 3 && pack_limit_for_brain(4) == 3);
+    CHECK(can_recruit(false, true, false, 0, 1) == RecruitFail::Disabled);
+    CHECK(can_recruit(true, false, false, 0, 1) == RecruitFail::NotAllied);
+    CHECK(can_recruit(true, true, true, 0, 1) == RecruitFail::AlreadyInPack);
+    CHECK(can_recruit(true, true, false, 1, 1) == RecruitFail::PackFull);
+    CHECK(can_recruit(true, true, false, 0, 0) == RecruitFail::PackFull);
+    CHECK(can_recruit(true, true, false, 0, 1) == RecruitFail::Ok);
+    CHECK(can_recruit(true, true, false, 2, 3) == RecruitFail::Ok);
+    PackOwners po;
+    CHECK(!po.add(10, 0, 3)); // host uses native pack, not guest pack table
+    CHECK(!po.add(10, 1, 0)); // brain 0 -> cap 0
+    CHECK(po.add(10, 1, 2) && po.owner_of(10) == 1 && po.count_of(1) == 1);
+    CHECK(!po.add(10, 2, 2)); // already owned by player 1
+    CHECK(po.add(11, 1, 2) && po.count_of(1) == 2);
+    CHECK(!po.add(12, 1, 2)); // player 1 at cap 2
+    CHECK(po.add(12, 2, 1) && po.count_of(2) == 1);
+    CHECK(po.remove(10) && po.owner_of(10) == kNoOwner && po.count_of(1) == 1);
+    auto rel = po.release_player(1);
+    CHECK(rel.size() == 1 && rel[0] == 11 && po.count_of(1) == 0 && po.count_of(2) == 1);
+    po.clear();
+    CHECK(po.owners.empty());
 }
 
 int main(int argc, char** argv)

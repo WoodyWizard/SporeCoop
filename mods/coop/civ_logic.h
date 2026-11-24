@@ -262,4 +262,72 @@ inline bool veh_kin_send(const float vel[3], const float pos[3], const float las
     }
     return last_moving_at > 0.0 && now - last_moving_at <= kVehStopTail;
 }
+
+// ---------------- standing city citizen gestures (BUG-1231) ----------------
+// On the host, standing city citizens play idle 0x02481DE5 or gestures (0x04A1DD75, 0x04A3442D, 0x050B5AB8, ...).
+// A guest's bound copy plays none of those on its own; worldobj.cpp carries the host citizen's drawn animation in the
+// citizen snapshot's u32 state field and mirrors standing gestures here.
+constexpr uint32_t kCitizenRunAnim = 0x02481DB0u;
+constexpr uint32_t kCitizenIdleAnim = 0x02481DE5u;
+constexpr uint32_t kCitizenGoneState = ~0u;
+
+inline bool is_citizen_gesture(uint32_t anim)
+{
+    return anim != 0 && anim != kCitizenGoneState && anim != kCitizenRunAnim && anim != kCitizenIdleAnim;
+}
+
+enum class CitizenAnimAction : uint8_t { Keep, PlayGesture, EndToIdle };
+
+inline CitizenAnimAction citizen_gesture_step(bool fix, bool moving, uint32_t local_anim, uint32_t host_anim,
+                                              uint32_t& last_gesture, double& gesture_at, double now,
+                                              double repeat_gap = 1.5)
+{
+    if (moving) {
+        last_gesture = 0;
+        return CitizenAnimAction::Keep;
+    }
+    if (!fix || host_anim == 0 || host_anim == kCitizenGoneState)
+        return CitizenAnimAction::Keep;
+    if (is_citizen_gesture(host_anim)) {
+        if (local_anim == host_anim)
+            return CitizenAnimAction::Keep;
+        if (host_anim != last_gesture || now - gesture_at >= repeat_gap) {
+            last_gesture = host_anim;
+            gesture_at = now;
+            return CitizenAnimAction::PlayGesture;
+        }
+        return CitizenAnimAction::Keep;
+    }
+    last_gesture = 0;
+    if (host_anim == kCitizenIdleAnim && is_citizen_gesture(local_anim))
+        return CitizenAnimAction::EndToIdle;
+    return CitizenAnimAction::Keep;
+}
+
+// ---------------- friendly fire (BUG-0899) ----------------
+
+enum class FfGate : uint8_t { Normal = 0, Allow = 1, Block = 2 };
+
+// Cross-player damage gate for vehicles and cities inside the shared player civilization.
+inline FfGate ff_damage_gate(bool ff_on, uint8_t att_owner, uint8_t vic_owner, uint8_t max_players = 8)
+{
+    if (att_owner < max_players && vic_owner < max_players && att_owner != vic_owner)
+        return ff_on ? FfGate::Allow : FfGate::Block;
+    return FfGate::Normal;
+}
+
+// True when a military vehicle (purpose == 0) of `att_owner` may take an FF attack order against `vic_owner`.
+inline bool can_ff_order(bool ff_on, uint8_t att_owner, uint8_t vic_owner, int purpose, uint8_t max_players = 8)
+{
+    return ff_on && purpose == 0 && att_owner < max_players && vic_owner < max_players && att_owner != vic_owner;
+}
+
+enum class FfStep : uint8_t { Wait = 0, Move = 1, Fire = 2 };
+
+inline FfStep ff_combat_step(float dist, float range, double now, double next_move, double next_fire)
+{
+    if (dist > range)
+        return now >= next_move ? FfStep::Move : FfStep::Wait;
+    return now >= next_fire ? FfStep::Fire : FfStep::Wait;
+}
 } // namespace civlogic

@@ -418,6 +418,69 @@ static void test_guest_ship_editor()
     CHECK(s4.phase == Phase::Idle && s4.dropped == 1);
 }
 
+// BUG-1231 (civ.citizen_gesture): standing city citizen gestures follow the host's animation
+static void test_citizen_gestures()
+{
+    printf("citizen_gestures\n");
+    constexpr uint32_t kCheer = 0x04A1DD75u, kTalk = 0x04A3442Du;
+    CHECK(!is_citizen_gesture(0));
+    CHECK(!is_citizen_gesture(kCitizenGoneState));
+    CHECK(!is_citizen_gesture(kCitizenRunAnim));
+    CHECK(!is_citizen_gesture(kCitizenIdleAnim));
+    CHECK(is_citizen_gesture(kCheer) && is_citizen_gesture(kTalk));
+
+    uint32_t last = 0;
+    double at = -100;
+    // fix off: never plays or ends gestures
+    CHECK(citizen_gesture_step(false, false, kCitizenIdleAnim, kCheer, last, at, 10.0) == CitizenAnimAction::Keep);
+    // old host (0) or gone sentinel: no-op
+    CHECK(citizen_gesture_step(true, false, kCitizenIdleAnim, 0, last, at, 10.0) == CitizenAnimAction::Keep);
+    CHECK(citizen_gesture_step(true, false, kCitizenIdleAnim, kCitizenGoneState, last, at, 10.0) == CitizenAnimAction::Keep);
+    // new standing gesture from host -> PlayGesture
+    CHECK(citizen_gesture_step(true, false, kCitizenIdleAnim, kCheer, last, at, 10.0) == CitizenAnimAction::PlayGesture);
+    CHECK(last == kCheer && at == 10.0);
+    // already playing the same gesture -> Keep
+    CHECK(citizen_gesture_step(true, false, kCheer, kCheer, last, at, 10.5) == CitizenAnimAction::Keep);
+    // one-shot finished locally before next host snapshot (within repeat_gap) -> Keep (do not falsely restart)
+    CHECK(citizen_gesture_step(true, false, kCitizenIdleAnim, kCheer, last, at, 10.8) == CitizenAnimAction::Keep);
+    // host still playing the same gesture after repeat_gap -> replay
+    CHECK(citizen_gesture_step(true, false, kCitizenIdleAnim, kCheer, last, at, 12.0) == CitizenAnimAction::PlayGesture);
+    CHECK(at == 12.0);
+    // host switches to a different gesture -> PlayGesture immediately
+    CHECK(citizen_gesture_step(true, false, kCheer, kTalk, last, at, 12.2) == CitizenAnimAction::PlayGesture);
+    CHECK(last == kTalk && at == 12.2);
+    // host returns to plain idle while guest is still gesturing -> EndToIdle and clear last
+    CHECK(citizen_gesture_step(true, false, kTalk, kCitizenIdleAnim, last, at, 13.0) == CitizenAnimAction::EndToIdle);
+    CHECK(last == 0);
+    // already idle on both -> Keep
+    CHECK(citizen_gesture_step(true, false, kCitizenIdleAnim, kCitizenIdleAnim, last, at, 13.5) == CitizenAnimAction::Keep);
+    // moving clears last_gesture so the same gesture can play again after stopping
+    CHECK(citizen_gesture_step(true, false, kCitizenIdleAnim, kCheer, last, at, 14.0) == CitizenAnimAction::PlayGesture);
+    CHECK(citizen_gesture_step(true, true, kCitizenRunAnim, kCheer, last, at, 14.2) == CitizenAnimAction::Keep);
+    CHECK(last == 0);
+    CHECK(citizen_gesture_step(true, false, kCitizenIdleAnim, kCheer, last, at, 14.5) == CitizenAnimAction::PlayGesture);
+}
+
+static void test_friendly_fire()
+{
+    printf("friendly_fire\n");
+    CHECK(ff_damage_gate(false, 0, 1) == FfGate::Block);
+    CHECK(ff_damage_gate(true, 0, 1) == FfGate::Allow);
+    CHECK(ff_damage_gate(false, 1, 1) == FfGate::Normal);
+    CHECK(ff_damage_gate(false, 0, kShared) == FfGate::Normal);
+    CHECK(ff_damage_gate(false, 0, kNpc) == FfGate::Normal);
+    CHECK(can_ff_order(true, 0, 1, 0));
+    CHECK(!can_ff_order(false, 0, 1, 0));
+    CHECK(!can_ff_order(true, 0, 1, 1)); // religious vehicle does not shoot
+    CHECK(!can_ff_order(true, 0, 1, 2)); // economic vehicle does not shoot
+    CHECK(!can_ff_order(true, 0, 0, 0));
+    CHECK(!can_ff_order(true, 0, kShared, 0));
+    CHECK(ff_combat_step(60.f, 45.f, 10.0, 9.0, 9.0) == FfStep::Move);
+    CHECK(ff_combat_step(60.f, 45.f, 10.0, 10.5, 9.0) == FfStep::Wait);
+    CHECK(ff_combat_step(30.f, 45.f, 10.0, 10.5, 9.0) == FfStep::Fire);
+    CHECK(ff_combat_step(30.f, 45.f, 10.0, 9.0, 10.5) == FfStep::Wait);
+}
+
 int main()
 {
     test_money();
@@ -430,6 +493,8 @@ int main()
     test_passive_income_cause();
     test_veh_burst();
     test_guest_ship_editor();
+    test_citizen_gestures();
+    test_friendly_fire();
     printf(g_fail ? "civ_tests: %d FAILED\n" : "civ_tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

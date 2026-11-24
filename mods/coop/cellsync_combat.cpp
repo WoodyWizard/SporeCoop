@@ -6,6 +6,38 @@
 #include "net/compat.h"
 
 namespace cellsync {
+bool is_pvp_puppet_damageable(uint8_t* c);
+}
+
+// BUG-0899: Cell_IsDamageable (0xE52940, custom ESI = cell*, bool in AL) rejects puppets because they share the
+// avatar's resource (ai.type == 0) while having idx != avatar_idx. When Cell friendly fire is on, allow live
+// partner puppets to pass IsDamageable so the game's own jaw/spike/electric combat runs against them.
+extern "C" {
+uint8_t cell_ff_damageable_on = 0;
+void* cell_o_IsDamageable = nullptr;
+bool __cdecl cell_puppet_damageable(uint8_t* c) { return cellsync::is_pvp_puppet_damageable(c); }
+void cell_h_IsDamageable();
+}
+__asm__(".text\n"
+        ".globl _cell_h_IsDamageable\n"
+        "_cell_h_IsDamageable:\n"
+        "  cmpb $0, _cell_ff_damageable_on\n"
+        "  je 1f\n"
+        "  pushl %ecx\n"
+        "  pushl %edx\n"
+        "  pushl %esi\n"
+        "  call _cell_puppet_damageable\n"
+        "  addl $4, %esp\n"
+        "  popl %edx\n"
+        "  popl %ecx\n"
+        "  testb %al, %al\n"
+        "  jz 1f\n"
+        "  movl $1, %eax\n"
+        "  ret\n"
+        "1:\n"
+        "  jmp *_cell_o_IsDamageable\n");
+
+namespace cellsync {
 
 // ---------------- guest -> host: what our avatar did to a cell of the host's pool ----------------
 void send_act(uint32_t hidx, uint8_t kind, uint8_t arg, int food, bool plant)
@@ -161,6 +193,83 @@ bool players_hurt_each_other()
 {
     return settings::on(settings::kFriendlyFire) || spaceext::rivals() || pfind::g_test_rivals;
 }
+
+// BUG-0899: extend all.friendly_fire to Cell stage direct combat (bites, mouth chunks, spikes, electric, breaks).
+bool g_fix_cell_ff = true;
+COOP_FIX("cell.friendly_fire", "BUG-0899", g_fix_cell_ff,
+         "cell: with all.friendly_fire on, players' cells can hurt each other (bites, spikes, electric)");
+static double g_pvp_last_hit[8];
+
+bool cell_ff_on() { return g_fix_cell_ff && players_hurt_each_other(); }
+
+void cell_ff_sync_flag()
+{
+    cell_ff_damageable_on = (cell_ff_on() && in_cell() && C.sess && C.sess->connected()) ? 1 : 0;
+}
+
+void pvp_reset()
+{
+    memset(g_pvp_last_hit, 0, sizeof g_pvp_last_hit);
+    cell_ff_damageable_on = 0;
+}
+
+void cell_ff_install_hook()
+{
+    if (uintptr_t a = H->sym("SporeCoop::Cell_IsDamageable"))
+        H->hook_create(M, (void*)a, (void*)&cell_h_IsDamageable, &cell_o_IsDamageable);
+}
+
+bool is_pvp_puppet_damageable(uint8_t* c)
+{
+    if (!c || !cell_ff_on() || !in_cell() || !modes::cell_is_puppet(c))
+        return false;
+    if (F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) || F<int>(c, kHp) <= 0)
+        return false;
+    int owner = C.puppet_owner ? C.puppet_owner(c) : -1;
+    if (owner < 0 || owner >= 8)
+        return false;
+    auto ko = g_ko.find(owner);
+    return ko == g_ko.end() || ko->second.state != KO_OUT;
+}
+
+bool send_pvp_hit(int target_id, int dmg, int type)
+{
+    if (!cell_ff_on() || !in_cell() || !C.sess || !C.sess->connected() || g_downed)
+        return false;
+    if (target_id < 0 || target_id >= 8 || target_id == (int)C.sess->my_id())
+        return false;
+    auto ko = g_ko.find(target_id);
+    if (ko != g_ko.end() && ko->second.state == KO_OUT)
+        return false;
+    double now = H->time_seconds();
+    if (!cell_logic::pvp_hit_ready(now, g_pvp_last_hit[target_id]))
+        return false;
+    g_pvp_last_hit[target_id] = now;
+    int d = cell_logic::pvp_damage(dmg);
+    net::Writer w;
+    if (is_host()) {
+        w.u32(0xFFFFFFFFu);
+        w.u8((uint8_t)d);
+        w.u8((uint8_t)type);
+        C.sess->send_reliable_to((uint8_t)target_id, net::MSG_CELL_HIT, w);
+    } else {
+        w.u32(cell_logic::encode_pvp_target((uint8_t)target_id));
+        w.u8((uint8_t)d);
+        w.u8((uint8_t)type);
+        C.sess->send_reliable_to(0, net::MSG_CELL_HIT, w);
+    }
+    g_n.pvp_out++;
+    trace::ev("pvp", "sent", "cell hit player %d dmg=%d type=%d", target_id, d, type);
+    return true;
+}
+
+std::string cell_ff_status()
+{
+    char b[160];
+    snprintf(b, sizeof b, "cell_ff: on=%d fix=%d pvp_out=%u pvp_in=%u pvp_relayed=%u pvp_refused=%u\n",
+             (int)cell_ff_on(), (int)g_fix_cell_ff, g_n.pvp_out, g_n.pvp_in, g_n.pvp_relayed, g_n.pvp_refused);
+    return b;
+}
 const char* kind_of(uint8_t* c);
 static bool own_product(uint8_t* att) { return att && att != avatar() && F<uint8_t>(att, 0x110) && !modes::cell_is_puppet(att); }
 static void note_foreign_hit(uint8_t* att)
@@ -267,21 +376,41 @@ void SK_CDECL h_Zap(uint8_t* att, uint32_t a2, uint32_t* first)
         g_n.puppet_zaps++;
     if (in_cell() && att && att == avatar())
         g_n.zaps++; // our avatar's electric attacks, with the fix or without
-    if (!g_fix_electric || !in_cell() || !is_guest() || !att || att != avatar() || g_downed) {
-        if (in_cell() && g_downed && att && att == avatar()) {
-            g_n.ko_bites_blocked++; // BUG-0509: a knocked-out cell zaps nobody
-            return;
-        }
+    if (in_cell() && g_downed && att && att == avatar()) {
+        g_n.ko_bites_blocked++; // BUG-0509: a knocked-out cell zaps nobody
+        return;
+    }
+    bool track_mirrors = g_fix_electric && in_cell() && is_guest() && att && att == avatar();
+    bool track_puppets = cell_ff_on() && in_cell() && att && att == avatar() && C.puppets;
+    if (!track_mirrors && !track_puppets) {
         o_Zap(att, a2, first);
         return;
     }
     // the mirrors near us and their hp before the attack (it reaches up to 32 cells in a chain)
     std::vector<std::pair<uint8_t*, int>> around;
     net::Vec3 me = pos_of(att);
-    for (auto& [local, hidx] : g_host_of) {
-        uint8_t* c = modes::cell_at(local);
-        if (c && net::dist(pos_of(c), me) < 60.f)
-            around.push_back({c, F<int>(c, kHp)});
+    if (track_mirrors) {
+        for (auto& [local, hidx] : g_host_of) {
+            uint8_t* c = modes::cell_at(local);
+            if (c && net::dist(pos_of(c), me) < 60.f)
+                around.push_back({c, F<int>(c, kHp)});
+        }
+    }
+    struct PuppetZap {
+        int id;
+        uint8_t* c;
+        int hp;
+        uint8_t invuln;
+    };
+    std::vector<PuppetZap> puppets;
+    if (track_puppets) {
+        for (auto& p : C.puppets()) {
+            uint8_t* pc = (uint8_t*)p.cell;
+            if (!pc || !is_pvp_puppet_damageable(pc) || net::dist(pos_of(pc), me) >= 60.f)
+                continue;
+            puppets.push_back({p.id, pc, F<int>(pc, kHp), F<uint8_t>(pc, kInvuln)});
+            F<uint8_t>(pc, kInvuln) = 0;
+        }
     }
     o_Zap(att, a2, first);
     for (auto& [c, hp] : around) {
@@ -294,6 +423,15 @@ void SK_CDECL h_Zap(uint8_t* att, uint32_t a2, uint32_t* first)
             send_hit(it->second, lost, 1);
             g_n.zap_hits++;
         }
+    }
+    for (auto& pz : puppets) {
+        int lost = pz.hp - F<int>(pz.c, kHp);
+        F<int>(pz.c, kHp) = pz.hp;
+        F<uint8_t>(pz.c, kInvuln) = pz.invuln;
+        F<uint8_t>(pz.c, kDead) = 0;
+        F<uint8_t>(pz.c, kDying) = 0;
+        if (lost > 0)
+            send_pvp_hit(pz.id, lost, 1);
     }
 }
 
@@ -360,10 +498,21 @@ bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const float* dir,
     // (a puppet, no collision pairs, invulnerable) takes nothing, or the guest would be bitten twice
     // (docs/re/cell.md 9). The guest tells the host which NPC bit it (MSG_CELL_BITTEN) for the
     // NPC's own after-bite behaviour.
-    if (is_host() && victim && C.puppet_owner && C.puppet_owner(victim) > 0) {
-        g_n.puppet_hits_dropped++;
-        return false;
+    if (victim && C.puppet_owner) {
+        int vo = C.puppet_owner(victim);
+        if (vo >= 0) {
+            if (attacker && attacker == avatar() && cell_ff_on()) {
+                int dmg = a_GetDamage ? skg::cdecl_call<int>(a_GetDamage, attacker, victim) : 1;
+                send_pvp_hit(vo, dmg, type);
+                return false;
+            }
+            if (is_host() && vo > 0)
+                g_n.puppet_hits_dropped++;
+            return false;
+        }
     }
+    if (victim && victim == avatar() && attacker && C.puppet_owner && C.puppet_owner(attacker) >= 0)
+        return false; // BUG-0899: the partner's machine is authoritative for its attacks on our cell
     if (mate_copy_refuse(victim)) // BUG-1432: a partner's mate is its owner's game's
         return false;
     if (victim && victim == avatar() && attacker && attacker != victim) {
@@ -462,6 +611,18 @@ static void chunk(Chunk_t orig, uint32_t eater, uint32_t victim, uint32_t a, uin
     }
     if (mate_copy_refuse(v)) // BUG-1432: no chunk off a partner's mate (it fed the eater)
         return;
+    if (C.puppet_owner) {
+        int vo = C.puppet_owner(v);
+        if (vo >= 0) {
+            if (e == avatar() && cell_ff_on()) {
+                int dmg = a_GetDamage ? skg::cdecl_call<int>(a_GetDamage, e, v) : 1;
+                send_pvp_hit(vo, dmg, 6);
+            }
+            return; // BUG-0899: never mutate a puppet locally
+        }
+        if (v == avatar() && C.puppet_owner(e) >= 0)
+            return; // partner's machine sends the hit
+    }
     if (e == avatar() && !is_guest())
         g_n.own_chunks++;
     auto it = is_guest() ? g_host_of.find(victim) : g_host_of.end();
@@ -519,6 +680,8 @@ bool SK_CDECL h_KillCell(uint8_t* c, uint32_t killer, void* res, bool by_player,
     }
     if (mate_copy_refuse(c)) // BUG-1432: a partner's mate does not die here (its loot was free meat)
         return false;
+    if (in_cell() && c && modes::cell_is_puppet(c))
+        return false; // BUG-0899: a partner's puppet never dies locally
     if (in_cell() && go_down(c))
         return false;
     if (g_in_guest_attack) // BUG-0714: a guest's attack replayed through the game is a player's kill
@@ -558,6 +721,18 @@ void SK_CDECL h_Break(uint8_t* victim, uint8_t* attacker, float f)
     }
     if (mate_copy_refuse(victim)) // BUG-1432: the lethal bite's BreakOrSwallow (Bite asks no +0x111 there)
         return;
+    if (in_cell() && victim && C.puppet_owner) {
+        int vo = C.puppet_owner(victim);
+        if (vo >= 0) {
+            if (attacker && attacker == avatar() && cell_ff_on()) {
+                int dmg = a_GetDamage ? skg::cdecl_call<int>(a_GetDamage, attacker, victim) : 2;
+                send_pvp_hit(vo, dmg, 4);
+            }
+            return;
+        }
+        if (victim == avatar() && attacker && C.puppet_owner(attacker) >= 0)
+            return;
+    }
     if (in_cell() && go_down(victim))
         return;
     if (in_cell() && victim && victim != avatar() && !modes::cell_is_puppet(victim))
@@ -821,6 +996,18 @@ void SK_CDECL h_ExecInter(uint32_t* in, float dt)
         in[2] = k;
         return;
     }
+    // BUG-0899: when a partner's puppet collides with our avatar under friendly fire, downgrade its attack
+    // interaction here to a plain contact push (1); the partner's own machine decides and sends MSG_CELL_HIT.
+    if (in && in_cell() && avatar() && in[1] == avatar_idx() && in[2] != 1) {
+        uint8_t* att = modes::cell_at(in[0]);
+        if (att && modes::cell_is_puppet(att)) {
+            uint32_t k = in[2];
+            in[2] = 1;
+            o_ExecInter(in, dt);
+            in[2] = k;
+            return;
+        }
+    }
     o_ExecInter(in, dt);
 }
 
@@ -830,6 +1017,16 @@ void SK_CDECL h_Swallow(uint8_t* eater, uint8_t* food, int type)
 {
     if (mate_copy_refuse(food)) // BUG-1432: nobody swallows a partner's mate whole
         return;
+    if (in_cell() && food && C.puppet_owner) {
+        int vo = C.puppet_owner(food);
+        if (vo >= 0) {
+            if (eater && eater == avatar() && cell_ff_on())
+                send_pvp_hit(vo, 2, 4);
+            return; // BUG-0899: never swallow a puppet locally
+        }
+        if (food == avatar() && eater && C.puppet_owner(eater) >= 0)
+            return;
+    }
     if (food && eater && in_cell() && is_guest() && eater == avatar() && g_host_of.count(F<uint32_t>(food, 0))) {
         g_swallowed[F<uint32_t>(food, 0)] = H->time_seconds();
         g_n.swallows_marked++;
@@ -1167,6 +1364,24 @@ void SK_CDECL h_Pair(uint8_t* a, uint8_t* b, float dt)
     if (in_cell() && a && b && (a == avatar() || b == avatar()) && !strcmp(kind_of(a == avatar() ? b : a), "creature"))
         g_n.creature_pairs++;
     if (in_cell() && (modes::cell_is_puppet(a) || modes::cell_is_puppet(b) || mate_copy_cell(a) || mate_copy_cell(b))) {
+        // BUG-0899: with Cell friendly fire on, let our live avatar collide with a live partner puppet so the
+        // game's jaw/spike collision rules run and send MSG_CELL_HIT; NPC-puppet and mate pairs stay skipped.
+        uint8_t* av = avatar();
+        uint8_t* pup = (a == av && modes::cell_is_puppet(b)) ? b : (b == av && modes::cell_is_puppet(a)) ? a : nullptr;
+        if (pup && !g_downed && !mate_copy_cell(a) && !mate_copy_cell(b) && is_pvp_puppet_damageable(pup)) {
+            g_n.own_pairs++;
+            uint8_t saved_invuln = F<uint8_t>(pup, kInvuln);
+            int saved_hp = F<int>(pup, kHp);
+            F<uint8_t>(pup, kInvuln) = 0;
+            own_probe("before a collision", pup);
+            o_Pair(a, b, dt);
+            F<uint8_t>(pup, kInvuln) = saved_invuln;
+            F<int>(pup, kHp) = saved_hp;
+            F<uint8_t>(pup, kDead) = 0;
+            F<uint8_t>(pup, kDying) = 0;
+            own_probe("collision", pup);
+            return;
+        }
         // a partner's cell is a picture of a cell simulated on its owner's machine: here nothing eats
         // it, swallows it or is eaten by it (the owner's own game does that, with our cells mirrored)
         g_n.pairs_skipped++;

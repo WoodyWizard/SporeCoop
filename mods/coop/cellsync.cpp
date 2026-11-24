@@ -840,6 +840,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_Zap, (void*)h_Zap, (void**)&o_Zap);
     if (a_GetDamage) // BUG-0714: the guest's damage for its replayed attack
         H->hook_create(M, (void*)a_GetDamage, (void*)h_GetDamage, (void**)&o_GetDamage);
+    cell_ff_install_hook(); // BUG-0899: Cell_IsDamageable for friendly fire on partner puppets
     H->hook_create(M, (void*)a_KillCell, (void*)h_KillCell, (void**)&o_KillCell);
     H->hook_create(M, (void*)a_Break, (void*)h_Break, (void**)&o_Break);
     if (uintptr_t sw = H->sym("Simulator::Cell::SwallowWhole")) // BUG-0827
@@ -1000,6 +1001,7 @@ static void forget_mirrors()
     g_kill_applied.reset();
     g_partner_clouds.clear(); // BUG-0958
     g_eaten.reset();
+    pvp_reset(); // BUG-0899
 }
 
 // BUG-0070: the knockout ends with the session and with the stage. Before, a session ending within
@@ -1449,8 +1451,11 @@ void tick(double now)
         camera_heal(avatar()); // BUG-0604: solo too (a session that ended keeps the lost view)
         scale_centre_note();   // BUG-1394
     }
-    if (!in_cell() || !C.sess || !C.sess->connected() || !avatar())
+    if (!in_cell() || !C.sess || !C.sess->connected() || !avatar()) {
+        cell_ff_sync_flag();
         return;
+    }
+    cell_ff_sync_flag();
     mate_tick(now); // BUG-1246
     bg_cull(now);
     spare_tick(); // BUG-0355
@@ -1542,6 +1547,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         int dmg = r.u8(), t = r.u8();
         if (r.ok() && idx == 0xFFFFFFFFu) {
             g_n.hurt_fwd++;
+            if (cell_ff_on())
+                g_n.pvp_in++;
             hurt_avatar(dmg, t);
         }
         return;
@@ -1580,6 +1587,35 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     } else if (type == net::MSG_CELL_HIT && is_host()) {
         uint32_t idx = r.u32();
         int dmg = r.u8(), t = r.u8();
+        uint8_t pvp_target = 0;
+        if (r.ok() && cell_logic::decode_pvp_target(idx, &pvp_target)) { // BUG-0899: guest PvP hit
+            bool ko = guest_knocked_out(from);
+            bool present = pvp_target > 0 && net::is_player(*C.sess, pvp_target);
+            auto route = cell_logic::route_pvp_hit(cell_ff_on(), ko, from, pvp_target, present);
+            if (route == cell_logic::PvpRoute::Refuse) {
+                if (ko)
+                    g_n.ko_hits_refused++;
+                else
+                    g_n.pvp_refused++;
+                trace::ev("pvp", "refused", "from %u -> %u dmg=%d refused", from, (unsigned)pvp_target, dmg);
+                return;
+            }
+            int d = cell_logic::pvp_damage(dmg);
+            if (route == cell_logic::PvpRoute::HurtHost) {
+                g_n.pvp_in++;
+                hurt_avatar(d, t);
+                trace::ev("pvp", "applied", "from %u -> host dmg=%d type=%d", from, d, t);
+            } else {
+                net::Writer w;
+                w.u32(0xFFFFFFFFu);
+                w.u8((uint8_t)d);
+                w.u8((uint8_t)t);
+                C.sess->send_reliable_to(pvp_target, net::MSG_CELL_HIT, w);
+                g_n.pvp_relayed++;
+                trace::ev("pvp", "relayed", "from %u -> %u dmg=%d type=%d", from, (unsigned)pvp_target, d, t);
+            }
+            return;
+        }
         uint8_t* c = modes::cell_at(idx);
         // a bite lands on an NPC of our pool: never on a player's cell (ours or a puppet); BUG-1008: nor on a dead one
         bool dead = c && g_fix_chunk_killer && F<uint8_t>(c, kDead);

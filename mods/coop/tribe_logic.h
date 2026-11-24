@@ -434,4 +434,33 @@ inline int pick_secondary_slot(const HandLimb* limbs, int n, int primary)
     return first;
 }
 
+// ---------------- friendly fire (BUG-0899) ----------------
+
+// True when `victim_owner` is a different player's member and Tribe friendly fire is enabled.
+inline bool can_ff_target(bool ff_on, uint8_t my_id, uint8_t victim_owner)
+{
+    return ff_on && my_id < kNobody && victim_owner < kNobody && victim_owner != my_id;
+}
+
+enum class FfGate : uint8_t { Normal = 0, Allow = 1, Block = 2 };
+
+// Cross-player damage gate inside the shared player tribe.
+inline FfGate ff_damage_gate(bool ff_on, uint8_t att_owner, uint8_t vic_owner)
+{
+    if (att_owner < kNobody && vic_owner < kNobody && att_owner != vic_owner)
+        return ff_on ? FfGate::Allow : FfGate::Block;
+    return FfGate::Normal;
+}
+
+enum class FfStep : uint8_t { Wait = 0, Walk = 1, Hit = 2 };
+
+// Host tick step for a friendly-fire attack order between two members of the shared player tribe.
+constexpr float kFfMeleeRange = 4.0f;
+inline FfStep ff_combat_step(float dist, double now, double next_walk, double next_hit)
+{
+    if (dist > kFfMeleeRange)
+        return now >= next_walk ? FfStep::Walk : FfStep::Wait;
+    return now >= next_hit ? FfStep::Hit : FfStep::Wait;
+}
+
 } // namespace tribe_logic

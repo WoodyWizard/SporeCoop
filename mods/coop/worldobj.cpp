@@ -17,6 +17,7 @@
 #include <set>
 #include <vector>
 
+#include "civ_logic.h"
 #include "fields.h"
 #include "fixes.h"
 #include "game.h"
@@ -952,7 +953,20 @@ static int corn_make(const net::Vec3& pos, uint32_t)
 // same number per city) and walks each bound one to the host's (the game's own MoveTo, so it animates), or
 // puts it there when it is far. Their size is the fields kind `civ_citizen` (below, BUG-0475's Civ half).
 constexpr uint32_t kCitizenNoun = 0x018EB4B7;
-static uint32_t citizen_state(void*) { return 0; }
+// BUG-1231: standing city citizens on the host play gestures (0x04A1DD75, 0x04A3442D, 0x050B5AB8, ...) in 20-45 % of
+// standing samples, while a guest's bound copies only stood in plain idle 0x02481DE5. Carry the host citizen's drawn
+// animation id in the snapshot's existing u32 state word (older guests ignore it; older hosts send 0) and play standing
+// gestures on the guest's bound copies. `coop.fix civ.citizen_gesture off`: state stays 0 and copies stay in plain idle.
+static bool g_cit_gesture_fix = true;
+COOP_FIX("civ.citizen_gesture", "BUG-1231", g_cit_gesture_fix,
+         "civ: a guest's copies of standing city citizens play the host's citizens' gestures instead of only plain idle");
+static uint32_t citizen_state(void* o)
+{
+    if (!g_cit_gesture_fix)
+        return 0;
+    uint32_t anim = 0;
+    return game::drawn_state(o, nullptr, &anim) ? anim : 0;
+}
 static void citizen_collect(Items& out) { collect_noun(kCitizenNoun, out, citizen_state); }
 static bool citizen_behind(uint32_t, uint32_t) { return false; }
 static void citizen_apply(const Item&, uint32_t) {}
@@ -1033,13 +1047,15 @@ struct CitizenRun {
     double seen = 0;      // when pos was read
     net::Vec3 pos{};      // the copy's place then
     float own = 0;        // the copy's own speed, smoothed (m/s)
+    uint32_t last_gesture = 0; // BUG-1231: last standing gesture played from the host
+    double gesture_at = -100;  // when last_gesture was played
 };
 static std::map<uint32_t, CitizenRun> g_cit_run; // the copy's id in this game -> its state (cleared with the binds)
-static uint32_t g_cit_run_plays, g_cit_run_ends;
+static uint32_t g_cit_run_plays, g_cit_run_ends, g_cit_gesture_plays, g_cit_gesture_ends;
 static std::map<uint32_t, uint32_t> g_cit_run_over; // (diagnostics) the animation a moving copy had instead of the run
-static void citizen_run(const Item& l, float host_sp, double now, bool still = false)
+static void citizen_run(const Item& l, float host_sp, double now, bool still = false, uint32_t host_st = 0)
 {
-    if (!g_cit_run_fix)
+    if (!g_cit_run_fix && !g_cit_gesture_fix)
         return;
     CitizenRun& r = g_cit_run[l.id];
     if (still) // BUG-1230: held at its standing host citizen (citizen_hold): stands, whatever its own walk does
@@ -1057,15 +1073,29 @@ static void citizen_run(const Item& l, float host_sp, double now, bool still = f
     uint32_t anim = 0;
     if (now - r.at < kCitizenRunGap || !game::drawn_state(l.p, nullptr, &anim))
         return;
-    if (!r.on) { // stands: a run left on it ends in the game's own idle
-        if (anim == kCitizenRunAnim) {
+    if (!r.on) { // stands: play host standing gesture (BUG-1231), or end a run left on it in idle (BUG-1229)
+        auto act = civlogic::citizen_gesture_step(g_cit_gesture_fix, false, anim, host_st, r.last_gesture, r.gesture_at, now);
+        if (act == civlogic::CitizenAnimAction::PlayGesture) {
+            game::play_animation(l.p, host_st, -1, false);
+            r.at = now;
+            g_cit_gesture_plays++;
+            return;
+        }
+        if (act == civlogic::CitizenAnimAction::EndToIdle) {
+            game::idle_refresh(l.p, true);
+            r.at = now;
+            g_cit_gesture_ends++;
+            return;
+        }
+        if (g_cit_run_fix && anim == kCitizenRunAnim) {
             game::idle_refresh(l.p, true);
             r.at = now;
             g_cit_run_ends++;
         }
         return;
     }
-    if (anim == kCitizenRunAnim)
+    r.last_gesture = 0;
+    if (!g_cit_run_fix || anim == kCitizenRunAnim)
         return;
     if (g_cit_run_over.size() < 64 || g_cit_run_over.count(anim))
         g_cit_run_over[anim]++;
@@ -1133,12 +1163,12 @@ static bool citizen_hold(const Item& l, const net::Vec3& hp, float host_sp, doub
     g_cit_hold_places++;
     return d <= kCitizenHoldFree;
 }
-static void citizen_drive(const Item& l, const net::Vec3& hp, const net::Vec3& v, double age, uint32_t)
+static void citizen_drive(const Item& l, const net::Vec3& hp, const net::Vec3& v, double age, uint32_t host_st)
 {
     float sp = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
     double now = H->time_seconds();
     bool still = citizen_hold(l, hp, sp, now); // BUG-1230
-    citizen_run(l, sp, now, still);
+    citizen_run(l, sp, now, still, host_st);
     if (!g_cit_lead_fix || sp < 0.3f || g_drive_dt <= 0)
         return; // the host's stands: citizen_follow's walk and the game's idle
     float t = (float)std::min(age, (double)kCitizenAhead);
@@ -2021,8 +2051,8 @@ std::string status()
              g_fruit_made_drops, g_fruit_made_fail, g_bundles_made, g_bundles_carried, g_bundles_removed, g_bundles_left_alone, g_corn_sets, g_corn_removed, g_corn_models,
              g_orn_fades, g_orn_destroys, g_orn_gone_held, (int)g_orn_host_new);
     s += b;
-    snprintf(b, sizeof b, "citizens walks=%u puts=%u far=%u relocs=%u glides=%u runs=%u run_ends=%u holds=%u hold_places=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks,
-             g_cit_puts, g_cit_far, g_cit_relocs, g_cit_glides, g_cit_run_plays, g_cit_run_ends, g_cit_holds, g_cit_hold_places, g_space_cit_puts, g_veh_drives);
+    snprintf(b, sizeof b, "citizens walks=%u puts=%u far=%u relocs=%u glides=%u runs=%u run_ends=%u gestures=%u gesture_ends=%u holds=%u hold_places=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks,
+             g_cit_puts, g_cit_far, g_cit_relocs, g_cit_glides, g_cit_run_plays, g_cit_run_ends, g_cit_gesture_plays, g_cit_gesture_ends, g_cit_holds, g_cit_hold_places, g_space_cit_puts, g_veh_drives);
     s += b;
     if (!g_cit_run_over.empty()) { // BUG-1229 (diagnostics): what a running copy had on instead of the run, most first
         std::vector<std::pair<uint32_t, uint32_t>> v;

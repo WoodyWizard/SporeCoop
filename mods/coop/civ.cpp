@@ -572,8 +572,37 @@ static int SK_THISCALL h_SetOrder(void* v, void* target, int type, int flag)
             send_cmd(w);
             return 0;
         }
+    } else if (!g_applying && is_host() && game::mode_id() == modes::kCiv) {
+        if (HvRef it = hv_find(v)) {
+            if (ff_try_order(it.id, v, it.h->owner, target, type))
+                return 0;
+        }
     }
     return o_SetOrder(v, target, type, flag);
+}
+
+// BUG-0899: find another player's live vehicle within `max_d` metres of `(x,y,z)` (for right-click move -> FF attack).
+static void* ff_vehicle_near(uint8_t my_owner, float x, float y, float z, float max_d = 5.0f)
+{
+    net::Vec3 p{x, y, z};
+    void* best = nullptr;
+    float bd = max_d;
+    for (void* cand : all_vehicles()) {
+        if (!cand || F<uint8_t>(cand, kVDead) || F<float>(cand, kVHp) <= 0)
+            continue;
+        uint8_t co = owner_of_vehicle(cand);
+        if (co >= net::kMaxPlayers || co == my_owner)
+            continue;
+        net::Vec3 cp{};
+        if (!game::object_position(cand, cp))
+            continue;
+        float d = net::dist(cp, p);
+        if (d < bd) {
+            bd = d;
+            best = cand;
+        }
+    }
+    return best;
 }
 
 SetMoveOrder_t o_SetMoveOrder;
@@ -587,6 +616,10 @@ static int SK_THISCALL h_SetMoveOrder(void* v, float x, float y, float z, int fl
                 g_n.orders_dropped++;
                 return 0;
             }
+            if (ff_on() && F<int>(v, kVPurpose) == 0) {
+                if (void* partner_v = ff_vehicle_near(it.g->owner, x, y, z))
+                    return h_SetOrder(v, partner_v, 1, flag);
+            }
             net::Writer w;
             w.u8(CMD_MOVE);
             w.u16(it.id);
@@ -594,6 +627,14 @@ static int SK_THISCALL h_SetMoveOrder(void* v, float x, float y, float z, int fl
             w.u32((uint32_t)flag);
             send_cmd(w);
             return 0;
+        }
+    } else if (!g_applying && is_host() && game::mode_id() == modes::kCiv) {
+        if (HvRef it = hv_find(v)) {
+            if (ff_on() && F<int>(v, kVPurpose) == 0) {
+                if (void* partner_v = ff_vehicle_near(it.h->owner, x, y, z))
+                    return h_SetOrder(v, partner_v, 1, flag);
+            }
+            ff_cancel_vehicle(it.id);
         }
     }
     return o_SetMoveOrder(v, x, y, z, flag);
@@ -1590,6 +1631,26 @@ uint8_t player_of_combatant(void* att)
 // F3 (BUG-0768): civ.roles off: nobody has a role, no role bonus
 uint8_t role(uint8_t p) { return C.role_of && p != 0xFF && settings::on(settings::kCivRoles) ? C.role_of(p) : 0; }
 
+// BUG-0899: Civ friendly fire (all.friendly_fire)
+bool g_fix_civ_ff = true;
+COOP_FIX("civ.friendly_fire", "BUG-0899", g_fix_civ_ff,
+         "civ: with all.friendly_fire on, players' military vehicles can attack and damage other players' vehicles and cities");
+bool ff_on() { return g_fix_civ_ff && settings::on(settings::kFriendlyFire); }
+
+static void* city_of_building(void* b)
+{
+    if (!b)
+        return nullptr;
+    for (void* city : all_cities()) {
+        if (F<void*>(city, 0x320) == b)
+            return city;
+        for (void* bl : vec_of((uint8_t*)city + kCityBuildings))
+            if (bl == b)
+                return city;
+    }
+    return nullptr;
+}
+
 // building / city hall TakeDamage (this = building+0x120): a military governor's vehicles hit harder;
 // the player is remembered for the capture damage the original adds
 using BTakeDamage_t = int(SK_THISCALL*)(void*, float, uint32_t, int, const void*, void*);
@@ -1599,17 +1660,33 @@ static int b_damage(BTakeDamage_t orig, void* self, float dmg, uint32_t pol, int
     if (cosmetic_hit(att)) // BUG-0477: a relayed shot of the host's
         return 0;
     uint8_t p = is_host() && active() ? player_of_combatant(att) : 0xFF;
+    bool is_ff_hit = false;
+    if (is_host() && active() && p < net::kMaxPlayers && self) {
+        if (void* city = city_of_building((uint8_t*)self - 0x120)) {
+            uint8_t co = owner_of_city(city);
+            auto gate = civlogic::ff_damage_gate(ff_on(), p, co, (uint8_t)net::kMaxPlayers);
+            if (gate == civlogic::FfGate::Block) {
+                g_n.ff_blocked++;
+                return 0;
+            }
+            if (gate == civlogic::FfGate::Allow) {
+                pol = 0xFFFFFFFFu;
+                g_n.ff_hits++;
+                is_ff_hit = true;
+            }
+        }
+    }
     if (p != 0xFF && role(p) == 1) {
         dmg *= 1.25f;
         g_n.military_hits++;
     }
     // WP-D1 (BUG-1473): all.party_difficulty: a player's vehicle hits a building (the players share one nation: an NPC's).
     // An NPC's hit on the players' buildings keeps the game's damage (the building's owner is not read here)
-    if (p < net::kMaxPlayers)
+    if (p < net::kMaxPlayers && !is_ff_hit)
         dmg = party::player_hits_npc(dmg);
     uint8_t prev = g_hit_by;
     size_t mark = game::swap_open(game::swap_undo_u8, &g_hit_by, prev, "capture attribution"); // BUG-0110
-    g_hit_by = p;
+    g_hit_by = is_ff_hit ? 0xFF : p;
     int r = orig(self, dmg, pol, type, dir, att);
     g_hit_by = prev;
     game::swap_close(mark);
@@ -1622,6 +1699,13 @@ static int SK_THISCALL h_BTakeDamage(void* s, float d, uint32_t pol, int t, cons
 static int SK_THISCALL h_HallTakeDamage(void* s, float d, uint32_t pol, int t, const void* dir, void* a)
 {
     return b_damage(o_HallTakeDamage, s, d, pol, t, dir, a);
+}
+void ff_deal_hall_hit(void* hall, void* attacker_veh, float dmg)
+{
+    if (!hall || !attacker_veh || !o_HallTakeDamage)
+        return;
+    static const float zero[3] = {0, 0, 0};
+    h_HallTakeDamage((uint8_t*)hall + 0x120, dmg, 0xFFFFFFFFu, 0, zero, (uint8_t*)attacker_veh + 0x508);
 }
 
 // capture damage: the city is taken faster when vehicles of two or more players attack it
@@ -2746,6 +2830,7 @@ std::string status()
     char tr[120];
     snprintf(tr, sizeof tr, "tribe_ruins: tx=%u rx=%u removed=%u\n", g_n.tribes_tx, g_n.tribes_rx, g_n.tribes_removed);
     lf += tr;
+    lf += ff_status();
     char mo[320]; // BUG-1236, BUG-1461, BUG-1478
     snprintf(mo, sizeof mo, "money: npc_money_held=%u passive_noted=%u income_cause=%d local_play_gate=%d holds=%d world_cmds_dropped=%u sw_paid_own=%u sw_short_own=%u\n",
              g_npc_money_held, g_passive_noted, (int)g_income_cause_fix, (int)g_local_play_gate_fix, (int)guest_holds(), g_n.world_cmds_dropped,

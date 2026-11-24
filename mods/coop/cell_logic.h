@@ -633,4 +633,47 @@ inline void rescale_restore_cam(const float saved[3], float old_scale, float new
     out[2] = saved[2] * inv;
 }
 
+// BUG-0899: Cell friendly fire (PvP hits carried on MSG_CELL_HIT).
+// Real cell pool indices have slot < 4096 and never collide with 0xFFFFFF00..0xFFFFFF07
+// (or 0xFFFFFFFF, which host -> guest already uses for hurt_avatar).
+constexpr uint32_t kPvpTargetBase = 0xFFFFFF00u;
+constexpr uint32_t kPvpTargetMask = 0xFFFFFFF8u;
+constexpr double kPvpCooldown = 0.45;
+
+inline uint32_t encode_pvp_target(uint8_t player_id)
+{
+    return kPvpTargetBase | (uint32_t)(player_id & 7u);
+}
+
+inline bool decode_pvp_target(uint32_t idx, uint8_t* out_player)
+{
+    if ((idx & kPvpTargetMask) != kPvpTargetBase || idx == 0xFFFFFFFFu)
+        return false;
+    if (out_player)
+        *out_player = (uint8_t)(idx & 7u);
+    return true;
+}
+
+inline int pvp_damage(int raw)
+{
+    return std::clamp(raw <= 0 ? 1 : raw, 1, 255);
+}
+
+inline bool pvp_hit_ready(double now, double last_hit)
+{
+    return last_hit <= 0.0 || (now - last_hit) >= kPvpCooldown;
+}
+
+enum class PvpRoute : uint8_t { Refuse = 0, HurtHost = 1, ForwardGuest = 2 };
+
+// Host routing for a guest's PvP MSG_CELL_HIT (sender `from` -> `target`).
+inline PvpRoute route_pvp_hit(bool ff_on, bool sender_ko, uint8_t from, uint8_t target, bool target_present)
+{
+    if (!ff_on || sender_ko || target == from || target >= 8)
+        return PvpRoute::Refuse;
+    if (target == 0)
+        return PvpRoute::HurtHost;
+    return target_present ? PvpRoute::ForwardGuest : PvpRoute::Refuse;
+}
+
 } // namespace cell_logic

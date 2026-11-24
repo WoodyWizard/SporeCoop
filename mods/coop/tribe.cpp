@@ -712,6 +712,18 @@ static int SK_THISCALL h_DoActionForObjects(void* self, void* vec, int action, v
                      vec ? (int)(F<void**>(vec, 4) - F<void**>(vec, 0)) : -1, target, target ? game::noun_id(target) : 0);
             g_last_local = lb;
             g_local_orders++;
+            void** hb = vec ? F<void**>(vec, 0) : nullptr;
+            void** he = vec ? F<void**>(vec, 4) : nullptr;
+            bool handled_ff = false;
+            for (void** it = hb; it && it < he; ++it) {
+                void* c = (uint8_t*)*it - 0xC0;
+                if (HEntry* hm = hm_of(c)) {
+                    if (ff_try_order(hm->id, hm->data.owner, target, action))
+                        handled_ff = true;
+                }
+            }
+            if (handled_ff)
+                return 0;
         }
         return o_DoActionForObjects(self, vec, action, target, prop);
     }
@@ -825,6 +837,10 @@ static int SK_THISCALL h_WalkSelected(void* self, const float* pos)
             snprintf(lb, sizeof lb, "walk to (%.1f %.1f %.1f)", pos[0], pos[1], pos[2]);
             g_last_local = lb;
             g_local_orders++;
+            g_host.members.for_each([&](HEntry& e) {
+                if (e.ref.p && F<uint8_t>(e.ref.p, kSelectedOff))
+                    ff_cancel_member(e.id);
+            });
         }
         return o_WalkSelected(self, pos);
     }
@@ -842,6 +858,9 @@ static int SK_THISCALL h_WalkSelected(void* self, const float* pos)
 }
 
 static void coop_init();
+using ChooseAction_t = int(SK_CDECL*)(void*, bool);
+static ChooseAction_t o_ChooseAction;
+static int SK_CDECL h_ChooseAction(void* obj, bool flag);
 
 // BUG-0475: a member's size is its own game's pick (cCreatureCitizen GetDesiredScale vt 0x80: a random
 // size per member, the chief's bigger): the guest's mirror (bound to a local member or spawned) kept a
@@ -1797,6 +1816,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_SetSelected, (void*)h_SetSelected, (void**)&o_SetSelected);
     H->hook_create(M, (void*)a_DoActionForObjects, (void*)h_DoActionForObjects, (void**)&o_DoActionForObjects);
     H->hook_create(M, (void*)a_WalkSelected, (void*)h_WalkSelected, (void**)&o_WalkSelected);
+    if (uintptr_t ca = H->sym("Simulator::cTribeInputStrategy::ChooseInputActionID")) // BUG-0899
+        H->hook_create(M, (void*)ca, (void*)h_ChooseAction, (void**)&o_ChooseAction);
     a_RingDraw = H->sym("SporeCoop::TribeTargetRing_Draw"); // BUG-0570 (optional)
     if (uintptr_t a = H->sym("SporeCoop::TribeTargetRings_Update"))
         H->hook_create(M, (void*)a, (void*)h_RingsUpdate, (void**)&o_RingsUpdate);
@@ -3751,6 +3772,38 @@ COOP_FIX("tribe.mirror_blow", "BUG-0685", g_mirror_blow_fix,
          "tribe: a blow of a guest's own game never kills a mirror of the host's member (no game over of its own there)");
 constexpr float kMirrorBlowFloor = 0.3f; // (the game's own floor of a chief that still has its tribe)
 static uint32_t g_mirror_blows_kept;
+// BUG-0899: Tribe friendly fire (all.friendly_fire)
+bool g_ff_fix = true;
+COOP_FIX("tribe.friendly_fire", "BUG-0899", g_ff_fix,
+         "tribe: with all.friendly_fire on, players can attack and hurt each other's tribe members");
+static uint32_t g_ff_hits, g_ff_blocked;
+bool ff_on() { return g_ff_fix && settings::on(settings::kFriendlyFire); }
+
+static int SK_CDECL h_ChooseAction(void* obj, bool flag)
+{
+    int r = o_ChooseAction(obj, flag);
+    if (r != 0 || !obj || !active() || !ff_on() || IsBadReadPtr(obj, 4))
+        return r;
+    void* gd = vcall<void*>(obj, 0xC / 4, (uint32_t)0x17F243Bu);
+    if (!gd || !is_citizen(gd) || game::is_dead(gd))
+        return r;
+    void* pt = player_tribe();
+    if (!pt || F<void*>(gd, kOwnerTribeOff) != pt)
+        return r;
+    uint8_t my = C.sess->my_id();
+    uint8_t vo = owner_of(gd);
+    if (!tribe_logic::can_ff_target(true, my, vo))
+        return r;
+    bool have_sel = false;
+    for (void* m : members(pt))
+        if (F<uint8_t>(m, kSelectedOff) && owner_of(m) == my && !game::is_dead(m)) {
+            have_sel = true;
+            break;
+        }
+    return have_sel ? 0x0A : r;
+}
+int choose_action_for(void* obj) { return o_ChooseAction ? h_ChooseAction(obj, false) : -1; }
+
 static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type, const void* pos, void* att)
 {
     if (civ::hit_is_cosmetic(att)) // BUG-0477: a Civ guest's copy of a host's shot hurts nobody
@@ -3780,9 +3833,24 @@ static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type
         }
         uint8_t ao = ah ? ah->data.owner : 0xFF;
         double now = H->time_seconds();
+        // BUG-0899: friendly fire between two different players' members inside the shared player tribe
+        bool is_ff_hit = false;
+        if (vt == pt && pt && ac && F<void*>(ac, kOwnerTribeOff) == pt) {
+            uint8_t vo = owner_of(victim);
+            auto gate = tribe_logic::ff_damage_gate(ff_on(), ao, vo);
+            if (gate == tribe_logic::FfGate::Block) {
+                g_ff_blocked++;
+                return 0;
+            }
+            if (gate == tribe_logic::FfGate::Allow) {
+                pol = 0xFFFFFFFFu;
+                g_ff_hits++;
+                is_ff_hit = true;
+            }
+        }
         // WP-D1 (BUG-1473): all.party_difficulty: a hit between the players' tribe and an NPC (another tribe's member, an
         // animal, an epic). The attacker is ours when it is a member of the player tribe (members are citizens: ah)
-        {
+        if (!is_ff_hit) {
             using party::Side;
             Side vs = vt == pt && pt ? Side::Player : vt ? Side::Npc : Side::Other;
             Side as = !ac ? Side::Other : ah && pt && F<void*>(ac, kOwnerTribeOff) == pt ? Side::Player : Side::Npc;
@@ -3808,8 +3876,8 @@ static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type
                 g_aura_hits++;
             }
         }
-        // a chief about to fall next to a partner's member: the tribe protects it
-        if (vt == pt && is_chief(victim) && settings::on(settings::kTribeAura)) {
+        // a chief about to fall next to a partner's member: the tribe protects it (not from a partner's FF hit)
+        if (!is_ff_hit && vt == pt && is_chief(victim) && settings::on(settings::kTribeAura)) {
             // BUG-1052 (tribe.rescue_max): 30 % of its real maximum (game::max_health), as the heal hook (BUG-0745)
             float hp = F<float>(victim, 0x5E0), mx = g_fix_rescue_max ? game::max_health(victim) : F<float>(victim, 0x5D4);
             uint8_t o = owner_of(victim);
@@ -3829,6 +3897,29 @@ static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type
         }
     }
     return o_CitizenTD(comb, dmg, pol, type, pos, att);
+}
+
+void ff_deal_hit(void* victim, void* attacker, float dmg)
+{
+    if (!victim || !attacker)
+        return;
+    static const float zero[3] = {0, 0, 0};
+    vcall<int>((uint8_t*)victim + 0x5A8, 0x18 / 4, dmg, 0xFFFFFFFFu, 0, zero, (uint8_t*)attacker + 0x5A8);
+}
+
+static uint32_t g_ff_orders_set, g_ff_orders_active;
+void ff_note_counts(uint32_t set_n, uint32_t active_n)
+{
+    g_ff_orders_set = set_n;
+    g_ff_orders_active = active_n;
+}
+
+std::string ff_status()
+{
+    char b[160];
+    snprintf(b, sizeof b, "tribe_ff: on=%d fix=%d orders=%u active=%u hits=%u blocked=%u\n",
+             (int)ff_on(), (int)g_ff_fix, g_ff_orders_set, g_ff_orders_active, g_ff_hits, g_ff_blocked);
+    return b;
 }
 
 static void bonus_food(int n)
@@ -4741,6 +4832,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 // (tribe.epic_herd) and runs whatever tribe.chiefs says (BUG-0214: one bug per switch)
 static void forget_world_tables()
 {
+    ff_clear_orders(); // BUG-0899
     g_epic_blows.clear(); // BUG-0515 diagnostics: keys are animals of the world left
     if (g_fix_chiefs) {
         g_chief_scale.clear();
@@ -4793,6 +4885,7 @@ void before_save()
 
 void on_session_end()
 {
+    ff_clear_orders(); // BUG-0899
     took_clear(); // BUG-1522
     g_test_gone.clear();
     g_away_pending.clear(); // BUG-1492
@@ -4997,6 +5090,7 @@ std::string status()
                  (unsigned)g_ours_t.size(), g_save_stripped, g_save_saves, g_forms_blocked, g_forms_run, g_unmapped_removed, g_bodies_detached, g_teardown_restored, g_slot_null_skipped, g_teardown_tribe_back,
                  g_teardown_bt_emptied, g_map_stale_skipped, g_join_bodies, g_mirrors_grown, g_away_trees_ended);
     std::string out = b;
+    out += ff_status();
     // C1 / C4 (BUG-1140, BUG-1143): the tables and the snapshot receiver
     // BUG-1460: dead mirrors kept still (tribe.body_still), make-way calls of tribe-less citizens left out (makeway_null)
     snprintf(b, sizeof b, "tribe bodies: still fix=%d stilled=%u | makeway_null fix=%d skipped=%u\n", (int)g_body_still_fix,

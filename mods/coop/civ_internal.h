@@ -146,6 +146,7 @@ struct Counters {
     uint32_t space_place_seen = 0;
     uint32_t world_checks_fired = 0;
     uint32_t kin_tx = 0, kin_rx = 0, burst_arms = 0; // BUG-0438: 20 Hz vehicle kinematics and loss-burst windows
+    uint32_t ff_orders = 0, ff_hits = 0, ff_blocked = 0; // BUG-0899: Civ friendly fire
 };
 extern Counters g_n;
 
@@ -634,4 +635,15 @@ void guest_influence(net::Reader& r);
 bool guest_converts_blocked(); // guest: the host's world decides the conversions (its follower maps come)
 bool remove_route(void* a, void* b); // guest: a route the host does not have any more, at both ends
 std::string influence_debug(const std::vector<std::string>& a);
+
+// BUG-0899: Civ friendly fire
+extern bool g_fix_civ_ff;
+bool ff_on();
+void ff_clear_orders();
+void ff_cancel_vehicle(uint16_t id);
+bool ff_try_order(uint16_t vid, void* v, uint8_t owner, void* target, int type);
+void ff_host_tick(double now);
+void ff_deal_vehicle_hit(void* target_veh, void* attacker_veh, float dmg);
+void ff_deal_hall_hit(void* hall, void* attacker_veh, float dmg);
+std::string ff_status();
 } // namespace civ

@@ -733,4 +733,16 @@ bool center(net::Vec3& pos);
 std::string member_brief(void* c);
 std::string list();
 
+// BUG-0899: Tribe friendly fire
+extern bool g_ff_fix;
+bool ff_on();
+int choose_action_for(void* obj);
+void ff_clear_orders();
+void ff_cancel_member(uint16_t id);
+bool ff_try_order(uint16_t att_id, uint8_t att_owner, void* target, int action);
+void ff_host_tick(double now);
+void ff_deal_hit(void* victim, void* attacker, float dmg);
+void ff_note_counts(uint32_t set_n, uint32_t active_n);
+std::string ff_status();
+
 } // namespace tribe

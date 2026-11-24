@@ -735,14 +735,42 @@ int SK_THISCALL h_VTakeDamage(void* s, float d, uint32_t pol, int t, const void*
 {
     if (cosmetic_hit(a))
         return 0;
-    if (is_host() && active()) { // WP-D1 (BUG-1473): all.party_difficulty between the players' vehicles and the NPCs'
+    if (is_host() && active()) {
         HvRef v = hv_find((uint8_t*)s - kVCombatant);
         uint8_t ap = player_of_combatant(a);
-        party::Side vs = !v ? party::Side::Other : v.h->owner < net::kMaxPlayers ? party::Side::Player : party::Side::Npc;
-        party::Side as = ap < net::kMaxPlayers ? party::Side::Player : a ? party::Side::Npc : party::Side::Other;
-        d = party::hit(d, vs, as);
+        bool is_ff_hit = false;
+        if (v) {
+            auto gate = civlogic::ff_damage_gate(ff_on(), ap, v.h->owner, (uint8_t)net::kMaxPlayers);
+            if (gate == civlogic::FfGate::Block) {
+                g_n.ff_blocked++;
+                return 0;
+            }
+            if (gate == civlogic::FfGate::Allow) {
+                pol = 0xFFFFFFFFu;
+                g_n.ff_hits++;
+                is_ff_hit = true;
+                if (role(ap) == 1) {
+                    d *= 1.25f;
+                    g_n.military_hits++;
+                }
+            }
+        }
+        // WP-D1 (BUG-1473): all.party_difficulty between the players' vehicles and the NPCs'
+        if (!is_ff_hit) {
+            party::Side vs = !v ? party::Side::Other : v.h->owner < net::kMaxPlayers ? party::Side::Player : party::Side::Npc;
+            party::Side as = ap < net::kMaxPlayers ? party::Side::Player : a ? party::Side::Npc : party::Side::Other;
+            d = party::hit(d, vs, as);
+        }
     }
     return o_VTakeDamage(s, d, pol, t, dir, a);
+}
+
+void ff_deal_vehicle_hit(void* target_veh, void* attacker_veh, float dmg)
+{
+    if (!target_veh || !attacker_veh || !o_VTakeDamage)
+        return;
+    static const float zero[3] = {0, 0, 0};
+    h_VTakeDamage((uint8_t*)target_veh + kVCombatant, dmg, 0xFFFFFFFFu, 0, zero, (uint8_t*)attacker_veh + kVCombatant);
 }
 
 

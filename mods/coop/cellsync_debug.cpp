@@ -756,14 +756,23 @@ std::string debug(const std::vector<std::string>& a)
             }
         return o.empty() ? "no loot" : o;
     }
-    if (a.size() >= 2 && a[0] == "swimto") { // swim to a cell by its sync key (like a click on it)
-        uint32_t key = (uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10);
+    if (a.size() >= 2 && a[0] == "swimto") { // swim to a cell by its sync key (or "partner": first live partner puppet)
+        uint32_t key = 0;
         uint8_t* c = nullptr;
-        if (is_guest()) {
-            auto it = g_mirrors.find(key);
-            c = it != g_mirrors.end() && it->second.local ? modes::cell_at(it->second.local) : nullptr;
-        } else
-            c = modes::cell_at(key);
+        if (a[1] == "partner" && C.puppets) {
+            for (auto& pp : C.puppets())
+                if (pp.cell) {
+                    c = (uint8_t*)pp.cell;
+                    break;
+                }
+        } else {
+            key = (uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10);
+            if (is_guest()) {
+                auto it = g_mirrors.find(key);
+                c = it != g_mirrors.end() && it->second.local ? modes::cell_at(it->second.local) : nullptr;
+            } else
+                c = modes::cell_at(key);
+        }
         if (!c && !is_guest()) {
             auto st = g_sent_at.find(key);
             if (st != g_sent_at.end()) { // BUG-0480: sent, not here now
@@ -2217,7 +2226,7 @@ std::string debug(const std::vector<std::string>& a)
              "world_scale=%.4f target=%.4f scale_converted=%u\n",
              F<float>(av, kOpacity), cm && F<uint32_t>(cm, 0x2C) ? 1 : 0, parts.c_str(), chase_me, chase_partner,
              world_scale(), G() ? F<float>(G(), 0x5150) : 0.f, g_n.scale_conv);
-    return b + std::string(ob) + ko + status() + away_status(); // the away line last: tests read the first food=
+    return b + std::string(ob) + ko + cell_ff_status() + status() + away_status(); // the away line last: tests read the first food=
 }
 
 } // namespace cellsync

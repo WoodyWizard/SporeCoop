@@ -25,6 +25,7 @@
 #include "creations.h"
 #include "creature_hp.h"
 #include "social.h"
+#include "social_logic.h"
 #include "driver.h"
 #include "game.h"
 #include "net/compat.h"
@@ -650,20 +651,170 @@ static std::unordered_map<void*, void*> g_ai_target; // host: NPC -> the puppet 
 static uint32_t g_ai_partner_picks = 0;
 void set_partner_targets(bool on) { g_partner_targets = on; }
 
+// BUG-1256: Creature stage guest pack recruitment
+static social_logic::PackOwners g_pack_owners; // host: guest-owned pack members (npc_id -> player 1..7)
+static bool g_pack_dirty = false;
+static uint32_t g_guest_pack_recruited = 0, g_guest_pack_released = 0, g_guest_pack_dismissed = 0;
+static std::map<uint16_t, uint8_t> g_guest_pack_owners; // guest: host-synced pack owners
+static std::unordered_set<uint16_t> g_guest_my_pack;     // guest: proxy ids added to local mPosseMembers + CreatureUI
+static std::unordered_map<uint16_t, void*> g_guest_pack_ptr; // guest: proxy ptr registered in local posse
+
+static uintptr_t a_PosseGet, a_PosseAdd, a_PosseRemove, a_PosseCount, a_PosseMax;
+static uintptr_t a_NmAddPosse, a_NmRemovePosse, a_StrategyGet, a_UiAddPosse, a_UiRemovePosse;
+using PosseRemove_t = void(SK_THISCALL*)(void*, void*, uint32_t, uint32_t);
+static PosseRemove_t o_PosseRemove;
+
+static void* creature_ui()
+{
+    if (!a_StrategyGet || !game::in_creature_stage())
+        return nullptr;
+    uint8_t* st = skg::cdecl_call<uint8_t*>(a_StrategyGet);
+    if (!st || IsBadReadPtr(st + 0x68, 4))
+        return nullptr;
+    void* ui = *(void**)(st + 0x68);
+    return ui && !IsBadReadPtr(ui, 0x80) ? ui : nullptr;
+}
+
+static void guest_pack_untrack_id(uint16_t id, bool remove_from_game)
+{
+    auto it = g_guest_pack_ptr.find(id);
+    if (it == g_guest_pack_ptr.end())
+        return;
+    void* c = it->second;
+    g_guest_pack_ptr.erase(it);
+    g_guest_my_pack.erase(id);
+    if (!remove_from_game || !c || !game::in_creature_stage() || !game::creature_listed(c))
+        return;
+    if (void* ui = creature_ui(); ui && a_UiRemovePosse)
+        skg::thiscall<void>(a_UiRemovePosse, ui, c);
+    if (void* nm = game::noun_manager(); nm && a_NmRemovePosse)
+        skg::thiscall<void>(a_NmRemovePosse, nm, c);
+}
+
+static void guest_pack_untrack_ptr(void* c)
+{
+    if (!c || g_guest_pack_ptr.empty())
+        return;
+    for (auto it = g_guest_pack_ptr.begin(); it != g_guest_pack_ptr.end(); ++it) {
+        if (it->second == c) {
+            uint16_t id = it->first;
+            guest_pack_untrack_id(id, true);
+            return;
+        }
+    }
+}
+
+static void SK_THISCALL h_PosseRemove(void* posse, void* c, uint32_t a, uint32_t b)
+{
+    if (is_guest() && social::g_guest_recruit_fix && c && game::in_creature_stage()) {
+        int id = proxy_id(c);
+        if (id >= 0 && g_guest_my_pack.count((uint16_t)id)) {
+            guest_pack_untrack_id((uint16_t)id, true);
+            g_guest_pack_dismissed++;
+            social::send_dismiss((uint16_t)id);
+            return;
+        }
+    }
+    o_PosseRemove(posse, c, a, b);
+}
+
+static void host_pack_remove_creature(void* c)
+{
+    if (!c || !game::in_creature_stage() || !game::creature_listed(c))
+        return;
+    void* posse = a_PosseGet ? skg::cdecl_call<void*>(a_PosseGet) : nullptr;
+    if (posse && o_PosseRemove && game::pack_member(c))
+        o_PosseRemove(posse, c, 1, 0);
+    if (!IsBadWritePtr((uint8_t*)c + 0xE68, 1))
+        *(uint8_t*)((uint8_t*)c + 0xE68) = 0;
+}
+
+static void host_pack_prune()
+{
+    if (!is_host() || g_pack_owners.owners.empty())
+        return;
+    std::vector<uint16_t> gone;
+    for (auto& [id, owner] : g_pack_owners.owners) {
+        void* c = host_npc(id);
+        if (!c || game::is_dead(c) || !game::pack_member(c))
+            gone.push_back(id);
+    }
+    for (uint16_t id : gone) {
+        g_pack_owners.remove(id);
+        g_pack_dirty = true;
+    }
+}
+
+static void guest_pack_sync()
+{
+    if (!is_guest() || !C.sess || !game::in_creature_stage())
+        return;
+    if (!social::g_guest_recruit_fix) {
+        std::vector<uint16_t> ids(g_guest_my_pack.begin(), g_guest_my_pack.end());
+        for (uint16_t id : ids)
+            guest_pack_untrack_id(id, true);
+        return;
+    }
+    uint8_t my = C.sess->my_id();
+    std::vector<uint16_t> drop;
+    for (uint16_t id : g_guest_my_pack) {
+        auto ow = g_guest_pack_owners.find(id);
+        void* px = proxy(id);
+        auto pi = g_guest_pack_ptr.find(id);
+        if (ow == g_guest_pack_owners.end() || ow->second != my || !px || game::is_dead(px) ||
+            pi == g_guest_pack_ptr.end() || pi->second != px)
+            drop.push_back(id);
+    }
+    for (uint16_t id : drop)
+        guest_pack_untrack_id(id, true);
+
+    void* nm = game::noun_manager();
+    void* ui = creature_ui();
+    for (auto& [id, owner] : g_guest_pack_owners) {
+        if (owner != my || g_guest_my_pack.count(id))
+            continue;
+        void* px = proxy(id);
+        if (!px || game::is_dead(px) || !game::creature_listed(px))
+            continue;
+        if (nm && a_NmAddPosse)
+            skg::thiscall<void>(a_NmAddPosse, nm, px);
+        if (ui && a_UiAddPosse)
+            skg::thiscall<void>(a_UiAddPosse, ui, px);
+        g_guest_my_pack.insert(id);
+        g_guest_pack_ptr[id] = px;
+    }
+}
+
 static void* ai_target(void* c)
 {
+    const bool adv = adventure::host_ai_targets_partners();
+    if (!g_enabled || !is_host() || (!game::in_creature_stage() && !adv))
+        return nullptr;
+    // BUG-1256: guest-recruited pack members follow their owner guest's live puppet even if
+    // creature.npcs_target_partners is off; host's own pack members keep following the host's avatar.
+    if (game::in_creature_stage() && game::pack_member(c)) {
+        int hid = host_id(c);
+        uint8_t owner = hid >= 0 ? g_pack_owners.owner_of((uint16_t)hid) : social_logic::kNoOwner;
+        if (social::g_guest_recruit_fix && owner >= 1 && owner < 8) {
+            void* pup = C.puppet_live ? C.puppet_live(owner) : (C.puppet_of ? C.puppet_of(owner) : nullptr);
+            if (pup && !game::is_dead(pup) && (!C.player_dead || !C.player_dead(owner))) {
+                g_ai_target[c] = pup;
+                return pup;
+            }
+        }
+        g_ai_target.erase(c);
+        return nullptr;
+    }
     // (the session setting creature.npcs_target_partners, coop.ini npcs_target_partners its default; the fix switch
     // and `coop.npc partners off` stay the test seams; in kScenario, adventure.body_side + host_actors enables it)
-    const bool adv = adventure::host_ai_targets_partners();
-    if (!g_enabled || !g_partner_targets || !settings::on(settings::kNpcTargets) || !is_host() ||
-        (!game::in_creature_stage() && !adv))
+    if (!g_partner_targets || !settings::on(settings::kNpcTargets))
         return nullptr;
     void* av = game::avatar();
     auto prev = g_ai_target.find(c);
     void* was = prev != g_ai_target.end() ? prev->second : nullptr;
     void* pick = nullptr;
     // the pack and the avatar's family follow and defend the host's avatar
-    if (av && !game::is_dead(c) && !game::pack_member(c) && game::herd_of(c) != game::avatar_herd()) {
+    if (av && !game::is_dead(c) && game::herd_of(c) != game::avatar_herd()) {
         net::Vec3 np = game::position(c);
         // an NPC far from every partner keeps the avatar (its notice and chase ranges are tens of m)
         float best = std::min(net::dist(np, game::position(av)), kPartnerAiRange);
@@ -844,6 +995,18 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     game::set_ai_target_picker(ai_target);
     a_StartFx2 = H->sym("Simulator::cCreatureBase::StartOrStopEffectFromPool2");
     a_StopFx = H->sym("Simulator::cCreatureBase::StopEffectFromPools");
+    a_PosseGet = H->sym("SporeCoop::cPosseSimulator_Get");
+    a_PosseAdd = H->sym("SporeCoop::cPosseSimulator_AddMember");
+    a_PosseRemove = H->sym("SporeCoop::cPosseSimulator_RemoveMember");
+    a_PosseCount = H->sym("SporeCoop::cPosseSimulator_GetMemberCount");
+    a_PosseMax = H->sym("SporeCoop::cPosseSimulator_GetMaxMembers");
+    a_NmAddPosse = H->sym("SporeCoop::cGameNounManager_AddPosseMember");
+    a_NmRemovePosse = H->sym("SporeCoop::cGameNounManager_RemovePosseMember");
+    a_StrategyGet = H->sym("App::cCreatureModeStrategy::Get");
+    a_UiAddPosse = H->sym("SporeCoop::CreatureUI_AddPosseCard");
+    a_UiRemovePosse = H->sym("SporeCoop::CreatureUI_RemovePosseCard");
+    if (a_PosseRemove)
+        H->hook_create(M, (void*)a_PosseRemove, (void*)h_PosseRemove, (void**)&o_PosseRemove);
     game::set_behaviour_anim_listener(on_behaviour_anim); // BUG-0464
     fields::add_kind({fields::K_NPC, "npc", nullptr, kNpcFields, 2, npc_each, npc_mirror, nullptr}); // BUG-0461
     H->command_add(M, "coop.npctrack", "coop.npctrack start [radius m [x y z]]|stop|count|dump [from] [n]|walk <id> x y z <m/s>|put <id> x y z [secs]|shove <id> <m> x y z <m/s> - every frame: the guest's NPC proxies (tests, BUG-0361)",
@@ -2006,6 +2169,7 @@ static void host_tick(double now, const std::vector<void*>& creatures)
             hn.last_seen += gap;
         g_frozen_since = 0;
     }
+    host_pack_prune(); // BUG-1256
     g_seen_now.clear();
     for (auto [c, hn] : hn_walk())
         hn.seen_bits <<= 1;
@@ -2353,6 +2517,7 @@ static void* handler_c(const PxE& pe)
 // the creature of a proxy that goes (the entry is detached already: not a proxy any more while the game destroys it)
 static void destroy_proxy_object(const mirror::Ref& r)
 {
+    guest_pack_untrack_ptr(r.p); // BUG-1256: never leave a destroyed proxy in mPosseMembers or CreatureUI
     // BUG-0842: not the object the proxy made (freed, another one at its address): only forget it, no call on it
     if (g_proxy_identity_fix && !ref_alive(r)) {
         game::puppet_unregister(r.p);
@@ -2513,6 +2678,7 @@ static void guest_tick(double now)
     // Creature and Tribe, before the stale drop below destroys anything and before anything is driven
     if (g_proxy_identity_fix)
         check_identity();
+    guest_pack_sync(); // BUG-1256: keep guest's own pack members in mPosseMembers + CreatureUI
     // A proxy the host stopped sending states for while it sends them for the others is not an
     // NPC of the host any more (its id belongs to a world the host has left: before 2026-10-25 the
     // host renumbered its NPCs after its editor or a load without a despawn, and the guest kept
@@ -3235,6 +3401,11 @@ void on_world_change()
     g_kill.clear();
     hn_clear();
     g_ai_target.clear();
+    g_pack_owners.clear(); // BUG-1256: old world's creatures are already unloaded
+    g_pack_dirty = false;
+    g_guest_pack_owners.clear();
+    g_guest_my_pack.clear();
+    g_guest_pack_ptr.clear();
     teamplay::reset();
     for (auto& [g, ks] : g_known)
         ks.clear(); // host re-sends spawns
@@ -3253,10 +3424,19 @@ void on_player_leave(uint8_t id)
     g_civ_sent.erase(id); // BUG-0973
     if (g_known_fix)
         g_known.erase(id);
+    release_player_pack(id); // BUG-1256: release this player's recruited pack members
 }
 
 void on_session_end()
 {
+    // BUG-1256: release every guest's recruited pack members on the host before clearing host NPCs
+    if (is_host() && !g_pack_owners.owners.empty()) {
+        for (uint8_t p = 1; p < 8; p++)
+            release_player_pack(p);
+    }
+    g_pack_owners.clear();
+    g_pack_dirty = false;
+    g_guest_pack_owners.clear();
     // BUG-0412: a guest that leaves plays on in this world: its game takes over the NPCs it showed
     // (the snapshot of away_snapshot, at most 0.5 s old; away_locals runs next frame, outside the
     // session's update)
@@ -3751,7 +3931,7 @@ std::string status()
         char b4[128]; // BUG-0973
         snprintf(b4, sizeof b4, "npc civ: wild=%d quiet=%d quiet_skipped=%u\n", (int)g_civ_wild_fix, (int)g_civ_quiet_fix,
                  g_civ_quiet_skipped);
-        return std::string(b) + b2 + b3 + b4 + meat_status() + registry_status() + game::destroy_deferred_status() + "\n";
+        return std::string(b) + b2 + b3 + b4 + guest_pack_status() + meat_status() + registry_status() + game::destroy_deferred_status() + "\n";
     } else {
         unsigned spawned = 0;
         for (auto [id, pe, px] : px_walk())
@@ -3770,7 +3950,7 @@ std::string status()
              g_pvp_in, g_pvp_relayed);
     char b5[96]; // BUG-1293
     snprintf(b5, sizeof b5, "npc species fallback: on=%d host_key_builds=%u\n", (int)g_species_fallback, g_species_fallbacks);
-    return b + std::string(b3) + b5 + meat_status() + registry_status() + game::destroy_deferred_status() + "\n";
+    return b + std::string(b3) + b5 + guest_pack_status() + meat_status() + registry_status() + game::destroy_deferred_status() + "\n";
 }
 
 } // namespace npc
@@ -4097,6 +4277,140 @@ bool debug_recruit(uint16_t id)
     static uintptr_t get = H->sym("SporeCoop::cPosseSimulator_Get"), add = H->sym("SporeCoop::cPosseSimulator_AddMember");
     void* posse = get && add ? skg::cdecl_call<void*>(get) : nullptr;
     return posse && skg::thiscall<bool>(add, posse, it);
+}
+
+// ---------------- BUG-1256: guest pack recruitment public helpers ----------------
+bool recruit_for_player(uint16_t id, uint8_t player, int max_pack)
+{
+    if (!is_host() || !social::g_guest_recruit_fix || player == 0 || player >= 8)
+        return false;
+    void* c = host_npc(id);
+    if (!c || game::is_dead(c) || game::pack_member(c))
+        return false;
+    if (g_pack_owners.owner_of(id) != social_logic::kNoOwner)
+        return false;
+    int cap = std::clamp(max_pack, 0, social_logic::kMaxPackSize);
+    if (cap <= 0 || g_pack_owners.count_of(player) >= cap)
+        return false;
+    void* posse = a_PosseGet ? skg::cdecl_call<void*>(a_PosseGet) : nullptr;
+    if (!posse || !a_PosseAdd)
+        return false;
+    // Mark mbTempPosseMember (+0xE68) so AddMember skips host's 3-member cap, increments mTempCount
+    // (preserving host's own GetMemberCount), and skips adding a card to the host's CreatureUI.
+    uint8_t prev_temp = *(uint8_t*)((uint8_t*)c + 0xE68);
+    *(uint8_t*)((uint8_t*)c + 0xE68) = 1;
+    bool ok = skg::thiscall<bool>(a_PosseAdd, posse, c);
+    if (!ok) {
+        *(uint8_t*)((uint8_t*)c + 0xE68) = prev_temp;
+        return false;
+    }
+    if (!g_pack_owners.add(id, player, cap)) {
+        host_pack_remove_creature(c);
+        return false;
+    }
+    g_guest_pack_recruited++;
+    g_pack_dirty = true;
+    H->log(M, SK_INFO, "npc: player %u recruited NPC #%u into their pack (count=%d/%d, BUG-1256)",
+           (unsigned)player, (unsigned)id, g_pack_owners.count_of(player), cap);
+    return true;
+}
+
+bool dismiss_for_player(uint16_t id, uint8_t player)
+{
+    if (!is_host() || g_pack_owners.owner_of(id) != player)
+        return false;
+    g_pack_owners.remove(id);
+    if (void* c = host_npc(id))
+        host_pack_remove_creature(c);
+    g_guest_pack_released++;
+    g_pack_dirty = true;
+    H->log(M, SK_INFO, "npc: player %u dismissed pack member #%u (BUG-1256)", (unsigned)player, (unsigned)id);
+    return true;
+}
+
+void release_player_pack(uint8_t player)
+{
+    auto ids = g_pack_owners.release_player(player);
+    if (ids.empty())
+        return;
+    for (uint16_t id : ids) {
+        if (game::in_creature_stage()) {
+            if (void* c = hn_obj(id))
+                host_pack_remove_creature(c);
+        }
+        g_guest_pack_released++;
+    }
+    g_pack_dirty = true;
+    H->log(M, SK_INFO, "npc: released %zu pack member(s) of player %u (BUG-1256)", ids.size(), (unsigned)player);
+}
+
+int pack_count_of(uint8_t player) { return g_pack_owners.count_of(player); }
+uint8_t pack_owner_of(uint16_t id)
+{
+    if (is_host())
+        return g_pack_owners.owner_of(id);
+    auto it = g_guest_pack_owners.find(id);
+    return it != g_guest_pack_owners.end() ? it->second : social_logic::kNoOwner;
+}
+
+std::vector<std::pair<uint16_t, uint8_t>> pack_owners_snapshot()
+{
+    const auto& src = is_host() ? g_pack_owners.owners : g_guest_pack_owners;
+    std::vector<std::pair<uint16_t, uint8_t>> out;
+    out.reserve(src.size());
+    for (auto& [id, p] : src)
+        out.push_back({id, p});
+    return out;
+}
+
+bool take_pack_dirty()
+{
+    bool d = g_pack_dirty;
+    g_pack_dirty = false;
+    return d;
+}
+
+void set_guest_pack_owners(const std::vector<std::pair<uint16_t, uint8_t>>& entries)
+{
+    g_guest_pack_owners.clear();
+    for (auto& [id, p] : entries)
+        g_guest_pack_owners[id] = p;
+    guest_pack_sync();
+}
+
+int local_posse_count()
+{
+    void* posse = a_PosseGet && game::in_creature_stage() ? skg::cdecl_call<void*>(a_PosseGet) : nullptr;
+    return posse && a_PosseCount ? skg::thiscall<int>(a_PosseCount, posse) : 0;
+}
+
+int local_posse_max()
+{
+    void* posse = a_PosseGet && game::in_creature_stage() ? skg::cdecl_call<void*>(a_PosseGet) : nullptr;
+    return posse && a_PosseMax ? std::clamp(skg::thiscall<int>(a_PosseMax, posse), 0, social_logic::kMaxPackSize) : 0;
+}
+
+bool debug_guest_dismiss(uint16_t id)
+{
+    if (!is_guest() || !o_PosseRemove || !a_PosseGet)
+        return false;
+    void* posse = skg::cdecl_call<void*>(a_PosseGet);
+    void* px = proxy(id);
+    if (!posse || !px)
+        return false;
+    h_PosseRemove(posse, px, 1, 0);
+    return true;
+}
+
+std::string guest_pack_status()
+{
+    char b[220];
+    snprintf(b, sizeof b,
+             "guest_pack: fix=%d local_count=%d local_max=%d my_pack=%u total=%u recruited=%u released=%u dismissed=%u\n",
+             (int)social::g_guest_recruit_fix, local_posse_count(), local_posse_max(), (unsigned)g_guest_my_pack.size(),
+             (unsigned)(is_host() ? g_pack_owners.owners.size() : g_guest_pack_owners.size()), g_guest_pack_recruited,
+             g_guest_pack_released, g_guest_pack_dismissed);
+    return b;
 }
 
 // tests (BUG-0426 class, L1 of 0.7.13): an address the game freed is given to a new object. `reuse <ptr> [frames]
