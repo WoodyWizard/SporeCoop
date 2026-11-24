@@ -106,6 +106,13 @@ struct Api {
     std::function<void(bool send)> report_answer;
     // the lobby's address line: the host's "ip:port, ..." to give to friends, a guest's the host it joined
     std::function<std::string()> host_address;
+    // local display settings (BUG-0865, BUG-0866): never synced over network
+    std::function<int()> frame_target;
+    std::function<int(int)> set_frame_target;
+    std::function<bool()> borderless;
+    std::function<bool(bool)> set_borderless;
+    std::function<int()> fov_step;
+    std::function<int()> cycle_fov;
     uint16_t default_port = 0;
 };
 

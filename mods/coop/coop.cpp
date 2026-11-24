@@ -47,6 +47,7 @@
 #include "civ_wallet.h"
 #include "civ_editors.h"
 #include "autoupdate.h"
+#include "fov.h"
 #include "gamefixes.h"
 #include "spacecoop.h"
 #include "squadron.h"
@@ -1230,6 +1231,7 @@ static void frame_stage_ticks(double now)
     if (g_sess.connected() && g_mode == modes::kCreature)
         teamplay::tick(game::avatar(), now);
     revive::tick(now); // WP-R1 of 0.7.17 (BUG-1472): a downed creature, its revive, the party wipe
+    fov::tick(g_mode); // WP-Q1 of 0.7.99 (BUG-0866): reset widened third-person FOV when leaving Creature/Adventure
 }
 
 // on_frame, phase: our player state (net::state_due: every 0.05 s, a stop at once) and the echo test remote
@@ -2360,6 +2362,28 @@ void init_ui()
         return v;
     };
     a.mode = [] { return game::mode_id(); };
+    a.frame_target = [] {
+        if (H->size >= offsetof(SkHost, frame_target_get) + sizeof(H->frame_target_get) && H->frame_target_get)
+            return H->frame_target_get();
+        return 0;
+    };
+    a.set_frame_target = [](int fps) {
+        if (H->size >= offsetof(SkHost, frame_target_set) + sizeof(H->frame_target_set) && H->frame_target_set)
+            return H->frame_target_set(fps);
+        return 0;
+    };
+    a.borderless = [] {
+        if (H->size >= offsetof(SkHost, borderless_get) + sizeof(H->borderless_get) && H->borderless_get)
+            return H->borderless_get() != 0;
+        return false;
+    };
+    a.set_borderless = [](bool on) {
+        if (H->size >= offsetof(SkHost, borderless_set) + sizeof(H->borderless_set) && H->borderless_set)
+            return H->borderless_set(on ? 1 : 0) != 0;
+        return false;
+    };
+    a.fov_step = [] { return fov::step(); };
+    a.cycle_fov = [] { return fov::cycle_step(); };
     a.default_port = default_port();
     coop_ui::init(H, M, std::move(a));
 }
@@ -2367,6 +2391,7 @@ void init_ui()
 void on_unload()
 {
     support::on_unload();
+    fov::shutdown();
     gamefixes::shutdown();
     mouse::shutdown(); // its message hook lives in this DLL
     keepalive_stop();
@@ -3133,6 +3158,7 @@ static void init_civ_and_space()
     spacecoop::init(H, M, std::move(spc));
     apply_startup_off(); // tests: switches that must be off before the game starts (fixes_off.txt)
     gamefixes::init(H, M);
+    fov::init(H, M, feed); // BUG-0866: wider third-person FOV in Creature and Galactic Adventures
     creationprops::init(H, M); // BUG-1328
     autoupdate::set_feed(feed);
     autoupdate::init(H, M, COOP_VERSION);

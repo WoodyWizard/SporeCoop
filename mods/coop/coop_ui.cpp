@@ -25,6 +25,7 @@
 #include "typed_text.h"
 #include "world.h"
 #include "fixes.h"
+#include "../../sporekit/display_logic.h"
 
 namespace coop_ui {
 
@@ -1601,6 +1602,22 @@ static void refresh_lobby()
     text(D.settings_btn, sb);
 }
 
+// BUG-0865 / BUG-0866: local Display settings (frame rate cap, borderless window, third-person FOV)
+// shown as a local group at the end of the Settings page (editable by host and guest alike; no wire)
+static bool g_display_settings_fix = true;
+COOP_FIX("ui.display_settings", "BUG-0865", g_display_settings_fix,
+         "ui: Display local settings (frame rate cap, borderless window, third-person FOV) in Settings");
+
+constexpr int kLocalHdr = -10000;
+constexpr int kLocalFps = 10000;
+constexpr int kLocalBorderless = 10001;
+constexpr int kLocalFov = 10002;
+
+static bool is_local_setting(int id)
+{
+    return id == kLocalFps || id == kLocalBorderless || id == kLocalFov;
+}
+
 // the settings page's entries: a group header (-1 - the index of its first setting) or a setting id. "All stages"
 // first, then the groups in the order of their first row; the rows of a group in kDefs order.
 static std::vector<int> settings_entries()
@@ -1622,6 +1639,12 @@ static std::vector<int> settings_entries()
                 head = true;
                 e.push_back(i);
             }
+    }
+    if (g_display_settings_fix) {
+        e.push_back(kLocalHdr);
+        e.push_back(kLocalFps);
+        e.push_back(kLocalBorderless);
+        e.push_back(kLocalFov);
     }
     return e;
 }
@@ -1646,6 +1669,37 @@ static void do_set_click(int row)
     int id = row >= 0 && row < kSetRows ? D.set_id[row] : -1;
     if (id < 0)
         return;
+    if (id == kLocalFps) {
+        int cur = A.frame_target ? A.frame_target() : 0;
+        int nv = skdisp::next_fps_preset(cur);
+        if (A.set_frame_target)
+            nv = A.set_frame_target(nv);
+        g_set_line = std::string(T("Frame rate cap: ", "Ограничение FPS: ")) +
+                     (nv == 0 ? T("Auto", "Авто") : std::to_string(nv) + " fps");
+        g_set_line_color = kGreen;
+        trace::line("ui", "display.frame_target -> %d", nv);
+        g_dirty = true;
+        return;
+    }
+    if (id == kLocalBorderless) {
+        bool cur = A.borderless ? A.borderless() : false;
+        bool nv = A.set_borderless ? A.set_borderless(!cur) : !cur;
+        g_set_line = std::string(T("Borderless window: ", "Окно без рамки: ")) +
+                     (nv ? T("On", "Вкл") : T("Off", "Выкл"));
+        g_set_line_color = kGreen;
+        trace::line("ui", "display.borderless -> %d", nv ? 1 : 0);
+        g_dirty = true;
+        return;
+    }
+    if (id == kLocalFov) {
+        int nv = A.cycle_fov ? A.cycle_fov() : 0;
+        g_set_line = std::string(T("Third-person FOV: ", "Обзор от 3-го лица: ")) +
+                     (nv == 0 ? T("Default", "Обычный") : "+" + std::to_string(nv * 3) + " deg");
+        g_set_line_color = kGreen;
+        trace::line("ui", "display.fov -> %d", nv);
+        g_dirty = true;
+        return;
+    }
     const auto& d = settings::kDefs[id];
     int v = settings::get((settings::Id)id);
     int nv = d.max == 1 && d.min == 0 ? !v : (v >= d.max ? d.min : v + 1);
@@ -1694,9 +1748,36 @@ static void refresh_settings()
             c.box.x1 = x1;
             fit(D.set_label[i], c);
         }
+        if (id == kLocalHdr) {
+            text(D.set_label[i], T("Display (this PC)", "Экран (этот ПК)"));
+            color(D.set_label[i], kGold);
+            continue;
+        }
         if (id < 0) {
             text(D.set_label[i], settings::kDefs[-id - 1].group);
             color(D.set_label[i], kGold);
+            continue;
+        }
+        if (is_local_setting(id)) {
+            if (id == kLocalFps) {
+                int fps = A.frame_target ? A.frame_target() : 0;
+                text(D.set_label[i], std::string(T("Frame rate cap", "Ограничение FPS")) + (fps ? " *" : ""));
+                color(D.set_label[i], fps ? kYellow : kWhite);
+                text(D.set_btn[i], fps == 0 ? T("Auto", "Авто") : std::to_string(fps) + " fps");
+            } else if (id == kLocalBorderless) {
+                bool bl = A.borderless ? A.borderless() : false;
+                text(D.set_label[i], std::string(T("Borderless window", "Окно без рамки")) + (bl ? " *" : ""));
+                color(D.set_label[i], bl ? kYellow : kWhite);
+                text(D.set_btn[i], bl ? T("On", "Вкл") : T("Off", "Выкл"));
+            } else {
+                int st = A.fov_step ? A.fov_step() : 0;
+                text(D.set_label[i], std::string(T("Third-person FOV", "Обзор от 3-го лица")) + (st ? " *" : ""));
+                color(D.set_label[i], st ? kYellow : kWhite);
+                text(D.set_btn[i], st == 0 ? T("Default", "Обычный") : "+" + std::to_string(st * 3) + " deg");
+            }
+            enable(D.set_btn[i], true);
+            text(D.set_tag[i], T("local", "локально"));
+            color(D.set_tag[i], kGreen);
             continue;
         }
         const auto& d = settings::kDefs[id];
@@ -2222,10 +2303,25 @@ std::string debug_state()
     if (D.address)
         s += "hostaddr '" + sui::caption(D.address) + "'\n";
     for (int i = 0; i < kSetRows; i++) // the settings rows on the page now: key, value, editable, tag
-        if (D.set_id[i] >= 0 && D.set_btn[i] && sui::visible(D.set_btn[i]))
-            s += "setting " + std::to_string(i) + " " + settings::kDefs[D.set_id[i]].key + " " +
-                 std::to_string(settings::get((settings::Id)D.set_id[i])) + " " +
-                 ((sui::flags(D.set_btn[i]) & sui::kFlagEnabled) ? "1" : "0") + " '" + sui::caption(D.set_tag[i]) + "'\n";
+        if (D.set_id[i] >= 0 && D.set_btn[i] && sui::visible(D.set_btn[i])) {
+            int id = D.set_id[i];
+            if (is_local_setting(id)) {
+                const char* key = id == kLocalFps ? "display.frame_target"
+                                  : id == kLocalBorderless ? "display.borderless"
+                                                           : "display.fov";
+                int val = id == kLocalFps ? (A.frame_target ? A.frame_target() : 0)
+                          : id == kLocalBorderless ? (A.borderless && A.borderless() ? 1 : 0)
+                                                   : (A.fov_step ? A.fov_step() : 0);
+                s += "setting " + std::to_string(i) + " " + key + " " + std::to_string(val) + " " +
+                     ((sui::flags(D.set_btn[i]) & sui::kFlagEnabled) ? "1" : "0") + " '" + sui::caption(D.set_tag[i]) +
+                     "'\n";
+            } else {
+                s += "setting " + std::to_string(i) + " " + settings::kDefs[id].key + " " +
+                     std::to_string(settings::get((settings::Id)id)) + " " +
+                     ((sui::flags(D.set_btn[i]) & sui::kFlagEnabled) ? "1" : "0") + " '" + sui::caption(D.set_tag[i]) +
+                     "'\n";
+            }
+        }
     if (D.set_line)
         s += "setline '" + sui::caption(D.set_line) + "'\n";
     if (Win pm = g_ok ? pause_menu() : nullptr) {

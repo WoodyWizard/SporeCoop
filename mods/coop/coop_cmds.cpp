@@ -8,6 +8,7 @@
 #include "own_progress.h"
 #include "revive.h"
 #include "cocoon.h"
+#include "fov.h"
 #include "net/compat.h"
 #include "net/kick.h"
 #include "net/manifest.h"
@@ -2224,6 +2225,9 @@ void register_commands_ui()
                    nullptr, SK_CMD_OUTSIDE_FRAME);
     H->command_add(M, "coop.uistate", "coop.uistate [0|1|reset|log|lang en|ru|first|color <argb>|nudge <control> <dx> <dy>|hide <control>|nudge off|demo <addr> <port> <shown port>|demo off|widgets] - co-op window state (open/close it; the rest: tests, README pictures)", c_uistate, nullptr,
                    SK_CMD_OUTSIDE_FRAME);
+    H->command_add(M, "coop.fov",
+                   "coop.fov [0-6|reset|ray <x> <y>] - wider third-person FOV in Creature and Adventure (BUG-0866)",
+                   fov::command, nullptr, SK_CMD_MAIN_THREAD);
 }
 
 } // namespace coop_core
