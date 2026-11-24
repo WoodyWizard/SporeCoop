@@ -11,6 +11,7 @@
 #include "civ_wallet_logic.h"
 #include "net/interp.h"
 #include "net/shared_ledger.h"
+#include "ship_editor_logic.h"
 
 static int g_fail = 0;
 #define CHECK(c)                                                         \
@@ -344,6 +345,79 @@ static void test_veh_burst()
     CHECK(std::fabs(e_ema.vel.x) > 5.f); // old EMA still dragged along old +X direction
 }
 
+static void test_guest_ship_editor()
+{
+    printf("guest spaceship editor (BUG-1531)\n");
+    using namespace ship_editor;
+    constexpr uint32_t kCiv = 0x01654C04u, kTribe = 0x01654C02u;
+
+    // Guards: fix off, host, elsewhere, wrong mode, wrong editor id
+    State s;
+    CHECK(!s.on_vote_end(kShipEditor, kCiv, kCiv, true, false, false, 10.0));   // fix off
+    CHECK(!s.on_vote_end(kShipEditor, kCiv, kCiv, false, false, true, 10.0));   // host
+    CHECK(!s.on_vote_end(kShipEditor, kCiv, kCiv, true, true, true, 10.0));     // elsewhere
+    CHECK(!s.on_vote_end(kShipEditor, kTribe, kCiv, true, false, true, 10.0));  // wrong mode
+    CHECK(!s.on_vote_end(0x99E92F05u, kCiv, kCiv, true, false, true, 10.0));    // City Hall, not ship
+    CHECK(s.phase == Phase::Idle && s.votes == 0);
+
+    // Happy path: vote passes -> settles 0.5 s -> opens -> editor seen -> result captured -> returns to Civ
+    CHECK(s.on_vote_end(kShipEditor, kCiv, kCiv, true, false, true, 10.0));
+    CHECK(s.phase == Phase::Pending && s.votes == 1 && s.held());
+    // Duplicate vote while active is ignored
+    CHECK(!s.on_vote_end(kShipEditor, kCiv, kCiv, true, false, true, 10.1));
+    // Busy/paused resets settle clock
+    CHECK(s.step_pending(true, true, true, true, false, false, false, true, false, false, 10.4, 0.1) == StepAction::Wait);
+    CHECK(s.step_pending(true, true, true, true, false, false, false, false, false, false, 10.7, 0.3) == StepAction::Wait);
+    CHECK(s.step_pending(true, true, true, true, false, false, false, false, false, false, 11.0, 0.3) == StepAction::Open);
+    CHECK(s.phase == Phase::Opening);
+    // Defer inside outside-frame task returns to Pending and settles again
+    s.defer_opening(11.0);
+    CHECK(s.phase == Phase::Pending);
+    CHECK(s.step_pending(true, true, true, true, false, false, false, false, false, false, 11.6, 0.6) == StepAction::Open);
+    s.on_submit_result(true, 11.6);
+    CHECK(s.phase == Phase::Open && s.opened == 1);
+    // Ignores unrelated tags (e.g. native tag or outfitter tag)
+    uint32_t k_other[3] = {0x11111111u, 0x476A98C7u, 0x40656200u};
+    CHECK(!s.on_result(kNativeTag, kUfoDesign, k_other, false));
+    // Sees Editor mode, receives own tag result, returns to Civ
+    CHECK(s.step_open(false, true, false, 12.0) == StepAction::Wait && s.editor_seen);
+    uint32_t k_mine[3] = {0xAABBCCDDu, 0x476A98C7u, 0x40656200u};
+    CHECK(s.on_result(kOwnShipTag, kUfoDesign, k_mine, false));
+    CHECK(s.results == 1 && s.cancels == 0 && s.res.key[0] == 0xAABBCCDDu);
+    CHECK(s.step_open(false, false, true, 13.0) == StepAction::Wait); // loading transition
+    CHECK(s.step_open(true, false, false, 13.5) == StepAction::Returned);
+    CHECK(s.phase == Phase::Done && !s.held());
+
+    // Session end cancels Pending (BUG-0234), but keeps an already Open editor tracked so return unpauses
+    State s2;
+    CHECK(s2.on_vote_end(kShipEditor, kCiv, kCiv, true, false, true, 20.0));
+    s2.on_session_end();
+    CHECK(s2.phase == Phase::Idle && s2.dropped == 1 && !s2.held());
+    CHECK(s2.on_vote_end(kShipEditor, kCiv, kCiv, true, false, true, 25.0));
+    CHECK(s2.step_pending(true, true, true, true, false, false, false, false, false, false, 25.6, 0.6) == StepAction::Open);
+    s2.on_submit_result(true, 25.6);
+    s2.on_session_end();
+    CHECK(s2.phase == Phase::Open && s2.held());
+    CHECK(s2.step_open(false, true, false, 26.0) == StepAction::Wait);
+    CHECK(s2.on_result(kOwnShipTag, kUfoDesign, nullptr, true) && s2.cancels == 1);
+    CHECK(s2.step_open(true, false, false, 27.0) == StepAction::Returned && s2.phase == Phase::Done);
+
+    // Timeout if editor never appears after Submit
+    State s3;
+    CHECK(s3.on_vote_end(kShipEditor, kCiv, kCiv, true, false, true, 50.0));
+    CHECK(s3.step_pending(true, true, true, true, false, false, false, false, false, false, 50.6, 0.6) == StepAction::Open);
+    s3.on_submit_result(true, 50.6);
+    CHECK(s3.step_open(true, false, false, 50.6 + kOpenLimit + 1.0) == StepAction::Drop);
+    CHECK(s3.phase == Phase::Idle && s3.dropped == 1);
+
+    // Hard timeout caps paused wait; direct exit to Space/Menu drops cleanly without Civ unpause
+    State s4;
+    CHECK(s4.on_vote_end(kShipEditor, kCiv, kCiv, true, false, true, 100.0));
+    for (int i = 1; i <= 305; i++)
+        s4.step_pending(true, true, true, true, false, false, false, false, true, false, 100.0 + i, 1.0);
+    CHECK(s4.phase == Phase::Idle && s4.dropped == 1);
+}
+
 int main()
 {
     test_money();
@@ -355,6 +429,7 @@ int main()
     test_local_play_gate();
     test_passive_income_cause();
     test_veh_burst();
+    test_guest_ship_editor();
     printf(g_fail ? "civ_tests: %d FAILED\n" : "civ_tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

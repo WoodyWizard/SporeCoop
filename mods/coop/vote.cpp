@@ -921,6 +921,8 @@ bool SK_CDECL h_Submit(void* req)
                     start_vote(req, g_name + " wants to move on to the Tribe stage");
                 } else if (designs::outfit_texts(mode, editor)) // BUG-1156: the outfitter is no evolution
                     start_vote(req, g_name + " wants to change the tribe's outfit");
+                else if (mode == modes::kCiv && editor == designs::kShipEditor) // BUG-1531: Civ -> Space launch
+                    start_vote(req, g_name + " wants to move on to the Space stage");
                 else
                     start_vote(req, g_name + (design_stage(mode) ? " wants to edit a design (" : " wants to evolve (") +
                                         modes::mode_name(mode) + ")");

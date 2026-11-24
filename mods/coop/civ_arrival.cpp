@@ -31,6 +31,7 @@
 #include "coop_state.h"
 #include "civ_editors.h"
 #include "designs.h"
+#include "ship_editor_logic.h"
 #include "species_line.h"
 
 namespace coop_core {
@@ -416,11 +417,14 @@ static void late_check(double now, uint32_t m)
     feed("Civilization: your own City Hall and vehicle editors open in a moment (you came after the end of Tribe)");
 }
 
+static void civ_ship_editor_tick(double now);
+
 void civ_arrival_tick(double now)
 {
     double dt = g_last_tick ? now - g_last_tick : 0;
     g_last_tick = now;
     late_check(now, game::mode_id());
+    civ_ship_editor_tick(now); // BUG-1531
     unpause_tick(now); // BUG-1323 (also after the last editor: phase done)
     if (g_phase == kNone || g_phase == kDone || g_queued)
         return;
@@ -581,12 +585,171 @@ static void reset()
 static size_t held() { return g_phase != kNone && g_phase != kDone ? 1 : 0; }
 SESSION_STATE("core.own_civ_arrival", &g_fix, reset, held);
 
+// ---- BUG-1531: a guest of the shared nation opens its own spaceship editor after the Civ -> Space vote ----
+// On the host, capturing the last city triggers PlanetWon -> Launch -> EditorRequest(0x96B24187, tag 0x0116D51D)
+// through the co-op vote. Guests receive captures via cCity::ChangeOwner (civ_guest.cpp) and never run PlanetWon
+// themselves. With civ.guest_ship_editor on, when the host's Civ -> Space vote passes (MSG_VOTE on=0, editor=0x96B24187),
+// each connected guest in the host's Civ world opens its own spaceship editor (0x96B24187, tag kOwnShipTag 0x0C0B1531 so
+// cGameModeCiv does not launch a local Space stage, red cross enabled so the guest may decline). Any Space world share
+// arriving from the host while the editor is open is deferred by world.cpp until 2 s after leaving the editor.
+static bool g_ship_fix = true;
+COOP_FIX("civ.guest_ship_editor", "BUG-1531", g_ship_fix,
+         "civ: a guest of the shared nation opens its own spaceship editor cleanly after the Civ -> Space vote");
+static ship_editor::State g_ship;
+static bool g_ship_queued = false;
+static double g_ship_last_tick = 0;
+
+static bool open_ship_editor()
+{
+    uintptr_t ctor = H->sym("EditorRequest_ctor"), alloc = H->sym("GeneralAllocator::new_"),
+              submit = H->sym("Editors::EditorRequest::Submit");
+    if (!ctor || !alloc || !submit)
+        return false;
+    void* req = skg::cdecl_call<void*>(alloc, (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
+    if (!req)
+        return false;
+    skg::thiscall<void*>(ctor, req);
+    skg::vcall<int>(req, 1); // AddRef
+    skg::field<uint32_t>(req, 0xC) = ship_editor::kShipEditor;
+    skg::field<uint32_t>(req, 0x90) = ship_editor::kOwnShipTag;
+    skg::field<uint8_t>(req, 0x34) = 0;
+    skg::field<uint8_t>(req, 0x36) = 1;
+    skg::field<uint8_t>(req, 0x37) = 1;
+    skg::field<uint8_t>(req, 0x38) = 1;
+    skg::field<uint8_t>(req, 0x39) = 0;
+    skg::field<uint8_t>(req, 0x3B) = 1; // allow red cross so a guest can decline cleanly
+    skg::field<uint8_t>(req, 0x3C) = 1;
+    skg::field<uint8_t>(req, 0x3D) = 1;
+    skg::field<uint8_t>(req, 0x64) = 1;
+    bool r{};
+    {
+        callguard::Hold vote_bypass(g_vote_bypass); // our own request: no vote, no BUG-1158 refusal
+        r = skg::cdecl_call<bool>(submit, req);
+    }
+    skg::vcall<int>(req, 2); // Release
+    return r;
+}
+
+static void ship_open_task(void*)
+{
+    g_ship_queued = false;
+    if (g_ship.phase != ship_editor::Phase::Opening)
+        return;
+    double now = H->time_seconds();
+    if (game::mode_id() != modes::kCiv || mode_switch_pending() || world::load_queued() || pause_ui_up() || g_vote.active) {
+        g_ship.defer_opening(now);
+        return;
+    }
+    g_modal_at_open = modal_pauses(); // BUG-1323: unpause 0x4BF38A7 cleanly on return to Civ
+    bool ok = open_ship_editor();
+    g_ship.on_submit_result(ok, now);
+    LOG("civ ship editor: guest spaceship editor %08X %s (BUG-1531)", ship_editor::kShipEditor,
+        ok ? "requested" : "refused by the game");
+    if (ok)
+        feed("Space: design your spaceship (or close the editor to wait for the host's Space stage)");
+}
+
+void civ_ship_editor_vote(uint32_t editor, uint32_t mode)
+{
+    bool is_guest = g_sess.connected() && g_sess.role() == net::Role::Client;
+    if (!g_ship.on_vote_end(editor, mode, modes::kCiv, is_guest, guest_elsewhere(), g_ship_fix, H->time_seconds()))
+        return;
+    LOG("civ ship editor: Civ -> Space vote passed (editor %08X): guest spaceship editor queued (BUG-1531)", editor);
+    feed("Space: your spaceship editor opens in a moment");
+}
+
+void civ_ship_editor_result(const void* data)
+{
+    void* d = const_cast<void*>(data);
+    if (!d || !skg::readable(d, 0x48))
+        return;
+    uint32_t tag = skg::field<uint32_t>(d, 0xC);
+    uint32_t type_id = skg::field<uint32_t>(d, 0x14);
+    uint32_t key[3] = {skg::field<uint32_t>(d, 0x18), skg::field<uint32_t>(d, 0x1C), skg::field<uint32_t>(d, 0x20)};
+    bool cancelled = skg::field<uint8_t>(d, 0x44) != 0;
+    if (!g_ship.on_result(tag, type_id, key, cancelled))
+        return;
+    LOG("civ ship editor: result type=%08X key=%08X/%08X/%08X cancelled=%d (BUG-1531)", type_id, key[0], key[1], key[2],
+        (int)cancelled);
+}
+
+static void civ_ship_editor_tick(double now)
+{
+    double dt = g_ship_last_tick ? now - g_ship_last_tick : 0;
+    g_ship_last_tick = now;
+    if (g_ship.phase == ship_editor::Phase::Idle || g_ship.phase == ship_editor::Phase::Done || g_ship_queued)
+        return;
+    uint32_t m = game::mode_id();
+    bool in_civ = m == modes::kCiv;
+    bool in_editor = m == modes::kEditor || m == modes::kEdit;
+    bool loading = m == modes::kLoad || mode_switch_pending() || world::load_queued();
+    if (g_ship.phase == ship_editor::Phase::Pending) {
+        unsigned b = game_busy() & busy::kEditorGate;
+        bool paused = (b & busy::kPaused) != 0 || pause_ui_up();
+        bool busy_other = (b & ~busy::kPaused) != 0 || world::cinematic_playing();
+        auto act = g_ship.step_pending(g_sess.connected(), g_sess.role() == net::Role::Client, g_ship_fix, in_civ, in_editor,
+                                       loading, guest_elsewhere(), busy_other, paused, g_vote.active, now, dt);
+        if (act == ship_editor::StepAction::Open) {
+            g_ship_queued = true;
+            H->run_outside_frame(ship_open_task, nullptr);
+        } else if (act == ship_editor::StepAction::Drop) {
+            LOG("civ ship editor: dropped while pending: %s (BUG-1531)", g_ship.why);
+        }
+        return;
+    }
+    if (g_ship.phase == ship_editor::Phase::Open) {
+        auto act = g_ship.step_open(in_civ, in_editor, loading, now);
+        if (act == ship_editor::StepAction::Returned) {
+            if (g_unpause_fix)
+                g_unpause_due_at = now; // BUG-1323: clear 0x4BF38A7 modal pause on Civ return
+            if (void* p = planner()) {
+                uint32_t pd = skg::field<uint32_t>(p, 0x4C);
+                if (pd == ship_editor::kUfoDesign || (g_ship.res.seen && pd == g_ship.res.type_id))
+                    skg::field<uint32_t>(p, 0x4C) = 0xFFFFFFFFu;
+            }
+            LOG("civ ship editor: guest returned to Civ (%s, key=%08X, BUG-1531)", g_ship.why, g_ship.res.key[0]);
+        } else if (act == ship_editor::StepAction::Drop) {
+            LOG("civ ship editor: ended while open: %s (BUG-1531)", g_ship.why);
+        }
+    }
+}
+
+std::string civ_ship_editor_status()
+{
+    char b[512];
+    snprintf(b, sizeof b,
+             "civship: fix=%d phase=%s votes=%u opened=%u open_failed=%u results=%u cancels=%u dropped=%u waits=%u "
+             "why='%s'\n  result seen=%d type=%08X key=%08X/%08X/%08X cancelled=%d\n",
+             (int)g_ship_fix, ship_editor::phase_name(g_ship.phase), g_ship.votes, g_ship.opened, g_ship.open_failed,
+             g_ship.results, g_ship.cancels, g_ship.dropped, g_ship.waits, g_ship.why, (int)g_ship.res.seen,
+             g_ship.res.type_id, g_ship.res.key[0], g_ship.res.key[1], g_ship.res.key[2], (int)g_ship.res.cancelled);
+    return b;
+}
+
+static int c_civship(void*, int, const char* const*, SkOut* out)
+{
+    H->out_printf(out, "%s", civ_ship_editor_status().c_str());
+    return 0;
+}
+
+static void ship_reset()
+{
+    g_ship.on_session_end();
+    if (g_ship.phase != ship_editor::Phase::Open)
+        g_ship_queued = false;
+}
+static size_t ship_held() { return g_ship.held() ? 1 : 0; }
+SESSION_STATE("civ.guest_ship_editor", &g_ship_fix, ship_reset, ship_held);
+
 void civ_arrival_init()
 {
     H->command_add(M, "coop.civarrival",
                    "coop.civarrival [status | due | forget] - a guest's own City Hall and vehicle editors at its arrival in "
                    "Civ (WP-X1, BUG-1276; a guest that missed the end of Tribe: BUG-1290)",
                    c_civarrival, nullptr, SK_CMD_OUTSIDE_FRAME);
+    H->command_add(M, "coop.civship",
+                   "coop.civship [status] - guest spaceship editor at the Civ -> Space vote (BUG-1531)", c_civship, nullptr,
+                   SK_CMD_OUTSIDE_FRAME);
 }
 
 } // namespace coop_core

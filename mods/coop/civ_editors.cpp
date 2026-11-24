@@ -39,6 +39,7 @@
 namespace coop_core {
 void feed(const std::string& s);
 void civ_arrival_result(const void* data); // WP-X1 (BUG-1276)
+void civ_ship_editor_result(const void* data); // BUG-1531
 }
 
 namespace civedit {
@@ -241,8 +242,10 @@ static int SK_THISCALL h_PlannerMsg(void* planner, uint32_t msg, void* data)
 // ---- cGameModeCiv's listener: the Civ outfitter's result is not the civilization's
 static int SK_THISCALL h_CivMsg(void* listener, uint32_t msg, void* data)
 {
-    if (msg == kMsgEditorResult)
-        coop_core::civ_arrival_result(data); // WP-X1 (BUG-1276): our own arrival editors' results (their own tag, BUG-1329)
+    if (msg == kMsgEditorResult) {
+        coop_core::civ_arrival_result(data);     // WP-X1 (BUG-1276): our own arrival editors' results (their own tag, BUG-1329)
+        coop_core::civ_ship_editor_result(data); // BUG-1531: our own spaceship editor result (kOwnShipTag)
+    }
     if (msg != kMsgEditorResult || !R(data, 0x48) || F<uint32_t>(data, 0xC) != kTagOutfitter || !active_return())
         return o_CivMsg(listener, msg, data);
     uint8_t& cancelled = F<uint8_t>(data, 0x44);
