@@ -31,6 +31,7 @@ enum FieldId : uint8_t {
     F_ITEM_SCALE = 6, // the scale of the model in a tribe member's hand (the model's transform; tribe.cpp, BUG-0912)
     F_HELD_ITEM = 5, // cCreatureCitizen +0xFFC mCurrentHandheldItem + 1 / the game's attach 0xC250A0 (tribe.cpp, BUG-0906)
     F_HUNGER = 7,    // cCreatureBase +0xBBC mHunger (0..100) / its clamped setter 0xC0BB30 (tribe.cpp, BUG-0935)
+    F_HAND_SLOT = 8, // cCreatureCitizen hand limb slot (1..n) matching +0xFC4 (tribe.cpp, BUG-1458)
 };
 
 struct Field {
@@ -69,6 +70,7 @@ enum KindId : uint8_t {
     K_TRIBE_ITEM_SCALE = 10, // the size of what a tribe member holds (tribe.cpp, BUG-0912: its own switch tribe.item_scale)
     K_TRIBE_ITEM = 9,    // what a tribe member holds in its hand (tribe.cpp, BUG-0906: its own switch tribe.held_item)
     K_TRIBE_HUNGER = 11, // a tribe member's hunger (tribe.cpp, BUG-0935: its own switch tribe.mirror_hunger)
+    K_TRIBE_HAND = 12,   // which hand slot a tribe member holds items in (tribe.cpp, BUG-1458: its own switch tribe.hand_side)
 };
 
 struct Ctx {

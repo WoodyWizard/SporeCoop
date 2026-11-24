@@ -504,6 +504,44 @@ static void audit_tr()
     CHECK(took_goes_back(false, false, false, false, true));
 }
 
+static void hold_track_and_hand_side()
+{
+    printf("hold track rebind (BUG-1347) and hand side (BUG-1458)\n");
+    const bool fix = !g_nofix;
+    // BUG-1347: track handle matches 0x9FF630: ((slot + 1) & 0xFF) | (gen << 8)
+    CHECK(track_handle(0, 1) == 0x101u);
+    CHECK(track_handle(15, 0x42) == 0x4210u);
+    CHECK(track_handle(16, 1) == 0u);
+    CHECK(!track_live_state(0) && track_live_state(1) && track_live_state(2) && !track_live_state(3));
+
+    // Hold retry policy: with track_fix ON, retries every 0.15 s (even off slow tick) up to 4 times and restarts idle
+    CHECK(hold_retry_action(true, fix, true, false, 0.16, 0.5, 0, true, true, false) ==
+          (fix ? HoldRetryAction::Retry : HoldRetryAction::None)); // FAILS with --nofix
+    CHECK(hold_retry_action(true, fix, true, false, 0.20, 0.8, 0, true, false, true) ==
+          (fix ? HoldRetryAction::RestartAndRetry : HoldRetryAction::Clear)); // FAILS with --nofix
+    CHECK(hold_retry_action(true, true, true, false, 0.20, 2.5, 0, true, false, true) == HoldRetryAction::Clear);
+    CHECK(hold_retry_action(true, true, true, false, 0.20, 0.5, 4, true, true, true) == HoldRetryAction::Clear);
+    CHECK(hold_retry_action(false, true, true, false, 0.50, 0.5, 0, true, true, true) == HoldRetryAction::None);
+    CHECK(hold_retry_action(true, true, true, true, 0.50, 0.5, 0, true, true, true) == HoldRetryAction::None);
+
+    // BUG-1458: hand slot lookup and secondary opposite-side selection (Citizen_PickHandBone 0xC24270)
+    HandLimb two[2] = {{10, 0}, {14, 1}};
+    CHECK(find_hand_slot(two, 2, 10) == 0);
+    CHECK(find_hand_slot(two, 2, 14) == 1);
+    CHECK(find_hand_slot(two, 2, 99) == -1);
+    CHECK(pick_secondary_slot(two, 2, 0) == 1);
+    CHECK(pick_secondary_slot(two, 2, 1) == 0);
+
+    // Four limbs (two left, two right): secondary picks first opposite-side limb wrapping from primary+1
+    HandLimb four[4] = {{10, 0}, {11, 0}, {20, 1}, {21, 1}};
+    CHECK(pick_secondary_slot(four, 4, 0) == 2);
+    CHECK(pick_secondary_slot(four, 4, 1) == 2);
+    CHECK(pick_secondary_slot(four, 4, 2) == 0);
+    // Single limb: secondary falls back to (0 + 1) % 1 == 0
+    HandLimb one[1] = {{7, 0}};
+    CHECK(pick_secondary_slot(one, 1, 0) == 0);
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && !strcmp(argv[1], "--nofix");
@@ -521,6 +559,7 @@ int main(int argc, char** argv)
     late_catch();
     body_rules();
     audit_tr();
+    hold_track_and_hand_side();
     if (g_fail) {
         printf("tribe_tests: %d FAILED\n", g_fail);
         return 1;

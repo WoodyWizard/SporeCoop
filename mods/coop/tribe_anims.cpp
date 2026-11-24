@@ -281,7 +281,7 @@ bool clear_pending_same(void* c, uint32_t cur)
     bool same = false;
     for (int i = 0; i < 16 && !same; i++) {
         uint32_t k = *(uint32_t*)(st + 0xF4C + i * 4);
-        if (k > 0xF || k == *(uint32_t*)(st + 0xFA8))
+        if (k > 0xF || (!g_hold_track_fix && k == *(uint32_t*)(st + 0xFA8)))
             continue;
         uint8_t* tr = st + 8 + k * 0xF0;
         same = *(uint32_t*)tr && *(uint32_t*)(tr + 0xD8) == cur;
@@ -309,6 +309,46 @@ uint8_t* main_track(void* c)
         return nullptr;
     uint8_t* tr = st + 8 + k * 0xF0;
     return *(uint32_t*)tr ? tr : nullptr;
+}
+// BUG-1347: handle of the creature's live (state 1 fading-in or 2 playing) main animation track, matching 0x9FF630
+uint32_t main_track_handle(void* c)
+{
+    uint8_t* ac = has_body(c) ? F<uint8_t*>(c, 0xB54) : nullptr;
+    uint8_t* st = ac && skg::readable(ac + 0x184, 4) ? *(uint8_t**)(ac + 0x184) : nullptr;
+    if (!st || !skg::readable(st, 0xFAC))
+        return 0;
+    uint32_t i = *(uint32_t*)(st + 0xFA4);
+    if (i > 0xF)
+        return 0;
+    uint32_t k = *(uint32_t*)(st + 0xF0C + i * 4);
+    if (k > 0xF)
+        return 0;
+    uint8_t* tr = st + 8 + k * 0xF0;
+    if (!*(uint32_t*)tr || !tribe_logic::track_live_state(*(int*)(tr + 0xC0)))
+        return 0;
+    return tribe_logic::track_handle(k, *(uint32_t*)(tr + 0xB4));
+}
+// BUG-1347: after Citizen_SetHandheldItem attaches an item (0xC240E0), 0x9FF700 may have bound the kind-5 hold
+// modifier to an earlier pending (state 0) or fading-out (state 3) track of the same animation id, causing the next
+// tick (0xC11240) to delete the hold immediately. Rebind any kind-5 hold modifier onto the live main track handle.
+bool rebind_hold_to_main(void* c)
+{
+    uint32_t want = main_track_handle(c);
+    uint8_t* tab = want && has_body(c) ? F<uint8_t*>(c, kModifiersOff) : nullptr;
+    if (!tab || !skg::readable(tab, 8 * 0x44))
+        return false;
+    bool rebound = false;
+    for (uint32_t i = 0; i < 8; i++) {
+        uint8_t* e = tab + i * 0x44;
+        if (*(int*)(e + 0x24) != 5 || *(int*)(e + 0x28) != 0 || *(void**)(e + 0x3C) != c)
+            continue;
+        if (*(uint32_t*)(e + 0x04) != want) {
+            *(uint32_t*)(e + 0x04) = want;
+            g_anim.hold_rebound++;
+            rebound = true;
+        }
+    }
+    return rebound;
 }
 bool track_loops(uint8_t* tr) { return *(float*)(tr + 0xA0) == -1.0f; }
 // guest: the mirror takes its item in the host's animation when it plays it (kind 11, or right after the relay played it)
@@ -359,6 +399,8 @@ void hold_try(GEntry& e, double now)
         if (g_hold_queued_fix && clear_pending_same(c, cur))
             hold_ev(member_id(c), 'W', cur, 0); // BUG-0992
         set_hand(c, item);
+        if (g_hold_track_fix && rebind_hold_to_main(c))
+            hold_ev(member_id(c), 'F', cur, main_track_handle(c)); // BUG-1347
         if (g_item_scale_fix && sc != 1.f)
             apply_item_scale(c, sc);
         g.hold_set_at = now; // BUG-1347: held_items_tick checks that this attach's hold started
