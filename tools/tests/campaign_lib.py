@@ -305,3 +305,14 @@ def failed_segment(items, segments, end):
     seg.update(stage=st, to=nxt if STAGES.index(nxt) >= STAGES.index(st) else st, finding=bad[0]['kind'],
                text=bad[0]['text'])
     return seg
+
+
+def host_view_recovery(stuck_count, old_host_click=False, old_raid_skip=False):
+    """BUG-1535: recovery policy when the host bot's Tribe camera gets stuck at its avatar (members on screen 0 /
+    the view did not reach the hut) on a non-planted raid.
+    - stuck_count <= 0, or old_host_click/old_raid_skip: 'none' (preserve legacy / BUG-1091 twin behaviour)
+    - stuck_count == 1: 'recenter' (press H to recenter on home village, recalibrate minimap, retry click)
+    - stuck_count >= 2: 'fallback' (select host members + coop.tribe act_obj 15 on the hut so the raid gets its goal)"""
+    if old_host_click or old_raid_skip or stuck_count <= 0:
+        return 'none'
+    return 'recenter' if stuck_count == 1 else 'fallback'

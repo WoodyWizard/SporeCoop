@@ -1200,7 +1200,15 @@ std::string debug(const std::vector<std::string>& a)
         });
         void* vec[3] = {sel.data(), sel.data() + sel.size(), sel.data() + sel.size()};
         int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, action, t, (void*)nullptr);
-        return "action ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) + ") " + g_last_cmd;
+        bool goal_set = false;
+        if (is_host() && (action == 15 || action == 9)) { // BUG-1535: match a host right-click's goal mission
+            if (void* v = target_village(t); v && wsync::goal_target(v)) {
+                g_guest_missions++;
+                goal_set = true;
+            }
+        }
+        return "action ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) +
+               (goal_set ? ", goal=1" : "") + ") " + g_last_cmd;
     }
     if (!a.empty() && a[0] == "party") { // party: tests (BUG-0646), the selected members party at the own fire pit
         // (a click on the fire pit: CitizenAction 12 Party with the tool of type 10, docs/re/tribe.md 2)

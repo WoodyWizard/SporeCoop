@@ -660,6 +660,13 @@ def test_campaign():
     got = cl.new_reports(names, 1000, {13, 14, 27, 37})
     check(got == ['crash-20261029-010000-i13.txt', 'report-20261029-020000-i27.txt'],
           f'new reports: only the instances of the run, only since the start ({got})')
+    # BUG-1535: host view stuck recovery on non-planted Tribe raids
+    check(cl.host_view_recovery(0) == 'none' and cl.host_view_recovery(1) == 'recenter'
+          and cl.host_view_recovery(2) == 'fallback' and cl.host_view_recovery(5) == 'fallback',
+          'host_view_recovery: 1 -> recenter, >=2 -> fallback (BUG-1535)')
+    check(cl.host_view_recovery(2, old_host_click=True) == 'none'
+          and cl.host_view_recovery(2, old_raid_skip=True) == 'none',
+          'host_view_recovery: disabled under CAMPAIGN_OLD_HOST_CLICK / CAMPAIGN_OLD_RAID_SKIP')
 
 
 def test_mergelogs():

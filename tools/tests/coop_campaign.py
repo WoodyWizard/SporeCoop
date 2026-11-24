@@ -133,6 +133,9 @@ TRIBE_ADVANCE = 0x6454B47   # the HUD's advance button the full goal bar shows i
 # clicks on the first village raided while another stands never come (a planted view that does not reach it, the test's twin)
 OLD_RAID_SKIP = os.environ.get('CAMPAIGN_OLD_RAID_SKIP') == '1'
 PLANT_NOCLICK = float(os.environ.get('CAMPAIGN_PLANT_NOCLICK') or 0)
+# BUG-1535: CAMPAIGN_OLD_HOST_CLICK=1: do not recenter/fallback when the host camera gets stuck at its avatar on a
+# non-planted Tribe raid (old behaviour: campaign_tribe_noclick stayed stuck at goal bar 1/5 for 30 min)
+OLD_HOST_CLICK = os.environ.get('CAMPAIGN_OLD_HOST_CLICK') == '1'
 # BUG-1165: the planted twin's Tribe advance gets the planted minutes on top of a 20 min advance (village 2 can fall only
 # after the plant, and the passing runs needed 22-26 min of the old 30: a game over's reload, a 300 s raid or the editor
 # at the end took the rest). CAMPAIGN_OLD_NOCLICK_BUDGET=1: the 30 min of every Tribe advance (stuck in 3 of 5 runs,
@@ -1671,6 +1674,22 @@ class Campaign:
         print('  BUG-1091 diag: bot step counts ' + '; '.join(f'{pl.name} {sorted(pl.count.items())}' for pl in g.p),
               flush=True)
 
+    def tribe_host_act_fallback(self, raid, mine):
+        """BUG-1535: fallback for a non-planted Tribe raid when the host's camera stays stuck at its avatar (view
+        centre ~90 m off its members). Selects own host members and sends `coop.tribe act_obj 15` on the raided hut,
+        which runs DoActionForObjects and sets the village's goal mission as a host right-click does."""
+        for mid in mine[:4]:
+            self.host.call(f'coop.tribe select {mid} 1')
+        out = self.host.call('coop.tribe act_obj 15 %s %.2f %.2f %.2f' % ((TRIBE_HUT,) + raid['hut']))
+        ok = 'action ordered' in out and 'selected, ret ' in out and '0 selected' not in out
+        if ok:
+            self.note(f'shortcut: coop.tribe act_obj fallback on village {raid["tribe"]} after stuck host view '
+                      f'(BUG-1535: {out.strip()[:80]})')
+            raid['why'] = ''
+        else:
+            raid['why'] = f'act_obj fallback failed ({out.strip()[:60]})'
+        return ok
+
     def tribe_host_click(self, g, pl, raid):
         """the host's own attack click on the raided hut, as a player gives it: the view on its members, a box round
         them, attack mode, the view on the hut (minimap), a right-click on the hut. True when the game took it as a raid
@@ -1685,38 +1704,65 @@ class Campaign:
         if not pl.J and not pl.calibrate():
             raid['why'] = 'minimap not calibrated'
             return False
-        sel = []
-        for group in (True, False, False):  # a box round several, else one member at a time (a box can miss: 12:32 of
-            sel = g.select_idle(pl, st, mine, group)  # lab 20261113-120534, "no member selected (6 own)")
-            if sel:
-                break
-        if not sel and not OLD_RAID_SKIP:
-            # BUG-1091: the members picked were out raiding where the view did not reach: the view on the village, a
-            # box round the host's members there (its home guard and the members spawned for this click)
-            home = play_tribe.tribe_centres(pl.con).get('p')
-            if home and pl.look(home):
-                sel = pl.select(mine, play_tribe.screen(pl.con), group=True)
-        if not sel:
-            raid['why'] = f'no member selected ({len(mine)} own)'
-            self.tribe_click_diag(pl, st, mine, raid)
-            return False
-        pl.mode(1)
-        if not pl.look(raid['hut']):
-            pl.calibrate()  # the view turned: the minimap's map again
-            if not pl.look(raid['hut']):
-                raid['why'] = 'the view did not reach the hut'
+
+        def try_click():
+            sel = []
+            for group in (True, False, False):  # a box round several, else one member at a time (a box can miss: 12:32 of
+                sel = g.select_idle(pl, st, mine, group)  # lab 20261113-120534, "no member selected (6 own)")
+                if sel:
+                    break
+            if not sel and not OLD_RAID_SKIP:
+                # BUG-1091: the members picked were out raiding where the view did not reach: the view on the village, a
+                # box round the host's members there (its home guard and the members spawned for this click)
+                home = play_tribe.tribe_centres(pl.con).get('p')
+                if home and pl.look(home):
+                    sel = pl.select(mine, play_tribe.screen(pl.con), group=True)
+            if not sel:
+                raid['why'] = f'no member selected ({len(mine)} own)'
                 self.tribe_click_diag(pl, st, mine, raid)
                 return False
-        pl.centre()
-        tg = [o for o in pl.on_screen(play_tribe.screen(pl.con)) if o[0] == f'hut{tk}']
-        if not tg:
-            raid['why'] = 'the hut not on screen'
-            return False
-        n0 = pl.given
-        g.click_order(pl, 'raid', sel, tg[0], 30)
-        ok = pl.given > n0 and 'action=15' in pl.last_order()[0]
-        raid['why'] = '' if ok else f'the click gave {pl.last_order()[0][:60]!r}'
-        return ok
+            pl.mode(1)
+            if not pl.look(raid['hut']):
+                pl.calibrate()  # the view turned: the minimap's map again
+                if not pl.look(raid['hut']):
+                    raid['why'] = 'the view did not reach the hut'
+                    self.tribe_click_diag(pl, st, mine, raid)
+                    return False
+            pl.centre()
+            tg = [o for o in pl.on_screen(play_tribe.screen(pl.con)) if o[0] == f'hut{tk}']
+            if not tg:
+                raid['why'] = 'the hut not on screen'
+                return False
+            n0 = pl.given
+            g.click_order(pl, 'raid', sel, tg[0], 30)
+            ok = pl.given > n0 and 'action=15' in pl.last_order()[0]
+            raid['why'] = '' if ok else f'the click gave {pl.last_order()[0][:60]!r}'
+            return ok
+
+        if try_click():
+            self._host_view_stuck = 0
+            return True
+
+        # BUG-1535: recover when the host camera is stuck at its avatar (~90 m off its members, members on screen 0)
+        stuck = getattr(self, '_host_view_stuck', 0) + 1
+        self._host_view_stuck = stuck
+        action = cl.host_view_recovery(stuck, old_host_click=OLD_HOST_CLICK, old_raid_skip=OLD_RAID_SKIP)
+        if action == 'recenter':
+            self.note(f'tribe: host view stuck ({raid.get("why", "")}); recentering on home village (H) and retrying (BUG-1535)')
+            pl.con.call('key h')
+            time.sleep(0.6)
+            pl.cur = None
+            pl.calibrate()
+            if try_click():
+                self._host_view_stuck = 0
+                return True
+            stuck = self._host_view_stuck = self._host_view_stuck + 1
+            action = cl.host_view_recovery(stuck, old_host_click=OLD_HOST_CLICK, old_raid_skip=OLD_RAID_SKIP)
+        if action == 'fallback':
+            if self.tribe_host_act_fallback(raid, mine):
+                self._host_view_stuck = 0
+                return True
+        return False
 
     def tribe_click_diag(self, pl, st, mine, raid):
         """BUG-1091 (diagnostics): where the host's view is when its box finds no own member"""

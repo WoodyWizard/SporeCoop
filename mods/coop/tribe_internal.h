@@ -611,6 +611,7 @@ extern std::string g_baby_last;
 void baby_on_host(uint8_t from, const net::Vec3& pos);
 void conquer_on_host(uint8_t from, const net::Vec3& p);
 extern uint32_t g_guest_missions;
+void* target_village(void* o);
 void host_command(uint8_t from, net::Reader& r);
 extern bool g_fix_gameover;
 extern uint32_t g_spawns_blocked;
