@@ -51,6 +51,9 @@ def show(h, g):
 def main():
     host, guest = start('tribe')
     ck = Checks()
+    # BUG-1470 (history.own) disables wsync's stages row for guests; test wsync's fallback stages row with it off.
+    host.call('coop.fix history.own off')
+    guest.call('coop.fix history.own off')
     time.sleep(6)
     h = dump(host)
     rel = h.get('tribe_rel', [])
@@ -107,6 +110,8 @@ def main():
     show(h, g)
     ck(not bad, f'the guest\'s own changes are replaced by the host\'s values within 15 s ({bad})')
     print('  guest wsync: ' + guest.call('coop.wsync')['out'].strip().replace('\n', ' | '), flush=True)
+    host.call('coop.fix history.own on')
+    guest.call('coop.fix history.own on')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

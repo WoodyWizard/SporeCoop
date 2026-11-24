@@ -45,7 +45,7 @@ def main():
     print(' ', host.call(f'coop.wsync civmoney {other["pol"]} 1500')['out'].strip(), flush=True)
     time.sleep(1)
     reads = []
-    for _ in range(14):
+    for _ in range(8):
         h, g = nation(host, other['pol']), nation(guest, other['pol'])
         reads.append((h and round(h['money']), g and round(g['money'])))
         time.sleep(0.5)

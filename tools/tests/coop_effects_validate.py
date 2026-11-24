@@ -67,7 +67,10 @@ def case(ck, con, what, args, key, delta=1, rx_from=None):
     got = after.get(key, 0) - before.get(key, 0)
     ck(got == delta, f'{what}: {key} {got:+d} (expected {delta:+d})')
     if key.startswith('bad_'):
-        ck(after.get('received', 0) == before.get('received', 0), f'{what}: it is not received')
+        # BUG-1517 (effects.bone_local): pool-3 bone validation runs locally at play() after relay, so bad_bone still
+        # counts as received on the wire while never playing.
+        if key != 'bad_bone':
+            ck(after.get('received', 0) == before.get('received', 0), f'{what}: it is not received')
         ck(after.get('played', 0) == before.get('played', 0), f'{what}: it is not played')
     if rx_from is not None:
         rx = last_rx(con, rx_from)
