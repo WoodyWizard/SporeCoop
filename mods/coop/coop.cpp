@@ -473,6 +473,11 @@ void feed(const std::string& s) { feed_kind(s, nullptr); }
 // ---- lobby: chat log, ready flags, round trip times, LAN discovery ----
 std::deque<std::string> g_chat;
 std::deque<uint32_t> g_chat_col; // F2: the colour of each line (its writer's; 0 = the window's own)
+// 8O: each line's kind for the chat filter (0 the session's lines, whispers and notices; 1 the galaxy's chat to all;
+// 2 its party chat)
+std::deque<uint8_t> g_chat_tag;
+constexpr uint8_t kTagAll = 1, kTagParty = 2;
+static bool g_chat_party_only; // 8O: the filter (coop.ini [galaxy] chat_filter): the party's lines, not everyone's
 std::map<uint8_t, bool> g_ready;   // by player id (the host keeps the truth)
 std::map<uint8_t, uint8_t> g_roles; // civilization roles by player id (the host keeps the truth)
 // roles end with their player and session, the lobby table keeps them with their ids (BUG-0064,
@@ -500,14 +505,83 @@ bool g_disc_on = false;
 int g_lan_fake_n = 0;           // coop.lanfake: games on the network that answer (tests, BUG-0183)
 uint32_t g_lan_fake_until = 0;
 
-void chat_log(const std::string& s, uint32_t argb = 0)
+void chat_log(const std::string& s, uint32_t argb = 0, uint8_t tag = 0)
 {
     g_chat.push_back(s);
     g_chat_col.push_back(argb);
+    g_chat_tag.push_back(tag);
     while (g_chat.size() > 50)
         g_chat.pop_front();
     while (g_chat_col.size() > g_chat.size())
         g_chat_col.pop_front();
+    while (g_chat_tag.size() > g_chat.size())
+        g_chat_tag.pop_front();
+}
+
+// decision 8O (owner 2026-11-23: "The chat will always be a global chat, we can add filters for party chat too"): on a
+// galaxy server the chat line goes to everyone online in the galaxy (any planet, any stage, the galaxy menu), "/p <text>"
+// to the party only; "/chat party" shows only the party's lines (and whispers, notices), "/chat all" everyone's again
+// (also the Social Menu's "Chat shows" button). Off a galaxy server the chat is the session's, as before. Switch
+// `coop.fix galaxy.chat off`: the session's chat on a galaxy server too (the galaxy menu has none)
+static bool g_gchat = true;
+COOP_FIX("galaxy.chat", "8O", g_gchat, "galaxy: the chat line goes to the whole galaxy (/p the party) and comes from it");
+static unsigned g_gchat_sent, g_gchat_got, g_gchat_party_got;
+static std::vector<std::string> g_gchat_seen; // (tests: coop.gchat)
+static std::string set_chat_filter(bool party_only)
+{
+    g_chat_party_only = party_only;
+    H->config_set_str(M, "galaxy", "chat_filter", party_only ? "party" : "all");
+    return party_only ? "The chat shows your party's lines only (and whispers). /chat all shows everyone's again."
+                      : "The chat shows everyone's lines.";
+}
+static void on_gchat(net::Reader& r)
+{
+    const uint8_t ch = r.u8();
+    r.u64(); // (the sender's identity: not shown)
+    const std::string name = utf8::shown_name(r.str8());
+    const std::string text = r.str16();
+    if (!r.ok() || !g_gchat)
+        return;
+    std::string line;
+    if (ch == net::galaxy::kChatNote) {
+        feed(text);
+        chat_log("* " + text);
+        line = "* " + text;
+    } else if (ch == net::galaxy::kChatParty) {
+        g_gchat_party_got++;
+        line = "[Party] " + name + ": " + text;
+        feed_kind("[Party] <" + name + "> " + text, "chat");
+        chat_log(line, 0xFF8CE68C, kTagParty);
+    } else {
+        g_gchat_got++;
+        line = name + ": " + text;
+        if (!g_chat_party_only)
+            feed_kind("<" + name + "> " + text, "chat");
+        chat_log(line, 0, kTagAll);
+    }
+    g_gchat_seen.push_back(line);
+    if (g_gchat_seen.size() > 20)
+        g_gchat_seen.erase(g_gchat_seen.begin());
+}
+// the chat line's text on a galaxy server: true when it was the galaxy's (sent, or a /chat command)
+static bool galaxy_say(const std::string& t)
+{
+    if (t == "/chat party" || t == "/chat all") {
+        feed(set_chat_filter(t == "/chat party"));
+        return true;
+    }
+    if (!g_gchat || !galaxy::online())
+        return false;
+    if (t.rfind("/p ", 0) == 0) {
+        if (galaxy::chat(net::galaxy::kChatParty, t.substr(3)))
+            g_gchat_sent++;
+        return true;
+    }
+    if (t.empty() || t[0] == '/')
+        return false; // (other commands: as before)
+    if (galaxy::chat(net::galaxy::kChatAll, t))
+        g_gchat_sent++;
+    return true;
 }
 
 // an event everybody sees (feed + lobby chat): guests send it to the host, the host relays it
@@ -9227,6 +9301,10 @@ int c_say(void*, int argc, const char* const* argv, SkOut* out)
         SAY("other eras %s", era_visitors::other_eras() ? "shown" : "hidden");
         return 0;
     }
+    if (galaxy_say(t)) { // 8O: the galaxy's chat
+        SAY("sent to the galaxy");
+        return 0;
+    }
     if (!g_sess.connected()) {
         SAY("not connected");
         return 1;
@@ -10410,6 +10488,7 @@ static void on_social_action(int action, const coop_ui::SocialRow& row, float x,
         break;
     case coop_ui::kSocMenu: open_menu_for(row.session_id, row.identity, row.name, x, y); break;
     case coop_ui::kSocEras: r = era_visitors::set_other_eras(!era_visitors::other_eras()); break; // BUG-9334
+    case coop_ui::kSocChat: r = set_chat_filter(!g_chat_party_only); break; // 8O
     default: break;
     }
     if (!r.empty())
@@ -10426,6 +10505,7 @@ static void social_tick(double now)
     st.galaxy = gx;
     st.stage = g_mode;
     st.eras = gx ? (era_visitors::other_eras() ? 1 : 0) : -1; // BUG-9334: the Social Menu's eras row
+    st.chat = gx && g_gchat ? (g_chat_party_only ? 0 : 1) : -1; // 8O: the "Chat shows" row
     const bool in_stage = g_mode >= modes::kCell && g_mode <= modes::kSpace;
     st.button = in_stage && (g_sess.connected() || galaxy::welcomed()) && !(game_busy() & (busy::kPaused | busy::kInputLock));
     if (coop_ui::social_open() && gx && now >= s_ask) {
@@ -11251,11 +11331,25 @@ void init_ui()
         }
         if (bans::chat_command(t)) // BUG-9251: "/kick", "/ban", "/unban", "/bans" (the host)
             return;
+        if (galaxy_say(t)) // 8O: the galaxy's chat
+            return;
         if (g_sess.connected())
             g_sess.send_chat(t);
     };
-    a.chat = [] { return std::vector<std::string>(g_chat.begin(), g_chat.end()); };
-    a.chat_colors = [] { return std::vector<uint32_t>(g_chat_col.begin(), g_chat_col.end()); };
+    a.chat = [] { // 8O: the party filter leaves out the lines to everyone
+        std::vector<std::string> v;
+        for (size_t i = 0; i < g_chat.size(); i++)
+            if (!(g_chat_party_only && i < g_chat_tag.size() && g_chat_tag[i] == kTagAll))
+                v.push_back(g_chat[i]);
+        return v;
+    };
+    a.chat_colors = [] {
+        std::vector<uint32_t> v;
+        for (size_t i = 0; i < g_chat_col.size(); i++)
+            if (!(g_chat_party_only && i < g_chat_tag.size() && g_chat_tag[i] == kTagAll))
+                v.push_back(g_chat_col[i]);
+        return v;
+    };
     a.lan_games = [] {
         std::vector<coop_ui::LanGame> v;
         for (auto& g : g_disc.games(net::now_ms()))
@@ -12042,7 +12136,14 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            return -1;
                        };
                        std::string r;
-                       if (sub == "invite" || sub == "lead") {
+                       uint64_t galaxy_id = 0; // (8O tests: a player of the galaxy by name, as the Social Menu's Invite)
+                       if (sub == "invite" && who() < 0 && parties::galaxy())
+                           for (auto& o : parties::online())
+                               if (utf8::shown_name(o.name) == arg || o.name == arg)
+                                   galaxy_id = o.identity;
+                       if (galaxy_id)
+                           r = parties::invite_identity(galaxy_id);
+                       else if (sub == "invite" || sub == "lead") {
                            const int id = who();
                            if (id < 0)
                                r = "No such player: " + arg;
@@ -13128,6 +13229,26 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         mouse::set_close_request(galaxy::close_request); // decision 6A A (alpha): Alt+F4 / the X save the planet first
     }
     era_visitors::init(H, M); // decision 5S A spike (alpha)
+    galaxy::on_message(net::galaxy::GCHAT, on_gchat); // 8O
+    { // 8O: the chat filter as the player left it
+        char f[16] = {};
+        H->config_str(M, "galaxy", "chat_filter", "all", f, sizeof f);
+        g_chat_party_only = !strcmp(f, "party");
+    }
+    H->command_add(M, "coop.gchat", "coop.gchat [status] - the galaxy's chat (8O): counts and the last lines got (tests)",
+                   [](void*, int, const char* const*, SkOut* out) -> int {
+                       H->out_printf(out, "galaxy chat (8O, %s): filter %s, sent %u, got %u to all and %u to the party\n",
+                                     g_gchat ? "on" : "off", g_chat_party_only ? "party" : "all", g_gchat_sent, g_gchat_got,
+                                     g_gchat_party_got);
+                       for (auto& l : g_gchat_seen)
+                           H->out_printf(out, "  %s\n", l.c_str());
+                       std::string shown;
+                       for (size_t i = 0; i < g_chat.size(); i++)
+                           if (!(g_chat_party_only && i < g_chat_tag.size() && g_chat_tag[i] == kTagAll))
+                               shown += g_chat[i] + " | ";
+                       H->out_printf(out, "the chat window shows: %s\n", shown.c_str());
+                       return 0;
+                   }, nullptr, MT);
     galaxy_menu::init(H, M);  // decision 5X B (alpha)
     galaxy_menu::on_screen_gone(coop_ui::planet_panel_hide); // 8M A (BUG-9340): the panel goes with the screen
     party::init(H, M, &g_sess);    // roadmap 0b

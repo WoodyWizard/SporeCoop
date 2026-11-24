@@ -104,6 +104,7 @@ std::string leave();
 std::string save(); // host: save the planet's world to the galaxy server now (also every few minutes and when leaving)
 std::string status();
 std::string forget_key();                   // 8Q A: forget the key kept for this server's address
+bool chat(uint8_t channel, const std::string& text); // 8O: a line to the galaxy's chat (net::galaxy::kChatAll / kChatParty)
 void set_upload_every(double seconds); // tests (300 by default)
 
 } // namespace galaxy

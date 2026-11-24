@@ -5478,6 +5478,8 @@ static struct {
     SoRowWin rows[kSoRows];
     Win eras_label = nullptr; // BUG-9334: "Players in other stages" and its Shown / Hidden button
     SoChip eras;
+    Win chat_label = nullptr; // 8O: "Chat shows" and its Everyone / Party button
+    SoChip chat;
     std::string btn_style;
     bool failed = false;
 } g_so;
@@ -5663,6 +5665,14 @@ static bool so_build()
         sui::set_visible(g_so.eras.img, false);
     }
     g_so.eras.cap = so_label(root, small, kWhite, sui::kAlignCenter);
+    g_so.chat_label = so_label(root, small, kWhite, sui::kAlignLeft); // 8O
+    g_so.chat.img = party_image_window(root, "lineages_button_gold_normal");
+    if (g_so.chat.img) {
+        sui::add_ref(g_so.chat.img);
+        sui::set_flag(g_so.chat.img, sui::kFlagIgnoreMouse, true);
+        sui::set_visible(g_so.chat.img, false);
+    }
+    g_so.chat.cap = so_label(root, small, kWhite, sui::kAlignCenter);
     sui::set_visible(root, false);
     return true;
 }
@@ -5727,6 +5737,7 @@ static void so_apply(void*)
         g_so_rect_seen = {};
         for (auto& r : g_so.rows) r.at = {}, r.row = -1;
         g_so.eras.at = {};
+        g_so.chat.at = {};
         return;
     }
     g_so_rows = st.rows;
@@ -5755,7 +5766,9 @@ static void so_apply(void*)
     const int nrows = std::min<int>((int)st.rows.size(), kSoRows);
     const bool friends_empty = std::none_of(st.rows.begin(), st.rows.end(), [](const SocialRow& r) { return r.section == 1; });
     const bool eras_row = st.eras >= 0 && g_eras_button; // BUG-9334
-    const float h = kSoHead + sections * kSoSect + nrows * kSoRow + kSoBottom + (friends_empty ? 24 : 0) + (eras_row ? kSoEras : 0);
+    const bool chat_row = st.chat >= 0;                  // 8O
+    const float h = kSoHead + sections * kSoSect + nrows * kSoRow + kSoBottom + (friends_empty ? 24 : 0) + (eras_row ? kSoEras : 0) +
+                    (chat_row ? kSoEras : 0);
     // at the top, left of the Party cards and the Social button when they show (they stay in reach: the button closes
     // it again), else at the right edge
     float x2 = sw - 10.f;
@@ -5899,6 +5912,26 @@ static void so_apply(void*)
         place(g_so.eras.img, false, {});
         place(g_so.eras.cap, false, {});
     }
+    // 8O: the chat filter under it, the same look: gold "Everyone", grey "Party"
+    if (chat_row) {
+        const float top = cy + 4 + (eras_row ? kSoEras : 0), bot = top + kSoChipH;
+        const Rect r{kSoW - kSoPad - 8 - kSoChipW - 6, top, kSoW - kSoPad - 8, bot};
+        text_at(g_so.chat_label, {kSoPad + 4, top + 2, r.x1 - 6, bot}, "Chat shows", true, false);
+        g_so.chat.action = kSocChat;
+        g_so.chat.style = st.chat ? kMenuGold : kMenuGrey;
+        g_so.chat.at = {x + r.x1, y + r.y1, x + r.x2, y + r.y2};
+        place(g_so.chat.img, true, r);
+        place(g_so.chat.cap, true, {r.x1, r.y1 + 1, r.x2, r.y2});
+        so_chip_look(g_so.chat);
+        sui::set_caption(g_so.chat.cap, st.chat ? "Everyone" : "Party");
+        if (g_so.chat.img) sui::bring_to_front(g_so.root, g_so.chat.img);
+        if (g_so.chat.cap) sui::bring_to_front(g_so.root, g_so.chat.cap);
+    } else {
+        g_so.chat.at = {};
+        place(g_so.chat_label, false, {});
+        place(g_so.chat.img, false, {});
+        place(g_so.chat.cap, false, {});
+    }
 }
 
 static void so_queue()
@@ -5915,7 +5948,8 @@ void set_social(const SocialState& s, void (*on_action)(int, const SocialRow&, f
     g_so_action = on_action;
     auto same = [](const SocialState& a, const SocialState& b) {
         if (a.button != b.button || a.galaxy != b.galaxy || a.rows.size() != b.rows.size() || a.party_n != b.party_n ||
-            a.friends_online != b.friends_online || a.online_n != b.online_n || a.stage != b.stage || a.eras != b.eras)
+            a.friends_online != b.friends_online || a.online_n != b.online_n || a.stage != b.stage || a.eras != b.eras ||
+            a.chat != b.chat) // (8O: the chat row too)
             return false;
         for (size_t i = 0; i < a.rows.size(); i++) {
             const auto &x = a.rows[i], &y = b.rows[i];
@@ -5968,6 +6002,10 @@ bool social_press(float x, float y, bool right)
         if (g_so_action) g_so_action(kSocEras, SocialRow{}, x, y);
         return true;
     }
+    if (!right && so_in(g_so.chat.at, x, y)) { // 8O
+        if (g_so_action) g_so_action(kSocChat, SocialRow{}, x, y);
+        return true;
+    }
     for (auto& w : g_so.rows) {
         if (w.row < 0 || w.row >= (int)g_so_rows.size() || !so_in(w.at, x, y)) continue;
         const SocialRow row = g_so_rows[w.row];
@@ -5998,6 +6036,7 @@ static void so_hover_tick()
                 break;
             }
     if (hr < 0 && so_in(g_so.eras.at, (float)px, (float)py)) hr = kSoRows, hc = 0; // BUG-9334 (the eras button)
+    if (hr < 0 && so_in(g_so.chat.at, (float)px, (float)py)) hr = kSoRows + 1, hc = 0; // 8O (the chat button)
     if (hr == g_so_hover_row && hc == g_so_hover_chip) return;
     g_so_hover_row = hr, g_so_hover_chip = hc;
     H->run_outside_frame([](void*) {
@@ -6015,6 +6054,11 @@ static void so_hover_tick()
             g_so.eras.hover = want;
             so_chip_look(g_so.eras);
         }
+        const bool want_chat = g_so_hover_row == kSoRows + 1; // 8O
+        if (g_so.chat.hover != want_chat && g_so.chat.at.x2 > g_so.chat.at.x1) {
+            g_so.chat.hover = want_chat;
+            so_chip_look(g_so.chat);
+        }
     }, nullptr);
 }
 
@@ -6027,7 +6071,11 @@ std::string social_debug()
     snprintf(b, sizeof b, "social open=%d eras=%d button=(%.0f %.0f %.0f %.0f) caption='%s' look=%s%s", (int)g_so_open,
              g_so_want.eras, r.x1, r.y1, r.x2, r.y2, g_so.eras.cap && r.x2 > r.x1 ? sui::caption(g_so.eras.cap).c_str() : "",
              stem.c_str(), card_look(stem) ? "" : " (no art)");
-    return b;
+    const Rect& c = g_so.chat.at; // 8O
+    char b2[160];
+    snprintf(b2, sizeof b2, "; chat=%d button=(%.0f %.0f %.0f %.0f) caption='%s'", g_so_want.chat, c.x1, c.y1, c.x2, c.y2,
+             g_so.chat.cap && c.x2 > c.x1 ? sui::caption(g_so.chat.cap).c_str() : "");
+    return std::string(b) + b2;
 }
 
 // ---------------- the planet details panel (decision 8M A, BUG-9340, owner 2026-11-22) ----------------

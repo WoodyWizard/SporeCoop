@@ -288,6 +288,15 @@ static std::string encryption_word()
     default: return "-";
     }
 }
+bool chat(uint8_t channel, const std::string& text) // 8O
+{
+    if (!g_welcomed || text.empty())
+        return false;
+    net::Writer w = control(GCHAT);
+    w.u8(channel);
+    w.str16(text.substr(0, kChatMaxBytes));
+    return raw_send(w.data.data(), w.data.size());
+}
 std::string forget_key()
 {
     if (!g_server.port)

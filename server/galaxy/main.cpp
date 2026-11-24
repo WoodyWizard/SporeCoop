@@ -53,6 +53,8 @@ struct Client {
     bool bans_asked = false;   // 8D A: it sent BANS (an older mod never does: it gets no list)
     uint32_t bans_crc = 0;     // the crc of the server ban list it keeps (its last BANS)
     uint32_t bans_sent_ms = 0; // when the list was last sent to it
+    double chat_tokens = kChatBurst; // 8O: lines it may send now (one more each second, kChatBurst at most)
+    uint32_t chat_ms = 0, muted_told_ms = 0;
 };
 // BUG-9287 (step 4 part 5): visitors across eras; --no-visitors turns the stream off
 static bool g_visitors = true;
@@ -722,6 +724,8 @@ static std::string clean_name(std::string s, size_t max)
 
 static void move_on(Client& c);
 static void arrive(Client& c, uint8_t era);
+static bool party_chat(const Client& c, const Writer& w); // 8O (below, with the parties)
+static uint64_t g_chat_lines, g_chat_dropped, g_chat_muted;
 static void start_era(Client& c, const std::string& from, uint8_t era);
 
 static void on_control(const Endpoint& from, Reader& r)
@@ -901,6 +905,49 @@ static void on_control(const Endpoint& from, Reader& r)
     }
     if (type == WHO) {
         send_players(*c, r.left() >= 2 ? r.u16() : 0); // S10: a page (an older player asks for the first only)
+        return;
+    }
+    if (type == GCHAT) { // 8O: the galaxy's chat (net/galaxy.h)
+        const uint8_t ch = r.u8();
+        const std::string text = clean_name(r.str16(), kChatMaxBytes);
+        if (!r.ok() || text.empty() || (ch != kChatAll && ch != kChatParty))
+            return;
+        const uint32_t now = now_ms();
+        c->chat_tokens = std::min<double>(kChatBurst, c->chat_tokens + (now - c->chat_ms) / 1000.0);
+        c->chat_ms = now;
+        auto note = [&](const char* t) {
+            Writer w = control(GCHAT);
+            w.u8(kChatNote);
+            w.u64(0);
+            w.str8("");
+            w.str16(t);
+            send(*c, w);
+        };
+        if (c->chat_tokens < 1) {
+            g_chat_dropped++;
+            return;
+        }
+        c->chat_tokens -= 1;
+        if (g_ban_players.count(c->identity)) { // 8D A: muted
+            g_chat_muted++;
+            if (now - c->muted_told_ms > 30000) {
+                c->muted_told_ms = now;
+                note("Your chat is muted on this galaxy.");
+            }
+            return;
+        }
+        Writer w = control(GCHAT);
+        w.u8(ch);
+        w.u64(c->identity);
+        w.str8(c->name);
+        w.str16(text);
+        if (ch == kChatParty) {
+            if (!party_chat(*c, w))
+                note("You are not in a party: the line went nowhere.");
+        } else
+            for (auto& [s, o] : g_clients)
+                send(o, w);
+        g_chat_lines++;
         return;
     }
     if (type == WHISPER) { // 6L A: passed on to the player of that identity
@@ -1191,6 +1238,17 @@ static void on_control(const Endpoint& from, Reader& r)
 
 // ---------------- decision 6K: the parties, kept here (parties.h) ----------------
 static parties::BasicBook<uint16_t> g_parties;
+// 8O: a party line to the sender's party (the sender too); false: it has no party
+static bool party_chat(const Client& c, const Writer& w)
+{
+    const auto* p = g_parties.find(c.slot);
+    if (!p || p->members.size() < 2) // (a player alone is a party of one: nobody to read it)
+        return false;
+    for (uint16_t m : p->members)
+        if (auto it = g_clients.find(m); it != g_clients.end())
+            send(it->second, w);
+    return true;
+}
 // a player that dropped (timed out, reconnected under another slot): its party for a while, by identity
 struct PartyGhost {
     uint16_t party = 0;
@@ -1893,6 +1951,8 @@ int main(int argc, char** argv)
             size_t sealed_players = 0;
             for (auto& [s, c] : g_clients)
                 sealed_players += chan_of(c.ep) != nullptr;
+            say("chat (8O): %llu line(s) passed on, %llu dropped (too fast), %llu muted", (unsigned long long)g_chat_lines,
+                (unsigned long long)g_chat_dropped, (unsigned long long)g_chat_muted);
             say("encryption: %zu of %zu player(s) encrypted, %zu channel(s), %llu exchanges (%llu refused), %llu sealed "
                 "datagrams refused, %llu clear ones dropped from encrypted addresses, %llu clear ones refused (encrypted only)",
                 sealed_players, g_clients.size(), g_chans.size(), (unsigned long long)g_keyx_answers,

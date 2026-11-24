@@ -24,6 +24,7 @@ EXE = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'build', 'galaxy_
 PROTO = int(os.environ.get('GALAXY_PROTO', '9'))  # (GALAXY_PROTO=8: a FAIL run on a server before BUG-9336)
 (HELLO, WELCOME, LIST, PLANETS, ENTER, ROLE, LEAVE, PING, PONG, REFUSED, HOSTGONE, READY, FETCH, XBEGIN, XCHUNK, XACK, XDONE,
  HOSTMOVE, PARTY, PARTYVIEW, PARTYNOTE, WHO, PLAYERS, WHISPER, CHALLENGE, MOVEON, MOVED, ARRIVE, VISIT, VISITOR, CRTPUT, CRTGET, CRTHAVE, CRTPART, VISITOBJ, ERAS, STARTERA) = range(1, 38)
+GCHAT = 40  # 8O
 CHUNK = 1100
 fails = []
 
@@ -57,9 +58,9 @@ class Reader:
 
 
 class Player:
-    def __init__(self, port, name, identity):
+    def __init__(self, port, name, identity, host='127.0.0.1'):
         self.s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.s.bind(('127.0.0.1', 0))
+        self.s.bind((host, 0))
         self.s.settimeout(0.05)
         self.to = ('127.0.0.1', port)
         self.name, self.identity, self.slot, self.inbox = name, identity, 0, []
@@ -636,6 +637,60 @@ def main():
             stranger.pump(0.5)
             check(stranger.raw_in[-1:] == [bytes([75, 3])], "a sealed datagram from an address without keys gets 'K' 3 (two bytes): exchange again")
             e.send(LEAVE)
+
+        if not os.environ.get('GALAXY_CHECK_OLD'):
+            print('the galaxy chat (8O)')
+            x, y, z, m = (Player(port, n, i, '127.0.0.3') for n, i in
+                          (('Chat X', 0xC1), ('Chat Y', 0xC2), ('Chat Z', 0xC3), ('Chat Muted', 0xBADBAD)))
+            with open(os.path.join(worlds, 'banned.txt'), 'a') as f:
+                f.write('player 0000000000badbad\n')
+            check(all(p.hello() for p in (x, y, z, m)), 'four chat players connect')
+            x.send(PARTY, struct.pack('<BQBI', 1, y.identity, 0, 0))
+            time.sleep(0.2)
+            y.send(PARTY, struct.pack('<BQBI', 2, x.identity, 1, 0))
+            time.sleep(5.5)  # (the ban list is read again when it changes, every 5 s)
+            for p in (x, y, z, m):
+                p.pump(0.2)
+                p.inbox.clear()
+
+            def lines(p, secs=0.6):
+                p.pump(secs)
+                out = []
+                for d in p.inbox:
+                    if len(d) >= 2 and d[0:1] == b'G' and d[1] == GCHAT:
+                        r = Reader(d[2:])
+                        ch, _ = r.take('<B'), r.take('<Q')
+                        name = r.s8().decode()
+                        n = r.take('<H')
+                        out.append((ch, name, r.b[r.i:r.i + n].decode()))
+                p.inbox.clear()
+                return out
+
+            def str16(t):
+                b = t.encode()
+                return struct.pack('<H', len(b)) + b
+
+            x.send(GCHAT, bytes([0]) + str16('hello galaxy'))
+            got = [lines(p) for p in (x, y, z)]
+            check(all((0, 'Chat X', 'hello galaxy') in g for g in got), 'a line to all reaches everyone online, its sender too')
+            x.send(GCHAT, bytes([1]) + str16('party only'))
+            gx, gy, gz = lines(x), lines(y), lines(z)
+            check((1, 'Chat X', 'party only') in gx and (1, 'Chat X', 'party only') in gy and not gz,
+                  'a party line reaches the party only')
+            z.send(GCHAT, bytes([1]) + str16('nobody'))
+            gz = lines(z)
+            check(len(gz) == 1 and gz[0][0] == 2 and 'not in a party' in gz[0][2], 'a party line without a party: a note back')
+            z.send(GCHAT, bytes([0]) + str16('two\nlines\x07'))
+            gx = lines(x)
+            check(gx and gx[-1][2] == 'twolines', 'a line is one line, no control characters')
+            m.send(GCHAT, bytes([0]) + str16('spam'))
+            gm, gx = lines(m), lines(x)
+            check(not gx and any(g[0] == 2 and 'muted' in g[2] for g in gm), 'a player of the ban list is muted (told so)')
+            time.sleep(5.5)  # (z's bucket full again)
+            for k in range(9):
+                z.send(GCHAT, bytes([0]) + str16('flood %d' % k))
+            gx = lines(x, 1.0)
+            check(len(gx) == 5, 'at most 5 lines at once from one player (then one a second): %d passed' % len(gx))
 
     finally:
         srv.kill()

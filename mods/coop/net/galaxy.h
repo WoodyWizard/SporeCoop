@@ -218,7 +218,16 @@ enum Type : uint8_t {
     BANS = 38,     // player -> server: u32 the crc of the server list it keeps (0 none); the server sends BANSPART until
                    //   a BANS names the current one (sent on each WELCOME and after a list arrived)
     BANSPART = 39, // server -> player: u32 total bytes, u32 crc, u32 offset, the piece (kCrtChunk bytes); total 0: no list
+    // decision 8O (owner 2026-11-23: "The chat will always be a global chat, we can add filters for party chat too"): the
+    // galaxy's chat. player -> server: u8 channel (kChatAll, kChatParty), str16 text; server -> players (everyone online
+    // for kChatAll, the sender's party for kChatParty, the sender too): u8 channel, u64 the sender's identity, str8 its
+    // name, str16 text; kChatNote: the server to one player (identity 0, no name). The server keeps one line of at most
+    // kChatMaxBytes, takes kChatBurst lines then one a second from a player, and mutes the players of its ban list (8D A)
+    GCHAT = 40,
 };
+constexpr uint8_t kChatAll = 0, kChatParty = 1, kChatNote = 2;
+constexpr size_t kChatMaxBytes = 400;
+constexpr int kChatBurst = 5;
 constexpr uint32_t kBansMaxBytes = 1u << 20;
 constexpr uint8_t kVisitVehicle = 1, kVisitBuilding = 2;
 constexpr size_t kVisitObjBytes = 4 + 12 + 12 + 16 + 12 + 1, kVisitObjMax = 1 + 24 * kVisitObjBytes;

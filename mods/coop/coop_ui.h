@@ -231,8 +231,9 @@ struct SocialState {
     int party_n = 0, friends_online = 0, online_n = 0;
     uint32_t stage = 0;  // this player's game mode (the button's art)
     int eras = -1;       // BUG-9334: the "Players in other stages" row: 1 shown, 0 hidden, -1 no row (not on a galaxy)
+    int chat = -1;       // 8O: the "Chat shows" row: 1 everyone's lines, 0 the party's only, -1 no row
 };
-enum SocialAction { kSocLeave = 1, kSocWhisper, kSocInvite, kSocMenu, kSocEras };
+enum SocialAction { kSocLeave = 1, kSocWhisper, kSocInvite, kSocMenu, kSocEras, kSocChat };
 void set_social(const SocialState& s, void (*on_action)(int action, const SocialRow& row, float x, float y));
 void toggle_social();
 bool social_open();
