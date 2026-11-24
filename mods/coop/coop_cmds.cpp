@@ -9,6 +9,7 @@
 #include "revive.h"
 #include "cocoon.h"
 #include "fov.h"
+#include "editor_depth.h"
 #include "net/compat.h"
 #include "net/kick.h"
 #include "net/manifest.h"
@@ -2049,6 +2050,18 @@ void register_commands_civ()
     H->command_add(M, "coop.creations", "coop.creations [list | next|prev <creature|cell|ufo> | choose <kind> <hex>]",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        SAY("%s", creations::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.depth", "coop.depth [status | list | select <idx> | nudge <delta>] - Creature editor depth handle (BUG-0871)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", editor_depth::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.library", "coop.library [status | list | foreign on|off | scan | retry | feed <lib|my> | ingest <path>] - shared creations library (BUG-0873)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", creations::library_debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
                        return 0;
                    },
                    nullptr, MT);

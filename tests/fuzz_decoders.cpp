@@ -37,6 +37,7 @@
 #include "net/validate.h"
 #include "fields_wire.h"
 #include "wire/adventure.h"
+#include "library_core.h"
 #include "wire/common.h"
 #include "wire/history.h"
 #include "wire/shared_res.h"
@@ -1534,6 +1535,107 @@ static void fuzz_wire_adventure(Rng& R, int iters)
     });
 }
 
+static void fuzz_library(uint64_t seed, int iters)
+{
+    printf("shared creations library index and wire codecs (%d mutations each)\n", iters);
+    Rng R(seed);
+    std::vector<uint8_t> valid_png = {
+        0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A,
+        0, 0, 0, 13, 'I', 'H', 'D', 'R',
+        0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 'I', 'E', 'N', 'D', 0, 0, 0, 0,
+    };
+    uint64_t valid_hash = library::content_hash64(valid_png.data(), valid_png.size());
+
+    std::vector<std::vector<uint8_t>> idx_corpus;
+    std::vector<std::vector<uint8_t>> list_corpus;
+    std::vector<std::vector<uint8_t>> png_corpus;
+    for (int i = 0; i < 6; ++i) {
+        std::vector<library::IndexEntry> entries;
+        for (int k = 0; k < i; ++k) {
+            library::IndexEntry e;
+            e.hash = valid_hash ^ (uint64_t)(k + 1);
+            e.imported = {0x100u + (uint32_t)k, 0x2B978C46u, 0x40626200u};
+            e.source_group = 0x40626200u;
+            e.flags = library::kFlagImported;
+            e.sender = "Peer" + std::to_string(k);
+            e.name = "Critter" + std::to_string(k);
+            entries.push_back(e);
+        }
+        auto enc = library::encode_index(entries);
+        std::vector<library::IndexEntry> dec;
+        CHECK(library::decode_index(enc.data(), enc.size(), dec) && dec.size() == entries.size(),
+              "library index round-trip");
+        idx_corpus.push_back(std::move(enc));
+
+        library::ListMsg lm;
+        lm.subkind = (i & 1) ? library::kListWant : library::kListHave;
+        if (lm.subkind == library::kListHave)
+            lm.have.push_back({valid_hash, 0x40626200u, 1});
+        else
+            lm.want.push_back(valid_hash);
+        auto lenc = library::encode_list(lm);
+        library::ListMsg ldec;
+        CHECK(library::decode_list(lenc.data(), lenc.size(), ldec) && ldec.subkind == lm.subkind,
+              "library list round-trip");
+        list_corpus.push_back(std::move(lenc));
+
+        library::PngMsg pm;
+        pm.hash = valid_hash;
+        pm.group = 0x40626200u;
+        pm.flags = 1;
+        pm.sender = "Guest";
+        pm.name = "Blob";
+        pm.png = valid_png;
+        auto penc = library::encode_png_msg(pm);
+        library::PngMsg pdec;
+        CHECK(library::decode_png_msg(penc.data(), penc.size(), pdec) && pdec.hash == pm.hash && pdec.png == pm.png,
+              "library png round-trip");
+        png_corpus.push_back(std::move(penc));
+    }
+
+    int idx_ok = 0, list_ok = 0, png_ok = 0;
+    for (int i = 0; i < iters; ++i) {
+        {
+            auto m = mutate(R, idx_corpus[R.below((uint32_t)idx_corpus.size())]);
+            Exact e(m);
+            std::vector<library::IndexEntry> out;
+            if (library::decode_index(e.data(), e.n, out)) {
+                idx_ok++;
+                auto re = library::encode_index(out);
+                std::vector<library::IndexEntry> out2;
+                CHECK(library::decode_index(re.data(), re.size(), out2) && out2.size() == out.size(),
+                      "library index re-encode");
+            }
+        }
+        {
+            auto m = mutate(R, list_corpus[R.below((uint32_t)list_corpus.size())]);
+            Exact e(m);
+            library::ListMsg out;
+            if (library::decode_list(e.data(), e.n, out)) {
+                list_ok++;
+                auto re = library::encode_list(out);
+                library::ListMsg out2;
+                CHECK(library::decode_list(re.data(), re.size(), out2) && out2.subkind == out.subkind,
+                      "library list re-encode");
+            }
+        }
+        {
+            auto m = mutate(R, png_corpus[R.below((uint32_t)png_corpus.size())]);
+            Exact e(m);
+            library::PngMsg out;
+            if (library::decode_png_msg(e.data(), e.n, out)) {
+                png_ok++;
+                auto re = library::encode_png_msg(out);
+                library::PngMsg out2;
+                CHECK(library::decode_png_msg(re.data(), re.size(), out2) && out2.hash == out.hash,
+                      "library png re-encode");
+            }
+        }
+    }
+    printf("  %d index (%d ok), %d list (%d ok), %d png (%d ok)\n", iters, idx_ok, iters, list_ok, iters, png_ok);
+}
+
 static void fuzz_wire(uint64_t seed, int iters)
 {
     printf("game module payloads, mods/coop/wire (%d mutations each)\n", iters);
@@ -1554,7 +1656,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
         return 0;
     std::vector<uint8_t> v(data + 1, data + size);
     Reader r(v.data(), v.size());
-    switch (data[0] % 13) {
+    switch (data[0] % 14) {
     case 0: { Hello x; x.read(r); break; }
     case 1: { Welcome x; x.read(r); break; }
     case 2: { PlayerState x; x.read(r); break; }
@@ -1579,6 +1681,15 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
         Reader rw(v.data() + 1, v.size() - 1);
         if (WireDec d = kWireDecoders[v[0] % n])
             d(rw);
+        break;
+    }
+    case 13: {
+        std::vector<library::IndexEntry> idx;
+        library::ListMsg lm;
+        library::PngMsg pm;
+        library::decode_index(v.data(), v.size(), idx);
+        library::decode_list(v.data(), v.size(), lm);
+        library::decode_png_msg(v.data(), v.size(), pm);
         break;
     }
     }
@@ -1606,6 +1717,7 @@ int main(int argc, char** argv)
     fuzz_dbpf(seed + 2, iters);
     fuzz_partprops(seed + 23, iters);
     fuzz_sreport(seed + 29, iters);
+    fuzz_library(seed + 37, iters);
     fuzz_wire(seed + 31, iters);
     fuzz_pack(seed + 3, iters / 2);
     fuzz_connection(seed + 4, iters * 5);

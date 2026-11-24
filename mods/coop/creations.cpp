@@ -1,4 +1,5 @@
 #include "creations_internal.h"
+#include "creations_library.h"
 #include "captain_logic.h"
 #include "lineage_cells.h"
 
@@ -1983,6 +1984,8 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
     bool unusable = false;
     const char* noun = k == kCreature ? "creature" : k == kCell ? "cell" : "UFO";
     unsigned miss = ensure_content(b.recs, mk_of(k), "player " + std::to_string(owner) + "'s " + noun + " '" + name + "'");
+    if (!miss && !b.recs.empty() && (!C.sess || owner != C.sess->my_id()))
+        library_on_partner_records(C.name_of ? C.name_of(owner) : "", name, kInfo[k].group, b.recs, true);
     if (miss) { // BUG-0452: its puppet falls back as for an unknown creation
         use = {};
         unusable = true;
@@ -2383,6 +2386,13 @@ static void apply_own_species(const std::vector<uint8_t>& data)
         return;
     }
     g_world_missing.erase(b.key.instance);
+    {
+        std::string sname, sauthor;
+        for (auto& r : b.recs)
+            if (r.key.type == kMeta)
+                dbpf::metadata_names(r.data, sauthor, sname);
+        library_on_partner_records(C.name_of ? C.name_of(0) : "", sname, b.key.group, b.recs, true);
+    }
     uint32_t h = 0x811C9DC5;
     for (auto& r : b.recs) // the creation itself (not the host's creaturedata cache)
         if (r.key.instance == b.key.instance && r.key.type != kCreatureData)
@@ -2549,6 +2559,13 @@ static void apply_own_design(uint8_t kind, const std::vector<uint8_t>& data)
     }
     d.ours = ours;
     g_design_in++;
+    {
+        std::string dname, dauthor;
+        for (auto& r : b.recs)
+            if (r.key.type == kMeta)
+                dbpf::metadata_names(r.data, dauthor, dname);
+        library_on_partner_records(C.name_of ? C.name_of(0) : "", dname, b.key.group, b.recs, true);
+    }
     H->log(M, SK_INFO, "creations: the host's own %s design %08X is %08X here (%u records)", kModelInfo[kind].name,
            b.key.instance, ours, (unsigned)recs.size());
 }
@@ -3061,6 +3078,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_BarPtr = H->sym("SporeCoop::AbilityBar_ptr");
     a_BarRebuild = H->sym("SporeCoop::AbilityBar_Rebuild");
     captain_init(); // BUG-1279: the property list save guard
+    library_init(); // BUG-0873: persistent shared creations library
     return a_GetDb && a_OpNew && a_DbCtor && a_RmPtr;
 }
 
@@ -3263,6 +3281,7 @@ void tick(double now)
     player_species_tick(); // BUG-0508
     bar_tick(); // BUG-0358
     captain_tick(now); // BUG-1279, BUG-1262
+    library_tick(now); // BUG-0873: persistent shared creations library
 }
 
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
@@ -3297,13 +3316,16 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     const bool cap_kind = kind == kKindHostProps || kind == kKindCaptain;
     if (cap_kind && (!captain_kind_on(kind) || (kind == kKindHostProps && (owner != 0 || total > (512u << 10)))))
         return;
+    const bool lib_kind = kind == kKindLibList || kind == kKindLibPng;
+    if (lib_kind && (!library_kind_on(kind) || total > (1u << 20)))
+        return;
     if (r.ok() && kind == kKindLineageCell && total == 0) { // BUG-1477: a player's old cell(s) withdrawn
         lineage_cells::on_withdraw(owner, from, id);
         return;
     }
     if (!r.ok() ||
         (kind >= kKinds && kind != kWorldSpecies && kind != kOwnSpecies && kind != kOwnDesign && !cap_kind &&
-         kind != kKindLineageCell) ||
+         !lib_kind && kind != kKindLineageCell) ||
         total > (8u << 20) ||
         (uint64_t)off + n > total)
         return;
@@ -3339,6 +3361,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         captain_message(kind, owner, id, data);
         return;
     }
+    if (lib_kind) { // BUG-0873 (creations_library.cpp)
+        library_message(kind, from, owner, data);
+        return;
+    }
     if (kind == kKindLineageCell) { // BUG-1477: a player's old cell (lineage_cells.cpp registers, keeps and relays it)
         lineage_cells::on_bundle(owner, from, id, std::move(data));
         return;
@@ -3363,6 +3389,7 @@ void on_player_join(uint8_t id)
         if (ok.first != id)
             send_bundle(id, ok.first, (Kind)ok.second, fnv(data.data(), data.size()), data);
     captain_join(id); // BUG-1279, BUG-1262
+    library_join(id); // BUG-0873
 }
 
 bool g_leave_fix = true;
@@ -3385,11 +3412,13 @@ void on_player_leave(uint8_t id)
     owned(g_applied);
     g_own_sent.erase(id);
     captain_leave(id); // BUG-1279, BUG-1262 (a partner's captain goes with it)
+    library_leave(id); // BUG-0873
 }
 
 void on_session_end()
 {
     captain_end(); // BUG-1279, BUG-1262
+    library_end(); // BUG-0873 (keeps persisted library entries; clears transient sync state)
     lineage_cells::on_session_end(); // BUG-1477
     g_own_told.clear(); // BUG-0345: the notice again in the next session
     // the host's creations registered under their original keys (priority 2000, above the guest's
@@ -3543,6 +3572,7 @@ std::string status()
     snprintf(b, sizeof b, "  own ship key: fix=%d unshadowed=%u (BUG-1301)\n", (int)g_ufo_own_fix, g_ufo_unshadowed);
     s += b;
     s += captain_status(); // BUG-1279, BUG-1262
+    s += "\n" + library_status(); // BUG-0873
     snprintf(b, sizeof b, "  own prebake: fix=%d asks=%u waits=%u swap_bake=%d baked=%u unbaked=%u (BUG-1237)\n",
              (int)g_prebake_fix, g_pre_asks, g_pre_waits, g_swap_bake, g_swap_baked, g_swap_unbaked);
     s += b;
@@ -3738,6 +3768,13 @@ Key line_register(const std::vector<uint8_t>& bundle, uint32_t shared, const std
     }
     g_line_pkgs[shared] = db;
     g_line_registered++;
+    {
+        std::string lname, lauthor;
+        for (auto& r : b.recs)
+            if (r.key.type == kMeta)
+                dbpf::metadata_names(r.data, lauthor, lname);
+        library_on_partner_records(whose, lname, b.key.group, b.recs, true);
+    }
     H->log(M, SK_INFO, "creations: %s: the %s %08X is %08X here (%u records)", whose.c_str(), mi->name, b.key.instance,
            shared, (unsigned)recs.size());
     return sk;

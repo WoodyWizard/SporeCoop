@@ -29,12 +29,17 @@ COOP_OBJ := $(patsubst %.cpp,$(B)/obj/%.o,$(COOP_SRC))
 .PHONY: test-win test-asan test-tsan all loader sporekit coop res setup clean test sanitizer-probe
 all: loader sporekit coop res setup $(B)/test/rtsshooks.dll
 
-# game resources (icons, ...) for SporeCoop: Data/SporeCoop.package
+# game resources (icons, Sporepedia Shared Creations tab, ...) for SporeCoop: Data/SporeCoop.package
 UI_PNG := $(wildcard data/ui/*.png)
 res: $(B)/SporeCoop.package
-$(B)/SporeCoop.package: tools/mkpackage.py $(UI_PNG)
-	@mkdir -p $(B)
-	python3 tools/mkpackage.py $@ $(foreach f,$(UI_PNG),sporecoop!$(basename $(notdir $(f))).png=$(f))
+$(B)/SporeCoop.package: tools/mkpackage.py tools/gen_library_res.py $(UI_PNG)
+	@mkdir -p $(B)/libres
+	python3 tools/gen_library_res.py $(B)/libres
+	python3 tools/mkpackage.py $@ \
+		$(foreach f,$(UI_PNG),sporecoop!$(basename $(notdir $(f))).png=$(f)) \
+		0x02FABF01!0xA7C9F2B2.0x02FAC0B6=$(B)/libres/library.locale \
+		0x06B38241!0x11C77D4C.prop=$(B)/libres/category.prop \
+		0x4E5892EB!0x0BA43291.prop=$(B)/libres/item.prop
 
 # tests: a do-nothing DLL under another program's name (BUG-0782, coop_rtss_note.py)
 $(B)/test/rtsshooks.dll: tests/dll/stand_in.c
@@ -200,6 +205,11 @@ unit-cpp: sanitizer-probe
 	@# WP-A of 0.7.99: co-op Galactic Adventures (adventure_logic.h, wire/adventure.h, BUG-1474 / BUG-0793)
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/adventure_tests tests/adventure_tests.cpp
 	$(B)/host/adventure_tests
+	@# WP-Q2 of 0.7.99: Creature editor depth handle (editor_depth_logic.h, BUG-0871) and shared creations library (library_core.h, BUG-0873)
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/editor_depth_tests tests/editor_depth_tests.cpp
+	$(B)/host/editor_depth_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/library_tests tests/library_tests.cpp
+	$(B)/host/library_tests
 	@# D3 of 0.7.15: the Tribe rules (tribe_logic.h, BUG-1161) and the member animations' message type (C7, BUG-1160)
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/tribe_tests tests/tribe_tests.cpp
 	$(B)/host/tribe_tests
