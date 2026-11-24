@@ -84,4 +84,26 @@ inline int other_planets(const std::vector<std::string>& names, const std::strin
     return n;
 }
 
+// BUG-1537: a queued world load waits while the window is minimized or the D3D9 device is lost / settling after a
+// Reset (Terrain::cTerrainSphere builds heightmaps and nest stamps on D3D9 render targets; resets mid-load dropped
+// guest nest terrain by 1.3-3.0 m). Returns a short reason string while blocked, nullptr when safe to load.
+constexpr double kDeviceResetSettle = 1.5;
+inline const char* load_device_blocker(bool fix, bool test_busy, bool iconic, bool device_lost, bool coop_ok,
+                                       double now, double reset_at)
+{
+    if (!fix)
+        return nullptr;
+    if (test_busy)
+        return "D3D9 device held (test)";
+    if (iconic)
+        return "game window is minimized";
+    if (device_lost)
+        return "D3D9 device is lost";
+    if (!coop_ok)
+        return "D3D9 device is not cooperative";
+    if (reset_at > 0.0 && now >= reset_at && now - reset_at < kDeviceResetSettle)
+        return "D3D9 device settling after Reset";
+    return nullptr;
+}
+
 } // namespace share_logic

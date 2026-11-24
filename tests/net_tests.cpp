@@ -3443,6 +3443,30 @@ static void test_diag_npc_agl()
     CHECK(std::fabs(dg::agl_dist(h.entries[0], g.entries[0]) - 9.f) < 0.01f);
 }
 
+static void test_diag_terrain_diff()
+{
+    printf("diag: absolute ground height check under matched NPCs (BUG-1537)\n");
+    namespace dg = net::diag;
+    dg::Digest h, g;
+    h.mode = g.mode = 0x1654C01;
+    h.world = g.world = 99;
+    g.self = 1;
+    // Matched NPC on guest terrain 2.35 m lower (agl identical -> BUG-1216 compare says OK, terrain_diff flags it)
+    h.entries = {{dg::make_key('n', 1), 506.80f, 0, 0, 0.f}, {dg::make_key('n', 2), 0, 502.30f, 0, 0.f},
+                 {dg::make_key('n', 3), 0, 0, 505.00f, 0.f}};
+    g.entries = {{dg::make_key('n', 1), 504.45f, 0, 0, 0.f},   // -2.35 m drop
+                 {dg::make_key('n', 2), 0, 502.40f, 0, 0.f},   // +0.10 m match
+                 {dg::make_key('n', 3), 25.f, 0, 500.0f, 0.f}}; // far apart horizontally -> ignored
+    dg::Limits lim;
+    lim.npc_agl = true;
+    CHECK(dg::compare(h, g, lim).issues.size() == 1); // only n3 (25 m sideways), n1 is hidden by agl
+    dg::TerrainDiff td = dg::terrain_diff(h, g, lim);
+    CHECK(td.count == 2);
+    CHECK(td.key == dg::make_key('n', 1));
+    CHECK(std::fabs(td.signed_max + 2.35f) < 0.01f && std::fabs(td.max_abs - 2.35f) < 0.01f);
+    CHECK(std::fabs(td.host_ground - 506.80f) < 0.01f && std::fabs(td.guest_ground - 504.45f) < 0.01f);
+}
+
 static void test_diag_compare()
 {
     printf("diag: the sync-check compares stage, players, totals and objects; lasting differences only\n");
@@ -5347,6 +5371,7 @@ int main(int argc, char** argv)
         {"test_diag_compare", test_diag_compare},
         {"test_diag_own_dna", test_diag_own_dna},
         {"test_diag_npc_agl", test_diag_npc_agl},
+        {"test_diag_terrain_diff", test_diag_terrain_diff},
         {"test_diag_session", test_diag_session},
         {"test_diag_conn_stats", test_diag_conn_stats},
         {"test_name_clean", test_name_clean},

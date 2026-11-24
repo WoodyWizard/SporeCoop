@@ -822,6 +822,15 @@ static void share_one_planet()
     // the copy notice: a copy of one planet has no old planets
     CHECK(other_planets({"Szaros.spo", "stars.db", "snapshot.spo"}, "Szaros") == 0);
     CHECK(other_planets({"Szaros.spo", "Afrincsia.spo", "Old.spo"}, "Szaros") == 2);
+    // BUG-1537: queued world load waits while minimized or D3D9 device lost / resetting
+    CHECK(load_device_blocker(true, false, false, false, true, 10.0, 0.0) == nullptr);
+    CHECK(load_device_blocker(true, true, false, false, true, 10.0, 0.0) != nullptr);
+    CHECK(load_device_blocker(true, false, true, false, true, 10.0, 0.0) != nullptr);
+    CHECK(load_device_blocker(true, false, false, true, true, 10.0, 0.0) != nullptr);
+    CHECK(load_device_blocker(true, false, false, false, false, 10.0, 0.0) != nullptr);
+    CHECK(load_device_blocker(true, false, false, false, true, 10.5, 10.0) != nullptr);
+    CHECK(load_device_blocker(true, false, false, false, true, 12.0, 10.0) == nullptr);
+    CHECK(load_device_blocker(false, true, true, true, false, 10.5, 10.0) == nullptr);
 }
 
 // BUG-1261: Creature interactive ornament fade-out and kGone sync rules (worldobj_orn.h)

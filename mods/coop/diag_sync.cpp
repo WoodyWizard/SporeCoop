@@ -238,6 +238,7 @@ struct GuestCheck {
     int late_run = 0;           // checks in a row that passed only through the BUG-0379 windows (BUG-0430)
     bool stood = false;         // BUG-1339: its last digest said its game stands
     std::set<uint32_t> band;    // the band cells of the last check (dg::Late::steady)
+    double last_terrain_warn = -1e9; // BUG-1537: rate-limit terrain height warnings per guest
 };
 // BUG-0379: the host's own shared totals (dna, cell food) of the last seconds. A guest shows a total
 // the host sends it (MSG_CELL_FOOD) up to ~0.5 s after the host counted it, and the host builds its
@@ -301,6 +302,15 @@ COOP_FIX("sync.no_place", "BUG-0378", g_no_place_fix,
 static bool g_npc_agl_fix = true;
 COOP_FIX("sync.npc_agl", "BUG-1216", g_npc_agl_fix,
          "sync-check: animals are compared by their height over each game's own ground, not by an absolute height");
+// BUG-1537: BUG-1216 hides multi-metre terrain divergence (such as a guest cold reload with D3D9 device resets dropping
+// nest terrain 1.3-3.0 m below the host's). Check ground radius (|pos| - agl) under matched Creature NPCs and log a
+// rate-limited warning when the absolute terrain difference reaches kTerrainWarnM. Off: no terrain check (0.7.17).
+static bool g_terrain_check_fix = true;
+COOP_FIX("sync.terrain_check", "BUG-1537", g_terrain_check_fix,
+         "sync-check: compares absolute ground height under matched Creature NPCs and warns when host and guest terrain diverge by over 1 m");
+constexpr float kTerrainWarnM = 1.0f;
+static uint32_t g_terrain_warns = 0;
+static float g_terrain_max_m = 0.f;
 
 // BUG-0378: in Space a player's allowed distance grows with its speed. The guest's digest is read
 // when the host's request arrives, the host's when the guest's digest arrives (both at the start of
@@ -563,6 +573,17 @@ static dg::Digest build_digest(uint32_t seq)
         for (auto& t : d.totals)
             if (t.first == dg::kTotalDna)
                 t.second += 50;
+    if (g_force == "terrain") // tests (BUG-1537): drop NPC ground radius by 2.5 m while keeping agl identical
+        for (auto& e : d.entries)
+            if (dg::key_kind(e.key) == 'n' && dg::entry_agl_known(e.agl)) {
+                float r = std::sqrt(e.x * e.x + e.y * e.y + e.z * e.z);
+                if (r > 10.f) {
+                    float k = (r - 2.5f) / r;
+                    e.x *= k;
+                    e.y *= k;
+                    e.z *= k;
+                }
+            }
     return d;
 }
 
@@ -687,6 +708,20 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
             SLOG("sync-check: %s plays elsewhere (%s), not compared", who.c_str(), dg::describe(c.issues).c_str());
         send_result(from, gd.seq, dg::kResOtherPlace, 0, "");
         return;
+    }
+    if (g_terrain_check_fix && hd.mode == modes::kCreature) { // BUG-1537: catch absolute terrain drop hidden by agl
+        dg::TerrainDiff td = dg::terrain_diff(hd, gconv, lim);
+        if (td.count > 0 && td.max_abs >= kTerrainWarnM) {
+            g_terrain_warns++;
+            if (td.max_abs > g_terrain_max_m)
+                g_terrain_max_m = td.max_abs;
+            if (now - g.last_terrain_warn >= 60.0) {
+                g.last_terrain_warn = now;
+                SWARN("sync-check: terrain height differs with %s (%s, %d NPCs, max %+.2f m at %s: host %.2f m, guest %.2f m, BUG-1537)",
+                      who.c_str(), place_text(hd.mode, hd.world).c_str(), td.count, td.signed_max,
+                      dg::key_text(td.key).c_str(), td.host_ground, td.guest_ground);
+            }
+        }
     }
     std::vector<dg::Issue> issues = c.issues;
     if (g.recheck)
@@ -964,13 +999,13 @@ std::string sync_status()
     snprintf(b, sizeof b,
              "clock: %s session time %.3f (%s, %d samples, best round trip %.1f ms)\n"
              "sync-check: every %.0f s%s, checks %d ok %d differs %d mismatch %d; host build+compare avg %.3f ms max %.3f ms (%d); "
-             "guest build avg %.3f ms max %.3f ms (%d); %llu bytes of digests; own_path_saved=%u guest_path_saved=%u sync_late=%u stands_skipped=%u\n",
+             "guest build avg %.3f ms max %.3f ms (%d); %llu bytes of digests; own_path_saved=%u guest_path_saved=%u sync_late=%u stands_skipped=%u terrain_warns=%u terrain_max_m=%.2f\n",
              ok ? "on," : "off,", t, g_P.sess && g_P.sess->role() == net::Role::Host ? "host" : "guest", (int)g_clock.samples(),
              g_clock.rtt() * 1000, g_sync_interval, g_force.empty() ? "" : (" (forced: " + g_force + ")").c_str(), g_c.sync_checks,
              g_c.sync_ok, g_c.sync_differs, g_c.sync_mismatch, g_c.sync_ms_n ? g_c.sync_ms_sum / g_c.sync_ms_n : 0.0, g_c.sync_ms_max,
              g_c.sync_ms_n, g_c.sync_guest_ms_n ? g_c.sync_guest_ms_sum / g_c.sync_guest_ms_n : 0.0, g_c.sync_guest_ms_max,
              g_c.sync_guest_ms_n, (unsigned long long)g_c.sync_bytes, g_own_path_saved, g_guest_path_saved, g_sync_late,
-             g_sync_stands);
+             g_sync_stands, g_terrain_warns, g_terrain_max_m);
     return b;
 }
 

@@ -161,7 +161,8 @@ static void save_write_watch()
 }
 
 static void install_intro_hook();
-static void install_save_hook(); // BUG-1413
+static void install_save_hook();
+static void on_device_event(void*, int ev, void*); // BUG-1413
 // coop.menuslot <GameN> (tests, BUG-0676): the galaxy menu shows the planets of another save slot, as when the player
 // picks that slot: the save database moves there and the star manager reads its stars (the menu rebuilds its planets
 // on the message 0x625D27D that sends). Outside the frame (it rebuilds UI).
@@ -246,6 +247,8 @@ void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)
                    "go: load it from the galaxy menu", c_continue, nullptr, SK_CMD_MAIN_THREAD);
     install_intro_hook(); // BUG-0626
     install_save_hook();  // BUG-1413
+    H->subscribe(M, SK_EV_DEVICE_LOST, on_device_event, nullptr);  // BUG-1537
+    H->subscribe(M, SK_EV_DEVICE_RESET, on_device_event, nullptr); // BUG-1537
 }
 
 static std::wstring current_db_dir(bool lower = true);
@@ -794,6 +797,42 @@ static bool host_dead_now()
     return av && (game::is_dead(av) || game::health(av) <= 0.f); // (the caption may wait with the flag already off)
 }
 static bool g_editor_load_fix = true;  // BUG-0157: a queued load never starts inside an editor
+// BUG-1537: Terrain::cTerrainSphere builds planet heightmaps and nest stamps on D3D9 GPU render targets. A guest cold
+// load started while the window was minimized (Present stopped, followed by 3 D3D9 device Resets mid-load) dropped
+// nest-stamped terrain 1.3-3.0 m below the host's (flooded lowlands and sea-monster kills on host dry land). Now a
+// queued load waits in the galaxy menu while the window is minimized or the D3D9 device is lost / settling after a
+// Reset. Off (`coop.fix world.load_active_device off`): loads immediately regardless of device state (0.7.16/0.7.17).
+static bool g_active_device_fix = true;
+COOP_FIX("world.load_active_device", "BUG-1537", g_active_device_fix,
+         "world: a queued world load waits while the game window is minimized or the D3D9 device is lost or resetting, so planet terrain builds on an active device");
+static bool g_device_lost = false;
+static double g_device_reset_at = -100.0;
+static bool g_test_device_busy = false; // tests (BUG-1537, `coop.worldfix devbusy 1|0`)
+static unsigned g_device_load_waits = 0;
+static void on_device_event(void*, int ev, void*)
+{
+    if (ev == SK_EV_DEVICE_LOST) {
+        g_device_lost = true;
+    } else if (ev == SK_EV_DEVICE_RESET) {
+        g_device_lost = false;
+        g_device_reset_at = H ? H->time_seconds() : 0.0;
+    }
+}
+static const char* device_load_blocker(double now)
+{
+    HWND w = H ? (HWND)H->game_window() : nullptr;
+    bool iconic = w && IsIconic(w);
+    bool coop_ok = true;
+    if (void* dev = H ? H->d3d_device() : nullptr; dev && skg::readable(dev, 4)) {
+        void** vt = *(void***)dev;
+        if (vt && skg::readable(vt + 3, 4) && vt[3]) {
+            typedef HRESULT(WINAPI* TestCoopFn)(void*);
+            coop_ok = ((TestCoopFn)vt[3])(dev) == S_OK;
+        }
+    }
+    return share_logic::load_device_blocker(g_active_device_fix, g_test_device_busy, iconic, g_device_lost, coop_ok,
+                                            now, g_device_reset_at);
+}
 COOP_FIX("core.share_reset", "BUG-0140", g_share_reset_fix, "world: the session end drops the shares and transfers of its players");
 COOP_FIX("world.share_drop_peer", "BUG-0166", g_drop_peer_fix, "world: shares for a player who left are dropped");
 COOP_FIX("world.share_one_save", "BUG-0112", g_one_save_fix, "world: one save for every share that waits at the same time");
@@ -1052,6 +1091,7 @@ struct ViaMenu {
     double since = 0, posted = 0;
     bool share = false; // a received world (not the player's own coop.load)
     std::string host;
+    bool dev_wait_told = false; // BUG-1537: logged once per queued load while device is inactive
 };
 static ViaMenu g_via_menu;
 
@@ -1519,6 +1559,17 @@ static void via_menu_tick()
         // were drawn without terrain (docs/re/space.md 8.3). Let the menu settle first.
         if (!other && now - g_menu_since < g_menu_settle)
             return;
+        // BUG-1537: wait while the window is minimized or the D3D9 device is lost / settling after a Reset
+        if (const char* why = device_load_blocker(now)) {
+            g_via_menu.since = now; // keep the load alive while waiting for the player to restore the window
+            if (!g_via_menu.dev_wait_told) {
+                g_via_menu.dev_wait_told = true;
+                g_device_load_waits++;
+                H->log(M, SK_INFO, "world: delaying load of %s: %s (BUG-1537)", g_via_menu.planet.c_str(), why);
+                g_feed("waiting for the game window / graphics device before loading the world");
+            }
+            return;
+        }
         // switching the save folder and starting the load reads files and builds UI: outside the
         // frame (this tick runs inside Present)
         static ViaMenu v;
@@ -2467,6 +2518,9 @@ std::string status()
     snprintf(b, sizeof b, "shares of the played planet alone %u, other planets left out %u (share_planet=%d)\n", g_planet_shares,
              g_planets_left_out, (int)g_share_planet_fix); // tests (BUG-1434)
     s += b;
+    snprintf(b, sizeof b, "loads delayed for graphics device %u (active_device=%d, device_lost=%d, test_busy=%d)\n",
+             g_device_load_waits, (int)g_active_device_fix, (int)g_device_lost, (int)g_test_device_busy); // tests (BUG-1537)
+    s += b;
     if (g_sw.m.coop) // BUG-1434: the slot the save database points to is a co-op copy
         s += "slot " + narrow(g_sw.slot) + ": a copy of " + g_sw.m.host + "'s world, made for " + g_sw.m.planet +
              (g_sw.m.own ? ", your own save" : "") + " (own marks " + std::to_string(g_own_marks) + "), old planets " +
@@ -2552,6 +2606,11 @@ static int c_worldfix(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 2 && !strcmp(argv[1], "autoload")) { // tests: auto_load_world of coop.ini
         g_auto_load = atoi(argv[2]) != 0;
         H->out_printf(out, "auto_load_world %d\n", g_auto_load ? 1 : 0);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "devbusy")) { // tests (BUG-1537): simulate minimized / D3D9 device lost
+        g_test_device_busy = atoi(argv[2]) != 0;
+        H->out_printf(out, "device busy test %d\n", g_test_device_busy ? 1 : 0);
         return 0;
     }
     for (auto& x : sw)

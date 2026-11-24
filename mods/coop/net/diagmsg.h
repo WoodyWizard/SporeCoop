@@ -354,6 +354,51 @@ inline float agl_dist(const Entry& h, const Entry& g)
     return dist(h, m);
 }
 
+// BUG-1537: absolute ground-radius divergence hidden by BUG-1216's agl comparison. For every matched NPC entry whose
+// agl is known on both sides and whose horizontal/agl distance is within lim.pos('n'), ground radius is |pos| - agl.
+struct TerrainDiff {
+    int count = 0;
+    float max_abs = 0.f;
+    float signed_max = 0.f; // guest_ground - host_ground at the worst point
+    float host_ground = 0.f, guest_ground = 0.f;
+    uint32_t key = 0;
+};
+inline TerrainDiff terrain_diff(const Digest& host, const Digest& guest, const Limits& lim = {})
+{
+    TerrainDiff td;
+    if (host.mode != guest.mode || host.world != guest.world)
+        return td;
+    std::map<uint32_t, const Entry*> g;
+    for (auto& e : guest.entries)
+        if (key_kind(e.key) == 'n' && entry_agl_known(e.agl))
+            g[e.key] = &e;
+    for (auto& he : host.entries) {
+        if (key_kind(he.key) != 'n' || !entry_agl_known(he.agl))
+            continue;
+        auto it = g.find(he.key);
+        if (it == g.end())
+            continue;
+        const Entry& ge = *it->second;
+        float rh = std::sqrt(he.x * he.x + he.y * he.y + he.z * he.z);
+        float rg = std::sqrt(ge.x * ge.x + ge.y * ge.y + ge.z * ge.z);
+        if (rh < 1.f || rg < 1.f)
+            continue;
+        if (agl_dist(he, ge) > lim.pos('n'))
+            continue;
+        float hg = rh - he.agl, gg = rg - ge.agl;
+        float d = gg - hg, ad = std::fabs(d);
+        td.count++;
+        if (ad > td.max_abs) {
+            td.max_abs = ad;
+            td.signed_max = d;
+            td.host_ground = hg;
+            td.guest_ground = gg;
+            td.key = he.key;
+        }
+    }
+    return td;
+}
+
 // BUG-0430: what tells a late guest from the normal lag of a changing value. fresh: the host's totals of the last
 // moment before it asked (kLateAge, ~1 s: a guest one update behind a rising total matches one of them); a guest
 // value matched only by an older recent one is late. steady: the band cells of the check before; a cell missing that
