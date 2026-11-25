@@ -254,6 +254,8 @@ static double g_last_guest_pvp_rel = 0.0;
 static double g_last_assign_tx = 0.0;
 static double g_last_food_tx = 0.0;
 static double g_last_rel_tx = 0.0;
+static double g_last_auto_form = 0.0;
+static uint32_t g_auto_form_count = 0;
 static double g_last_raid_at[rivals::kMaxPlayers] = {};
 
 // Save-strip temporary backup for host species slots
@@ -1274,6 +1276,28 @@ static void host_deliver_creature_payouts()
 }
 
 // ---- Host tick: R2 takeover, species swap, R4 NPC relations, 11.5 stage end ----
+static void host_try_auto_form_npc(double now, const char* reason)
+{
+    if (now - g_last_auto_form < 2.0 || g_auto_form_count >= 6)
+        return;
+    if (!tribe::a_NpcCtrl || !tribe::o_Form)
+        return;
+    void* ctrl = skg::cdecl_call<void*>(tribe::a_NpcCtrl);
+    if (!ctrl)
+        return;
+    tribe::FormSpecies fs;
+    if (tribe::form_species_state(ctrl, fs) && fs.past)
+        return;
+    g_last_auto_form = now;
+    void* made = tribe::o_Form(ctrl, 0);
+    if (made) {
+        g_auto_form_count++;
+        if (H && M)
+            H->log(M, SK_INFO, "tribe_rivals: auto-formed NPC tribe %p (%s, total_auto=%u, tribes=%u)", made, reason,
+                   g_auto_form_count, (unsigned)tribe::all_tribes().size());
+    }
+}
+
 static void host_ensure_assignments(double now)
 {
     void* pt = tribe::player_tribe();
@@ -1288,6 +1312,7 @@ static void host_ensure_assignments(double now)
     auto ts = tribe::all_tribes();
     net::Vec3 hp = g_owned[0].pos;
     bool changed = false;
+    bool need_guest_tribe = false;
 
     for (const auto& pl : S->players()) {
         uint8_t pid = pl.id;
@@ -1332,8 +1357,10 @@ static void host_ensure_assignments(double now)
             if (idx >= 0 && idx < (int)ts.size())
                 picked = ts[idx];
         }
-        if (!picked)
+        if (!picked) {
+            need_guest_tribe = true;
             continue;
+        }
         ot = OwnedTribe{};
         ot.ptr = picked;
         ot.serial = game::object_serial(picked);
@@ -1350,6 +1377,19 @@ static void host_ensure_assignments(double now)
         if (H && M)
             H->log(M, SK_INFO, "tribe_rivals: assigned NPC tribe %p (pol %08X) to player %u (dist=%s)", picked, ot.pol,
                    (unsigned)pid, rivals::distance_name(rivals::base_distance()));
+    }
+    // Fresh Tribe planets start with only 1 NPC tribe; once guests take it over (R7 inviolable), spawn extra tribes
+    // so 3-4 players each get a village AND at least 2 non-player NPC tribes exist for stage progression.
+    if (need_guest_tribe) {
+        host_try_auto_form_npc(now, "guest_tribe");
+    } else if (!ts.empty() && !g_stage_won_reported && !g_race_end_handled) {
+        int total_npcs = 0;
+        for (void* t : ts) {
+            if (t && t != pt && !is_player_owned_tribe(t))
+                total_npcs++;
+        }
+        if (total_npcs < 2)
+            host_try_auto_form_npc(now, "free_npc_reserve");
     }
     if (changed || now - g_last_assign_tx >= 3.0) {
         g_last_assign_tx = now;
@@ -1545,6 +1585,8 @@ static void reset_runtime(bool restore_game)
     g_race_end_handled = false;
     g_was_active = false;
     g_last_guest_pvp_rel = 0.0;
+    g_last_auto_form = 0.0;
+    g_auto_form_count = 0;
     g_last_npc_count = 0;
     g_last_win_needed = 1;
 }

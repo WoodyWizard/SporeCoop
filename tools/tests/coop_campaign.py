@@ -605,10 +605,13 @@ class Campaign:
             targets = [self.host] + ([self.guests[0]] if self.guests else [])
             for p in targets:
                 p.call('coop.uistate 1')
+                if 'page=rivals' in (p.call('coop.uistate') or ''):
+                    opened.append(p)
+                    continue
                 ui = Ui(p.con, p.name)
                 deadline = time.time() + 4.0
                 while time.time() < deadline:
-                    if ui.click('rivals'):
+                    if ui.click('rivals') or 'page=rivals' in (p.call('coop.uistate') or ''):
                         opened.append(p)
                         break
                     time.sleep(0.3)
@@ -1440,11 +1443,11 @@ class Campaign:
         rival_pos = []
         if self.a.rivals:
             tr_st = self.host.call('coop.tribe rivals') or ''
-            rival_pols = {m.group(1).upper() for m in re.finditer(r'assign pid=[1-3] pol=([0-9A-Fa-f]+)', tr_st)}
-            if rival_pols:
+            rival_ptrs = {m.group(1).lower().lstrip('0x') for m in re.finditer(r'assign pid=[1-3]\s+pol=[0-9A-Fa-f]+\s+ptr=(?:0x)?([0-9A-Fa-f]+)', tr_st)}
+            if rival_ptrs:
                 tf = self.host.call('coop.tribe factions') or ''
-                for m in re.finditer(r'pol=([0-9A-Fa-f]+) .*?pos=\(([-\d.]+),([-\d.]+),([-\d.]+)\)', tf):
-                    if m.group(1).upper() in rival_pols:
+                for m in re.finditer(r'ptr=(?:0x)?([0-9A-Fa-f]+)\s+.*?pos=\(([-\d.]+),([-\d.]+),([-\d.]+)\)', tf):
+                    if m.group(1).lower().lstrip('0x') in rival_ptrs:
                         rival_pos.append(tuple(float(m.group(i)) for i in (2, 3, 4)))
         out = []
         for k, c in cent.items():
