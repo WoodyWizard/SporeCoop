@@ -9,6 +9,8 @@
 
 namespace cellsync {
 bool is_pvp_puppet_damageable(uint8_t* c);
+bool mirror_cloud_owner(uint32_t hidx, uint8_t* out_owner);
+void rivals_report_pvp_kill(uint8_t killer, const net::Vec3& pos, float scale, int victim_level);
 }
 
 // BUG-0899: Cell_IsDamageable (0xE52940, custom ESI = cell*, bool in AL) rejects puppets because they share the
@@ -547,6 +549,8 @@ bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const float* dir,
         return false; // BUG-0899: the partner's machine is authoritative for its attacks on our cell
     if (mate_copy_refuse(victim)) // BUG-1432: a partner's mate is its owner's game's
         return false;
+    bool rivals_poison_pvp = false;
+    uint8_t rivals_poison_owner = 255;
     if (victim && victim == avatar() && attacker && attacker != victim) {
         // BUG-0958: a partner's poison cloud (a mirror of the host's that is a player's product, or on the host a
         // cloud of a partner's puppet) never hurts our cell while players do not hurt each other
@@ -566,22 +570,36 @@ bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const float* dir,
             return false;
         }
         if ((mirror_product || partner_cloud) && !strcmp(k, "poison")) {
-            bool allow_poison = false;
-            if (rivals_active()) {
-                if (is_host() && partner_cloud) {
-                    auto pc_it = g_partner_clouds.find(F<uint32_t>(attacker, 0));
-                    allow_poison = pc_it != g_partner_clouds.end() && rivals::at_war(0, pc_it->second);
-                } else {
-                    allow_poison = can_pvp_any();
+            // BUG-1552: attribute poison cloud to its owning player (0..3) so 3-4p Cell Rivals gates damage strictly
+            // on War between victim and cloud owner, and routes lethal poison kills through kSubPvpKill for meat drops.
+            uint8_t my_id = (C.sess && C.sess->connected()) ? C.sess->my_id() : 0;
+            bool has_owner = false;
+            uint8_t cloud_owner = 255;
+            if (is_host() && partner_cloud) {
+                auto pc_it = g_partner_clouds.find(F<uint32_t>(attacker, 0));
+                if (pc_it != g_partner_clouds.end()) {
+                    has_owner = true;
+                    cloud_owner = pc_it->second;
                 }
-            } else {
-                allow_poison = !g_fix_partner_poison || players_hurt_each_other();
+            } else if (is_guest() && am != g_host_of.end()) {
+                has_owner = mirror_cloud_owner(am->second, &cloud_owner);
             }
+            bool war_with_owner = has_owner && rivals::valid_player(cloud_owner) && rivals::at_war(my_id, cloud_owner);
+            bool together_allow = !g_fix_partner_poison || players_hurt_each_other();
+            bool allow_poison = cell_rivals_logic::allow_poison_cloud_pvp(
+                rivals_active(), my_id, has_owner, cloud_owner, war_with_owner, can_pvp_any(), together_allow);
             if (!allow_poison) {
-                g_n.partner_poison_refused++;
+                if (has_owner && cloud_owner == my_id && g_fix_own_cloud)
+                    g_own_cloud_refused++;
+                else
+                    g_n.partner_poison_refused++;
                 return false;
             }
             g_n.partner_poison_taken++;
+            if (rivals_active() && has_owner && rivals::valid_player(cloud_owner) && cloud_owner != my_id) {
+                rivals_poison_pvp = true;
+                rivals_poison_owner = cloud_owner;
+            }
         }
     }
     if (is_guest() && victim) {
@@ -600,11 +618,20 @@ bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const float* dir,
     }
     if (victim && victim == avatar()) { // damage our own cell takes (diagnostics: is the guest as exposed?)
         int before = F<int>(victim, kHp);
+        bool was_alive = !F<uint8_t>(victim, kDying) && !F<uint8_t>(victim, kDead) && before > 0;
+        net::Vec3 death_pos = pos_of(victim);
+        float death_scale = world_scale();
+        int death_lvl = F<int>(victim, kLevel);
         bool r = o_DamageCell(victim, attacker, dir, type, x, dt);
         int lost = before - F<int>(victim, kHp);
         if (lost > 0 && !g_downed) {
             g_n.bites_taken++;
             g_n.damage_taken += lost;
+        }
+        if (rivals_poison_pvp && was_alive &&
+            (F<int>(victim, kHp) <= 0 || F<uint8_t>(victim, kDying) || F<uint8_t>(victim, kDead))) {
+            // BUG-1552: lethal war poison cloud kill drops 3 physical meat chunks and records kill like bite/spike/electric
+            rivals_report_pvp_kill(rivals_poison_owner, death_pos, death_scale, death_lvl);
         }
         if (lost > 0 && is_guest() && attacker) {
             // a mirror bit us: on the host that NPC only touched our puppet (no bite there), so it

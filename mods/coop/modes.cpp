@@ -1643,15 +1643,22 @@ static bool rts_anchor(net::Vec3& p, bool* is_civ = nullptr)
 {
     if (is_civ)
         *is_civ = false;
+    uint32_t mode = game::mode_id();
+    if (mode != kTribe && mode != kCiv)
+        return false;
     void* nm = noun_manager();
     if (!nm)
         return false;
-    void* tribe = skg::field<void*>(nm, 0x70);
-    if (tribe && skg::readable(tribe, 0x130)) {
-        auto v = skg::field<skg::Vector3>(tribe, 0x124);
-        p = {v.x, v.y, v.z};
-        return drive::speed(p) > 1;
+    if (mode == kTribe) {
+        void* tribe = skg::field<void*>(nm, 0x70);
+        if (tribe && skg::readable(tribe, 0x130)) {
+            auto v = skg::field<skg::Vector3>(tribe, 0x124);
+            p = {v.x, v.y, v.z};
+            return drive::speed(p) > 1;
+        }
+        return false;
     }
+    // BUG-1552: strictly gate GetPlayerCivilization on kCiv so kTribe with null mPlayerTribe never crashes in Sim_GameData_Filter
     uintptr_t f = S("Simulator::cGameNounManager::GetPlayerCivilization");
     void* civ = f ? skg::thiscall<void*>(f, nm) : nullptr;
     if (civ && skg::readable(civ, 0xA8)) {

@@ -1,6 +1,7 @@
 // Cell: the host's side (host_tick and the state it sends, MSG_CELL_STATE); moved out of cellsync.cpp (C8 of
 // 0.7.15, BUG-1183).
 #include "cellsync_internal.h"
+#include "cell_rivals_logic.h"
 
 namespace cellsync {
 
@@ -199,11 +200,21 @@ static void write_cell(net::Writer& w, uint8_t* c, uint32_t idx, int dest)
     w.u8(cell_logic::hp_byte(F<int>(c, kHp))); // a negative hp is 0, not 255 (BUG-0160)
     // flag 4 (BUG-0958): a player's product (+0x110, the clouds of a player's poison part; older guests ignore it)
     // flag 8 (BUG-1513): and the product is the receiver's own (a cloud the host made for its puppet)
+    // flags 4..6 (BUG-1552): owner player ID (0..3) of a player's poison cloud for 3-4p Rivals PvP attribution
     bool own = false;
-    if (g_fix_own_cloud && F<uint8_t>(c, 0x110) && dest > 0)
-        if (auto pc = g_partner_clouds.find(idx); pc != g_partner_clouds.end())
-            own = pc->second == (uint8_t)dest;
-    w.u8(cell_logic::state_flags(F<uint8_t>(c, kDying), F<uint8_t>(c, kDead), F<uint8_t>(c, 0x110), own));
+    bool is_prod = F<uint8_t>(c, 0x110) != 0;
+    uint8_t cloud_owner = 0;
+    if (is_prod) {
+        if (auto pc = g_partner_clouds.find(idx); pc != g_partner_clouds.end()) {
+            cloud_owner = pc->second;
+            if (g_fix_own_cloud && dest > 0)
+                own = (cloud_owner == (uint8_t)dest);
+        }
+    }
+    uint8_t fl = cell_logic::state_flags(F<uint8_t>(c, kDying), F<uint8_t>(c, kDead), is_prod, own);
+    if (is_prod)
+        fl = cell_rivals_logic::encode_cloud_owner_flags(fl, cloud_owner);
+    w.u8(fl);
 }
 
 static void send_state(int dest, const std::vector<SendCell>& cells)

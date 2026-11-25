@@ -500,8 +500,29 @@ void for_each_object(bool (*fn)(void* obj, uint32_t noun, void* user), void* use
     for (int i = 0; n && n != anchor && i < 200000; i++) {
         uint8_t* next = *(uint8_t**)n;
         void* obj = n - 0xC;
-        if (!IsBadReadPtr(obj, 0x30) && in_exe(*(void**)obj) && !fn(obj, noun_id(obj), user))
-            return;
+        if (!IsBadReadPtr(obj, 0x30)) {
+            void* vtbl = *(void**)obj;
+            if (!in_exe(vtbl)) {
+                // BUG-0359 / BUG-1552: one-shot diagnostic tripwire per corrupted object (capped at 8) to date vtable overwrites
+                static void* s_bad_objs[8] = {};
+                static size_t s_bad_n = 0;
+                bool seen = false;
+                for (size_t k = 0; k < s_bad_n; k++) {
+                    if (s_bad_objs[k] == obj) {
+                        seen = true;
+                        break;
+                    }
+                }
+                if (!seen && s_bad_n < 8 && H) {
+                    s_bad_objs[s_bad_n++] = obj;
+                    H->log(M, SK_WARN,
+                           "game: BUG-0359 tripwire: obj=%p non-exe vtable=0x%08X mode=0x%X frame=%llu",
+                           obj, *(uint32_t*)obj, (unsigned)mode_id(), (unsigned long long)H->frame_index());
+                }
+            } else if (!fn(obj, noun_id(obj), user)) {
+                return;
+            }
+        }
         n = next;
     }
 }
