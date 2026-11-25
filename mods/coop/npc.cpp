@@ -24,6 +24,8 @@
 
 #include "creations.h"
 #include "creature_hp.h"
+#include "creature_rivals.h"
+#include "rivals.h"
 #include "social.h"
 #include "social_logic.h"
 #include "driver.h"
@@ -804,6 +806,17 @@ static void* ai_target(void* c)
         }
         g_ai_target.erase(c);
         return nullptr;
+    }
+    // WP-R3 (BUG-1547): in Creature Rivals, a guest's assigned family herd treats that guest's puppet as its player
+    if (creature_rivals::active() && game::in_creature_stage()) {
+        uint8_t fam = creature_rivals::creature_family_owner(c);
+        if (fam >= 1 && fam < rivals::kMaxPlayers) {
+            void* pup = C.puppet_live ? C.puppet_live(fam) : (C.puppet_of ? C.puppet_of(fam) : nullptr);
+            if (pup && !game::is_dead(pup) && (!C.player_dead || !C.player_dead(fam))) {
+                g_ai_target[c] = pup;
+                return pup;
+            }
+        }
     }
     // (the session setting creature.npcs_target_partners, coop.ini npcs_target_partners its default; the fix switch
     // and `coop.npc partners off` stay the test seams; in kScenario, adventure.body_side + host_actors enables it)
@@ -3464,6 +3477,11 @@ LIFECYCLE_HOOK("npc.session", lifecycle::kSessionEnd, -90, [](const lifecycle::C
 
 // F3 (BUG-0768): all.friendly_fire (session, default off): a player's hit on a partner's creature hurts that partner
 static bool friendly_fire() { return settings::on(settings::kFriendlyFire); }
+// WP-R3 (BUG-1547): in Creature Rivals, PvP is strictly gated by War (rivals::at_war) regardless of all.friendly_fire
+static bool pvp_allowed(uint8_t attacker, uint8_t victim)
+{
+    return creature_rivals::active() ? creature_rivals::allow_pvp_damage(attacker, victim, false) : friendly_fire();
+}
 static unsigned g_pvp_out, g_pvp_in, g_pvp_relayed; // hits on partners sent / taken by the host's avatar / relayed
 
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
@@ -3682,7 +3700,11 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             return;
         }
         void* npc = it;
-        if (creature_hp::drop_partner_hit(npc)) // BUG-0374: the host's pack / family (npc.party_peace)
+        if (creature_rivals::active()) {
+            uint8_t fam = creature_rivals::creature_family_owner(npc);
+            if (fam != 255 && !creature_rivals::allow_pvp_damage(from, fam, true))
+                break; // WP-R3 (BUG-1547): Neutral/Allied players cannot damage a rival's family
+        } else if (creature_hp::drop_partner_hit(npc)) // BUG-0374: the host's pack / family (npc.party_peace)
             break;
         // BUG-0805: the guest's puppet as the attacker only while it is a live creature here (TakeDamage relays it)
         void* attacker = g_handler_live_fix && C.puppet_live ? C.puppet_live(from) : C.puppet_of(from);
@@ -3708,8 +3730,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     case net::MSG_DAMAGE: { // guest: the host says we were hit
         net::Damage d;
-        if (is_host() && from != 0 && friendly_fire() && d.read(r) && std::isfinite(d.damage)) {
-            // F3 (BUG-0768), all.friendly_fire: a guest hit a partner's creature in its game: the host's own avatar
+        if (is_host() && from != 0 && d.read(r) && std::isfinite(d.damage) && pvp_allowed(from, d.player)) {
+            // F3 (BUG-0768), all.friendly_fire / WP-R3 (BUG-1547) War PvP: a guest hit a partner's creature in its game: the host's own avatar
             // takes it here, another guest's hit goes on to that guest (as if the host's game had seen it)
             d.damage = std::clamp(d.damage, 0.f, kMaxHit);
             d.attacker = 0xFFFF;
@@ -3765,6 +3787,11 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
         if (px_id_of(c, pid)) { // hit on a host NPC: the host applies it
             if (attacker == av && social::drop_social_hit(pid))
                 return false; // BUG-0021: the social stance does not attack
+            if (attacker == av && creature_rivals::active()) {
+                uint8_t fam = creature_rivals::creature_family_owner(c);
+                if (fam != 255 && !creature_rivals::allow_pvp_damage(C.sess->my_id(), fam, true))
+                    return false; // WP-R3 (BUG-1547): Neutral/Allied cannot hit rival family (or own family)
+            }
             if (attacker == av) {
                 net::DamageReq q;
                 q.net_id = pid;
@@ -3778,9 +3805,9 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
             return false;
         }
         if (game::is_puppet(c)) {
-            if (attacker == av && av && friendly_fire()) // F3 (BUG-0768): the hit goes to that player (via the host)
+            if (attacker == av && av) // F3 (BUG-0768) / WP-R3 (BUG-1547): PvP hit goes to that player via host
                 for (auto& p : C.sess->players())
-                    if (p.id != C.sess->my_id() && C.puppet_of(p.id) == c) {
+                    if (p.id != C.sess->my_id() && C.puppet_of(p.id) == c && pvp_allowed(C.sess->my_id(), p.id)) {
                         net::Damage d;
                         d.player = p.id;
                         d.damage = damage;
@@ -3813,8 +3840,14 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
             return true;
         }
         if (!game::is_puppet(c)) {
-            if (attacker == av)
+            if (attacker == av) {
+                if (creature_rivals::active()) {
+                    uint8_t fam = creature_rivals::creature_family_owner(c);
+                    if (fam != 255 && !creature_rivals::allow_pvp_damage(0, fam, true))
+                        return false; // WP-R3 (BUG-1547): Neutral/Allied cannot hit rival family (or own family)
+                }
                 damage = party::player_hits_npc(teamplay::on_player_hit(c, 0, damage));
+            }
             return true;
         }
         // a guest's puppet was hit: forward real NPC hits to that guest
@@ -3824,19 +3857,18 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
                     log_hit(p.id, attacker, 0, "dropped (creature.air_immune)");
             return false;
         }
-        bool pvp = attacker && attacker == av && friendly_fire(); // F3 (BUG-0768): the host hit a guest
         // BUG-0790: the attacker may be a vehicle, UFO, turret or building: the party check and the pack defence read
         // creature fields, they take a listed creature only
         void* att_creature = !attacker || !game::attacker_owner_fix() || game::creature_listed(attacker) ? attacker : nullptr;
-        if (!pvp && creature_hp::drop_party_hit(att_creature)) { // BUG-0374: never from the host's pack / family
-            for (auto& p : C.sess->players())
-                if (p.id != 0 && C.puppet_of(p.id) == c)
-                    log_hit(p.id, attacker, 0, "dropped (npc.party_peace)");
-            return false;
-        }
         for (auto& p : C.sess->players()) {
             if (p.id == 0 || C.puppet_of(p.id) != c)
                 continue;
+            bool pvp = attacker && attacker == av && pvp_allowed(0, p.id); // F3 (BUG-0768) / WP-R3 (BUG-1547)
+            bool war_host_family = creature_rivals::active() && rivals::at_war(0, p.id);
+            if (!pvp && !war_host_family && creature_hp::drop_party_hit(att_creature)) { // BUG-0374: never from the host's pack / family
+                log_hit(p.id, attacker, 0, "dropped (npc.party_peace)");
+                return false;
+            }
             if (pvp)
                 g_pvp_out++;
             if (pvp || (attacker && attacker != av && !game::is_puppet(attacker))) {

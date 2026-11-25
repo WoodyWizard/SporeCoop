@@ -10,8 +10,10 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <string>
+#include <vector>
 
 #include "net/protocol.h"
 #include "net/session.h"
@@ -67,5 +69,20 @@ std::string debug_objects(uint32_t vt_lo, uint32_t vt_hi); // game objects with 
 extern bool g_guest_recruit_fix;
 void send_dismiss(uint16_t npc_id);
 std::string pack_dump();
+
+// WP-R3 (BUG-1547): Creature Rivals per-player species table helpers
+struct SpeciesRec {
+    uint32_t key[3];
+    int32_t relation;
+    uint32_t x, impressed, killed;
+    bool operator==(const SpeciesRec& o) const
+    {
+        return !std::memcmp(key, o.key, sizeof key) && relation == o.relation && x == o.x && impressed == o.impressed &&
+               killed == o.killed;
+    }
+};
+std::vector<SpeciesRec> read_native_table();
+void apply_external_table(const std::vector<SpeciesRec>& t);
+void write_native_record(const uint32_t key[3], int32_t relation, uint32_t x, uint32_t impressed, uint32_t killed);
 
 } // namespace social

@@ -85,6 +85,7 @@
 #include "species_line.h"
 #include "history.h"
 #include "rivals.h"
+#include "creature_rivals.h"
 #include "own_captain.h"
 #include "designs.h"
 #include "notify.h"
@@ -1109,6 +1110,7 @@ static void frame_world_ticks(double now)
     parts::tick(now); // BUG-0401
     effects::tick(now); // BUG-0451: sends the queued effects on the main thread
     social::tick(now);
+    creature_rivals::tick(now); // WP-R3 (BUG-1547): Creature Rivals nests, per-player species tables, race & draft
     evo_key_tick(now);
     creature_hp::tick();
     shared::tick(g_sess, game::mode_id(), now, guest_elsewhere() || guest_space_other()); // BUG-0231, BUG-0709: held while elsewhere
@@ -2895,7 +2897,7 @@ static void init_player_modules()
         sc.sess = &g_sess;
         sc.playing = [] { return stage_mode(g_mode) && g_local != nullptr; };
         sc.world_name = [] { return modes::current_world_name(); };
-        sc.rivals = [] { return spaceext::rivals() || pfind::g_test_rivals; }; // (tests: coop.find rivals 1)
+        sc.rivals = [] { return spaceext::rivals() || rivals::active_in_stage() || pfind::g_test_rivals; }; // (tests: coop.find rivals 1)
         sc.holds_world = [] { // BUG-1502: an editor or a load keeps the world (and the session) started
             uint32_t m = game::mode_id();
             return m == modes::kEditor || m == modes::kEdit || m == modes::kLoad;
@@ -3052,6 +3054,15 @@ static void init_tribe_and_creations()
         rvc.mode = [] { return game::mode_id(); };
         rvc.russian = [] { return coop_ui::russian(); };
         rivals::init(H, M, std::move(rvc));
+    }
+    {
+        creature_rivals::Ctx crvc; // WP-R3 of 0.8.0 (BUG-1547): Creature Rivals mode
+        crvc.sess = &g_sess;
+        crvc.puppet_of = [](uint8_t id) { return creature_puppet_live(id); };
+        crvc.feed = feed;
+        crvc.notice = [](const std::string& t) { notice(t, -1); };
+        crvc.russian = [] { return coop_ui::russian(); };
+        creature_rivals::init(H, M, std::move(crvc));
     }
     {
         adventure::Ctx ac; // WP-A of 0.7.99 (BUG-1474, BUG-0793): co-op Galactic Adventures

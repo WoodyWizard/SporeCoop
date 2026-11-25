@@ -44,6 +44,8 @@ bool census(int& unlocked, uint32_t& hash, int& unlockable, std::vector<Key>* lo
 // tests: the game's own "a part was found" (a skeleton's reward): cCreatureModeStrategy's message
 // 0x5371F11 {avatar, 0, level}. Outside the frame (it shows the goal card). Unlocked count after.
 int find_part(int level);
+// WP-R3 (BUG-1547): unlock a single Creature part key (cost 0) for Creature Rivals draft picks
+bool unlock_key(Key k);
 std::string status();
 // tests (BUG-0467): the game's own "a Cell part token was collected" (0xE5D7B0) for part i, outside
 // the frame; the part states as a 13-digit string

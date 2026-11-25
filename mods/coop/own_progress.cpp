@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "cellsync.h"
+#include "creature_rivals.h"
 #include "fixes.h"
 #include "game.h"
 #include "lifecycle.h"
@@ -86,6 +87,8 @@ static double g_table_got = -100;
 
 bool active()
 {
+    if (creature_rivals::use_own_progress())
+        return true; // WP-R3 (BUG-1547): Creature Rivals keeps each player's own DNA, evolution bar, and brain level
     if (!C.sess || !C.sess->connected() || !wanted())
         return false;
     if (C.sess->role() == net::Role::Host)
@@ -671,9 +674,9 @@ void tick(double now)
     bank_tick(now); // (also after the session or the setting ended: everything kept goes in)
     if (is_host())
         host_tick(now);
-    else if (is_guest() && active())
+    else if (is_guest() && active() && !creature_rivals::use_own_progress())
         guest_tick(now);
-    if (active())
+    if (active() && !creature_rivals::use_own_progress())
         notice_tick(now);
     else
         g_switch_due = false;
@@ -681,7 +684,7 @@ void tick(double now)
 
 bool hold_stage_end(bool cell, bool at_end)
 {
-    if (!is_host() || !active())
+    if (!is_host() || !active() || creature_rivals::use_own_progress())
         return false;
     std::string waiting;
     const bool all = all_full(&waiting);

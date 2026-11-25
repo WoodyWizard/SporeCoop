@@ -1,4 +1,5 @@
 #include "parts.h"
+#include "creature_rivals.h"
 
 #include <windows.h>
 
@@ -461,6 +462,8 @@ void tick(double now)
         return;
     if (game::mode_id() != modes::kCreature || !game::avatar() || now - g_last_poll < kPoll)
         return;
+    if (creature_rivals::block_shared_parts()) // WP-R3 (BUG-1547): each rival keeps own collected parts
+        return;
     g_last_poll = now;
     if (is_host())
         host_tick(now);
@@ -513,8 +516,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         }
         return;
     }
-    if (!g_fix)
-        return; // the Creature parts (BUG-0998: below the Cell kinds)
+    if (!g_fix || creature_rivals::block_shared_parts())
+        return; // the Creature parts (BUG-0998: below the Cell kinds; BUG-1547: own parts in Creature Rivals)
     if (is_host() && kind == kKindFound && from != 0) {
         g_rx_found++;
         if (world == 0 || world != (C.world ? C.world() : 0)) { // found in another world than ours
@@ -573,6 +576,19 @@ int find_part(int level)
     int n, all;
     uint32_t h;
     return census(n, h, all) ? n : -1;
+}
+
+bool unlock_key(Key k)
+{
+    void* items = C.items ? C.items() : nullptr;
+    if (!items || !a_UnlockPart || !a_IsUnlocked)
+        return false;
+    if (thiscall<bool>(a_IsUnlocked, items, k.first, k.second))
+        return true;
+    bool ok = thiscall<bool>(a_UnlockPart, items, k.first, k.second, 0);
+    if (ok)
+        g_applied++;
+    return ok;
 }
 
 std::string dump(const std::string& what)
