@@ -81,6 +81,8 @@ static Save_t o_Save;
 
 static uintptr_t a_ScenarioModePtr;
 static uintptr_t a_SwitchToEditMode;
+static uintptr_t a_ScenarioRequestReset;
+static uintptr_t a_StateManagerGet;
 static uintptr_t a_GetEditAct;
 static uintptr_t a_SetEditAct;
 static uintptr_t a_GetNumActs;
@@ -1461,6 +1463,8 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
 
     a_ScenarioModePtr = H->sym("App::cScenarioMode::ptr");
     a_SwitchToEditMode = H->sym("SporeCoop::ScenarioMode_SwitchToEditMode");
+    a_ScenarioRequestReset = H->sym("SporeCoop::ScenarioRequest_Reset");
+    a_StateManagerGet = H->sym("App::IStateManager::Get");
     a_GetEditAct = H->sym("SporeCoop::ScenarioEdit_GetAct");
     a_SetEditAct = H->sym("SporeCoop::ScenarioEdit_SetAct");
     a_GetNumActs = H->sym("SporeCoop::ScenarioData_GetNumActs");
@@ -1531,16 +1535,43 @@ std::string command(const std::vector<std::string>& args)
     if (args.empty() || args[0] == "status")
         return status_line();
 
-    // `coop.adveditor enter`: transition active Scenario from Play (2) to Edit (1)
+    // `coop.adveditor enter [inst_hex] [group_hex]`:
+    //   - If already in Scenario with Editor UI allocated ([sm+0x10] & [sm+0x14] non-null), switches preview -> Edit.
+    //   - Otherwise (e.g. Galaxy Menu), launches native Adventure Editor via ScenarioRequest_Reset + IStateManager.
     if (args[0] == "enter") {
-        if (game::mode_id() != modes::kScenario)
-            return "not in Scenario mode\n";
-        void* sm = scenario_mode();
-        if (!sm || !a_SwitchToEditMode)
-            return "cScenarioMode or SwitchToEditMode unavailable\n";
-        if (modes::adventure_sub_mode() != 1)
-            skg::thiscall<void>(a_SwitchToEditMode, sm);
-        return status_line();
+        if (game::mode_id() == modes::kScenario) {
+            void* sm = scenario_mode();
+            if (sm && skg::readable(sm, 0xD4) && skg::field<void*>(sm, 0x10) && skg::field<void*>(sm, 0x14) &&
+                a_SwitchToEditMode) {
+                if (modes::adventure_sub_mode() != 1)
+                    skg::thiscall<void>(a_SwitchToEditMode, sm);
+                return status_line();
+            }
+            return status_line() + "current Scenario was opened Play-only (no Editor UI); enter from Galaxy Menu\n";
+        }
+        if (!a_ScenarioRequestReset || !a_StateManagerGet)
+            return "ScenarioRequest_Reset or IStateManager unavailable\n";
+        uint32_t* req = skg::cdecl_call<uint32_t*>(a_ScenarioRequestReset);
+        if (!req || !skg::readable(req, 0x30))
+            return "ScenarioRequest_Reset returned null\n";
+        if (args.size() >= 2 && args[1] != "new") {
+            uint32_t inst = (uint32_t)strtoul(args[1].c_str(), nullptr, 16);
+            uint32_t grp = args.size() >= 3 ? (uint32_t)strtoul(args[2].c_str(), nullptr, 16) : 0x408A0000u;
+            req[0] = inst;
+            req[1] = 0x030BDEE3u;
+            req[2] = grp;
+        }
+        req[0x24 / 4] = 1u; // subMode = Edit
+        req[0x28 / 4] = 0u; // entryKind = Edit/Create (allocates Editor UI controllers +0x10/+0x14)
+        void* stm = skg::cdecl_call<void*>(a_StateManagerGet);
+        if (!stm || !skg::readable(stm, 4))
+            return "IStateManager null\n";
+        uintptr_t vt = *(uintptr_t*)stm;
+        if (!vt || !skg::readable((void*)(vt + 0x28), 4))
+            return "IStateManager vtable unreadable\n";
+        uintptr_t fn = *(uintptr_t*)(vt + 0x28);
+        skg::thiscall<void>(fn, stm, 0x21851EBEu);
+        return "launching Adventure Editor\n";
     }
 
     if (!active || !data)

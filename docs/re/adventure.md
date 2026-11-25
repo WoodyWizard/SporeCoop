@@ -239,6 +239,13 @@ BUG-0863 (WP-AE of 0.8.0). GOG 2024 (`dc04aee5`), verified directly via `objdump
   * `SporeCoop::ScenarioMode_SwitchToEditMode` (`0x00EF1280`, `thiscall(cScenarioMode*)` plain `ret`) switches from Play
     to Edit; `SporeCoop::ScenarioMode_SwitchToPlayMode` (`0x00EF12D0`, `thiscall(cScenarioMode*, int)` `ret 4`) is
     native preview (Edit -> Play).
+  * ✔ (runtime, lab `20261125-030131`) Calling `ScenarioMode_SwitchToEditMode` (`0xEF1280`) inside an adventure opened
+    in Play-only mode (`entryKind +0x28 == 1`, `cScenarioMode +0xD0 == 1`) faults at `0x00EDA170` (`write 0x54`,
+    `esi = 0`) because `cScenarioMode::OnEnter` (`0xEF201D: cmp [esi+0xD0], 0`) only allocates the Editor UI controllers
+    (`cScenarioMode +0x10`, `+0x14`) when `entryKind == 0`. To open the Adventure Editor from the Galaxy Menu, call
+    `SporeCoop::ScenarioRequest_Reset` (`0x00EF1910`, `cdecl() -> 0x015ACCC8`, sets `+0x24 = 1` Edit Mode and `+0x28 = 0`
+    Edit/Create entry), optionally write `{instance, 0x030BDEE3, group}` at `+0x00..+0x0B`, and call
+    `App::IStateManager::Get()` (`0x0067DCE0`) `vt+0x28(0x21851EBE)` (verified in `GAMenu_Play` `0xDFBD40..0xDFBFC0`).
 * ✔ (disassembly) `SporeCoop::ScenarioEdit_StatePtr` (`0x016C7B88`) holds the active Edit Mode state pointer: `+0x00`
   is `int32_t currentAct`, `+0x04` is the hovered object handle, `+0x08` / `+0x0C` is the selected object.
   `SporeCoop::ScenarioEdit_GetAct` (`0x00EFC410`, `cdecl() -> int`) reads `*(int*)[0x16C7B88]` (or 0 if null);

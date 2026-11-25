@@ -135,35 +135,18 @@ def boot_into_editor(ck):
     joined = wait_until(lambda: re.search(r'remote 1\b', safe_call(h, 'coop.status')) is not None, 60, step=1.0)
     ck(bool(joined), 'guest joined host at the galaxy menu')
 
-    for order in (['host'], ['guest']):
-        procs = [start_adventure(lane.HOST if w == 'host' else lane.GUEST) for w in order]
-        for p in procs:
-            p.wait(timeout=900)
-        for w in order:
-            c = h if w == 'host' else g
-            if mode_name(c) == 'GalaxyGameEntry':
-                start_adventure(lane.HOST if w == 'host' else lane.GUEST).wait(timeout=900)
-    ck(mode_name(h) == 'Scenario' and mode_name(g) == 'Scenario',
-       f'1a. both games entered Scenario mode (host {mode_name(h)}, guest {mode_name(g)})')
-
+    # Launch both games directly from the Galaxy Menu into the native Adventure Editor on stock adventure F63B6851
     for who, c in (('host', h), ('guest', g)):
-        for i in range(6):
-            sa = adv_state_act(c)
-            if sa and sa[0] == 3:
-                break
-            if i % 2 == 0:
-                c.call('key enter')
-            time.sleep(4)
-        print(f'  {who}: pre-editor state/act {adv_state_act(c)}', flush=True)
-
-    # Transition both games into native Adventure Editor (cScenarioMode +0xCC == 1)
-    for who, c in (('host', h), ('guest', g)):
-        print(f'  {who} enter editor: ' + safe_call(c, 'coop.adveditor enter'), flush=True)
+        print(f'  {who} enter editor: ' + safe_call(c, 'coop.adveditor enter F63B6851 408A0000'), flush=True)
     in_edit = wait_until(
-        lambda: (editor_status(h) or {}).get('sub') == 1 and (editor_status(g) or {}).get('sub') == 1,
-        30, step=1.0, what='both games in Adventure Editor (sub=1)',
+        lambda: mode_name(h) == 'Scenario' and mode_name(g) == 'Scenario'
+                and (editor_status(h) or {}).get('sub') == 1 and (editor_status(g) or {}).get('sub') == 1,
+        180, step=1.5, what='both games in Adventure Editor (sub=1)',
     )
-    ck(bool(in_edit), f'1b. both games entered Adventure Editor (host={editor_status(h)}, guest={editor_status(g)})')
+    ck(bool(in_edit), f'1. both games entered Adventure Editor (host={editor_status(h)}, guest={editor_status(g)})')
+    if in_edit:
+        h.call('wait.frames 120 60000')
+        g.call('wait.frames 120 60000')
     return h, g
 
 
