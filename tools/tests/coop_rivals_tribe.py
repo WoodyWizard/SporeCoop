@@ -159,6 +159,9 @@ def main():
         wait_for(lambda: 'bal=[' in rv_out(guest), 6.0)
         time.sleep(0.5)
 
+        # BUG-1551: Protect requires being Allied with the NPC tribe; ally npc_a for guest first
+        host.call(f'coop.tribe rivals setrel 1 {npc_a} 4')
+        time.sleep(0.5)
         guest.call(f'coop.rivals influence protect {npc_a}')
         prot_ok = wait_for(lambda: f'npc pol={npcs[0]["pol"]}' in tr_out(host) and 'prot=[p0=0,p1=1]' in tr_out(host), 8.0)
         ck(bool(prot_ok), 'R4 guest Protect on npcA synced on host')

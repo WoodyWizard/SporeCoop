@@ -133,6 +133,9 @@ def main():
         npc_b = next(('0x' + pol for pol, _p0, p1 in npc_rows if ('0x' + pol) != npc_a and p1 != 'Hostile'),
                      ('0x' + npc_rows[1][0]) if len(npc_rows) >= 2 else '0x5678')
 
+        # Protect requires being Allied with the NPC tribe (BUG-1551): ally npc_a for guest first
+        host.call(f'coop.tribe rivals setrel 1 {npc_a} 4')
+        time.sleep(0.5)
         guest.call(f'coop.rivals influence protect {npc_a}')
         prot_synced = wait_for(lambda: 'prots=1' in rivals_out(host) and 'bal=[100,80,' in rivals_out(guest), 8.0)
         ck(bool(prot_synced), 'guest Protect deducted 20 influence and synced prots=1')

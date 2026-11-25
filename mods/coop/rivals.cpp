@@ -1358,91 +1358,6 @@ std::vector<UiRow> ui_rows()
                      tr("Smooth", "Мир"), (int)kCostSmoothOver);
             rows.push_back({buf, tr("Buy +25", "Купить +25"),
                             [report_ui_err] { report_ui_err(request_influence(InfluenceAction::Buy, 0, 255)); }, kGold});
-
-            if (st != Stage::None) {
-                if (auto* hk = active_stage_hooks(st); hk && hk->on_npc_ui_list) {
-                    auto npcs = hk->on_npc_ui_list(me);
-                    std::vector<uint8_t> rivals_list;
-                    for (const auto& p : C.sess->players()) {
-                        if (valid_player(p.id) && p.id != me)
-                            rivals_list.push_back(p.id);
-                    }
-                    double now = now_s();
-                    auto prot_rem = [&](uint8_t owner, uint32_t nid) -> double {
-                        for (const auto& pr : g_state.inf.protections) {
-                            if (pr.owner == owner && pr.npc_id == nid) {
-                                double rem = pr.expires_at > now ? (pr.expires_at - now) : pr.remaining_secs;
-                                if (rem > 0.0)
-                                    return rem;
-                            }
-                        }
-                        return 0.0;
-                    };
-                    for (const auto& e : npcs) {
-                        uint32_t nid = e.npc_id;
-                        std::string lbl = e.label;
-                        if (lbl.empty()) {
-                            char nb[32];
-                            snprintf(nb, sizeof nb, "NPC 0x%X", (unsigned)nid);
-                            lbl = nb;
-                        }
-                        double my_prot = prot_rem(me, nid);
-                        std::string status = e.allied ? tr("Allied", "Союз")
-                                                      : (e.hostile ? tr("Hostile", "Враг") : tr("Neutral", "Нейтрал"));
-                        if (my_prot > 0.0) {
-                            char pb[48];
-                            snprintf(pb, sizeof pb, ", %s %.0fs", tr("Protected", "Защита"), my_prot);
-                            status += pb;
-                        }
-                        snprintf(buf, sizeof buf, "  %s [%s]", lbl.c_str(), status.c_str());
-                        bool offer_protect = e.can_protect && my_prot <= 0.0;
-                        bool offer_smooth = e.can_smooth;
-                        uint32_t col = e.allied ? kGreen : (e.hostile ? kRed : 0);
-                        if (offer_protect) {
-                            rows.push_back({buf, tr("Protect (20)", "Защита (20)"),
-                                            [nid, report_ui_err] {
-                                                report_ui_err(request_influence(InfluenceAction::Protect, nid, 255));
-                                            },
-                                            col});
-                        } else if (offer_smooth) {
-                            rows.push_back({buf, tr("Smooth (25)", "Мир (25)"),
-                                            [nid, report_ui_err] {
-                                                report_ui_err(request_influence(InfluenceAction::SmoothOver, nid, 255));
-                                            },
-                                            col});
-                        } else {
-                            rows.push_back({buf, "", nullptr, col});
-                        }
-                        if (offer_protect && offer_smooth) {
-                            snprintf(buf, sizeof buf, "    %s", tr("Smooth over relations", "Улучшить отношения"));
-                            rows.push_back({buf, tr("Smooth (25)", "Мир (25)"),
-                                            [nid, report_ui_err] {
-                                                report_ui_err(request_influence(InfluenceAction::SmoothOver, nid, 255));
-                                            },
-                                            kDim});
-                        }
-                        if (e.can_turn && !rivals_list.empty()) {
-                            for (uint8_t rid : rivals_list) {
-                                double rprot = prot_rem(rid, nid);
-                                std::string rname = name_of(rid);
-                                if (rprot > 0.0) {
-                                    snprintf(buf, sizeof buf, "    %s %s (%s %.0fs)", tr("Turn vs", "Ссора с"),
-                                             rname.c_str(), tr("Protected", "Защита"), rprot);
-                                    rows.push_back({buf, "", nullptr, kDim});
-                                } else {
-                                    snprintf(buf, sizeof buf, "    %s %s", tr("Turn vs", "Ссора с"), rname.c_str());
-                                    rows.push_back({buf, tr("Turn (30)", "Ссора (30)"),
-                                                    [nid, rid, report_ui_err] {
-                                                        report_ui_err(
-                                                            request_influence(InfluenceAction::TurnAgainst, nid, rid));
-                                                    },
-                                                    kYellow});
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
 
         // Section 5: Active Draft (11.6)
@@ -1484,10 +1399,98 @@ std::vector<UiRow> ui_rows()
         }
 
         // Section 7: Stage-specific Rivals rows (Wave 2: Cell/Creature/Tribe/Civ/Space)
-        if (auto* hk = active_stage_hooks(current_stage()); hk && hk->on_extra_ui_rows) {
+        if (auto* hk = active_stage_hooks(st); hk && hk->on_extra_ui_rows) {
             auto extra = hk->on_extra_ui_rows();
             for (auto& er : extra)
                 rows.push_back(std::move(er));
+        }
+
+        // Section 8: Live NPC Influence targets (Turn / Protect / SmoothOver)
+        if (st != Stage::Cell && st != Stage::None && valid_player(me)) {
+            if (auto* hk = active_stage_hooks(st); hk && hk->on_npc_ui_list) {
+                auto npcs = hk->on_npc_ui_list(me);
+                std::vector<uint8_t> rivals_list;
+                for (const auto& p : C.sess->players()) {
+                    if (valid_player(p.id) && p.id != me)
+                        rivals_list.push_back(p.id);
+                }
+                double now = now_s();
+                auto prot_rem = [&](uint8_t owner, uint32_t nid) -> double {
+                    for (const auto& pr : g_state.inf.protections) {
+                        if (pr.owner == owner && pr.npc_id == nid) {
+                            double rem = pr.expires_at > now ? (pr.expires_at - now) : pr.remaining_secs;
+                            if (rem > 0.0)
+                                return rem;
+                        }
+                    }
+                    return 0.0;
+                };
+                if (!npcs.empty())
+                    rows.push_back({tr("NPC Diplomacy & Influence", "Дипломатия NPC и Влияние"), "", nullptr, kGold});
+                for (const auto& e : npcs) {
+                    uint32_t nid = e.npc_id;
+                    std::string lbl = e.label;
+                    if (lbl.empty()) {
+                        char nb[32];
+                        snprintf(nb, sizeof nb, "NPC 0x%X", (unsigned)nid);
+                        lbl = nb;
+                    }
+                    double my_prot = prot_rem(me, nid);
+                    std::string status = e.allied ? tr("Allied", "Союз")
+                                                  : (e.hostile ? tr("Hostile", "Враг") : tr("Neutral", "Нейтрал"));
+                    if (my_prot > 0.0) {
+                        char pb[48];
+                        snprintf(pb, sizeof pb, ", %s %.0fs", tr("Protected", "Защита"), my_prot);
+                        status += pb;
+                    }
+                    snprintf(buf, sizeof buf, "  %s [%s]", lbl.c_str(), status.c_str());
+                    bool offer_protect = e.can_protect && my_prot <= 0.0;
+                    bool offer_smooth = e.can_smooth;
+                    uint32_t col = e.allied ? kGreen : (e.hostile ? kRed : 0);
+                    if (offer_protect) {
+                        rows.push_back({buf, tr("Protect (20)", "Защита (20)"),
+                                        [nid, report_ui_err] {
+                                            report_ui_err(request_influence(InfluenceAction::Protect, nid, 255));
+                                        },
+                                        col});
+                    } else if (offer_smooth) {
+                        rows.push_back({buf, tr("Smooth (25)", "Мир (25)"),
+                                        [nid, report_ui_err] {
+                                            report_ui_err(request_influence(InfluenceAction::SmoothOver, nid, 255));
+                                        },
+                                        col});
+                    } else {
+                        rows.push_back({buf, "", nullptr, col});
+                    }
+                    if (offer_protect && offer_smooth) {
+                        snprintf(buf, sizeof buf, "    %s", tr("Smooth over relations", "Улучшить отношения"));
+                        rows.push_back({buf, tr("Smooth (25)", "Мир (25)"),
+                                        [nid, report_ui_err] {
+                                            report_ui_err(request_influence(InfluenceAction::SmoothOver, nid, 255));
+                                        },
+                                        kDim});
+                    }
+                    if (e.can_turn && !rivals_list.empty()) {
+                        for (uint8_t rid : rivals_list) {
+                            double rprot = prot_rem(rid, nid);
+                            std::string rname = name_of(rid);
+                            if (rprot > 0.0) {
+                                snprintf(buf, sizeof buf, "    %s %s (%s %.0fs)", tr("Turn vs", "Ссора с"),
+                                         rname.c_str(), tr("Protected", "Защита"), rprot);
+                                rows.push_back({buf, "", nullptr, kDim});
+                            } else {
+                                snprintf(buf, sizeof buf, "    %s %s", tr("Turn vs", "Ссора с"), rname.c_str());
+                                rows.push_back({buf, tr("Turn (30)", "Ссора (30)"),
+                                                [nid, rid, report_ui_err] {
+                                                    report_ui_err(
+                                                        request_influence(InfluenceAction::TurnAgainst, nid, rid));
+                                                },
+                                                kYellow});
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     return rows;

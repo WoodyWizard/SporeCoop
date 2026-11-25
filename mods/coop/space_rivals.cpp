@@ -1661,10 +1661,13 @@ static std::vector<rivals::UiRow> extra_rivals_ui_rows()
 }
 
 // Live discovered Space NPC empires for the F9 Influence UI (TurnAgainst / Protect / SmoothOver, BUG-1555).
-static std::vector<rivals::NpcUiEntry> space_npc_ui_list(uint8_t /*viewer*/)
+static std::vector<rivals::NpcUiEntry> space_npc_ui_list(uint8_t viewer)
 {
     std::vector<rivals::NpcUiEntry> out;
     if (!active() || !spaceext::connected())
+        return out;
+    // Each Space player lives in its own galaxy; host does not hold a remote peer's local NPC relationships.
+    if (viewer != spaceext::my_id())
         return out;
     uint32_t me = my_pol();
     void* rm = rel_mgr();
