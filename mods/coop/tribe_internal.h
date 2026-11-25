@@ -664,8 +664,18 @@ extern void* g_epic;
 extern void* g_epic_herd;
 extern bool g_fix_epic_herd;
 extern bool g_fix_epic_players;
+extern bool g_fix_epic_hostile;
 
 constexpr uint32_t kEpicArchetype = 0xFC811218u;
+constexpr uint32_t kDomesticatedArchetype = 0xD77DC235u;
+constexpr int32_t kDomesticatedPersonality = 7;
+
+bool is_domesticated_animal(void* a, void* pt);
+int animal_species_rel(void* a);
+int animal_rel_to_member(void* a, void* member);
+bool animal_is_hostile_to(void* a, void* member);
+bool domesticate_animal(void* a, void* pt);
+bool set_animal_species_rel(void* a, int rel);
 
 uint16_t id_of(void* c);
 extern bool g_fix_chiefs;

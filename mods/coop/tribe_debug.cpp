@@ -357,13 +357,17 @@ std::string debug(const std::vector<std::string>& a)
                 void* h = game::herd_of(o);
                 bool hr = h && skg::readable(h, 0x21C);
                 auto& d = g_epic_blows[o];
-                char b[360];
+                void* pt = player_tribe();
+                auto ms = pt ? members(pt) : std::vector<void*>{};
+                void* m0 = ms.empty() ? nullptr : ms[0];
+                char b[400];
                 snprintf(b, sizeof b,
                          "epic %p ours=%d hp=%.0f/%.0f scale=%.2f herd=%p arch=%08X gen=%d scale_mult=%.2f hp_override=%.0f dmg_mult=%.2f "
-                         "blows=%u last=%.1f max=%.1f\n",
+                         "blows=%u last=%.1f max=%.1f species=%08X rel=%d hostile=%d\n",
                          o, (int)(o == g_epic), game::health(o), game::max_health(o), game::scale(o), h, hr ? F<uint32_t>(h, 0x88) : 0,
                          hr ? F<int>(h, 0xF0) : -1, hr ? F<float>(h, 0x150) : 0.f, hr ? F<float>(h, 0x154) : 0.f, hr ? F<float>(h, 0x158) : 0.f,
-                         d.n, d.last, d.max);
+                         d.n, d.last, d.max, game::species_key(o).instance, m0 ? animal_rel_to_member(o, m0) : -1,
+                         m0 ? (int)animal_is_hostile_to(o, m0) : -1);
                 u->s += b;
                 return true;
             },
@@ -409,6 +413,54 @@ std::string debug(const std::vector<std::string>& a)
         before_save();
         return "before_save done";
     }
+    if (a.size() >= 2 && a[0] == "epic" && a[1] == "tame" && is_host()) { // tests (BUG-1542): domesticate nearest wild animal right at the village
+        void* pt = player_tribe();
+        if (!pt)
+            return "no player tribe";
+        net::Vec3 tp = tribe_pos(pt);
+        struct Q {
+            net::Vec3 tp;
+            void* pt;
+            uintptr_t is_epic;
+            void* best = nullptr;
+            float bd = 1e9f;
+        } q{tp, pt, H->sym("SporeCoop::cCreatureAnimal_IsEpic")};
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* u) {
+                auto* q = (Q*)u;
+                if (noun != 0x18EB45E || !skg::readable(o, 0x22) || F<uint8_t>(o, 0x21) || game::is_dead(o) ||
+                    game::is_puppet(o) || npc::is_proxy(o) || !game::species_profile(o))
+                    return true;
+                if (q->is_epic && thiscall<bool>(q->is_epic, o))
+                    return true;
+                if (is_domesticated_animal(o, q->pt))
+                    return true;
+                float d = net::dist(game::position(o), q->tp);
+                if (d < q->bd) {
+                    q->bd = d;
+                    q->best = o;
+                }
+                return true;
+            },
+            &q);
+        if (!q.best)
+            return "no wild animal";
+        // Move right next to the village so it is the closest animal to the village, ally its species (rel=6),
+        // and domesticate it via the game's own DomesticateAnimal (0x00DB5E10).
+        float len = std::sqrt(tp.x * tp.x + tp.y * tp.y + tp.z * tp.z);
+        net::Vec3 up = len > 1 ? net::Vec3{tp.x / len, tp.y / len, tp.z / len} : net::Vec3{0, 0, 1};
+        net::Vec3 side = std::fabs(up.z) < 0.9f ? net::Vec3{up.y, -up.x, 0} : net::Vec3{0, up.z, -up.y};
+        float sl = std::sqrt(side.x * side.x + side.y * side.y + side.z * side.z);
+        net::Vec3 near_p{tp.x + side.x / sl * 5.f, tp.y + side.y / sl * 5.f, tp.z + side.z / sl * 5.f};
+        game::teleport(q.best, near_p, game::orientation(q.best));
+        set_animal_species_rel(q.best, 6);
+        bool ok = domesticate_animal(q.best, pt);
+        char b[200];
+        snprintf(b, sizeof b, "tamed %p ok=%d species=%08X dom=%d rel=%d dist=%.1f", q.best, (int)ok,
+                 game::species_key(q.best).instance, (int)is_domesticated_animal(q.best, pt),
+                 animal_species_rel(q.best), net::dist(game::position(q.best), tp));
+        return b;
+    }
     if (!a.empty() && a[0] == "epic" && is_host()) {
         if (a.size() >= 3 && a[1] == "hit") { // epic hit <attacker id> <dmg>
             void* at = local_of((uint16_t)atoi(a[2].c_str()));
@@ -421,15 +473,20 @@ std::string debug(const std::vector<std::string>& a)
             return "no epic: the session setting tribe.epic is off";
         bool ok = spawn_epic();
         uintptr_t is_epic = H->sym("SporeCoop::cCreatureAnimal_IsEpic");
-        char b[200];
-        // BUG-0563 (tests): the epic's species, and whether it is a player's creature (any player of the session)
+        char b[256];
+        // BUG-0563 / BUG-1542 (tests): the epic's species, player_species, hostility, and relation to a player member
         void* sp = g_epic ? game::species_profile(g_epic) : nullptr;
         int players = 0;
         for (auto& pl : C.sess->players())
             players += sp && creations::player_species(pl.id) == sp;
-        snprintf(b, sizeof b, "epic %s %p is_epic=%d hp=%.0f species=%08X player_species=%d skipped=%u", ok ? "spawned" : "not spawned", g_epic,
-                 g_epic && is_epic ? (int)thiscall<bool>(is_epic, g_epic) : -1, g_epic ? F<float>(g_epic, 0x5E0) : 0.f,
-                 g_epic ? game::species_key(g_epic).instance : 0u, players, g_epic_skipped);
+        void* pt = player_tribe();
+        auto ms = pt ? members(pt) : std::vector<void*>{};
+        void* m0 = ms.empty() ? nullptr : ms[0];
+        snprintf(b, sizeof b, "epic %s %p is_epic=%d hp=%.0f species=%08X player_species=%d skipped=%u rel=%d hostile=%d",
+                 ok ? "spawned" : "not spawned", g_epic, g_epic && is_epic ? (int)thiscall<bool>(is_epic, g_epic) : -1,
+                 g_epic ? F<float>(g_epic, 0x5E0) : 0.f, g_epic ? game::species_key(g_epic).instance : 0u, players,
+                 g_epic_skipped, g_epic && m0 ? animal_rel_to_member(g_epic, m0) : -1,
+                 g_epic && m0 ? (int)animal_is_hostile_to(g_epic, m0) : -1);
         return b;
     }
     if (a.size() >= 3 && a[0] == "select") { // select <id> <0|1>

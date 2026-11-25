@@ -463,4 +463,52 @@ inline FfStep ff_combat_step(float dist, double now, double next_walk, double ne
     return now >= next_hit ? FfStep::Hit : FfStep::Wait;
 }
 
+// ---------------- Tribe epic hostility (BUG-1542) & UFO mirror stage (BUG-1543) ----------------
+
+// BUG-1542 (`coop.fix tribe.epic_hostile`): candidate species tier for the co-op epic in Tribe stage.
+// Species table relation values (cSpeciesRelationshipManager::GetRelationship, 0xBA40E0):
+//   0 = none/undiscovered, 1 = scared, 2 = aggressive, 3 = neutral, 4 = friendly, 5 = hostile, 6 = allied.
+// Tiers (lower is preferred; ties broken by distance to the player village):
+//   0 = wild, non-domesticated, non-friendly, and undiscovered (0) or hostile (2/5)
+//   1 = wild, non-domesticated, non-friendly (e.g. neutral 3 or scared 1)
+//   2 = wild, non-domesticated fallback (friendly/allied wild species only when no non-friendly wild exists)
+//   3 = domesticated fallback (only when no non-domesticated species exists on the planet)
+// Off: every non-player animal gets tier 0 (nearest wins regardless of domesticated/friendly state).
+inline int epic_candidate_tier(bool fix, bool domesticated, bool herd_friendly, int species_rel)
+{
+    if (!fix)
+        return 0;
+    if (domesticated)
+        return 3;
+    const bool friendly = herd_friendly || species_rel == 4 || species_rel == 6;
+    if (friendly)
+        return 2;
+    if (species_rel == 0 || species_rel == 2 || species_rel == 5)
+        return 0;
+    return 1;
+}
+
+// True when candidate (tier, dist) beats current best (best_tier, best_dist).
+inline bool epic_candidate_better(int tier, float dist, int best_tier, float best_dist)
+{
+    return tier < best_tier || (tier == best_tier && dist < best_dist);
+}
+
+// True when the host should also update the picked species' cSpeciesRelationshipManager record to hostile (5):
+// only for non-domesticated, non-friendly wild species (tier <= 1) whose current relation is not already hostile (2/5).
+// Never overwrites a friendly/allied/domesticated species record (tier >= 2) if fallback had to pick one.
+inline bool epic_should_force_species_hostile(bool fix, int picked_tier, int current_rel)
+{
+    return fix && picked_tier <= 1 && current_rel != 2 && current_rel != 5;
+}
+
+// BUG-1543 (`coop.fix tribe.ufo_mirror`): stages where the host mirrors drama UFOs to guests (K_UFO).
+// Off: Creature stage only (0.7.16). On: Creature and Tribe stages.
+inline bool ufo_mirror_stage(bool fix, uint32_t mode_id)
+{
+    constexpr uint32_t kCreatureMode = 0x1654C01u;
+    constexpr uint32_t kTribeMode = 0x1654C02u;
+    return mode_id == kCreatureMode || (fix && mode_id == kTribeMode);
+}
+
 } // namespace tribe_logic
