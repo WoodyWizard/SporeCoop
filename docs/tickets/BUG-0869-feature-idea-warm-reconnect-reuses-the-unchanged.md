@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 lineages30-dev (world.cpp resume receipt, CAP_RESUME_WORLD)
 role: both
 versions:
-fixed_in:
+fixed_in: unreleased
 branch: w08/cell-warm
 commits: 0db2c591, 25017314, e91ccf62
 tests: unit, cell_warm_reconnect, cell_warm_reconnect_off
