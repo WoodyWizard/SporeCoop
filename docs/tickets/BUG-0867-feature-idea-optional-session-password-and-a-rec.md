@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 lineages36-dev (net/session.cpp, coop_ui.cpp)
 role: both
 versions: 0.8.0
-fixed_in:
+fixed_in: unreleased
 branch: w08/lobby-qol
 commits: fe6af56e 80e954c7 c8149c8b f61197e6
 tests: password_recent, password_recent_off, net_tests::test_session_password, net_tests::test_recent_servers

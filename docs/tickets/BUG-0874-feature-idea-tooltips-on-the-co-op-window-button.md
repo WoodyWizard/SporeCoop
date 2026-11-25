@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 lineages42-dev, BUG-9107 (coop_ui.cpp)
 role: both
 versions: 0.8.0
-fixed_in:
+fixed_in: unreleased
 branch: w08/lobby-qol
 commits: 80e954c7 c8149c8b f61197e6
 tests: ui_tooltips, ui_tooltips_off
