@@ -46,11 +46,25 @@ static bool g_fix_rivals_civ = true;
 COOP_FIX("rivals.civ", "BUG-1549", g_fix_rivals_civ,
          "civ: Civilization Rivals mode (own nation takeover, perspective swap, per-player NPC diplomacy, war city capture, inviolable capital, draft)");
 
+// BUG-1563: guarantee that a guest's taken-over NPC nation & capital city specialty matches the player's Tribe
+// consequence card when no naturally matching free NPC exists on the planet (host + guest sync).
+static bool g_fix_civ_spec_convert = true;
+COOP_FIX("rivals.civ_spec_convert", "BUG-1563", g_fix_civ_spec_convert,
+         "civ: convert taken-over guest nation and capital city specialty to match the player's Tribe card");
+
+// BUG-1563: validate and deduct guest superweapon costs directly on mWealth (+0x98) in Civ Rivals so guest
+// superweapons cannot bypass insufficient funds or trigger NPC budget refill on mIsPlayer == 0 civilizations.
+static bool g_fix_civ_sw_spend = true;
+COOP_FIX("rivals.civ_sw_spend", "BUG-1563", g_fix_civ_sw_spend,
+         "civ: validate and deduct guest superweapon mWealth cost directly in Civ Rivals");
+
 // ---- Game addresses ----
 static uintptr_t a_GetPlayerCiv = 0;
 static uintptr_t a_GetPlayerPol = 0;
 static uintptr_t a_CityIsPlayerOwned = 0;
 static uintptr_t a_CitySetPlayerOwned = 0;
+static uintptr_t a_CitySetSpecialty = 0;
+static uintptr_t a_CivRefreshUnlocks = 0;
 static uintptr_t a_CivAI = 0;
 static uintptr_t a_CivIncomeTick = 0;
 static uintptr_t a_CivSetSpeciesKey = 0;
@@ -69,6 +83,7 @@ static uintptr_t a_GameCivShowWon = 0;
 
 constexpr uint32_t kRelDelta = 0x530CF07; // raw delta relationship event (wsync.cpp)
 constexpr uintptr_t kCivWealth = 0x98;
+constexpr uintptr_t kCivSwTools = 0x470; // eastl::vector<intrusive_ptr<cSpaceToolData>> (12 entries on player civ, empty on NPC)
 constexpr uintptr_t kCivDomesticBudget = 0x4AC;
 constexpr uintptr_t kCivExpansionBudget = 0x4B0;
 constexpr uintptr_t kCivIsPlayer = 0x89;
@@ -149,6 +164,9 @@ static struct {
     uint32_t npcrel_rx = 0;
     uint32_t draft_applied = 0;
     uint32_t allied_trades = 0;
+    uint32_t spec_converted = 0;
+    uint32_t sw_spent = 0;
+    uint32_t sw_refused_funds = 0;
 } g_st;
 
 // ---- Helpers ----
@@ -159,11 +177,27 @@ static uint8_t my_id() { return C.sess ? C.sess->my_id() : 0; }
 static double now_s() { return H ? H->time_seconds() : 0.0; }
 
 bool enabled() { return g_fix_rivals_civ; }
+bool spec_convert_enabled() { return g_fix_civ_spec_convert; }
+bool sw_spend_enabled() { return g_fix_civ_sw_spend; }
 
 bool active()
 {
     return g_fix_rivals_civ && rivals::stage_is_rivals(rivals::Stage::Civ) && game::mode_id() == modes::kCiv &&
            sess_connected();
+}
+
+static void apply_city_specialty(void* city, void* civ, int target_spec)
+{
+    if (!city || !valid_native_specialty(target_spec))
+        return;
+    if (a_CitySetSpecialty)
+        thiscall<void>(a_CitySetSpecialty, city, target_spec, 1);
+    if (skg::readable(city, civ::kCitySpecialty + 4))
+        F<int>(city, civ::kCitySpecialty) = target_spec;
+    if (skg::readable(city, 0x29C + 4))
+        F<int>(city, 0x29C) = target_spec;
+    if (civ && a_CivRefreshUnlocks)
+        thiscall<void>(a_CivRefreshUnlocks, civ);
 }
 
 static void* orig_player_civ()
@@ -285,6 +319,35 @@ bool is_player_capital(void* city, uint8_t* owner_out)
     return is_capital_city_pos(to_vec3(civ::city_pos(city)), g_nations, owner_out);
 }
 
+int my_capital_specialty()
+{
+    if (!active())
+        return -1;
+    uint8_t me = my_id();
+    if (me < kMaxPlayers && g_nations[me].assigned) {
+        if (valid_native_specialty(g_nations[me].cap_specialty))
+            return g_nations[me].cap_specialty;
+        if (void* mc = civ_by_pol(g_nations[me].pol_id)) {
+            auto cs = civ::vec_of((uint8_t*)mc + civ::kCivCities);
+            if (!cs.empty() && skg::readable(cs[0], civ::kCitySpecialty + 4)) {
+                int sp = F<int>(cs[0], civ::kCitySpecialty);
+                if (valid_native_specialty(sp))
+                    return sp;
+            }
+        }
+    }
+    return -1;
+}
+
+int foreign_city_count(void* civ)
+{
+    if (!civ || !civ::nm())
+        return 1;
+    int total = (int)civ::all_cities().size();
+    int own = (int)civ::vec_of((uint8_t*)civ + civ::kCivCities).size();
+    return std::max(1, total - own);
+}
+
 // ---- Perspective swap restore & apply (R1) ----
 static void restore_perspective()
 {
@@ -349,6 +412,39 @@ static void apply_guest_perspective()
             thiscall<void>(a_CitySetPlayerOwned, city, own);
         else if (skg::readable(city, kCityIsPlayer + 1))
             F<uint8_t>(city, kCityIsPlayer) = own ? 1 : 0;
+    }
+    // BUG-1563: replicate converted capital specialties from SK_ASSIGN onto the guest's local cities
+    if (g_fix_civ_spec_convert) {
+        for (int i = 0; i < kMaxPlayers; i++) {
+            if (!g_nations[i].assigned || !valid_native_specialty(g_nations[i].cap_specialty))
+                continue;
+            void* nc = civ_by_pol(g_nations[i].pol_id);
+            void* cap_city = nullptr;
+            if (nc) {
+                auto ncs = civ::vec_of((uint8_t*)nc + civ::kCivCities);
+                if (!ncs.empty())
+                    cap_city = ncs[0];
+            }
+            if (!cap_city) {
+                net::Vec3 cp{g_nations[i].cap_pos.x, g_nations[i].cap_pos.y, g_nations[i].cap_pos.z};
+                cap_city = civ::local_city_near(cp);
+            }
+            if (!cap_city || !skg::readable(cap_city, civ::kCitySpecialty + 4))
+                continue;
+            int want = g_nations[i].cap_specialty;
+            int cur_spec = F<int>(cap_city, civ::kCitySpecialty);
+            int cur_cap = skg::readable(cap_city, 0x29C + 4) ? F<int>(cap_city, 0x29C) : want;
+            if (cur_spec != want || cur_cap != want) {
+                apply_city_specialty(cap_city, nc, want);
+                if (cur_spec != want) {
+                    g_st.spec_converted++;
+                    if (H && M)
+                        H->log(M, SK_INFO,
+                               "civ_rivals: synced converted capital specialty %d -> %d (%s) for player %d on guest (BUG-1563)",
+                               cur_spec, want, civ_specialty_name(want), i);
+                }
+            }
+        }
     }
     // Point TerrainCursor selectable objects vector to guest's own nation (+0xD4)
     if (a_TerrainCursorGet && a_TerrainCursorSetObj) {
@@ -534,12 +630,20 @@ static void host_broadcast_assign(double now, int only_peer = -1)
 {
     if (!is_host() || !active())
         return;
-    // Refresh live wealths before sending
+    // Refresh live wealths and capital specialties before sending
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!g_nations[i].assigned)
             continue;
-        if (void* c = civ_by_pol(g_nations[i].pol_id); c && skg::readable(c, kCivWealth + 4))
-            g_nations[i].wealth = F<float>(c, kCivWealth);
+        if (void* c = civ_by_pol(g_nations[i].pol_id)) {
+            if (skg::readable(c, kCivWealth + 4))
+                g_nations[i].wealth = F<float>(c, kCivWealth);
+            auto cs = civ::vec_of((uint8_t*)c + civ::kCivCities);
+            if (!cs.empty() && skg::readable(cs[0], civ::kCitySpecialty + 4)) {
+                int sp = F<int>(cs[0], civ::kCitySpecialty);
+                if (valid_native_specialty(sp))
+                    g_nations[i].cap_specialty = (int8_t)sp;
+            }
+        }
     }
     net::Writer w;
     write_assign(w, g_nations);
@@ -596,11 +700,14 @@ static void host_ensure_assignments(double now)
 
     uint32_t host_pol = civ::pol_of(host_civ);
     Vec3 host_cap = to_vec3(civ::city_pos(host_cities[0]));
+    int host_spec = skg::readable(host_cities[0], civ::kCitySpecialty + 4) ? F<int>(host_cities[0], civ::kCitySpecialty) : -1;
+    int8_t host_spec8 = valid_native_specialty(host_spec) ? (int8_t)host_spec : (int8_t)-1;
     if (!g_nations[0].assigned || g_nations[0].pol_id != host_pol) {
-        g_nations[0] = {0, host_pol, host_cap, F<float>(host_civ, kCivWealth), true};
+        g_nations[0] = {0, host_pol, host_cap, F<float>(host_civ, kCivWealth), true, host_spec8};
         g_assign_dirty = true;
     } else {
         g_nations[0].wealth = F<float>(host_civ, kCivWealth);
+        g_nations[0].cap_specialty = host_spec8;
     }
 
     // Collect already-taken pols
@@ -641,25 +748,32 @@ static void host_ensure_assignments(double now)
     for (const auto& pl : C.sess->players()) {
         if (pl.id == 0 || pl.id >= kMaxPlayers || g_nations[pl.id].assigned)
             continue;
-        // BUG-1557: when the guest has its own Rivals Tribe path, prefer a free NPC nation matching
-        // its Tribe consequence card specialty (Aggressive->Mil, Industrious->Eco, Friendly->Rel).
+        // BUG-1557 / BUG-1563: determine the guest's desired Civ specialty from its Tribe consequence card
+        // (Aggressive->Mil 0, Friendly->Rel 1, Industrious->Eco 2). Prefer a free NPC nation matching it when the
+        // guest has its own Rivals Tribe path; if no free NPC matches (or all players finished Tribe with the same
+        // card), convert the taken-over capital city specialty to match (rivals.civ_spec_convert).
         uint32_t pick = 0;
         int want_native = -1;
-        if (history::rivals_own_history_enabled() &&
-            (rivals::stage_is_rivals(rivals::Stage::Tribe) || history::player_has_own_tribe(pl.id))) {
-            uint32_t tcard = history::player_card(pl.id, history::kTribe);
-            int pref_h = history::civ_spec_for_tribe_card(tcard);
-            want_native = pref_h >= 0 ? history::history_spec_to_native_city((uint8_t)(pref_h + 1)) : -1;
-            if (want_native >= 0) {
-                std::vector<BaseCandidate> matched;
-                for (const auto& bc : cands) {
-                    auto it = cand_native_spec.find(bc.pol_id);
-                    if (it != cand_native_spec.end() && it->second == want_native)
-                        matched.push_back(bc);
-                }
-                if (!matched.empty())
-                    pick = select_base_nation(host_cap, matched, rivals::base_distance(), taken);
+        uint32_t tcard = 0;
+        bool own_tribe = history::rivals_own_history_enabled() &&
+                         (rivals::stage_is_rivals(rivals::Stage::Tribe) || history::player_has_own_tribe(pl.id));
+        if (history::rivals_own_history_enabled())
+            history::host_sync_now();
+        tcard = history::player_card(pl.id, history::kTribe);
+        if (!tcard && !own_tribe)
+            tcard = history::player_card(0, history::kTribe);
+        int pref_h = history::civ_spec_for_tribe_card(tcard);
+        if (pref_h >= 0)
+            want_native = history::history_spec_to_native_city((uint8_t)(pref_h + 1));
+        if (own_tribe && want_native >= 0) {
+            std::vector<BaseCandidate> matched;
+            for (const auto& bc : cands) {
+                auto it = cand_native_spec.find(bc.pol_id);
+                if (it != cand_native_spec.end() && it->second == want_native)
+                    matched.push_back(bc);
             }
+            if (!matched.empty())
+                pick = select_base_nation(host_cap, matched, rivals::base_distance(), taken);
         }
         if (!pick)
             pick = select_base_nation(host_cap, cands, rivals::base_distance(), taken);
@@ -675,6 +789,16 @@ static void host_ensure_assignments(double now)
             continue;
         Vec3 cap = to_vec3(civ::city_pos(gcities[0]));
         int cap_native = skg::readable(gcities[0], civ::kCitySpecialty + 4) ? F<int>(gcities[0], civ::kCitySpecialty) : -1;
+        if (g_fix_civ_spec_convert && needs_specialty_conversion(cap_native, want_native)) {
+            int old_native = cap_native;
+            apply_city_specialty(gcities[0], gc, want_native);
+            cap_native = want_native;
+            g_st.spec_converted++;
+            if (H && M)
+                H->log(M, SK_INFO,
+                       "civ_rivals: converted player %u capital city specialty %d -> %d (%s) to match Tribe card 0x%08X (BUG-1563)",
+                       (unsigned)pl.id, old_native, want_native, civ_specialty_name(want_native), (unsigned)tcard);
+        }
         uint8_t hist_spec = history::native_city_spec_to_history(cap_native);
         if (hist_spec != history::kCivSpecNone)
             history::set_civ_start_specialty(pl.id, hist_spec);
@@ -693,7 +817,8 @@ static void host_ensure_assignments(double now)
         F<float>(gc, kCivExpansionBudget) = 0.0f;
         F<uint8_t>(gc, kCivIsPlayer) = 0;
 
-        g_nations[pl.id] = {pl.id, pick, cap, w, true};
+        g_nations[pl.id] = {pl.id, pick, cap, w, true,
+                            valid_native_specialty(cap_native) ? (int8_t)cap_native : (int8_t)-1};
         taken.push_back(pick);
         g_npc_rels.remove_npc(pick); // no longer an NPC nation
         host_apply_guest_species(pl.id, gc);
@@ -982,6 +1107,66 @@ void host_credit_player(uint8_t pid, float amount)
 }
 
 void host_mark_assign_dirty() { g_assign_dirty = true; }
+
+void host_finalize_sw_spend(uint8_t from, void* civ, float before_wealth, float cost)
+{
+    if (!active() || !is_host() || !civ || !skg::readable(civ, kCivExpansionBudget + 4))
+        return;
+    float target = finalize_superweapon_wealth(before_wealth, cost, F<float>(civ, kCivDomesticBudget),
+                                               F<float>(civ, kCivExpansionBudget));
+    F<float>(civ, kCivWealth) = target;
+    if (from < kMaxPlayers && g_nations[from].assigned)
+        g_nations[from].wealth = target;
+    g_st.sw_spent++;
+    host_broadcast_assign(now_s());
+    if (H && M)
+        H->log(M, SK_INFO,
+               "civ_rivals: guest %u superweapon spend %.0f -> %.0f (cost=%.0f, sw_spent=%u, BUG-1563)",
+               (unsigned)from, before_wealth, target, cost, g_st.sw_spent);
+}
+
+void record_sw_refused_funds() { g_st.sw_refused_funds++; }
+
+SwToolsBorrow::SwToolsBorrow(void* target_civ)
+{
+    if (!target_civ || !is_host() || !active())
+        return;
+    void* host_civ = orig_player_civ();
+    if (!host_civ || host_civ == target_civ)
+        return;
+    if (!skg::readable(target_civ, kCivSwTools + 12) || !skg::readable(host_civ, kCivSwTools + 12))
+        return;
+    uint32_t t0 = F<uint32_t>(target_civ, kCivSwTools);
+    uint32_t t1 = F<uint32_t>(target_civ, kCivSwTools + 4);
+    uint32_t h0 = F<uint32_t>(host_civ, kCivSwTools);
+    uint32_t h1 = F<uint32_t>(host_civ, kCivSwTools + 4);
+    uint32_t h2 = F<uint32_t>(host_civ, kCivSwTools + 8);
+    if (t0 && t1 >= t0 && (t1 - t0) >= 12u * 4u)
+        return; // already populated
+    if (!h0 || h1 < h0 || (h1 - h0) < 12u * 4u)
+        return; // host civ has no tools to lend
+    civ = target_civ;
+    saved[0] = t0;
+    saved[1] = t1;
+    saved[2] = F<uint32_t>(target_civ, kCivSwTools + 8);
+    mark = game::swap_open(game::swap_undo_u32, (uint8_t*)target_civ + kCivSwTools, saved[0], "civ_rivals: sw tools[0]");
+    game::swap_open(game::swap_undo_u32, (uint8_t*)target_civ + kCivSwTools + 4, saved[1], "civ_rivals: sw tools[1]");
+    game::swap_open(game::swap_undo_u32, (uint8_t*)target_civ + kCivSwTools + 8, saved[2], "civ_rivals: sw tools[2]");
+    F<uint32_t>(target_civ, kCivSwTools) = h0;
+    F<uint32_t>(target_civ, kCivSwTools + 4) = h1;
+    F<uint32_t>(target_civ, kCivSwTools + 8) = h2;
+    active_borrow = true;
+}
+
+SwToolsBorrow::~SwToolsBorrow()
+{
+    if (!active_borrow || !civ)
+        return;
+    F<uint32_t>(civ, kCivSwTools) = saved[0];
+    F<uint32_t>(civ, kCivSwTools + 4) = saved[1];
+    F<uint32_t>(civ, kCivSwTools + 8) = saved[2];
+    game::swap_close(mark, 3);
+}
 
 // ---- R7 & War/Neutral/Ally enforcement ----
 CombatGate damage_gate(uint8_t attacker_pid, uint8_t victim_pid, bool is_capital, int dmg_type)
@@ -1501,6 +1686,8 @@ void init()
     a_GetPlayerPol = H->sym("SporeCoop::GameNounManager_GetPlayerPoliticalID");
     a_CityIsPlayerOwned = H->sym("SporeCoop::City_IsPlayerOwned");
     a_CitySetPlayerOwned = H->sym("SporeCoop::City_SetIsPlayerOwned");
+    a_CitySetSpecialty = H->sym("SporeCoop::cCity_SetSpecialty");
+    a_CivRefreshUnlocks = H->sym("SporeCoop::Civilization_RefreshUnlocks");
     a_CivAI = H->sym("SporeCoop::Civilization_AI");
     a_CivIncomeTick = H->sym("SporeCoop::Civ_IncomeTick");
     a_CivSetSpeciesKey = H->sym("SporeCoop::Civ_SetSpeciesKey");
@@ -1655,6 +1842,41 @@ std::string debug(const std::vector<std::string>& a)
                  (unsigned)ap, (int)blocked, (int)can_t, g_st.sw_blocked);
         return b;
     }
+    if (!a.empty() && a[0] == "setspec" && a.size() >= 3) {
+        int spec = atoi(a[2].c_str());
+        if (!valid_native_specialty(spec))
+            return "error: specialty must be 0 (mil), 1 (rel), or 2 (eco)\n";
+        if (a[1] == "all_npc") {
+            void* orig_pc = orig_player_civ();
+            uint32_t orig_pol = orig_pc ? civ::pol_of(orig_pc) : 0;
+            int n = 0;
+            for (void* city : civ::all_cities()) {
+                if (!city)
+                    continue;
+                uint32_t cpol = civ::pol_of(city);
+                if (orig_pol && cpol == orig_pol)
+                    continue;
+                void* cc = skg::readable(city, civ::kCityCiv + 4) ? F<void*>(city, civ::kCityCiv) : nullptr;
+                apply_city_specialty(city, cc, spec);
+                n++;
+            }
+            snprintf(b, sizeof b, "setspec all_npc count=%d spec=%d\n", n, spec);
+            return b;
+        }
+        int ci = atoi(a[1].c_str());
+        auto cs = civ::all_cities();
+        void* city = is_host() ? civ::host_city((size_t)ci)
+                               : (ci >= 0 && ci < (int)civ::g_host_cities.size() ? civ::g_host_cities[ci] : nullptr);
+        if (!city && ci >= 0 && ci < (int)cs.size())
+            city = cs[ci];
+        if (!city)
+            return "error: invalid city\n";
+        void* cc = skg::readable(city, civ::kCityCiv + 4) ? F<void*>(city, civ::kCityCiv) : nullptr;
+        apply_city_specialty(city, cc, spec);
+        snprintf(b, sizeof b, "setspec city=%d spec=%d cap29c=%d\n", ci, F<int>(city, civ::kCitySpecialty),
+                 skg::readable(city, 0x29C + 4) ? F<int>(city, 0x29C) : -1);
+        return b;
+    }
     if (!a.empty() && a[0] == "pvp_test" && a.size() >= 4 && is_host()) {
         uint16_t avid = (uint16_t)atoi(a[1].c_str());
         uint16_t vvid = (uint16_t)atoi(a[2].c_str());
@@ -1686,25 +1908,30 @@ std::string debug(const std::vector<std::string>& a)
              "pvp_allowed=%u pvp_blocked=%u war_captures=%u gifts=%u/%u spice=%u "
              "inf_buy=%u inf_turn=%u inf_prot=%u inf_smooth=%u inf_trade=%u inf_diplo=%u rel_readbacks=%u "
              "assign_tx=%u assign_rx=%u npcrel_tx=%u npcrel_rx=%u "
-             "race_ended=%d draft_started=%d draft_applied=%u draft_payouts=%u transition_ready=%d\n",
+             "race_ended=%d draft_started=%d draft_applied=%u draft_payouts=%u transition_ready=%d "
+             "spec_converted=%u sw_spent=%u sw_refused_funds=%u\n",
              (int)g_fix_rivals_civ, (int)active(), assigned_n, (int)g_swap_applied, (unsigned)cur_pol, (unsigned)api_pol,
              cur_money, g_st.takeovers, g_st.ai_blocked, g_st.swap_hits, g_st.cap_blocked, g_st.conv_blocked,
              g_st.sw_blocked, g_st.pvp_allowed, g_st.pvp_blocked, g_st.war_captures, g_st.gifts_done, g_st.gifts_rejected,
              g_st.spice_gifts, g_st.inf_bought, g_st.inf_turned, g_st.inf_protected, g_st.inf_smoothed, g_st.inf_trade,
              g_st.inf_diplomacy, g_st.rel_readbacks, g_st.assign_tx, g_st.assign_rx, g_st.npcrel_tx, g_st.npcrel_rx,
-             (int)g_race_ended, (int)g_draft_started, g_st.draft_applied, g_st.draft_payouts, (int)g_transition_ready);
+             (int)g_race_ended, (int)g_draft_started, g_st.draft_applied, g_st.draft_payouts, (int)g_transition_ready,
+             g_st.spec_converted, g_st.sw_spent, g_st.sw_refused_funds);
     std::string out = b;
 
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!g_nations[i].assigned)
             continue;
         void* c = civ_by_pol(g_nations[i].pol_id);
-        int nc = c ? (int)civ::vec_of((uint8_t*)c + civ::kCivCities).size() : 0;
+        auto cs = c ? civ::vec_of((uint8_t*)c + civ::kCivCities) : std::vector<void*>{};
+        int nc = (int)cs.size();
         int nv = c ? (int)civ::vec_of((uint8_t*)c + 0xB0).size() : 0;
         float mw = (c && skg::readable(c, kCivWealth + 4)) ? F<float>(c, kCivWealth) : g_nations[i].wealth;
-        snprintf(b, sizeof b, "  nation p=%d pol=0x%08X cities=%d vehs=%d wealth=%.0f cap=(%.1f %.1f %.1f)\n", i,
+        int cap_sp = (!cs.empty() && skg::readable(cs[0], civ::kCitySpecialty + 4)) ? F<int>(cs[0], civ::kCitySpecialty)
+                                                                                   : (int)g_nations[i].cap_specialty;
+        snprintf(b, sizeof b, "  nation p=%d pol=0x%08X cities=%d vehs=%d wealth=%.0f cap=(%.1f %.1f %.1f) spec=%d\n", i,
                  (unsigned)g_nations[i].pol_id, nc, nv, mw, g_nations[i].cap_pos.x, g_nations[i].cap_pos.y,
-                 g_nations[i].cap_pos.z);
+                 g_nations[i].cap_pos.z, cap_sp);
         out += b;
     }
     if (is_host()) {

@@ -103,12 +103,81 @@ inline uint32_t select_base_nation(const Vec3& host_cap, const std::vector<BaseC
 }
 
 // ---------------- R1 / R2: Nation assignment table ----------------
+constexpr int kCitySpecMilitary = 0;
+constexpr int kCitySpecReligious = 1;
+constexpr int kCitySpecEconomic = 2;
+
+inline bool valid_native_specialty(int spec) { return spec >= kCitySpecMilitary && spec <= kCitySpecEconomic; }
+
+// BUG-1563: returns true when a taken-over capital's native specialty differs from the desired specialty
+// derived from the player's Tribe consequence card.
+inline bool needs_specialty_conversion(int current_native_spec, int desired_native_spec)
+{
+    return valid_native_specialty(desired_native_spec) && current_native_spec != desired_native_spec;
+}
+
+// BUG-1563: land vehicle editor asset id matching a native cCity specialty (0=Mil, 1=Rel, 2=Eco; 0=unknown).
+inline uint32_t land_vehicle_editor_for_specialty(int native_spec)
+{
+    switch (native_spec) {
+    case kCitySpecMilitary: return 0x7D433FADu;
+    case kCitySpecReligious: return 0x9AD7D4AAu;
+    case kCitySpecEconomic: return 0xF670AA43u;
+    default: return 0u;
+    }
+}
+
+// BUG-1563: Spore GOG 2024 GetSuperweaponCost (0x00BF6DF0) cost table for types 0..11.
+// Returns -1.0f for invalid types.
+inline float superweapon_cost(int sw_type, int foreign_cities)
+{
+    switch (sw_type) {
+    case 0:
+    case 6:
+    case 11:
+        return 4000.0f;
+    case 1:
+    case 4:
+    case 7:
+        return 16000.0f;
+    case 3:
+    case 9:
+    case 10:
+        return 2000.0f;
+    case 2:
+    case 5:
+    case 8:
+        return 12000.0f * (float)std::max(1, foreign_cities);
+    default:
+        return -1.0f;
+    }
+}
+
+inline bool can_afford_superweapon(float wealth, float cost)
+{
+    return std::isfinite(wealth) && std::isfinite(cost) && cost >= 0.0f && wealth >= cost;
+}
+
+// BUG-1563: authoritative post-fire wealth for a guest cCivilization (mIsPlayer == 0 on host).
+// Clamps mWealth to max(0, before_wealth - cost) and clears NPC budgets so native SpendMoney / budget refill
+// can neither double-spend nor refill from domestic/expansion budgets.
+inline float finalize_superweapon_wealth(float before_wealth, float cost, float& domestic_budget,
+                                         float& expansion_budget)
+{
+    float base = (std::isfinite(before_wealth) && before_wealth > 0.0f) ? before_wealth : 0.0f;
+    float c = (std::isfinite(cost) && cost > 0.0f) ? cost : 0.0f;
+    domestic_budget = 0.0f;
+    expansion_budget = 0.0f;
+    return std::max(0.0f, base - c);
+}
+
 struct PlayerNation {
     uint8_t player_id = 0;
     uint32_t pol_id = 0;
     Vec3 cap_pos{};
     float wealth = 0.0f;
     bool assigned = false;
+    int8_t cap_specialty = -1; // native cCity specialty (+0x540): 0=Mil, 1=Rel, 2=Eco, -1=unknown
 };
 
 inline bool is_global_superweapon(int sw_type)
@@ -702,7 +771,8 @@ inline std::vector<rivals::Draft::Item> build_civ_draft_items(const std::vector<
 }
 
 // ---------------- Wire payloads inside MSG_RIVALS_FACTION (Stage::Civ) ----------------
-// SK_ASSIGN (1): u8 count, count * {u8 pid, u32 pol_id, f32 cap_x, f32 cap_y, f32 cap_z, f32 wealth}
+// SK_ASSIGN (1): u8 count, count * {u8 pid, u32 pol_id, f32 cap_x, f32 cap_y, f32 cap_z, f32 wealth},
+// followed by optional count * u8 cap_specialty (0=Mil, 1=Rel, 2=Eco, 0xFF=unknown; BUG-1563).
 inline void write_assign(net::Writer& w, const std::array<PlayerNation, kMaxPlayers>& nations)
 {
     uint8_t n = 0;
@@ -720,6 +790,11 @@ inline void write_assign(net::Writer& w, const std::array<PlayerNation, kMaxPlay
         w.f32(nations[i].cap_pos.z);
         w.f32(nations[i].wealth);
     }
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (!nations[i].assigned)
+            continue;
+        w.u8(valid_native_specialty(nations[i].cap_specialty) ? (uint8_t)nations[i].cap_specialty : 0xFFu);
+    }
 }
 
 inline bool read_assign(net::Reader& r, std::array<PlayerNation, kMaxPlayers>& out)
@@ -730,6 +805,7 @@ inline bool read_assign(net::Reader& r, std::array<PlayerNation, kMaxPlayers>& o
     std::array<PlayerNation, kMaxPlayers> tmp{};
     for (int i = 0; i < kMaxPlayers; i++)
         tmp[i].player_id = (uint8_t)i;
+    uint8_t order[kMaxPlayers] = {};
     for (uint8_t i = 0; i < n; i++) {
         uint8_t pid = r.u8();
         uint32_t pol = r.u32();
@@ -737,7 +813,16 @@ inline bool read_assign(net::Reader& r, std::array<PlayerNation, kMaxPlayers>& o
         if (!r.ok() || pid >= kMaxPlayers || !pol || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) ||
             !std::isfinite(wealth))
             return false;
-        tmp[pid] = {pid, pol, {x, y, z}, wealth, true};
+        tmp[pid] = {pid, pol, {x, y, z}, wealth, true, -1};
+        order[i] = pid;
+    }
+    if (r.left() >= n) {
+        for (uint8_t i = 0; i < n; i++) {
+            uint8_t sp = r.u8();
+            if (!r.ok())
+                return false;
+            tmp[order[i]].cap_specialty = sp <= (uint8_t)kCitySpecEconomic ? (int8_t)sp : (int8_t)-1;
+        }
     }
     out = tmp;
     return true;

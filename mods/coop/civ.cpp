@@ -2020,8 +2020,44 @@ void host_superweapon_request(uint8_t from, net::Reader& r)
             }
             return;
         }
-        callguard::Hold sw_bypass(g_sw_bypass);
         g_sw_last_req = type;
+        if (from != 0 && civ_rivals::sw_spend_enabled()) {
+            // BUG-1563: guest cCivilization has mIsPlayer == 0 on host; validate funds before firing and
+            // clamp mWealth (+0x98) to before - cost with zeroed NPC budgets so native SpendMoney / NPC
+            // budget refill cannot bypass funds or double-spend.
+            int foreign = civ_rivals::foreign_city_count(pc);
+            float cost = civ_rivals_logic::superweapon_cost(type, foreign);
+            float before = civ_rivals::civ_money(pc);
+            if (!civ_rivals_logic::can_afford_superweapon(before, cost)) {
+                civ_rivals::record_sw_refused_funds();
+                if (C.sess) {
+                    char msg[128];
+                    snprintf(msg, sizeof msg, "superweapon refused: need %.0f Sporebucks (have %.0f)", cost, before);
+                    net::Writer nw;
+                    nw.str8(msg);
+                    C.sess->send_reliable_to(from, net::MSG_NOTICE, nw);
+                }
+                return;
+            }
+            bool fired = false;
+            {
+                callguard::Hold sw_bypass(g_sw_bypass);
+                civ_rivals::SwToolsBorrow tools_borrow(pc);
+                fired = o_FireSW(pc, type, pos);
+            }
+            if (!fired) {
+                if (C.sess) {
+                    net::Writer nw;
+                    nw.str8("superweapon: not fired (locked or cooling down)");
+                    C.sess->send_reliable_to(from, net::MSG_NOTICE, nw);
+                }
+                return;
+            }
+            g_sw_fired = type;
+            civ_rivals::host_finalize_sw_spend(from, pc, before, cost);
+            return;
+        }
+        callguard::Hold sw_bypass(g_sw_bypass);
         g_sw_fired = type;
         o_FireSW(pc, type, pos);
         civ_rivals::host_mark_assign_dirty();

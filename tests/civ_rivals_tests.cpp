@@ -361,6 +361,89 @@ static void test_civ_npc_ui_list()
         assert(!e.can_turn);
 }
 
+static void test_specialty_conversion_and_superweapon_spend()
+{
+    // BUG-1563 Part A: native specialty validation, conversion decision, and vehicle editor mapping
+    assert(valid_native_specialty(kCitySpecMilitary));
+    assert(valid_native_specialty(kCitySpecReligious));
+    assert(valid_native_specialty(kCitySpecEconomic));
+    assert(!valid_native_specialty(-1));
+    assert(!valid_native_specialty(3));
+
+    // Mismatch requires conversion; match or invalid desired specialty does not
+    assert(needs_specialty_conversion(kCitySpecMilitary, kCitySpecEconomic));
+    assert(needs_specialty_conversion(kCitySpecEconomic, kCitySpecReligious));
+    assert(needs_specialty_conversion(-1, kCitySpecMilitary));
+    assert(!needs_specialty_conversion(kCitySpecEconomic, kCitySpecEconomic));
+    assert(!needs_specialty_conversion(kCitySpecMilitary, -1));
+    assert(!needs_specialty_conversion(kCitySpecMilitary, 99));
+
+    // Land vehicle editor asset IDs match native specialties
+    assert(land_vehicle_editor_for_specialty(kCitySpecMilitary) == 0x7D433FADu);
+    assert(land_vehicle_editor_for_specialty(kCitySpecReligious) == 0x9AD7D4AAu);
+    assert(land_vehicle_editor_for_specialty(kCitySpecEconomic) == 0xF670AA43u);
+    assert(land_vehicle_editor_for_specialty(-1) == 0u);
+
+    // SK_ASSIGN roundtrips cap_specialty AND remains backward-compatible with legacy payloads
+    std::array<PlayerNation, kMaxPlayers> a{}, b{};
+    a[0] = {0, 0x1001, {10, 20, 30}, 4500.0f, true, kCitySpecMilitary};
+    a[1] = {1, 0x2002, {-50, 60, 70}, 3200.0f, true, kCitySpecEconomic};
+    net::Writer w_new;
+    write_assign(w_new, a);
+    net::Reader r_new(w_new.data.data(), w_new.data.size());
+    assert(read_assign(r_new, b));
+    assert(b[0].cap_specialty == kCitySpecMilitary);
+    assert(b[1].cap_specialty == kCitySpecEconomic);
+    assert(!b[2].assigned && b[2].cap_specialty == -1);
+
+    // Legacy SK_ASSIGN payload without trailing specialty bytes decodes with cap_specialty == -1
+    net::Writer w_old;
+    w_old.u8(1);
+    w_old.u8(1);
+    w_old.u32(0x2002);
+    w_old.f32(1.0f);
+    w_old.f32(2.0f);
+    w_old.f32(3.0f);
+    w_old.f32(3000.0f);
+    std::array<PlayerNation, kMaxPlayers> c{};
+    net::Reader r_old(w_old.data.data(), w_old.data.size());
+    assert(read_assign(r_old, c));
+    assert(c[1].assigned && c[1].pol_id == 0x2002 && c[1].cap_specialty == -1);
+
+    // BUG-1563 Part B: superweapon cost table, affordability, and double-spend / budget-refill guard
+    assert(std::fabs(superweapon_cost(0, 3) - 4000.0f) < 1e-4f);
+    assert(std::fabs(superweapon_cost(6, 3) - 4000.0f) < 1e-4f);
+    assert(std::fabs(superweapon_cost(11, 3) - 4000.0f) < 1e-4f);
+    assert(std::fabs(superweapon_cost(1, 3) - 16000.0f) < 1e-4f);
+    assert(std::fabs(superweapon_cost(4, 3) - 16000.0f) < 1e-4f);
+    assert(std::fabs(superweapon_cost(7, 3) - 16000.0f) < 1e-4f);
+    assert(std::fabs(superweapon_cost(3, 3) - 2000.0f) < 1e-4f);
+    assert(std::fabs(superweapon_cost(9, 3) - 2000.0f) < 1e-4f);
+    assert(std::fabs(superweapon_cost(10, 3) - 2000.0f) < 1e-4f);
+    assert(std::fabs(superweapon_cost(2, 0) - 12000.0f) < 1e-4f);
+    assert(std::fabs(superweapon_cost(5, 4) - 48000.0f) < 1e-4f);
+    assert(std::fabs(superweapon_cost(8, 2) - 24000.0f) < 1e-4f);
+    assert(superweapon_cost(-1, 3) < 0.0f);
+    assert(superweapon_cost(12, 3) < 0.0f);
+
+    // Affordability rejection
+    assert(!can_afford_superweapon(1999.0f, 2000.0f));
+    assert(can_afford_superweapon(2000.0f, 2000.0f));
+    assert(can_afford_superweapon(5000.0f, 2000.0f));
+    assert(!can_afford_superweapon(5000.0f, -1.0f));
+
+    // Finalizing wealth clamps to before - cost (prevents both double-spend and NPC budget refill)
+    float dom = 750.0f, exp = 500.0f;
+    float after = finalize_superweapon_wealth(5000.0f, 2000.0f, dom, exp);
+    assert(std::fabs(after - 3000.0f) < 1e-4f && dom == 0.0f && exp == 0.0f);
+
+    // Never goes negative
+    dom = 300.0f;
+    exp = 200.0f;
+    float clamped = finalize_superweapon_wealth(1500.0f, 2000.0f, dom, exp);
+    assert(clamped == 0.0f && dom == 0.0f && exp == 0.0f);
+}
+
 int main()
 {
     test_base_distance_selection();
@@ -371,6 +454,7 @@ int main()
     test_bidirectional_native_npc_diplomacy_sync();
     test_guest_direct_spend_and_handoff_and_payout();
     test_civ_npc_ui_list();
+    test_specialty_conversion_and_superweapon_spend();
     printf("civ_rivals_tests: all passed\n");
     return 0;
 }
