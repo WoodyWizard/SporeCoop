@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: step 4 part 3 (docs/12 #server-party-stage-end)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 4b8076f7
 tests: tools/tests/galaxy_server_check.py (the server side, BUG-9278); in game: TITAN QA runs
@@ -43,3 +43,4 @@ TITAN QA 9 hosting the test galaxy's Cellfour (Cell) world, 2026-11-20:
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: built; Cell -> Creature seen in game, Tribe -> Civ not run.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

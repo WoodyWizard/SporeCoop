@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: 
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 94508298
 tests: tools/qa_win (manual, 2026-11-23): TITAN, QA 8 and QA 9 on the test galaxy, a right-click on a row of the Social Menu; coop.fix ui.menu_beside_social off/on
@@ -43,3 +43,4 @@ no-fail-run: Windows QA by hand; the runs above are the switch off and on.
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: fixed on feat/lineages-alpha.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

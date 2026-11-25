@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: owner decision 6V A
 role: host
 versions: 0.7.14.1-lineages64-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: a1d5059e, c76950ca
 tests: manual on TITAN QA 8 + 9 (coop.social pevent, coop.social species)
@@ -56,3 +56,4 @@ no-fail-run: no lab test (galaxy planets have none yet). Manual, TITAN QA 8 host
 
 ## History
 - 2026-11-19: opened and fixed.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

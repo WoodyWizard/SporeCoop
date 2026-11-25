@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: qa
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 7f3d2bd0
 tests: tools/tests/galaxy_server_check.py (the owner in the list, GWS3); tools/qa_win (manual, the MSI, a fresh profile)
@@ -50,3 +50,4 @@ no-fail-run: the in-game FAIL is the switch off on the same build (the old path 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: fixed on feat/lineages-alpha (7f3d2bd0), server check FAIL/PASS, seen in game on the MSI.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

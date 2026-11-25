@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: TITAN QA run 2026-11-22 (crash-20261122-194216-i8)
 role: host
 versions: 0.7.14.1-lineages69-dev (alpha)
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 9c698468
 tests: tools/qa_win (manual, 2026-11-22): TITAN, QA 8 hosting Abber (Creature) in its death caption, QA 9 entering Abber (Civ); coop.fix galaxy.editor_snapshot_guard off/on
@@ -60,3 +60,4 @@ no-fail-run: Windows QA by hand; the runs above are the switch on and off.
 ## History
 - 2026-11-22: opened.
 - 2026-11-22: root cause found (the editor's snapshot message), fixed on feat/lineages-alpha; a busy-state gate tried first and dropped.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

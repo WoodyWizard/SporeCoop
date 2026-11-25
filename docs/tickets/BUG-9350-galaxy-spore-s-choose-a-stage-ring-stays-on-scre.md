@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: QA (MSI)
 role: guest
 versions: 0.7.14.1-lineages69-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: ee08d149
 tests: tools/qa_win (manual, 2026-11-23): the MSI's game, TITAN's galaxy server; coop.gmenu play Abber, then coop.galaxy enter Abber|Civ; coop.fix galaxy.stage_screen_close off/on
@@ -60,3 +60,4 @@ no-fail-run: Windows QA by hand (no lab lane on Windows); the runs above are the
 ## History
 - 2026-11-23: opened (seen on the MSI in a cross-PC run).
 - 2026-11-23: fixed on feat/lineages-alpha (ee08d149): closed before a load from the menu; seen off and on on the MSI.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

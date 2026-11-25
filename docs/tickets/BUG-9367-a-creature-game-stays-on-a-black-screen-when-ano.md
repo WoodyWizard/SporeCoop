@@ -8,7 +8,7 @@ reported: 2026-11-24
 source: deep playtest 2026-11-24
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: e91040a7
 tests: tools/qa_win (manual, the MSI, TITAN's galaxy server): a Creature era entered beside the planet's Civ era; `coop.visit status` bake queue
@@ -52,3 +52,4 @@ no-fail-run: Windows QA by hand (no lab on this PC); the FAIL is the run of the 
 ## History
 - 2026-11-24: opened.
 - 2026-11-24: fixed on feat/lineages-alpha (the deep playtest).
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

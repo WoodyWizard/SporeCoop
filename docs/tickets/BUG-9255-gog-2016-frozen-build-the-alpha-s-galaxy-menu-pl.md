@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: verification
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 88e1dc00
 tests: tools/re_lint.py (make test)
@@ -37,3 +37,4 @@ no-fail-run: tooling only; re_lint went from 9 problems to 6 (the six are the li
 
 ## History
 - 2026-11-18: opened.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: qa
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: e655cfb9
 tests: tools/qa_win (manual, the MSI: host Samuth, coop.team die, coop.galaxy leave on the death screen, enter again)
@@ -55,3 +55,4 @@ no-fail-run: the FAIL is the switch off on the same build.
 ## History
 - 2026-11-23: opened.
 - 2026-11-24: fixed on feat/lineages-alpha (the galaxy save waits for a living creature), FAIL and PASS on the MSI.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

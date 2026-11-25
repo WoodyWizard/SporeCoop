@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: TITAN QA run 2026-11-20 (crash-20261120-195419-i7)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 4dd70c23
 tests: in game through tools/qa_win/qa.py (QA 7 entering Abber (Tribe) while QA 8 hosts Abber (Civ))
@@ -45,3 +45,4 @@ TITAN QA 7 (DuoQAClythHost, Clyth.spo) entering Abber (Tribe) with QA 8 hosting 
 - 2026-11-20: found and fixed (crash only when a Tribe game shows a Civ era's objects).
 - 2026-11-22: CORRECTION: the same crash seen in the Creature stage (BUG-9341): the fix's Creature exception is not safe
   in every case.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

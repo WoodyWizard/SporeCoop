@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: qa
 role: host
 versions: 0.7.14.1-lineages64-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 557f6e29
 tests: tools/qa_win/qa.py (manual: F8 open, the close button, galaxy menu and a joined world; no lab test yet)
@@ -39,3 +39,4 @@ screenshots in the 2026-11-18 session.
 
 ## History
 - 2026-11-18: opened and fixed on feat/lineages-alpha.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

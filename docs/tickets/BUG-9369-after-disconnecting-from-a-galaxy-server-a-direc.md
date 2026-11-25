@@ -8,7 +8,7 @@ reported: 2026-11-24
 source: deep playtest 2026-11-24
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 22b04cce
 tests: tools/qa_win (manual, TITAN + the MSI): a galaxy planet, coop.galaxy disconnect, then coop.host / coop.join
@@ -43,3 +43,4 @@ no-fail-run: Windows QA by hand (no lab on this PC); the FAIL is the run of the 
 ## History
 - 2026-11-24: opened.
 - 2026-11-24: fixed on feat/lineages-alpha (the deep playtest).
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

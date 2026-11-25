@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: decision 7H (docs/ROADMAP.md), the menu plan
 role: any
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 4dd70c23
 tests: in game through tools/qa_win/qa.py (QA 7 on the galaxy menu: coop.gmenu, screenshots)
@@ -40,3 +40,4 @@ no-fail-run: a menu layout (before: one star per era, seen in the earlier galaxy
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: built; seen in game.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

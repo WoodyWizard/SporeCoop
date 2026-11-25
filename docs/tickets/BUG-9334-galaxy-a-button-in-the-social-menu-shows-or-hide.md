@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: roadmap-alpha-now (BUG-9294 left a button for /eras)
 role: 
 versions: 0.7.14.1-lineages69-dev (alpha)
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 82aac47b
 tests: tools/qa_win (manual, 2026-11-22): TITAN's test galaxy, QA 9 on Samuth (Creature), coop.party social / lclick, coop.fix galaxy.eras_button off/on
@@ -46,3 +46,4 @@ no-fail-run: Windows QA by hand (no lab on this PC); the runs above are the swit
 ## History
 - 2026-11-22: opened.
 - 2026-11-22: built on feat/lineages-alpha and seen in game (both directions, switch off: no row).
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

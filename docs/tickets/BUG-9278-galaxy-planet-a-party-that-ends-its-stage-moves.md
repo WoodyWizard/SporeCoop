@@ -8,9 +8,9 @@ reported: 2026-11-19
 source: owner 2026-11-19 (step 4)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
-commits:
+commits: 4b8076f7 b23e9a9b bcebb401 ea7e2a87 50bc3c2f ecc9de53 3a747dda 9705efe3
 tests: tools/tests/galaxy_server_check.py
 signature:
 docs: docs/12-server-and-players.md#server-party-stage-end
@@ -38,3 +38,4 @@ party of 2+, a guest's party crossing whole, arriving where the next era has a h
 
 ## History
 - 2026-11-19: opened; server and game sides built on feat/lineages-alpha; the whole crossing seen in game.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

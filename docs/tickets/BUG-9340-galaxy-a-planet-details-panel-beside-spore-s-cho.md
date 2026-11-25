@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: roadmap 8M A (owner 2026-11-22)
 role: 
 versions: 0.7.14.1-lineages69-dev (alpha)
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 4fed29a5
 tests: tools/qa_win (manual, 2026-11-22): TITAN's test galaxy, QA 9 on Abber's Choose A Stage screen by real clicks, QA 8 hosting Abber (Creature); coop.fix galaxy.planet_panel off/on
@@ -57,3 +57,4 @@ no-fail-run: a feature, Windows QA by hand; the runs above are the switch on and
 
 ## History
 - 2026-11-22: opened.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: decision 7I A (docs/ROADMAP.md)
 role: any
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 4dd70c23
 tests: tools/tests/galaxy_server_check.py (BUG-9294 lines); in game: TITAN QA runs
@@ -40,3 +40,4 @@ none. Not built: a button in the co-op window (the chat command for now).
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: built; server check FAIL/PASS, seen in game.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

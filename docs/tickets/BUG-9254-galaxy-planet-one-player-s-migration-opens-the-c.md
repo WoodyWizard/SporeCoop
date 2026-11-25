@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: qa
 role: host
 versions: 0.7.14.1-lineages64-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 92cc35fe
 tests: coop.migratetest (manual: TITAN QA 8 + 9 and the MSI on one galaxy planet; no lab test yet)
@@ -46,3 +46,4 @@ QA 8 guests, QA 8 `coop.migratetest`:
 
 ## History
 - 2026-11-18: opened and fixed on feat/lineages-alpha.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

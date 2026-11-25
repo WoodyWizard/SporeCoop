@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: verification
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 88e1dc00
 tests: tools/tests/galaxy_server_check.py, tests/party_tests.cpp, tests/validate_tests.cpp, tests/net_tests.cpp
@@ -42,3 +42,4 @@ pass with them; the review file lists what was not run.
 
 ## History
 - 2026-11-18: opened.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

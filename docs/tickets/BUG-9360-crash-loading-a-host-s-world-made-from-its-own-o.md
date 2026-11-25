@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: qa
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: ffd01832
 tests: tools/qa_win (manual, the MSI: coop.attachtest with game.attach_no_model off / on; a Vandh private planet joined)
@@ -58,3 +58,4 @@ no-fail-run: the load crash did not come again; the FAIL run is the fault site (
 ## History
 - 2026-11-23: opened.
 - 2026-11-24: guarded on feat/lineages-alpha (a held object's attach without a model), FAIL and PASS at the fault site on the MSI.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

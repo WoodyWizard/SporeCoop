@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: owner
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: f81fc9e6
 tests: tools/qa_win (manual, the MSI: coop.prules roar 32 on the guest, coop.prules slots 2 1 25 on the host)
@@ -44,3 +44,4 @@ no-fail-run: the FAIL is the switch off on the same build.
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: fixed on feat/lineages-alpha, seen off and on on the MSI.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

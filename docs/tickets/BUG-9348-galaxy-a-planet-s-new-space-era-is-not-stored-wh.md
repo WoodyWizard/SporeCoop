@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: 
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 4442e63b
 tests: tools/qa_win (manual, 2026-11-23): TITAN, BUG-9346's start run again on a fresh copy of the test galaxy, then `coop.space takeoff` and `coop.galaxy save`
@@ -47,3 +47,4 @@ no-fail-run: the storing needs no fix (Spore's own rule); the hint is a message.
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: the Space era is stored once the ship is in the solar system (seen); a hint for the player added.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

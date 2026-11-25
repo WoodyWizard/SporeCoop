@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: qa-win connect screenshots (2026-11-22)
 role: 
 versions: 0.7.14.1-lineages69-dev (alpha)
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 28034591
 tests: tools/qa_win (manual, 2026-11-22): TITAN's rebuilt test galaxy (3 planets), QA 9 connecting; coop.fix galaxy.short_planet_list off/on
@@ -45,3 +45,4 @@ no-fail-run: Windows QA by hand; the runs above are the switch on and off.
 ## History
 - 2026-11-22: opened.
 - 2026-11-22: fixed on feat/lineages-alpha (a short line on the screen, the whole list in the log).
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

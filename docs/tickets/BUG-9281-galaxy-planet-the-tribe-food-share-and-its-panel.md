@@ -8,9 +8,9 @@ reported: 2026-11-19
 source: TITAN test 2026-11-19 (BUG-9278)
 role: all
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
-commits:
+commits: 4f2251de
 tests: tools/qa_win (live TITAN QA 8+9 2026-11-19, two parties in Samuth (Tribe))
 signature:
 docs: docs/12-server-and-players.md#server-party-stage-end
@@ -39,3 +39,4 @@ game (images/stage4_bug9281_pass_guest.png). Not seen: a delivery shared within 
 
 ## History
 - 2026-11-19: opened and fixed on feat/lineages-alpha.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

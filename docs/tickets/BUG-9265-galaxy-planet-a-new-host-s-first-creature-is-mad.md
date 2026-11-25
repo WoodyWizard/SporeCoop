@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: owner
 role: host
 versions: 0.7.14.1-lineages64-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 5cf76575
 tests: tools/qa_win/qa.py (manual: TITAN QA 8 hosting the galaxy planet Samuth without a creature record; no lab test yet)
@@ -50,3 +50,4 @@ Samuth's world), hosting Samuth from the galaxy server's stored world, 2026-11-1
 
 ## History
 - 2026-11-19: opened and fixed on feat/lineages-alpha.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

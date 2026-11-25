@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: owner 2026-11-19 (step 4)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 6a73ae46
 tests: tools/qa_win (live TITAN QA 8+9 2026-11-19, coop.dna gain on the guest)
@@ -46,3 +46,4 @@ brain levels by its own bar.
 
 ## History
 - 2026-11-19: opened and built on feat/lineages-alpha.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

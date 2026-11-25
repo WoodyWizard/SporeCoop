@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: QA run 2026-11-19 (BUG-9266 tests)
 role: host
 versions: 0.7.14.1-lineages64-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: d9c4da12
 tests: manual on TITAN QA 8 + 9 (the host reloads Samuth with coop.load: the same world::load_slot path)
@@ -45,3 +45,4 @@ no-fail-run: no lab test (galaxy planets have none yet). Manual, TITAN: QA 8 hos
 
 ## History
 - 2026-11-19: opened (found while testing BUG-9266); fixed.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

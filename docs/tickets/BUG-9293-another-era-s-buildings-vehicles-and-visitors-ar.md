@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: decision 7H A (docs/ROADMAP.md)
 role: any
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 4dd70c23
 tests: in game: TITAN QA runs (coop.visit walk / onstretch / status: avatar in each prop's frame)
@@ -53,3 +53,4 @@ TITAN QA 8 hosting Abber (Civ), QA 9 on Abber (Creature), QA 7 on Abber (Tribe),
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: built; seen in game (buildings, the stretch).
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

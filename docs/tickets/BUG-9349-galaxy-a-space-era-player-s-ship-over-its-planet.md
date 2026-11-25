@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: 
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: a8f9306c, 9188054a
 tests: tools/qa_win (manual, 2026-11-23): TITAN, QA 9 in Abber (Space) at the planet, QA 8 entering Abber (Civ); coop.fix galaxy.space_ships off/on
@@ -59,3 +59,4 @@ no-fail-run: a feature, Windows QA by hand; the runs above are the switch off an
   shown name without -NoShare- seen (images/bug9349_msi_tag.png); gone after the takeoff.
 - 2026-11-23: a Tribe game on Clyth showed Clyth's Space ship (live 1, its design 7D041B1C, the tag at its place:
   images/bug9349_tribe_tag.png; the ship itself behind a volcano from that camera).
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

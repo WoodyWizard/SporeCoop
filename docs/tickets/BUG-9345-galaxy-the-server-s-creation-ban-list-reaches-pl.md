@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: 
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 5116ea44
 tests: tools/qa_win (manual, 2026-11-23): TITAN, QA 9 on a copy of a test profile with 65 received creations, the rebuilt test galaxy; coop.fix galaxy.server_bans off/on; the server's player line with and without
@@ -58,3 +58,4 @@ no-fail-run: a feature, Windows QA by hand; the runs above are the switch off an
 - 2026-11-23: opened.
 - 2026-11-23: built on feat/lineages-alpha and seen in game (switch off: nothing moved; on: moved at once and at the next start).
 - 2026-11-23: cross-PC run (the MSI): switch off nothing moved; on, the list arrived and the creation moved.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

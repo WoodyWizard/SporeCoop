@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: alpha review 2026-11-18 W4
 role: guest
 versions: 0.7.14.1-lineages64-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 8cb56580
 tests: manual on TITAN QA 8 + 9 (coop.tribe villages_apart on: the table always on its own)
@@ -41,3 +41,4 @@ buildings' health kept coming; no error in either log.
 
 ## History
 - 2026-11-19: opened and fixed.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

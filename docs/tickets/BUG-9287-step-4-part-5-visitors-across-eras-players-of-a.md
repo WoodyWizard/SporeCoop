@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: step 4 part 5, decisions 5S A / 5T B (docs/12 #server-era-visitors)
 role: any
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 0d9b1de5
 tests: tools/tests/galaxy_server_check.py (server side); in game: TITAN QA runs (docs, Verification)
@@ -41,3 +41,4 @@ TITAN QA runs (no lab on Windows), docs/12-server-and-players.md#server-era-visi
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: built and seen in game (TITAN, two QA games).
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: found while testing BUG-9337 (2026-11-22)
 role: 
 versions: 0.7.14.1-lineages69-dev (alpha)
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 28034591
 tests: tools/qa_win (manual, 2026-11-22): TITAN, QA 9, real star + Play on Samuth with galaxy.native_stage_choice off; coop.fix galaxy.choice_box_no_card off/on
@@ -46,3 +46,4 @@ no-fail-run: Windows QA by hand; the runs above are the switch on and off.
 ## History
 - 2026-11-22: opened (found while testing BUG-9337).
 - 2026-11-22: fixed on feat/lineages-alpha (Play goes back to the planets and the box opens there).
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

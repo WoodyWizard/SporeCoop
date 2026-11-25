@@ -2,6 +2,40 @@
 
 ## [Unreleased]
 
+## [0.7.14.1-lineages70-dev] - 2026-11-24
+
+The Lineages alpha (online worlds on a galaxy server) becomes the live build (owner 2026-11-24). Direct co-op, hosting
+and joining as before, plays as it did, the host's pause for everybody included (BUG-9376); everything under
+"Online worlds" needs a galaxy server somebody runs (docs/12-server-and-players.md) and is an alpha. The galaxy server
+program is not part of this release.
+
+- Online worlds (alpha): a galaxy server keeps shared planets that stay when their players leave. Connected, the
+  galaxy menu shows the server's planets and Play joins one; a new game started while connected becomes a new planet
+  (BUG-9364). Up to 16 players on a planet; when a planet's host leaves, the next player takes it over with no reload.
+  The traffic with the server is encrypted, and a server can send a creation ban list (BUG-9345).
+- Online worlds (alpha): parties of four with a Social Menu (F8): invite, kick, a new leader, whispers, friends, a
+  chat for everyone online (/p for the party). Each party has its own difficulty, its own relations with the planet's
+  species and its own progress bar (BUG-9266, BUG-9267, BUG-9277). A party that ends its stage moves on together and
+  the others stay where they are, from Cell to Space (BUG-9278, BUG-9292, BUG-9368). A party can ask for a private
+  planet.
+- Online worlds (alpha): a planet has one world per stage. Players of its other stages show as visitors: their
+  creatures, a Civ stage's buildings and vehicles, a Space ship over the planet (BUG-9287, BUG-9290, BUG-9349); a
+  Social Menu setting hides them (BUG-9334). Spore's own Choose A Stage screen picks a planet's stage or starts its
+  next one (BUG-9337, BUG-9336, BUG-9343, BUG-9346). Extinct species come back and nests left behind get new species
+  after a while (BUG-9285, BUG-9286).
+- All stages: the Party cards, the partners' tags and the knock-out box are no longer drawn over Spore's History
+  screen (BUG-9365).
+- Creature: a partner's Siren Song charms the host's animals (BUG-9361); each party has its own Summon Flock on an
+  online planet (BUG-9362).
+- Tribe: a partner's two power buttons are its own powers again; they named powers it had not earned and did nothing
+  (BUG-9366).
+- A crash while a partner loaded a world in which a creature carried something (BUG-9360).
+- Online worlds: a planet is never stored while its host's creature is dead, so nobody arrives on the death screen
+  (BUG-9359); no black screen entering a Creature stage beside a Civ stage (BUG-9367); after leaving a galaxy server a
+  direct game can be hosted or joined without a restart (BUG-9369).
+- Known: a partner's "Eat" hint can name the host's diet (BUG-9370); in Civ a partner's camera starts on the host's
+  city (BUG-9371); more in docs/known-issues.md.
+
 ## [0.7.14.1-lineages69-dev] - 2026-11-22
 
 - All stages: the frame rate no longer falls to 1-3 fps while partners' rings are shown (Tribe with a partner's

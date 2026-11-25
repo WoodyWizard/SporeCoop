@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: step 4 part 5 (Civ era visitors)
 role: any
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 39901e3b
 tests: in game: TITAN QA runs (coop.visit at / move / status screen positions); tools/tests/galaxy_server_check.py (the stream)
@@ -49,3 +49,4 @@ TITAN QA runs, 2026-11-20:
 - 2026-11-20: opened.
 - 2026-11-20: opened with the runs that rule things out.
 - 2026-11-20: found (the tests did not look at the props; an ornament draws only near where it was made) and fixed.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

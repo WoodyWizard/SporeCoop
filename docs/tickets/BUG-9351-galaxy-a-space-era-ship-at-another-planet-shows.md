@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: QA (MSI)
 role: host
 versions: 0.7.14.1-lineages69-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: efc895d5
 tests: tools/qa_win (manual, 2026-11-23): two MSI games on TITAN's galaxy server; msi2 Abber (Space), msi Abber (Civ); coop.fix galaxy.space_ships_home off/on
@@ -46,3 +46,4 @@ no-fail-run: Windows QA by hand; the runs above are the switch off and on.
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: fixed on feat/lineages-alpha (efc895d5), seen off and on on the MSI.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

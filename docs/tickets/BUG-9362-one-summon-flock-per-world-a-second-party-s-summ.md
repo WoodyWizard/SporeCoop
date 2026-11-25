@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: owner
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 97fdf70d
 tests: tools/qa_win (manual, the MSI: coop.prules roar 33 on the host, then on the guest; coop.gpack, coop.drama summon)
@@ -51,3 +51,4 @@ no-fail-run: the FAIL is the switch off on the same build.
 ## History
 - 2026-11-23: opened.
 - 2026-11-24: fixed on feat/lineages-alpha (97fdf70d), FAIL and PASS seen on the MSI.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

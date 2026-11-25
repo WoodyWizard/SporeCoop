@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: roadmap-alpha-now (5R A: start a stage the planet has no era of)
 role: 
 versions: 0.7.14.1-lineages69-dev (alpha)
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 9f5b7abc
 tests: tools/tests/galaxy_server_check.py (7 checks, "a player starts a stage its planet has none of"); tools/qa_win (manual, 2026-11-22): TITAN's test galaxy, QA 9 new to Samuth (Creature only), a real click on "Tribe (new)", coop.fix galaxy.stage_start off/on
@@ -59,3 +59,4 @@ no-fail-run: Windows QA by hand (no lab on this PC); the runs above are the swit
 - 2026-11-22: opened.
 - 2026-11-22: built on feat/lineages-alpha (protocol 9), seen in game through to the stored Tribe era; switch off: no
   choice.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

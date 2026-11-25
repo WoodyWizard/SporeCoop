@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: owner 2026-11-19 (7C)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 6a73ae46
 tests: tools/tests/galaxy_server_check.py
@@ -46,3 +46,4 @@ QA 9 joined it; two uploads left Samuth_Creature-*.world.1 and .2 beside the wor
 
 ## History
 - 2026-11-19: opened and built on feat/lineages-alpha.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

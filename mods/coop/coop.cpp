@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.7.14.1-lineages69-dev"
+#define COOP_VERSION "0.7.14.1-lineages70-dev"
 #endif
 
 #include <set>

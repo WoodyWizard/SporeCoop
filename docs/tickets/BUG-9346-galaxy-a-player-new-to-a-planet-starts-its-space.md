@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: 
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 9780bc18
 tests: tools/qa_win (manual, 2026-11-23): TITAN, QA 9 (every stage reached, new to Abber) on a copy of the test galaxy; coop.fix galaxy.space_start off/on
@@ -53,3 +53,4 @@ no-fail-run: a feature, Windows QA by hand; the runs above are the switch on and
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: built on feat/lineages-alpha and seen in game through to Space; switch off: no Space offer.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

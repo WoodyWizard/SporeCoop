@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: alpha review 2026-11-18 S2, S3 (decision 6S A, owner's continue rule)
 role: server
 versions: 0.7.14.1-lineages64-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: c3187171
 tests: tools/tests/galaxy_server_check.py (18 checks; 3 new); manual on TITAN QA 8 + 9
@@ -43,3 +43,4 @@ other 15 unchanged. In game (TITAN): QA 8 and QA 9 connected through the challen
 
 ## History
 - 2026-11-19: opened and fixed.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

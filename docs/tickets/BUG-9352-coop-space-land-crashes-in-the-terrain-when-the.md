@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: QA (MSI)
 role: host
 versions: 0.7.14.1-lineages69-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: efc895d5, b21f63bb
 tests: tools/qa_win (manual, 2026-11-23): the MSI's Space game; coop.space land at a gas giant
@@ -44,3 +44,4 @@ no-fail-run: test tooling; the crash is the failing run.
 - 2026-11-23: opened.
 - 2026-11-23: fixed on feat/lineages-alpha (efc895d5, b21f63bb).
 - 2026-11-23: the fixed command refused at the gas giant and still landed on Abber (the MSI).
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

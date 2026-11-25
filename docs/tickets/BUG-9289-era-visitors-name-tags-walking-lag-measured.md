@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: step 4 part 5 polish
 role: any
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: e2e7c598
 tests: tools/tests/galaxy_server_check.py (the stream); in game: TITAN QA runs (the tag)
@@ -36,3 +36,4 @@ mean gap was 5.2 m with it, 5.7 m without, over 4 walks each (no real change).
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: built and seen in game / in the server checks (TITAN).
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

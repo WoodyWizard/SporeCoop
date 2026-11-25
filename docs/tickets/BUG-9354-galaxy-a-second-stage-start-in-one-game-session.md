@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: QA (MSI)
 role: host
 versions: 0.7.14.1-lineages69-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 3535a616
 tests: tools/qa_win (manual, 2026-11-23): the MSI's game with every stage reached, TITAN's galaxy server; two stage starts in one session
@@ -45,3 +45,4 @@ no-fail-run: Windows QA by hand; the FAIL run is the build without the fix (the 
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: fixed on feat/lineages-alpha (3535a616), seen failing and passing on the MSI.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

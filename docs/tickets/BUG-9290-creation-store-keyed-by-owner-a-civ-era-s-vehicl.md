@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: step 4 part 5 (Civ era visitors)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: e2e7c598
 tests: tools/tests/galaxy_server_check.py; in game: TITAN QA runs
@@ -44,3 +44,4 @@ vt 0x4C(key, &level)).
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: built and seen in game / in the server checks (TITAN).
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

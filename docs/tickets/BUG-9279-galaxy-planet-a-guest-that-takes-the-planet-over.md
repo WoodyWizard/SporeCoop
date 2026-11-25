@@ -8,9 +8,9 @@ reported: 2026-11-19
 source: TITAN test 2026-11-19 (BUG-9278)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
-commits:
+commits: 50bc3c2f
 tests: tools/qa_win (live TITAN QA 8+9 2026-11-19, the host moves on, the guest takes over in place)
 signature:
 docs: docs/12-server-and-players.md#server-party-stage-end
@@ -41,3 +41,4 @@ its own party's (BUG-9279)".
 
 ## History
 - 2026-11-19: found in BUG-9278's test and fixed on feat/lineages-alpha.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

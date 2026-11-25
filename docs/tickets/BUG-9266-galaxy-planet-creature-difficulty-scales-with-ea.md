@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: owner decision 6K A / 6R A
 role: host
 versions: 0.7.14.1-lineages64-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: ac304d73, a1d5059e
 tests: tests/party_tests.cpp (test_party_count); manual on TITAN QA 8 + 9 (coop.npc hit / hosthit, coop.party status)
@@ -76,3 +76,4 @@ joined, NPC 3 (12 HP), `coop.npc hit 3 1` on the guest, the host's log "applied"
 
 ## History
 - 2026-11-19: opened.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

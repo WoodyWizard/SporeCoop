@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: TITAN QA run 2026-11-22 (Social Menu shots)
 role: 
 versions: 0.7.14.1-lineages69-dev (alpha)
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 28034591
 tests: tools/qa_win (manual, 2026-11-22): TITAN, QA 9 on Samuth (Creature), QA 8's Social Menu (F8); coop.fix ui.social_era_names off/on
@@ -40,3 +40,4 @@ no-fail-run: Windows QA by hand; the runs above are the switch on and off.
 ## History
 - 2026-11-22: opened.
 - 2026-11-22: fixed on feat/lineages-alpha.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

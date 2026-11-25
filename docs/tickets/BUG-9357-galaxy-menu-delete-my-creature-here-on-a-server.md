@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: owner
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 7f3d2bd0
 tests: tools/qa_win (manual, the MSI, real clicks)
@@ -45,3 +45,4 @@ empty). A planet with no creature: "You have no creature of your own on Testplan
 ## History
 - 2026-11-23: opened.
 - 2026-11-23: built on feat/lineages-alpha (7f3d2bd0), seen in game on the MSI.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

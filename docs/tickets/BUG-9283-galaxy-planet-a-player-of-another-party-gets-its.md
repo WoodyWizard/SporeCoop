@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: owner 2026-11-19 (7E A)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: c8dcd277
 tests: tools/qa_win (live TITAN QA 8 + QA 7 with a fresh profile, 2026-11-19)
@@ -41,3 +41,4 @@ player whose old co-op seat already has a nest by the host's keeps it (QA 9's ol
 
 ## History
 - 2026-11-19: built on feat/lineages-alpha.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: QA run 2026-11-19 (live checks)
 role: host, guest
 versions: 0.7.14.1-lineages64-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: 33161d36
 tests: manual on TITAN QA 8 + 9 (tools/qa_win/galaxy.ps1 stop / start with both on Samuth)
@@ -48,3 +48,4 @@ galaxy server stopped for 25 s and started again:
 
 ## History
 - 2026-11-19: opened and fixed.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

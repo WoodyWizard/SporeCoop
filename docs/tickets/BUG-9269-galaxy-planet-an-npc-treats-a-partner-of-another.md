@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: owner decision 6W (continue: A, B, C)
 role: host
 versions: 0.7.14.1-lineages64-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: c76950ca
 tests: manual on TITAN QA 8 + 9 (coop.social pevent <npc> 7 <player>, coop.social goto, the host log's hits)
@@ -50,3 +50,4 @@ the host's log ("damage: 1 hit by npc"):
 
 ## History
 - 2026-11-19: opened and fixed.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

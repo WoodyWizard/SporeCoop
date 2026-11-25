@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: step 4 part 4 (docs/12 #server-nest-refresh, 6Z)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch:
 commits: 3ea9d832
 tests: tools/tests/galaxy_server_check.py (server side); in game: TITAN QA runs (docs, Verification)
@@ -36,3 +36,4 @@ TITAN QA runs (no lab on Windows), docs/12-server-and-players.md#server-nest-ref
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: built and seen in game.
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.

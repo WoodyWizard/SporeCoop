@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: owner 2026-11-18
 role: both
 versions: alpha
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages70-dev
 branch: feat/lineages-alpha
 commits: d18b3b8b
 tests: tools/qa_win/qa.py (manual: MSI pair, P and Esc on the host, coop.pauses on both)
@@ -42,3 +42,4 @@ closing it left every count at 0; the guest never paused. With `coop.fix core.no
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: built and checked on feat/lineages-alpha (d18b3b8b).
+- 2026-11-24: released in 0.7.14.1-lineages70-dev.
