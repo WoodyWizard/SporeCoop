@@ -1,5 +1,6 @@
 #include "tribe.h"
 #include "tribe_internal.h"
+#include "tribe_rivals.h"
 #include "tribe_logic.h"
 #include "call_guard.h"
 #include "lifecycle.h"
@@ -93,6 +94,8 @@ std::string debug(const std::vector<std::string>& a)
             return "usage: coop.tribe fix chiefs|gameover|ko|epic_players|epic_herd|away 0|1";
         return "fix " + a[1] + " " + (on ? "on" : "off");
     }
+    if (!a.empty() && a[0] == "rivals") // WP-R4 (BUG-1548): Tribe Rivals status & commands
+        return tribe_rivals::debug_cmd(a);
     if (!a.empty() && a[0] == "factions") { // WP-R1 (BUG-0794): read-only cTribe faction diagnostic
         if (game::mode_id() != modes::kTribe)
             return "tribe factions: count=0 (not in tribe stage)\n";

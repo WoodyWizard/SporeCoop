@@ -12,6 +12,7 @@
 #include "net/shared_ledger.h"
 #include "space_ext.h"
 #include "space_rivalry.h"
+#include "tribe_rivals.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
 #include "wire/shared_res.h"
@@ -274,7 +275,8 @@ static uint32_t g_mode; // the game mode of the last tick: status / debug_add us
 // sends its own changes (civ.wallet_row); the host keeps sharing its money with a guest without a wallet (an older peer)
 static bool own_budget(const Res& r)
 {
-    return (r.mode == modes::kSpace && spaceext::rivals()) || (r.mode == modes::kCiv && civ_wallet::guest_own_money());
+    return (r.mode == modes::kSpace && spaceext::rivals()) || (r.mode == modes::kCiv && civ_wallet::guest_own_money()) ||
+           (r.mode == modes::kTribe && tribe_rivals::active());
 }
 
 void init(const SkHost* host, SkMod* mod)

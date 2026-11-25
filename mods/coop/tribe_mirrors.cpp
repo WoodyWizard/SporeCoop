@@ -1,5 +1,6 @@
 #include "tribe.h"
 #include "tribe_internal.h"
+#include "tribe_rivals.h"
 #include "tribe_logic.h"
 #include "call_guard.h"
 #include "lifecycle.h"
@@ -182,19 +183,22 @@ void guest_state(net::Reader& r)
     }
     if (!r.ok())
         return cut();
-    // host tribe index -> local tribe (the player tribe directly, others by position)
+    // host tribe index -> local tribe (the player tribe directly, others by position;
+    // WP-R4 BUG-1548: when guest perspective is swapped in Tribe Rivals, map host's tribe to orig_player_tribe
+    // and match all other tribes by position including the guest's swapped player_tribe)
     auto locals = all_tribes();
     void* pt = player_tribe();
+    void* host_local_pt = tribe_rivals::perspective_swapped() ? tribe_rivals::orig_player_tribe() : pt;
     g_guest.local_tribe_of.assign(htribes.size(), nullptr);
     for (size_t i = 0; i < htribes.size(); i++) {
-        if (htribes[i].second) {
-            g_guest.local_tribe_of[i] = pt;
+        if (htribes[i].second && host_local_pt) {
+            g_guest.local_tribe_of[i] = host_local_pt;
             continue;
         }
         float best = 40.f;
         for (void* t : locals) {
             float d = net::dist(tribe_pos(t), htribes[i].first);
-            if (t != pt && d < best) {
+            if (t != host_local_pt && d < best) {
                 best = d;
                 g_guest.local_tribe_of[i] = t;
             }

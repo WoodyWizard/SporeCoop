@@ -1,5 +1,6 @@
 #include "tribe.h"
 #include "tribe_internal.h"
+#include "tribe_rivals.h"
 #include "tribe_logic.h"
 #include "call_guard.h"
 #include "lifecycle.h"
@@ -265,14 +266,17 @@ void host_tick(double now)
     for (auto& p : C.sess->players())
         players.push_back(p.id);
     std::sort(players.begin(), players.end());
-    if (g_claims_at_join && pt && players.size() > g_host.split_for.size()) { // tests (BUG-1450): a join in this tick
-        g_claims_at_join = false;
-        g_claims_join_forced++;
-        g_mclaims_at = -1e9; // the follow is due now
+    const bool rivals_on = tribe_rivals::active(); // WP-R4 (BUG-1548): each player owns a whole cTribe
+    if (!rivals_on) {
+        if (g_claims_at_join && pt && players.size() > g_host.split_for.size()) { // tests (BUG-1450): a join in this tick
+            g_claims_at_join = false;
+            g_claims_join_forced++;
+            g_mclaims_at = -1e9; // the follow is due now
+        }
+        member_claims_tick(pt, now, !g_claims_order_fix); // E1 (BUG-1154); TR-1: the follow after the adopt loop
     }
-    member_claims_tick(pt, now, !g_claims_order_fix); // E1 (BUG-1154); TR-1: the follow after the adopt loop
     bool resplit = false;
-    if (players != g_host.split_for && pt) {
+    if (!rivals_on && players != g_host.split_for && pt) {
         resplit = true;
         arrival_place_due(now); // BUG-0340: a player arrived or rejoined
         // the players changed: split the player tribe again, in member order (E1: a claimed member to its player)
@@ -313,7 +317,9 @@ void host_tick(double now)
             if (!it)
                 continue;
             seen.insert(id);
-            if (fresh) { // the owner (D3: tribe_logic::new_owner): E1's claim, else the players in turns; BUG-0671's purchase
+            if (rivals_on) {
+                it->data.owner = tribe_rivals::owner_of_tribe(tribes[ti]);
+            } else if (fresh) { // the owner (D3: tribe_logic::new_owner): E1's claim, else the players in turns; BUG-0671's purchase
                 auto bf = g_host.born_for.find(c);
                 bool bought = bf != g_host.born_for.end();
                 it->data.owner = tribe_logic::new_owner(player, player ? claim_holder(c) : -1, players, g_host.dealt,
@@ -355,7 +361,7 @@ void host_tick(double now)
             if (HEntry* it = g_host.members.find(e.id))
                 e.owner = it->data.owner;
     }
-    if (g_claims_order_fix && pt) // TR-1 (BUG-1429): the claims follow the owners this tick's split and adoption gave
+    if (!rivals_on && g_claims_order_fix && pt) // TR-1 (BUG-1429): the claims follow the owners this tick's split and adoption gave
         member_claims_follow(pt, now, members(pt));
     // chunks that fit one packet; every chunk carries the tribe table. A chunk larger than a packet
     // is dropped by the connection: with 24 members per chunk (fixed until 2026-10-23) the first
@@ -660,6 +666,7 @@ void host_command(uint8_t from, net::Reader& r)
     if (kind != CMD_ACTION && kind != CMD_WALK)
         return;
     void* pt = player_tribe();
+    void* sender_tribe = tribe_rivals::active() ? tribe_rivals::tribe_of_player(from) : pt; // WP-R4 (BUG-1548)
     void* target = kind == CMD_ACTION ? resolve_target(tgt) : nullptr;
     char b[160];
     snprintf(b, sizeof b, "from=%u kind=%u n=%u action=%d target=%u/%u/%X (%.1f %.1f %.1f) -> %p", from, kind,
@@ -686,7 +693,7 @@ void host_command(uint8_t from, net::Reader& r)
             continue;
         }
         if (hm->data.owner != from ||
-            (g_cmd_listed_fix ? !hm_live(c) : !game::object_alive(c)) || F<void*>(c, kOwnerTribeOff) != pt) { // (BUG-1053)
+            (g_cmd_listed_fix ? !hm_live(c) : !game::object_alive(c)) || F<void*>(c, kOwnerTribeOff) != sender_tribe) { // (BUG-1053)
             g_cmds_rejected++;
             continue;
         }
