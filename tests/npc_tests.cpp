@@ -1003,6 +1003,50 @@ static void test_social_logic()
     CHECK(rel.size() == 1 && rel[0] == 11 && po.count_of(1) == 0 && po.count_of(2) == 1);
     po.clear();
     CHECK(po.owners.empty());
+
+    // BUG-1560: cPosseSimulator mNumTransientPosseMembers reconciliation, editor rebind, UI block, save strip
+    {
+        auto ok = reconcile_temp_count(3, 1, 1);
+        CHECK(!ok.drifted && ok.clamped == 1);
+        // Corrupted save (mTempCount=2 serialized, +0xE68 reset to 0 on reload -> true_temp=0)
+        auto drifted = reconcile_temp_count(2, 2, 0);
+        CHECK(drifted.drifted && drifted.clamped == 0);
+        // Negative mTempCount or > list_size clamped into [0, list_size]
+        auto neg = reconcile_temp_count(1, -1, 0);
+        CHECK(neg.drifted && neg.clamped == 0);
+        auto over = reconcile_temp_count(1, 3, 2);
+        CHECK(over.drifted && over.clamped == 1);
+        auto empty = reconcile_temp_count(0, 1, 0);
+        CHECK(empty.drifted && empty.clamped == 0);
+
+        CHECK(should_rebind_pack_member(true, true, true, true, false));
+        CHECK(!should_rebind_pack_member(false, true, true, true, false)); // fix off
+        CHECK(!should_rebind_pack_member(true, false, true, true, false)); // reused object (new serial)
+        CHECK(!should_rebind_pack_member(true, true, false, true, false)); // dead
+        CHECK(!should_rebind_pack_member(true, true, true, false, false)); // not in pack
+        CHECK(!should_rebind_pack_member(true, true, true, true, true));   // pooled (at planet origin)
+
+        CHECK(is_orphan_guest_temp(true, false, false, false, true, 0));   // orphaned guest temp member
+        CHECK(!is_orphan_guest_temp(false, false, false, false, true, 0)); // fix off
+        CHECK(!is_orphan_guest_temp(true, true, false, false, true, 0));   // still guest-owned
+        CHECK(!is_orphan_guest_temp(true, false, true, false, true, 0));   // pending rebind after evolution
+        CHECK(!is_orphan_guest_temp(true, false, false, true, true, 0));   // Summon Flock (herd+0x192)
+        CHECK(!is_orphan_guest_temp(true, false, false, false, false, 0)); // permanent host member (+0xE68 == 0)
+        CHECK(!is_orphan_guest_temp(true, false, false, false, true, 15000)); // native 15s transient ally
+
+        CHECK(should_block_host_posse_card(true, true, true, false, false));
+        CHECK(should_block_host_posse_card(true, true, false, true, false));
+        CHECK(should_block_host_posse_card(true, true, false, false, true));
+        CHECK(!should_block_host_posse_card(false, true, true, false, true));  // fix off
+        CHECK(!should_block_host_posse_card(true, false, true, false, true));  // guest UI allowed
+        CHECK(!should_block_host_posse_card(true, true, false, false, false)); // normal host pack member allowed
+
+        CHECK(should_strip_pack_on_save(true, true, true, true));
+        CHECK(!should_strip_pack_on_save(false, true, true, true));
+        CHECK(!should_strip_pack_on_save(true, false, true, true));
+        CHECK(!should_strip_pack_on_save(true, true, false, true));
+        CHECK(!should_strip_pack_on_save(true, true, true, false));
+    }
 }
 
 int main(int argc, char** argv)

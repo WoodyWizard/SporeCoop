@@ -37,6 +37,7 @@
 #include "npc_proxy_rules.h"
 #include "mirror_registry.h"
 #include "world.h"
+#include "savestrip.h"
 #include "sporekit_game.hpp"
 #include "actor_scope.h"
 #include "fixes.h"
@@ -662,10 +663,110 @@ static std::map<uint16_t, uint8_t> g_guest_pack_owners; // guest: host-synced pa
 static std::unordered_set<uint16_t> g_guest_my_pack;     // guest: proxy ids added to local mPosseMembers + CreatureUI
 static std::unordered_map<uint16_t, void*> g_guest_pack_ptr; // guest: proxy ptr registered in local posse
 
+// BUG-1560: guest pack recruit followed by Creature Editor / save leaks companion to host & breaks host's 3-member cap.
+// 1. CreatureUI rebuild on editor exit (0xD2CBD6) checks herd+0x192 only, not creature+0xE68 -> block host UI cards.
+// 2. Host species evolution changes species_instance in-place -> npc_object_reused retires old_id -> rebind owner to new_id.
+// 3. cPosseSimulator serializes mNumTransientPosseMembers (+0x1C), while cCreatureAnimal never serializes +0xE68 ->
+//    temporarily strip guest pack members on save and reconcile mNumTransientPosseMembers against true transient count.
+static bool g_pack_editor_cap_fix = true;
+COOP_FIX("npc.pack_editor_cap", "BUG-1560", g_pack_editor_cap_fix,
+         "creature: keep guest pack members out of saves and host UI after Creature Editor, rebind on species evolution, and reconcile cPosseSimulator temp count");
+
+struct PackRebind {
+    uint32_t serial = 0;
+    uint8_t owner = social_logic::kNoOwner;
+};
+struct PackSaveEntry {
+    void* c = nullptr;
+    uint32_t serial = 0;
+    uint8_t prev_temp = 0;
+};
+static std::unordered_map<void*, PackRebind> g_pack_rebind; // host: live guest pack members awaiting re-ID after species evolution
+static std::vector<PackSaveEntry> g_pack_save_suspended;    // host: guest pack members temporarily stripped during save
+static uint32_t g_pack_ui_blocked = 0, g_pack_ui_leaked = 0;
+static uint32_t g_pack_save_strips = 0, g_pack_rebound = 0, g_pack_orphans_removed = 0, g_pack_temp_fixed = 0;
+
+LIFECYCLE_STATE("npc.pack_rebind", lifecycle::kSession | lifecycle::kWorld, &g_pack_editor_cap_fix,
+                [] {
+                    g_pack_rebind.clear();
+                    g_pack_save_suspended.clear();
+                },
+                []() -> size_t { return g_pack_rebind.size() + g_pack_save_suspended.size(); });
+
 static uintptr_t a_PosseGet, a_PosseAdd, a_PosseRemove, a_PosseCount, a_PosseMax;
 static uintptr_t a_NmAddPosse, a_NmRemovePosse, a_StrategyGet, a_UiAddPosse, a_UiRemovePosse;
 using PosseRemove_t = void(SK_THISCALL*)(void*, void*, uint32_t, uint32_t);
 static PosseRemove_t o_PosseRemove;
+using UiAddPosse_t = void(SK_THISCALL*)(void*, void*);
+static UiAddPosse_t o_UiAddPosse;
+
+static std::vector<void*> read_posse_members()
+{
+    std::vector<void*> out;
+    void* nm = game::noun_manager();
+    if (!nm || !game::in_creature_stage() || IsBadReadPtr((uint8_t*)nm + 0x5C, 8))
+        return out;
+    void** b = *(void***)((uint8_t*)nm + 0x5C);
+    void** e = *(void***)((uint8_t*)nm + 0x60);
+    if (!b || e <= b || e - b > 64 || IsBadReadPtr(b, (size_t)((uint8_t*)e - (uint8_t*)b)))
+        return out;
+    out.reserve((size_t)(e - b));
+    for (void** p = b; p != e; ++p)
+        if (*p)
+            out.push_back(*p);
+    return out;
+}
+
+static bool posse_is_summoned(void* c)
+{
+    void* h = c && game::creature_listed(c) ? game::herd_of(c) : nullptr;
+    return h && !IsBadReadPtr((uint8_t*)h + 0x192, 1) && *(uint8_t*)((uint8_t*)h + 0x192) != 0;
+}
+
+static bool posse_is_temp_flag(void* c)
+{
+    return c && !IsBadReadPtr((uint8_t*)c + 0xE68, 1) && *(uint8_t*)((uint8_t*)c + 0xE68) != 0;
+}
+
+static uint32_t posse_temp_timer(void* c)
+{
+    return c && !IsBadReadPtr((uint8_t*)c + 0xE6C, 4) ? *(uint32_t*)((uint8_t*)c + 0xE6C) : 0;
+}
+
+static int* posse_temp_count_ptr(void* posse)
+{
+    if (!posse || IsBadWritePtr((uint8_t*)posse + 0x1C, 4))
+        return nullptr;
+    return (int*)((uint8_t*)posse + 0x1C);
+}
+
+static bool is_guest_pack_creature(void* c)
+{
+    if (!c)
+        return false;
+    if (g_pack_rebind.count(c))
+        return true;
+    int hid = host_id(c);
+    return hid >= 0 && g_pack_owners.owner_of((uint16_t)hid) != social_logic::kNoOwner;
+}
+
+static void SK_THISCALL h_UiAddPosse(void* ui, void* c)
+{
+    if (is_host() && c) {
+        int hid = host_id(c);
+        bool guest_owned = hid >= 0 && g_pack_owners.owner_of((uint16_t)hid) != social_logic::kNoOwner;
+        bool pending_rebind = g_pack_rebind.count(c) != 0;
+        bool temp_flag = posse_is_temp_flag(c);
+        if (social_logic::should_block_host_posse_card(g_pack_editor_cap_fix, true, guest_owned, pending_rebind,
+                                                       temp_flag)) {
+            g_pack_ui_blocked++;
+            return;
+        }
+        if (guest_owned || pending_rebind || temp_flag)
+            g_pack_ui_leaked++;
+    }
+    o_UiAddPosse(ui, c);
+}
 
 static void* creature_ui()
 {
@@ -726,25 +827,201 @@ static void host_pack_remove_creature(void* c)
     if (!c || !game::in_creature_stage() || !game::creature_listed(c))
         return;
     void* posse = a_PosseGet ? skg::cdecl_call<void*>(a_PosseGet) : nullptr;
-    if (posse && o_PosseRemove && game::pack_member(c))
+    if (posse && o_PosseRemove && game::pack_member(c)) {
+        if (g_pack_editor_cap_fix && !posse_is_summoned(c) && !posse_is_temp_flag(c)) {
+            int* tp = posse_temp_count_ptr(posse);
+            if (tp && *tp > 0 && !IsBadWritePtr((uint8_t*)c + 0xE68, 1))
+                *(uint8_t*)((uint8_t*)c + 0xE68) = 1;
+        }
         o_PosseRemove(posse, c, 1, 0);
+    }
     if (!IsBadWritePtr((uint8_t*)c + 0xE68, 1))
         *(uint8_t*)((uint8_t*)c + 0xE68) = 0;
 }
 
 static void host_pack_prune()
 {
-    if (!is_host() || g_pack_owners.owners.empty())
+    if (!is_host() || !g_pack_save_suspended.empty() || g_pack_owners.owners.empty())
         return;
     std::vector<uint16_t> gone;
     for (auto& [id, owner] : g_pack_owners.owners) {
-        void* c = host_npc(id);
-        if (!c || game::is_dead(c) || !game::pack_member(c))
+        void* c = nullptr;
+        if (g_pack_editor_cap_fix) {
+            // BUG-1560: check live object registry rather than g_seen_now (host_npc), because on the first
+            // frame after Creature Editor exit or during throttled updates an alive pack member may not be
+            // in this frame's updated batch yet; pruning it there orphaned it inside cPosseSimulator.
+            auto* e = g_hreg.find(id);
+            if (e && ref_alive(e->ref))
+                c = e->ref.p;
+        } else {
+            c = host_npc(id);
+        }
+        if (!c || game::is_dead(c) || !game::pack_member(c)) {
+            if (g_pack_editor_cap_fix && c && game::is_dead(c) && game::pack_member(c))
+                host_pack_remove_creature(c);
             gone.push_back(id);
+        }
     }
     for (uint16_t id : gone) {
         g_pack_owners.remove(id);
         g_pack_dirty = true;
+    }
+}
+
+static void host_pack_try_rebind(void* c, uint16_t new_id, uint32_t serial)
+{
+    auto it = g_pack_rebind.find(c);
+    if (it == g_pack_rebind.end())
+        return;
+    PackRebind rb = it->second;
+    g_pack_rebind.erase(it);
+    if (!g_pack_editor_cap_fix || !is_host() || !social::g_guest_recruit_fix ||
+        rb.serial != serial || game::is_dead(c) || !game::pack_member(c)) {
+        if (rb.serial == serial && game::pack_member(c)) {
+            host_pack_remove_creature(c);
+            g_guest_pack_released++;
+        }
+        return;
+    }
+    if (!IsBadWritePtr((uint8_t*)c + 0xE68, 1))
+        *(uint8_t*)((uint8_t*)c + 0xE68) = 1;
+    if (g_pack_owners.add(new_id, rb.owner, social_logic::kMaxPackSize)) {
+        g_pack_dirty = true;
+        g_pack_rebound++;
+        H->log(M, SK_INFO, "npc: rebound guest %u pack member %p to new NPC #%u (BUG-1560)",
+               (unsigned)rb.owner, c, (unsigned)new_id);
+    } else {
+        host_pack_remove_creature(c);
+        g_guest_pack_released++;
+    }
+}
+
+static void pack_save_start()
+{
+    g_pack_save_suspended.clear();
+    bool has_guest = !g_pack_owners.owners.empty() || !g_pack_rebind.empty();
+    if (!social_logic::should_strip_pack_on_save(g_pack_editor_cap_fix, is_host(), game::in_creature_stage(), has_guest))
+        return;
+    void* nm = game::noun_manager();
+    void* posse = a_PosseGet ? skg::cdecl_call<void*>(a_PosseGet) : nullptr;
+    int* temp_ptr = posse_temp_count_ptr(posse);
+    if (!nm || !a_NmRemovePosse || !temp_ptr)
+        return;
+    auto members = read_posse_members();
+    for (void* c : members) {
+        if (!c || !game::creature_listed(c) || !is_guest_pack_creature(c))
+            continue;
+        uint8_t prev_temp = posse_is_temp_flag(c) ? 1 : 0;
+        uint32_t serial = game::object_serial(c);
+        skg::thiscall<void>(a_NmRemovePosse, nm, c);
+        if (!IsBadWritePtr((uint8_t*)c + 0xE68, 1))
+            *(uint8_t*)((uint8_t*)c + 0xE68) = 0;
+        if (prev_temp && *temp_ptr > 0)
+            (*temp_ptr)--;
+        g_pack_save_suspended.push_back({c, serial, prev_temp});
+    }
+    if (!g_pack_save_suspended.empty()) {
+        g_pack_save_strips++;
+        H->log(M, SK_INFO, "npc: stripped %zu guest pack member(s) from save (mTempCount=%d, BUG-1560)",
+               g_pack_save_suspended.size(), *temp_ptr);
+    }
+}
+
+static void pack_save_end()
+{
+    if (g_pack_save_suspended.empty())
+        return;
+    auto list = std::move(g_pack_save_suspended);
+    g_pack_save_suspended.clear();
+    if (!is_host() || !game::in_creature_stage() || !social::g_guest_recruit_fix)
+        return;
+    void* nm = game::noun_manager();
+    void* posse = a_PosseGet ? skg::cdecl_call<void*>(a_PosseGet) : nullptr;
+    int* temp_ptr = posse_temp_count_ptr(posse);
+    if (!nm || !a_NmAddPosse || !temp_ptr)
+        return;
+    for (auto& e : list) {
+        if (!e.c || !game::creature_listed(e.c) || game::object_serial(e.c) != e.serial ||
+            game::is_dead(e.c) || game::pack_member(e.c) || !is_guest_pack_creature(e.c))
+            continue;
+        if (!IsBadWritePtr((uint8_t*)e.c + 0xE68, 1))
+            *(uint8_t*)((uint8_t*)e.c + 0xE68) = e.prev_temp ? e.prev_temp : 1;
+        skg::thiscall<void>(a_NmAddPosse, nm, e.c);
+        (*temp_ptr)++;
+    }
+}
+
+static void posse_reconcile()
+{
+    if (!g_pack_editor_cap_fix || is_guest() || !game::in_creature_stage() || !g_pack_save_suspended.empty())
+        return;
+    if (is_host() && !g_pack_rebind.empty()) {
+        std::vector<void*> drop;
+        for (auto& [c, rb] : g_pack_rebind) {
+            bool listed = c && game::creature_listed(c);
+            bool at_origin = false;
+            if (listed) {
+                net::Vec3 p = game::position(c);
+                at_origin = p.x * p.x + p.y * p.y + p.z * p.z < 2500.f;
+            }
+            bool alive_match = listed && game::object_serial(c) == rb.serial && !game::is_dead(c) &&
+                               game::pack_member(c) && !at_origin;
+            if (!alive_match)
+                drop.push_back(c);
+        }
+        for (void* c : drop) {
+            auto it = g_pack_rebind.find(c);
+            if (it == g_pack_rebind.end())
+                continue;
+            uint32_t ser = it->second.serial;
+            uint8_t ow = it->second.owner;
+            g_pack_rebind.erase(it);
+            if (c && game::creature_listed(c) && game::object_serial(c) == ser && game::pack_member(c)) {
+                host_pack_remove_creature(c);
+                g_guest_pack_released++;
+                H->log(M, SK_INFO, "npc: dropped stale pending-rebind pack member %p of guest %u (BUG-1560)", c,
+                       (unsigned)ow);
+            }
+        }
+    }
+    auto members = read_posse_members();
+    std::vector<void*> orphans;
+    for (void* c : members) {
+        if (!c || !game::creature_listed(c))
+            continue;
+        int hid = is_host() ? host_id(c) : -1;
+        bool guest_owned = is_host() && hid >= 0 && g_pack_owners.owner_of((uint16_t)hid) != social_logic::kNoOwner;
+        bool pending_rebind = is_host() && g_pack_rebind.count(c) != 0;
+        bool summoned = posse_is_summoned(c);
+        bool temp_flag = posse_is_temp_flag(c);
+        uint32_t temp_timer = posse_temp_timer(c);
+        if ((guest_owned || pending_rebind) && !temp_flag && !IsBadWritePtr((uint8_t*)c + 0xE68, 1))
+            *(uint8_t*)((uint8_t*)c + 0xE68) = 1;
+        else if (social_logic::is_orphan_guest_temp(true, guest_owned, pending_rebind, summoned, temp_flag, temp_timer))
+            orphans.push_back(c);
+    }
+    if (!orphans.empty()) {
+        for (void* c : orphans) {
+            host_pack_remove_creature(c);
+            g_pack_orphans_removed++;
+        }
+        members = read_posse_members();
+    }
+    void* posse = a_PosseGet ? skg::cdecl_call<void*>(a_PosseGet) : nullptr;
+    int* temp_ptr = posse_temp_count_ptr(posse);
+    if (!temp_ptr)
+        return;
+    int true_temp = 0;
+    for (void* c : members) {
+        if (c && game::creature_listed(c) && (posse_is_summoned(c) || posse_is_temp_flag(c)))
+            true_temp++;
+    }
+    auto chk = social_logic::reconcile_temp_count((int)members.size(), *temp_ptr, true_temp);
+    if (chk.drifted) {
+        H->log(M, SK_WARN, "npc: cPosseSimulator mNumTransientPosseMembers drifted (%d -> %d, list=%zu); fixed (BUG-1560)",
+               *temp_ptr, chk.clamped, members.size());
+        *temp_ptr = chk.clamped;
+        g_pack_temp_fixed++;
     }
 }
 
@@ -781,8 +1058,12 @@ static void guest_pack_sync()
             continue;
         if (nm && a_NmAddPosse)
             skg::thiscall<void>(a_NmAddPosse, nm, px);
-        if (ui && a_UiAddPosse)
-            skg::thiscall<void>(a_UiAddPosse, ui, px);
+        if (ui && (o_UiAddPosse || a_UiAddPosse)) {
+            if (o_UiAddPosse)
+                o_UiAddPosse(ui, px);
+            else
+                skg::thiscall<void>(a_UiAddPosse, ui, px);
+        }
         g_guest_my_pack.insert(id);
         g_guest_pack_ptr[id] = px;
     }
@@ -798,6 +1079,11 @@ static void* ai_target(void* c)
     if (game::in_creature_stage() && game::pack_member(c)) {
         int hid = host_id(c);
         uint8_t owner = hid >= 0 ? g_pack_owners.owner_of((uint16_t)hid) : social_logic::kNoOwner;
+        if (owner == social_logic::kNoOwner && g_pack_editor_cap_fix) {
+            auto it = g_pack_rebind.find(c);
+            if (it != g_pack_rebind.end())
+                owner = it->second.owner;
+        }
         if (social::g_guest_recruit_fix && owner >= 1 && owner < 8) {
             void* pup = C.puppet_live ? C.puppet_live(owner) : (C.puppet_of ? C.puppet_of(owner) : nullptr);
             if (pup && !game::is_dead(pup) && (!C.player_dead || !C.player_dead(owner))) {
@@ -1021,6 +1307,9 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     a_UiRemovePosse = H->sym("SporeCoop::CreatureUI_RemovePosseCard");
     if (a_PosseRemove)
         H->hook_create(M, (void*)a_PosseRemove, (void*)h_PosseRemove, (void**)&o_PosseRemove);
+    if (a_UiAddPosse)
+        H->hook_create(M, (void*)a_UiAddPosse, (void*)h_UiAddPosse, (void**)&o_UiAddPosse);
+    savestrip::add_save_hooks(pack_save_start, pack_save_end); // BUG-1560: never save guest pack members or inflated mTempCount
     game::set_behaviour_anim_listener(on_behaviour_anim); // BUG-0464
     fields::add_kind({fields::K_NPC, "npc", nullptr, kNpcFields, 2, npc_each, npc_mirror, nullptr}); // BUG-0461
     H->command_add(M, "coop.npctrack", "coop.npctrack start [radius m [x y z]]|stop|count|dump [from] [n]|walk <id> x y z <m/s>|put <id> x y z [secs]|shove <id> <m> x y z <m/s> - every frame: the guest's NPC proxies (tests, BUG-0361)",
@@ -1351,6 +1640,33 @@ static void retire(uint16_t id, void* c)
             send_despawn(g, id);
     g_ai_target.erase(c);
     teamplay::forget_target(c);
+    // BUG-1560: if this retired NPC was a guest-owned pack member, either queue a rebind (in-place
+    // species evolution after Creature Editor: same live creature object/serial, new species key)
+    // or remove it cleanly from cPosseSimulator so it never leaks into the host's pack.
+    uint8_t pack_owner = g_pack_owners.owner_of(id);
+    if (g_pack_editor_cap_fix && pack_owner != social_logic::kNoOwner) {
+        auto* entry = g_hreg.find(id);
+        uint32_t old_serial = entry ? entry->ref.serial : 0;
+        g_pack_owners.remove(id);
+        g_pack_dirty = true;
+        bool listed = c && game::creature_listed(c);
+        bool same_serial = listed && old_serial != 0 && game::object_serial(c) == old_serial;
+        bool alive = listed && !game::is_dead(c);
+        bool in_pack = listed && game::pack_member(c);
+        bool at_origin = false;
+        if (listed) {
+            net::Vec3 p = game::position(c);
+            at_origin = p.x * p.x + p.y * p.y + p.z * p.z < 2500.f;
+        }
+        if (social_logic::should_rebind_pack_member(true, same_serial, alive, in_pack, at_origin)) {
+            g_pack_rebind[c] = {old_serial, pack_owner};
+            H->log(M, SK_INFO, "npc: queued rebind for retired pack member #%u (%p, guest %u, BUG-1560)",
+                   (unsigned)id, c, (unsigned)pack_owner);
+        } else if (same_serial && in_pack) {
+            host_pack_remove_creature(c);
+            g_guest_pack_released++;
+        }
+    }
 }
 
 // host: tracked NPCs that did not update this frame and are no creature in the world any more: freed
@@ -2249,9 +2565,10 @@ static void host_tick(double now, const std::vector<void*>& creatures)
                           id, &fresh))
             continue; // (65534 NPCs at once: not in this world)
         it = &g_hreg.find(id)->data;
-        if (fresh)
+        if (fresh) {
             *it = {id, now, species, dead};
-        else {
+            host_pack_try_rebind(c, id, game::object_serial(c)); // BUG-1560: preserve guest pack owner across species evolution re-ID
+        } else {
             it->last_seen = now;
             it->dead = dead;
         }
@@ -3316,8 +3633,11 @@ static void tick_frame(double now)
     const auto& creatures = game::creatures_updated(); // must run every frame
     game::swap_guard_tick();                            // outside every NPC tick here
     game::destroy_deferred_tick();                      // creatures removed while a cinematic played
-    if (game::in_creature_stage())
+    if (game::in_creature_stage()) {
         remove_saved_strays(now);
+        if (!is_guest())
+            posse_reconcile(); // BUG-1560: reconcile cPosseSimulator temp count (also heals corrupted saves offline)
+    }
     hatch_tick(now, !creatures.empty());
     if (g_leave_locals_due && !is_guest()) { // BUG-0412: the guest left; its game plays the planet on alone
         g_leave_locals_due = false;
@@ -3464,6 +3784,8 @@ void on_world_change()
     hn_clear();
     g_ai_target.clear();
     g_pack_owners.clear(); // BUG-1256: old world's creatures are already unloaded
+    g_pack_rebind.clear();
+    g_pack_save_suspended.clear();
     g_pack_dirty = false;
     g_guest_pack_owners.clear();
     g_guest_my_pack.clear();
@@ -3492,11 +3814,13 @@ void on_player_leave(uint8_t id)
 void on_session_end()
 {
     // BUG-1256: release every guest's recruited pack members on the host before clearing host NPCs
-    if (is_host() && !g_pack_owners.owners.empty()) {
+    if (is_host() && (!g_pack_owners.owners.empty() || !g_pack_rebind.empty())) {
         for (uint8_t p = 1; p < 8; p++)
             release_player_pack(p);
     }
     g_pack_owners.clear();
+    g_pack_rebind.clear();
+    g_pack_save_suspended.clear();
     g_pack_dirty = false;
     g_guest_pack_owners.clear();
     // BUG-0412: a guest that leaves plays on in this world: its game takes over the NPCs it showed
@@ -4414,20 +4738,42 @@ bool dismiss_for_player(uint16_t id, uint8_t player)
 void release_player_pack(uint8_t player)
 {
     auto ids = g_pack_owners.release_player(player);
-    if (ids.empty())
-        return;
+    size_t released = 0;
     for (uint16_t id : ids) {
         if (game::in_creature_stage()) {
             if (void* c = hn_obj(id))
                 host_pack_remove_creature(c);
         }
         g_guest_pack_released++;
+        released++;
     }
+    for (auto it = g_pack_rebind.begin(); it != g_pack_rebind.end();) {
+        if (it->second.owner == player) {
+            void* c = it->first;
+            uint32_t ser = it->second.serial;
+            it = g_pack_rebind.erase(it);
+            if (game::in_creature_stage() && c && game::creature_listed(c) && game::object_serial(c) == ser)
+                host_pack_remove_creature(c);
+            g_guest_pack_released++;
+            released++;
+        } else {
+            ++it;
+        }
+    }
+    if (!released)
+        return;
     g_pack_dirty = true;
-    H->log(M, SK_INFO, "npc: released %zu pack member(s) of player %u (BUG-1256)", ids.size(), (unsigned)player);
+    H->log(M, SK_INFO, "npc: released %zu pack member(s) of player %u (BUG-1256)", released, (unsigned)player);
 }
 
-int pack_count_of(uint8_t player) { return g_pack_owners.count_of(player); }
+int pack_count_of(uint8_t player)
+{
+    int n = g_pack_owners.count_of(player);
+    for (auto& [c, rb] : g_pack_rebind)
+        if (rb.owner == player)
+            n++;
+    return n;
+}
 uint8_t pack_owner_of(uint16_t id)
 {
     if (is_host())
@@ -4487,13 +4833,28 @@ bool debug_guest_dismiss(uint16_t id)
 
 std::string guest_pack_status()
 {
-    char b[220];
+    char b[240];
     snprintf(b, sizeof b,
              "guest_pack: fix=%d local_count=%d local_max=%d my_pack=%u total=%u recruited=%u released=%u dismissed=%u\n",
              (int)social::g_guest_recruit_fix, local_posse_count(), local_posse_max(), (unsigned)g_guest_my_pack.size(),
              (unsigned)(is_host() ? g_pack_owners.owners.size() : g_guest_pack_owners.size()), g_guest_pack_recruited,
              g_guest_pack_released, g_guest_pack_dismissed);
-    return b;
+    auto members = read_posse_members();
+    int true_temp = 0;
+    for (void* c : members)
+        if (c && game::creature_listed(c) && (posse_is_summoned(c) || posse_is_temp_flag(c)))
+            true_temp++;
+    void* posse = a_PosseGet && game::in_creature_stage() ? skg::cdecl_call<void*>(a_PosseGet) : nullptr;
+    int* tp = posse_temp_count_ptr(posse);
+    int cur_temp = tp ? *tp : 0;
+    char d[260];
+    snprintf(d, sizeof d,
+             "posse_diag: cap_fix=%d list=%d temp=%d true_temp=%d ui_blocked=%u ui_leaked=%u save_strips=%u "
+             "rebound=%u orphans=%u temp_fixed=%u rebind_pending=%u\n",
+             (int)g_pack_editor_cap_fix, (int)members.size(), cur_temp, true_temp, g_pack_ui_blocked, g_pack_ui_leaked,
+             g_pack_save_strips, g_pack_rebound, g_pack_orphans_removed, g_pack_temp_fixed,
+             (unsigned)g_pack_rebind.size());
+    return std::string(b) + d;
 }
 
 // tests (BUG-0426 class, L1 of 0.7.13): an address the game freed is given to a new object. `reuse <ptr> [frames]

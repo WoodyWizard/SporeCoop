@@ -174,4 +174,44 @@ struct PackOwners {
     void clear() { owners.clear(); }
 };
 
+// ---------------- BUG-1560: guest pack across Creature Editor & save/reload ----------------
+// cPosseSimulator serializes mNumTransientPosseMembers (+0x1C), while cCreatureAnimal never
+// serializes mbTempPosseMember (+0xE68). CreatureUI rebuild on Creature Editor exit (0xD2CBD6)
+// also checks only herd+0x192, not creature+0xE68, and in-place species evolution triggers
+// npc_object_reused (retiring the old net id while keeping the creature in mPosseMembers).
+struct TempCountCheck {
+    int clamped = 0;
+    bool drifted = false;
+};
+
+inline TempCountCheck reconcile_temp_count(int list_size, int cur_temp, int true_temp)
+{
+    int hi = list_size > 0 ? list_size : 0;
+    int want = std::clamp(true_temp, 0, hi);
+    return {want, cur_temp != want};
+}
+
+// Note: cPosseSimulator::AddMember removes a recruited creature from its herd (0xC6B5E0), so
+// pack members normally have herd == nullptr; pooled creatures are distinguished by at_origin / !in_pack.
+inline bool should_rebind_pack_member(bool fix, bool same_serial, bool alive, bool in_pack, bool at_origin)
+{
+    return fix && same_serial && alive && in_pack && !at_origin;
+}
+
+inline bool is_orphan_guest_temp(bool fix, bool guest_owned, bool pending_rebind, bool summoned_herd, bool temp_flag,
+                                 uint32_t temp_timer)
+{
+    return fix && !guest_owned && !pending_rebind && !summoned_herd && temp_flag && temp_timer == 0;
+}
+
+inline bool should_block_host_posse_card(bool fix, bool is_host, bool guest_owned, bool pending_rebind, bool temp_flag)
+{
+    return fix && is_host && (guest_owned || pending_rebind || temp_flag);
+}
+
+inline bool should_strip_pack_on_save(bool fix, bool is_host, bool creature_stage, bool has_guest_members)
+{
+    return fix && is_host && creature_stage && has_guest_members;
+}
+
 } // namespace social_logic
