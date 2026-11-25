@@ -2174,6 +2174,97 @@ static int c_cellfluid(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// BUG-1544 (GitHub #222): Simulator::GetMainSpeciesImageKey (0x1065F10, called by SpaceGameUI::FillStarTooltipPlanetInfo
+// when entering a star system) resolves star->GetEmpireID() -> StarManager::GetEmpire(id) for tech-5 planets and passes
+// the result straight to cEmpire::IsContactedByPlayer (0xC30A70) with no null check (0xAE98E1 does the same), even though
+// SpaceGameUI itself checks empireID != -1 and GetEmpire != nullptr eight instructions later (0x106D171..0x106D185). A
+// save with a tech-5 planet on a star whose empire is missing or 0xFFFFFFFF crashes reading [ecx+0x84] at 0xC30A70.
+// Guard cEmpire::IsContactedByPlayer so null this returns false (the caller then yields the standard unknown-species icon).
+// `coop.fix space.null_empire_contact off`: calls the game's original with null this (reproduces #222 in tests).
+using EmpireContactFn = bool(__thiscall*)(void*);
+using PlanetOwnedFn = bool(__thiscall*)(void*);
+using PlanetEmpireFn = void*(__thiscall*)(void*);
+static EmpireContactFn g_empire_contact_orig;
+static PlanetOwnedFn g_planet_owned_orig;
+static PlanetEmpireFn g_planet_empire_fn;
+static uintptr_t g_space_ui_update;
+static std::atomic<unsigned> g_empire_contact_guarded{0};
+static std::atomic<unsigned> g_planet_ui_guarded{0};
+static bool g_empire_contact_fix = true;
+COOP_FIX_UNSAFE("space.null_empire_contact", "BUG-1544", g_empire_contact_fix,
+                "gamefixes: cEmpire::IsContactedByPlayer (0xC30A70) and SpaceGameUI empire badge (0x107453A) handle a null empire");
+
+static bool __fastcall empire_contact_guard(void* emp, void*)
+{
+    if (!emp && g_empire_contact_fix) {
+        unsigned n = ++g_empire_contact_guarded;
+        if (n <= 8)
+            H->log(M, SK_WARN,
+                   "game fixes: skipped cEmpire::IsContactedByPlayer on null empire (BUG-1544, mode %08X, #%u)",
+                   game::mode_id(), n);
+        return false;
+    }
+    return g_empire_contact_orig(emp);
+}
+
+static bool __fastcall planet_owned_guard(void* planet, void*)
+{
+    bool owned = g_planet_owned_orig(planet);
+    if (!owned && g_empire_contact_fix && g_space_ui_update && g_planet_empire_fn) {
+        uintptr_t ra = (uintptr_t)__builtin_return_address(0);
+        if (ra >= g_space_ui_update && ra < g_space_ui_update + 0x200 && g_planet_empire_fn(planet) == nullptr) {
+            unsigned n = ++g_planet_ui_guarded;
+            if (n <= 8)
+                H->log(M, SK_WARN,
+                       "game fixes: hid SpaceGameUI empire badge for tech-5 planet with null empire (BUG-1544, #%u)", n);
+            return true; // 0x1074531 jne 0x107454E -> hides badge 0x3FEA475 instead of reading [NULL+0x84]
+        }
+    }
+    return owned;
+}
+
+// tests (BUG-1544): `coop.empirecontact` status; `coop.empirecontact orphan <planet_hex>` marks a planet on an unowned
+// star as tech 5 (reproducing GitHub #222's save state); `coop.empirecontact probe <planet_hex>` calls
+// Simulator::GetMainSpeciesImageKey on that planet record.
+static int c_empirecontact(void*, int argc, const char* const* argv, SkOut* out)
+{
+    bool hooked = g_empire_contact_orig != nullptr && g_planet_owned_orig != nullptr;
+    if (argc > 2 && (!strcmp(argv[1], "orphan") || !strcmp(argv[1], "probe"))) {
+        uintptr_t sm_get = H->sym("Simulator::cStarManager::Get");
+        uintptr_t get_pr = H->sym("Simulator::cStarManager::GetPlanetRecord");
+        uintptr_t get_sr = H->sym("Simulator::cStarManager::GetStarRecord");
+        void* sm = sm_get ? skg::cdecl_call<void*>(sm_get) : nullptr;
+        uint32_t pid = (uint32_t)strtoul(argv[2], nullptr, 16);
+        void* rec = (sm && get_pr) ? skg::thiscall<void*>(get_pr, sm, pid) : nullptr;
+        void* star = (sm && get_sr) ? skg::thiscall<void*>(get_sr, sm, pid & 0xFFFFFFu) : nullptr;
+        if (!rec || !star || !readable(rec, 0x198) || !readable(star, 0x58)) {
+            H->out_printf(out, "empirecontact: planet %08X unavailable\n", pid);
+            return 1;
+        }
+        if (!strcmp(argv[1], "orphan")) {
+            uint32_t old_tech = *(uint32_t*)((uint8_t*)rec + 0x194);
+            uint32_t eid = *(uint32_t*)((uint8_t*)star + 0x54);
+            *(uint32_t*)((uint8_t*)rec + 0x194) = 5;
+            H->out_printf(out, "empirecontact orphan %08X: tech %u -> 5, star_empire=%08X\n", pid, old_tech, eid);
+            return 0;
+        }
+        uintptr_t get_key = H->sym("Simulator::GetMainSpeciesImageKey");
+        if (!get_key) {
+            H->out_printf(out, "empirecontact: GetMainSpeciesImageKey missing\n");
+            return 1;
+        }
+        uint32_t key[3] = {0, 0, 0};
+        skg::cdecl_call<void*>(get_key, key, rec);
+        H->out_printf(out, "empirecontact probe %08X: key=%08X/%08X/%08X fix=%d guarded=%u ui_guarded=%u\n", pid,
+                      key[0], key[1], key[2], (int)g_empire_contact_fix, g_empire_contact_guarded.load(),
+                      g_planet_ui_guarded.load());
+        return 0;
+    }
+    H->out_printf(out, "empirecontact: hooked=%d fix=%d guarded=%u ui_guarded=%u\n", (int)hooked,
+                  (int)g_empire_contact_fix, g_empire_contact_guarded.load(), g_planet_ui_guarded.load());
+    return 0;
+}
+
 void frame()
 {
     fxcut_frame();
@@ -2382,6 +2473,22 @@ void init(const SkHost* host, SkMod* mod)
     H->log(M, SK_INFO, "game fixes: Cell fluid-field lifetime guard %s (BUG-1536)", cell_fluid ? "on" : "off");
     H->command_add(M, "coop.cellfluid", "coop.cellfluid [probe] - Cell fluid-field lifetime guard status / probe (BUG-1536)",
                    c_cellfluid, nullptr, SK_CMD_MAIN_THREAD);
+    uintptr_t ec = H->sym("SporeCoop::cEmpire_IsContactedByPlayer");
+    uintptr_t po = H->sym("SporeCoop::cPlanet_IsPlayerOwned");
+    g_planet_empire_fn = (PlanetEmpireFn)H->sym("SporeCoop::cPlanet_GetEmpire");
+    g_space_ui_update = H->sym("SporeCoop::SpaceGameUI_Update");
+    bool emp_contact = ec && H->hook_create(M, (void*)ec, (void*)&empire_contact_guard, (void**)&g_empire_contact_orig) == 0;
+    if (!emp_contact)
+        g_empire_contact_orig = nullptr;
+    bool planet_ui = po && g_planet_empire_fn && g_space_ui_update &&
+                     H->hook_create(M, (void*)po, (void*)&planet_owned_guard, (void**)&g_planet_owned_orig) == 0;
+    if (!planet_ui)
+        g_planet_owned_orig = nullptr;
+    H->log(M, SK_INFO, "game fixes: null empire contact guard %s, SpaceGameUI badge guard %s (BUG-1544)",
+           emp_contact ? "on" : "off", planet_ui ? "on" : "off");
+    H->command_add(M, "coop.empirecontact",
+                   "coop.empirecontact [orphan <planet_hex> | probe <planet_hex>] - null empire IsContactedByPlayer guard (BUG-1544)",
+                   c_empirecontact, nullptr, SK_CMD_MAIN_THREAD);
 }
 
 void shutdown()
@@ -2421,7 +2528,9 @@ std::string status()
            ", freed fruit taken out of the pool " + std::to_string(g_fruit_dropped.load()) +
            ", galaxy menu rollovers rolled out before a rebuild " + std::to_string(g_menu_rollouts.load()) + " (stale dropped " +
            std::to_string(g_menu_dropped.load()) + "), Cell fluid calls guarded " +
-           std::to_string(g_cell_fluid_guarded.load()) + ", " + reset_status() + "\n";
+           std::to_string(g_cell_fluid_guarded.load()) + ", null empire contacts guarded " +
+           std::to_string(g_empire_contact_guarded.load()) + " (SpaceGameUI badges " +
+           std::to_string(g_planet_ui_guarded.load()) + "), " + reset_status() + "\n";
 }
 
 } // namespace gamefixes
