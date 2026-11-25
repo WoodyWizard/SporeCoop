@@ -129,10 +129,34 @@ def toast(kind):
     return img.resize((W, H), Image.LANCZOS)
 
 
+def tooltip_bg(size=48):
+    """9-slice Spore-style dark blue glass tooltip background (BUG-0874, StdDrawable 1/3 margins)."""
+    s = SS
+    W = H = size
+    img = Image.new('RGBA', (W * s, H * s), (0, 0, 0, 0))
+    rad = 10
+    grad = Image.new('RGBA', (1, H * s))
+    for y in range(H * s):
+        t = y / (H * s)
+        grad.putpixel((0, y), (int(18 + 14 * (1 - t)), int(32 + 18 * (1 - t)), int(62 + 24 * (1 - t)), 238))
+    grad = grad.resize((W * s, H * s))
+    mask = Image.new('L', (W * s, H * s), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([s, s, W * s - s - 1, H * s - s - 1], radius=rad * s, fill=255)
+    img.paste(grad, (0, 0), mask)
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([s, s, W * s - s - 1, H * s - s - 1], radius=rad * s,
+                        outline=(135, 200, 255, 200), width=int(1.6 * s))
+    d.rounded_rectangle([int(2.6 * s), int(2.6 * s), W * s - int(2.6 * s) - 1, H * s - int(2.6 * s) - 1],
+                        radius=(rad - 1.5) * s, outline=(200, 235, 255, 65), width=int(1.0 * s))
+    return img.resize((W, H), Image.LANCZOS)
+
+
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
     coop_icon().save(os.path.join(OUT, 'coop_icon.png'))
     print('wrote', os.path.join(OUT, 'coop_icon.png'))
+    tooltip_bg().save(os.path.join(OUT, 'tooltip_bg.png'), optimize=True)
+    print('wrote', os.path.join(OUT, 'tooltip_bg.png'))
     for k in TOASTS:
         p = os.path.join(OUT, 'toast_%s.png' % k)
         toast(k).save(p, optimize=True)

@@ -16,7 +16,8 @@ namespace sui {
 static const SkHost* H;
 static SkMod* M;
 static uintptr_t a_wm_get, a_btn_create, a_te_create, a_layout_ctor, a_layout_load, a_layout_container,
-    a_image_get, a_obj_new, a_get_alloc, a_std_ctor, a_info_ctor;
+    a_image_get, a_obj_new, a_get_alloc, a_std_ctor, a_info_ctor, a_stddrw_ctor;
+static std::function<std::string()> g_state_provider;
 
 // ---- UILayout::Load hook: which layouts the game loads (devkit "coop.ui layouts") ----
 struct LayoutRec {
@@ -50,6 +51,7 @@ bool init(const SkHost* host, SkMod* mod)
     a_get_alloc = H->sym("UTFWin::GetAllocator");
     a_std_ctor = H->sym("UTFWin::SporeStdDrawable::SporeStdDrawable");
     a_info_ctor = H->sym("UTFWin::SporeStdDrawableImageInfo::SporeStdDrawableImageInfo");
+    a_stddrw_ctor = H->sym("UTFWin::StdDrawable::StdDrawable");
     if (a_layout_load)
         H->hook_create(M, (void*)a_layout_load, (void*)h_LayoutLoad, (void**)&o_LayoutLoad);
     bool ok = a_wm_get && a_btn_create && a_te_create && a_layout_ctor && o_LayoutLoad && a_image_get &&
@@ -400,6 +402,26 @@ void set_edit_text(Win w, const std::string& t)
     }
 }
 
+void set_edit_password(Win w, bool on)
+{
+    // ITextEdit::SetTextEditFlag (vt +0x44, 0x989ae0, ret 8): bit 0x80 = kFlagPassword
+    if (void* e = as_edit(w))
+        vcall<void>(e, 0x44 / 4, 0x80u, on);
+}
+
+bool edit_password(Win w)
+{
+    // ITextEdit::GetTextEditFlag (vt +0x48, 0x9893a0, ret 4): bit 0x80 = kFlagPassword
+    void* e = as_edit(w);
+    return e && vcall<int>(e, 0x48 / 4, 0x80u) != 0;
+}
+
+void set_button_borders(Win w, float l, float t, float r, float b)
+{
+    if (void* btn = as_button(w))
+        vcall<void>(btn, 0x54 / 4, l, t, r, b);
+}
+
 // ---------------- images / drawables ----------------
 Win image_window(Win parent, uint32_t instance, uint32_t group, float x, float y)
 {
@@ -496,6 +518,26 @@ void* std_drawable_with_icon(void* src, void* icon)
     return d;
 }
 
+// BUG-0874: UTFWin::StdDrawable (0x7C bytes, ctor 0x988350): images[8] at +0x10..+0x2C,
+// mScaleType = 1 (9-slice) at +0x30, mScaleArea = {1/3, 1/3, 1/3, 1/3} at +0x34..+0x40.
+void* std_drawable_9slice(void* img)
+{
+    if (!a_stddrw_ctor || !a_obj_new || !a_get_alloc || !img)
+        return nullptr;
+    uint8_t* d = (uint8_t*)utf_new(0x7C);
+    if (!d)
+        return nullptr;
+    thiscall<void*>(a_stddrw_ctor, d);
+    for (int i = 0; i < 8; i++) {
+        void** slot = (void**)(d + 0x10 + i * 4);
+        *slot = img;
+        obj_addref(img);
+    }
+    return d;
+}
+
+void set_state_provider(std::function<std::string()> fn) { g_state_provider = std::move(fn); }
+
 // ---------------- events ----------------
 struct HandlerBox {
     std::function<bool(Win, const Msg&)> fn;
@@ -564,6 +606,13 @@ Win arg_win(const char* text, SkOut* out)
 int c_ui(void*, int argc, const char* const* argv, SkOut* out)
 {
     std::string sub = argc > 1 ? argv[1] : "tree";
+    if (sub == "state") {
+        if (g_state_provider)
+            H->out_printf(out, "%s", g_state_provider().c_str());
+        else
+            H->out_printf(out, "ui state unavailable\n");
+        return 0;
+    }
     if (sub == "find" && argc > 2) {
         std::string t = argv[2];
         for (int i = 3; i < argc; i++)
@@ -752,7 +801,7 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
 void register_commands()
 {
     H->command_add(M, "coop.ui",
-                   "coop.ui tree [depth] [all] [root] | find <caption> | where <hex id>... | cmd <hex cmd>... | at <x> <y> | layouts | load <inst> [group] | "
+                   "coop.ui state | tree [depth] [all] [root] | find <caption> | where <hex id>... | cmd <hex cmd>... | at <x> <y> | layouts | load <inst> [group] | "
                    "show <win> [0|1] - Spore UI windows",
                    c_ui, nullptr, SK_CMD_OUTSIDE_FRAME);
 }

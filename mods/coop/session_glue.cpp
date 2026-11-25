@@ -22,6 +22,7 @@
 #include "designs.h"
 #include "net/compat.h"
 #include "net/manifest.h"
+#include "recent_servers.h"
 
 namespace coop_core {
 
@@ -806,6 +807,65 @@ bool slow_lookup(const std::string& host, uint32_t& ip)
     return g_real_lookup(host, ip);
 }
 
+// BUG-0867: optional session password & persisted recent servers list ([recent] server0..server7 in coop.ini)
+bool g_recent_servers_fix = true;
+COOP_FIX("ui.recent_servers", "BUG-0867", g_recent_servers_fix,
+         "ui: persist and show up to 8 recently joined server addresses in the Join step");
+static recent::List g_recent;
+static std::string g_joining_addr;
+
+static void recent_save()
+{
+    if (!H || !H->config_set_str)
+        return;
+    g_recent.save([](const char* key, const std::string& val) {
+        H->config_set_str(M, "recent", key, val.c_str());
+    });
+}
+
+void recent_load()
+{
+    g_recent.clear();
+    if (!H)
+        return;
+    g_recent.load([](const char* key) {
+        char buf[256] = {};
+        H->config_str(M, "recent", key, "", buf, sizeof buf);
+        return std::string(buf);
+    });
+}
+
+void recent_record(const std::string& addr)
+{
+    if (!g_recent_servers_fix)
+        return;
+    if (g_recent.add(addr))
+        recent_save();
+}
+
+void recent_clear()
+{
+    g_recent.clear();
+    recent_save();
+}
+
+std::vector<std::string> recent_list()
+{
+    if (!g_recent_servers_fix)
+        return {};
+    return g_recent.items();
+}
+
+void set_session_password(const std::string& pw)
+{
+    g_sess.password = pw; // never logged or persisted
+}
+
+bool has_session_password()
+{
+    return net::g_fix.session_password && !g_sess.password.empty();
+}
+
 void setup_callbacks()
 {
     net::g_spawn_thread = spawn_pinned;
@@ -815,6 +875,8 @@ void setup_callbacks()
                      std::string(H->exe_sha256()).substr(0, 8);
     g_sess.cb.log = [](const std::string& s) { LOG("net: %s", s.c_str()); };
     g_sess.cb.connected = [] {
+        if (g_recent_servers_fix && !g_joining_addr.empty())
+            recent_record(g_joining_addr);
         support::on_session_start();
         support::on_connected();
         pfind::on_connected(); // F2: the colour this player picked goes to the host
@@ -1413,6 +1475,7 @@ bool do_join(const std::string& addr, std::string& err)
 {
     end_open_session();
     reset_lobby();
+    g_joining_addr = recent::clean_address(addr);
     g_sess.rejoin_token = rejoin::token_for_join(H->instance_id(), addr, g_name); // BUG-0235, BUG-1001
     if (!g_sess.join(addr, g_name, err))
         return false;

@@ -27,6 +27,7 @@ struct PlayerRow {
 struct LanGame {
     std::string name, address, info;
     int players = 0, max_players = 0;
+    bool locked = false; // BUG-0867: host requires a session password
 };
 
 // what the UI needs from the mod (filled in coop.cpp)
@@ -88,6 +89,10 @@ struct Api {
     std::function<std::vector<LanGame>()> lan_games;
     std::function<void(bool)> lan_scan; // start/stop looking for games on the network
     std::function<std::vector<std::string>()> local_addresses;
+    // BUG-0867: optional session password & recent servers list (never log or persist raw password)
+    std::function<void(const std::string&)> set_password;
+    std::function<bool()> has_password;
+    std::function<std::vector<std::string>()> recent_servers;
     std::function<uint32_t()> mode; // game mode id
     std::function<std::string()> version_line; // "SporeCoop 0.7.2.1  -  GOG 2024" (window footer)
     std::function<std::string()> report;       // writes a problem report, returns its path ("" = cannot)

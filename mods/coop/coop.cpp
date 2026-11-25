@@ -2356,10 +2356,14 @@ void init_ui()
     a.lan_games = [] {
         std::vector<coop_ui::LanGame> v;
         for (auto& g : g_disc.games(net::now_ms()))
-            v.push_back({g.info.name, g.host.str(), g.info.info, g.info.players, g.info.max_players});
+            v.push_back({g.info.name, g.host.str(), g.info.info, g.info.players, g.info.max_players,
+                         net::g_fix.session_password && g.info.has_flags && (g.info.flags & net::DF_PASSWORD) != 0});
         return v;
     };
     a.lan_scan = lan_scan;
+    a.set_password = set_session_password;
+    a.has_password = has_session_password;
+    a.recent_servers = recent_list;
     a.local_addresses = [] {
         std::vector<std::string> v;
         for (auto& l : local_addresses())
@@ -2603,6 +2607,7 @@ static void init_config()
         g_name = "Player";
     g_share_world = H->config_int(M, "coop", "share_world", 1) != 0;
     g_save_on_share = H->config_int(M, "coop", "save_before_share", 1) != 0;
+    recent_load();
     trace::init(H, M);
     trace::g_detail = std::max(0, std::min(2, H->config_int(M, "coop", "log_detail", 1)));
 }
