@@ -37,6 +37,7 @@
 #include "net/validate.h"
 #include "fields_wire.h"
 #include "wire/adventure.h"
+#include "wire/adv_editor.h"
 #include "library_core.h"
 #include "wire/common.h"
 #include "wire/history.h"
@@ -1118,6 +1119,10 @@ static const WireDec kWireDecoders[] = {
     wire_dec<wire::adventure::Hello>, wire_dec<wire::adventure::Welcome>, wire_dec<wire::adventure::Propose>,
     wire_dec<wire::adventure::Commit>, wire_dec<wire::adventure::ActChange>, wire_dec<wire::adventure::Outcome>,
     wire_dec<wire::adventure::Death>, wire_dec<wire::adventure::Hit>, wire_dec<wire::adventure::ActorBatch>,
+    // wire/adv_editor.h (MSG_ADV_EDITOR, WP-AE of 0.8.0)
+    wire_dec<wire::adv_editor::HelloSync>, wire_dec<wire::adv_editor::SnapshotChunk>, wire_dec<wire::adv_editor::OpReq>,
+    wire_dec<wire::adv_editor::OpApplied>, wire_dec<wire::adv_editor::LeaseMsg>, wire_dec<wire::adv_editor::DragPreview>,
+    wire_dec<wire::adv_editor::OpReject>,
 };
 
 // fuzz_struct with a rule per prefix length instead of one base length (MSG_RES: the head alone is an older host's
@@ -1650,6 +1655,84 @@ static void fuzz_wire(uint64_t seed, int iters)
     fuzz_wire_space_rivalry(R, iters);
     fuzz_wire_modules(R, iters);
     fuzz_wire_adventure(R, iters);
+    {
+        namespace ae = wire::adv_editor;
+        auto hdr = [](Rng& R) {
+            ae::DraftHeader h;
+            h.draft_key.v[0] = R.u32();
+            h.draft_key.v[1] = R.u32();
+            h.draft_key.v[2] = R.u32();
+            h.session_id = R.u32() | 1u;
+            return h;
+        };
+        auto mk_op = [](Rng& R, bool concrete) {
+            ae::OpData o;
+            static const uint8_t kAll[] = {ae::OP_CREATE_MARKER, ae::OP_DELETE_MARKER, ae::OP_TRANSFORM_MARKER,
+                                           ae::OP_ADD_ACT, ae::OP_DELETE_ACT, ae::OP_SET_CAPTAIN,
+                                           ae::OP_UNDO, ae::OP_REDO};
+            o.kind = kAll[R.below(concrete ? 6 : 8)];
+            o.uid = R.u32() | 1u;
+            o.class_id = (int32_t)R.below(64);
+            o.key.v[0] = R.u32();
+            o.key.v[1] = R.u32();
+            o.key.v[2] = R.u32();
+            o.act = (uint8_t)R.below(ae::kMaxActs);
+            o.pos[0] = (float)(int)R.below(200) - 100.f;
+            o.pos[1] = (float)(int)R.below(200) - 100.f;
+            o.pos[2] = (float)(int)R.below(200) - 100.f;
+            o.rot[0] = 0.f; o.rot[1] = 0.f; o.rot[2] = 0.f; o.rot[3] = 1.f;
+            o.scale = 0.5f + (float)R.below(10) * 0.25f;
+            return o;
+        };
+        fuzz_struct<ae::HelloSync>("adv_editor HelloSync", R, iters, [&](Rng& R) {
+            ae::HelloSync x; x.hdr = hdr(R); x.last_rev = R.u32(); return x;
+        });
+        fuzz_struct<ae::SnapshotChunk>("adv_editor SnapshotChunk", R, iters / 2, [&](Rng& R) {
+            ae::SnapshotChunk x; x.hdr = hdr(R); x.rev = R.u32();
+            x.num_acts = (uint8_t)(1 + R.below(ae::kMaxActs));
+            x.current_act = (uint8_t)R.below(x.num_acts);
+            x.captain_key.v[0] = R.u32(); x.captain_key.v[1] = R.u32(); x.captain_key.v[2] = R.u32();
+            x.chunk_total = (uint8_t)(1 + R.below(4));
+            x.chunk_idx = (uint8_t)R.below(x.chunk_total);
+            int n = (int)R.below(ae::kMaxMarkersPerChunk + 1);
+            for (int i = 0; i < n; i++) {
+                ae::MarkerRec m;
+                m.uid = R.u32() | 1u; m.class_id = (int32_t)R.below(64);
+                m.class_key.v[0] = R.u32(); m.class_key.v[1] = R.u32(); m.class_key.v[2] = R.u32();
+                m.act = (uint8_t)R.below(x.num_acts);
+                m.pos[0] = (float)i; m.pos[1] = 1.f; m.pos[2] = 2.f;
+                m.rot[0] = 0.f; m.rot[1] = 0.f; m.rot[2] = 0.f; m.rot[3] = 1.f;
+                m.scale = 1.f;
+                x.markers.push_back(m);
+            }
+            return x;
+        });
+        fuzz_struct<ae::OpReq>("adv_editor OpReq", R, iters, [&](Rng& R) {
+            ae::OpReq x; x.hdr = hdr(R); x.client_op_id = R.u32(); x.op = mk_op(R, false); return x;
+        });
+        fuzz_struct<ae::OpApplied>("adv_editor OpApplied", R, iters, [&](Rng& R) {
+            ae::OpApplied x; x.hdr = hdr(R); x.rev = R.u32() | 1u; x.actor_id = (uint8_t)R.below(4);
+            x.client_op_id = R.u32(); x.flags = (uint8_t)R.below(3);
+            x.actor_undo_depth = R.u8(); x.actor_redo_depth = R.u8();
+            x.op = mk_op(R, true); return x;
+        });
+        fuzz_struct<ae::LeaseMsg>("adv_editor LeaseMsg", R, iters, [&](Rng& R) {
+            ae::LeaseMsg x; x.hdr = hdr(R); x.action = (uint8_t)(1 + R.below(6));
+            x.uid = R.u32() | 1u; x.owner_id = (uint8_t)R.below(4); x.ttl_ms = R.below(ae::kMaxLeaseTtlMs + 1);
+            return x;
+        });
+        fuzz_struct<ae::DragPreview>("adv_editor DragPreview", R, iters, [&](Rng& R) {
+            ae::DragPreview x; x.hdr = hdr(R); x.actor_id = (uint8_t)R.below(4); x.uid = R.u32() | 1u;
+            x.pos[0] = 1.f; x.pos[1] = 2.f; x.pos[2] = 3.f;
+            x.rot[0] = 0.f; x.rot[1] = 0.f; x.rot[2] = 0.f; x.rot[3] = 1.f; x.scale = 1.f;
+            return x;
+        });
+        fuzz_struct<ae::OpReject>("adv_editor OpReject", R, iters, [&](Rng& R) {
+            ae::OpReject x; x.hdr = hdr(R); x.client_op_id = R.u32();
+            x.reason = (uint8_t)(1 + R.below(6)); x.holder_id = (uint8_t)R.below(4); x.uid = R.u32();
+            return x;
+        });
+    }
 }
 
 #ifdef FUZZ_LIBFUZZER

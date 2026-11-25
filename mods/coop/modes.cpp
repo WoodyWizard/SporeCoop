@@ -451,6 +451,8 @@ COOP_FIX("adventure.captain_scale", "BUG-0793", g_captain_scale_fix,
          "adventure: partner captain puppets render at their true per-captain scale (1.0x) instead of the 1.15x Creature puppet factor");
 static void* scenario_spawn(const net::PlayerState& s, void* av)
 {
+    if (adventure_sub_mode() == 1)
+        return nullptr; // BUG-0863: never spawn captain puppets inside the Adventure Editor
     if (!g_adventure_puppet_fix)
         return creature_spawn(s, av);
     void* herd = game::avatar_herd();
@@ -610,6 +612,26 @@ void* adventure_play_mode()
     if (!sm || !skg::readable(sm, 0x7C))
         return nullptr;
     return *(void**)(sm + 0x78);
+}
+void* adventure_data()
+{
+    if (game::mode_id() != kScenario)
+        return nullptr;
+    uintptr_t p = S2("App::cScenarioMode::ptr");
+    uint8_t* sm = p ? *(uint8_t**)p : nullptr;
+    if (!sm || !skg::readable(sm, 0x78))
+        return nullptr;
+    return *(void**)(sm + 0x74);
+}
+int adventure_sub_mode()
+{
+    if (game::mode_id() != kScenario)
+        return 0;
+    uintptr_t p = S2("App::cScenarioMode::ptr");
+    uint8_t* sm = p ? *(uint8_t**)p : nullptr;
+    if (!sm || !skg::readable(sm, 0xD0))
+        return 0;
+    return *(int32_t*)(sm + 0xCC);
 }
 static uint32_t adventure_place()
 {

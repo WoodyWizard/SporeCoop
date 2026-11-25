@@ -166,7 +166,7 @@ static uint32_t g_actor_batches_tx = 0, g_actor_batches_rx = 0;
 static bool connected() { return C.sess && C.sess->connected(); }
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client; }
-static bool in_scenario() { return game::mode_id() == modes::kScenario; }
+static bool in_scenario() { return game::mode_id() == modes::kScenario && modes::adventure_sub_mode() != 1; }
 
 static bool shared_enabled() { return g_shared_fix && settings::on(settings::kAdventureShared); }
 static bool host_actors_enabled() { return shared_enabled() && g_host_actors_fix; }
