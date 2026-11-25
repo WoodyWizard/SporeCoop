@@ -1,17 +1,17 @@
 ---
 id: BUG-1553
 title: Creature Rivals: GetRelationship enum inversion, War PvP and family combat, pack recruitment, arrows, transition and NPC Influence UI
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-25
 source: v0.8.0 independent audit
 role: both
 versions: 0.8.0
-fixed_in:
+fixed_in: 0.8.0.1
 branch: w0801/creature
-commits:
-tests:
+commits: 7e927911
+tests: rivals_creature, rivals_creature_off, creature_rivals_tests, campaign_rivals
 signature:
 docs: docs/11-rivals.md
 related: BUG-1547
@@ -51,9 +51,12 @@ See `docs/plan-0.8.0.1.md` WP-3.
    - Skipped full `game::for_each_object` planet scans once all connected players have assigned live nests, throttling periodic herd maintenance to >= 1.0 s while still reacting immediately to `BaseDistance` changes and unassigned players.
 7. **F9 Influence UI wild species list (`creature_rivals.cpp`, `creature_rivals_logic.h`)**:
    - Implemented and registered `StageHooks::on_npc_ui_list` via `build_wild_npc_ui_list`, returning discovered non-extinct wild species (excluding player home species) with `Wild 0xXXXXXXXX` labels, `allied`, `hostile`, `can_turn = !extinct`, `can_protect = allied`, and `can_smooth = hostile`; verified `Protect` requires `kRelAllied`.
+- `switch: rivals.creature` (`SPORE_FIX_OFF=rivals.creature`).
 
 ## Verification
 - Native MinGW build (`make -j$(nproc)`): 0 warnings, 0 errors.
 - Native Linux ASan+UBSan unit tests (`make unit-cpp`): all suites passed (`creature_rivals_tests`: 195 assertions covering enum values, predator `rel=5` non-extinction, War PvP/hover/settings, guest pack recruitment & impressed isolation, auto Tribe transition, NPC UI list generation, and wire codecs).
 - Static lint (`python3 tools/tests/test_lint.py`): 1117 mod counter keys, 0 problems.
-- Pending live Wine integration run (`coop_rivals_creature.py` and `campaign_rivals`) before closing.
+- Wine lab verification:
+  - FAIL run: `out/lab/20261125-111531` (`rivals_creature_off` twin FAIL with `SPORE_FIX_OFF=rivals.creature`).
+  - PASS runs: `out/lab/20261125-105211` (`rivals_creature` PASS 40 s), `out/lab/20261125-130606` (4-player `campaign_rivals` Creature -> Tribe natural transition).

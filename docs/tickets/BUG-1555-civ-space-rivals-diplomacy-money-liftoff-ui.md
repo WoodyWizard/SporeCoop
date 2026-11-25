@@ -1,17 +1,17 @@
 ---
 id: BUG-1555
 title: Civ & Space Rivals: NPC diplomacy wipe, guest SpendMoney, Civ->Space liftoff stranding, city handoff, Space influence price and NPC UI
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-25
 source: v0.8.0 independent audit
 role: both
 versions: 0.8.0
-fixed_in:
+fixed_in: 0.8.0.1
 branch: w0801/civ-space
-commits:
-tests:
+commits: 1f9e463e, c05de51b, 0d7d9e7b
+tests: rivals_civ, rivals_civ_off, rivals_space, rivals_space_off, civ_rivals_tests, space_rivals_tests, campaign_rivals
 signature:
 docs: docs/11-rivals.md
 related: BUG-1549, BUG-1550
@@ -42,10 +42,13 @@ Implemented all 8 WP-5 items on branch `w0801/civ-space`:
 5. **Civ->Space city count handoff (`civ_rivals_logic.h`, `civ_rivals.cpp`, `space_rivals.h`, `space_rivals.cpp`)**: `civ_rivals` tracks live Civ city counts for guests `1..3`, clamps to `1..3` (`clamp_space_handoff_cities`), and pushes them into `spacerivals::set_guest_civ_cities(pid, count)` on progress eval, city capture, and stage race end. Updated `coop.space rivals emigrate [cities [pid]]` to accept an optional `pid`.
 6. **Space influence buy price scaling (`space_rivals_logic.h`, `space_rivals.cpp`)**: added `influence_buy_space_cost` (`kSpaceMoneyPerInfluenceUnit = 200` -> 10k/20k/30k Sporebucks) and wired it into `on_buy_influence_space` for host and guests (with guest-side clamp >= 0 on `OP_CHARGE_MONEY`).
 7. **Space rivalry toggle & early-load sync (`space_rivalry.cpp`)**: `host_apply(A_RIVALS/A_ALLIES)` now updates `rivals::set_stage_mode(Stage::Space, ...)` under a re-entrancy `CALL_GUARD`, and `sync_from_rivals()` records a pending sync when `money_ptr()` is null during early Space load and retries on `tick()` once ready.
-8. **F9 Influence NPC UI providers (`civ_rivals_logic.h`, `civ_rivals.cpp`, `space_rivals_logic.h`, `space_rivals.cpp`)**: registered `hooks.on_npc_ui_list` in both Civ (readable color/specialty/city-count labels) and Space (discovered NPC empires from `cRelationshipManager` and `cPlayer` contacts) with `allied`, `hostile`, `can_turn`, `can_protect`, `can_smooth`; removed duplicate `Smooth`-only NPC rows from `civ_rivals.cpp` `hook_extra_ui_rows()`.
+8. **F9 Influence NPC UI providers & Space city pose sanitization (`civ_rivals_logic.h`, `civ_rivals.cpp`, `space_rivals_logic.h`, `space_rivals.cpp`)**: registered `hooks.on_npc_ui_list` in both Civ (readable color/specialty/city-count labels) and Space (discovered NPC empires from `cRelationshipManager` and `cPlayer` contacts, guarded on `viewer == spaceext::my_id()`) with `allied`, `hostile`, `can_turn`, `can_protect`, `can_smooth`; removed duplicate `Smooth`-only NPC rows from `civ_rivals.cpp` `hook_extra_ui_rows()`; added `sanitize_city_pose()` in `ensure_city_count()` so `FillPlanetDataForTechLevel` `(0,0,0)` `cCityData` positions on unvisited emigrated homeworlds never trigger `0x00BBD808` (`PlanetRecord_EcoLevel+0x858`) `NaN` fault storms on landing.
+- `switch: rivals.civ` / `rivals.space` (`SPORE_FIX_OFF=rivals.civ`, `SPORE_FIX_OFF=rivals.space`).
 
 ## Verification
 - Cross-compile (`make -j$(nproc)`): PASS, 0 warnings/0 errors (`-Werror`).
 - ASan+UBSan unit tests (`make unit-cpp`): PASS (`civ_rivals_tests`: 8/8 suites passed; `space_rivals_tests`: 102 passed, 0 failed).
 - Lint (`python3 tools/tests/test_lint.py`): PASS (0 problems).
-- Pending Wine/lab E2E verification (`coop_rivals_civ.py`, `coop_rivals_space.py`, and full campaign run) before marking `status: fixed`.
+- Wine lab verification:
+  - FAIL runs: `out/lab/20261125-111531` (`rivals_civ_off` and `rivals_space_off` twin FAILs with `SPORE_FIX_OFF=rivals.civ` / `rivals.space`), `out/lab/20261125-114308` (`campaign_rivals` guest Space landing `0x00BBD808` fault storm before `sanitize_city_pose`).
+  - PASS runs: `out/lab/20261125-105211` (`rivals_civ` PASS 38 s), `out/lab/20261125-130601` (`rivals_space` PASS 90 s), `out/lab/20261125-130606` (4-player `campaign_rivals` Civ -> Space + Chronicle Finale with 4 emigrated homeworlds and 0 Space faults).

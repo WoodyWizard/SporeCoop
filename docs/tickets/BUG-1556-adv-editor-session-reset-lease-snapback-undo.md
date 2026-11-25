@@ -1,17 +1,17 @@
 ---
 id: BUG-1556
 title: Shared Adventure Editor: broadcast Save/Play-test session reset, release leases on drag end, snap-back on reject, and non-destructive Ctrl+Z
-status: open
+status: fixed
 kind: bug
 stage: Adventure
 reported: 2026-11-25
 source: v0.8.0 independent audit
 role: both
 versions: 0.8.0
-fixed_in:
+fixed_in: 0.8.0.1
 branch: w0801/adveditor
-commits:
-tests: tests/adv_editor_tests.cpp
+commits: 968905e7
+tests: adv_editor, adv_editor_off, adv_editor_tests tests/adv_editor_tests.cpp
 signature:
 docs: docs/10-adventures.md
 related: BUG-0863
@@ -42,9 +42,12 @@ Implemented in `mods/coop/adv_editor_logic.h` and `mods/coop/adv_editor.cpp` (wi
 4. **Non-destructive `Ctrl+Z` / `Ctrl+Y` routing**:
    - Added `UndoRouter` in `adv_editor_logic.h` to record whether each `h_CommitHistory` corresponded to a synced edit hook (`Synced`) or a native-only edit (`Native`: terrain, atmosphere, goals, cast/marker properties).
    - `h_CanUndo`/`h_CanRedo`/`h_Undo`/`h_Redo` route `Synced` entries through the shared op log (with rollback on rejected guest `OP_UNDO`/`OP_REDO`) and fall through to `o_CanUndo`/`o_CanRedo`/`o_Undo`/`o_Redo` (wrapped in `g_applying = true`) for `Native` entries. Console `coop.adveditor undo`/`redo` remains routed to the shared op log.
+- `switch: adventure.shared_editor` (`SPORE_FIX_OFF=adventure.shared_editor`).
 
 ## Verification
 - Native build (`make -j$(nproc)`): 0 warnings, 0 errors.
 - Native ASan+UBSan unit tests (`make unit-cpp`): `adv_editor_tests: 265 checks, 0 failed` (covering session reset & guest re-sync on Save/Play-test/mismatch, drag lease release on CommitHistory and 0.25 s settle, `LEASE_DENY` holder tracking + `K_OP_REJECT` snap-back, and mixed synced/native UndoRouter routing).
 - Test lint (`python3 tools/tests/test_lint.py`): 0 problems.
-- Pending live Wine/lab `coop_adv_editor.py` verification before closing.
+- Wine lab verification:
+  - FAIL run: `out/lab/20261125-114420` (`adv_editor_off` twin FAIL with `SPORE_FIX_OFF=adventure.shared_editor`).
+  - PASS run: `out/lab/20261125-105211` (`adv_editor` PASS 53 s, 0 faults).

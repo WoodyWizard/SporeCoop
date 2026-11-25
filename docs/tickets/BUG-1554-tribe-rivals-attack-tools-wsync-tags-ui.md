@@ -1,17 +1,17 @@
 ---
 id: BUG-1554
 title: Tribe Rivals: guest War attack, guest tool purchases, wsync isolation, tags/relations, Creature payout and NPC Influence UI
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-25
 source: v0.8.0 independent audit
 role: both
 versions: 0.8.0
-fixed_in:
+fixed_in: 0.8.0.1
 branch: w0801/tribe
-commits:
-tests: tests/tribe_rivals_tests.cpp
+commits: de73d480, 0a1ee38f
+tests: rivals_tribe, rivals_tribe_off, tribe_rivals_tests, campaign_rivals tests/tribe_rivals_tests.cpp
 signature:
 docs: docs/11-rivals.md
 related: BUG-1548, BUG-1547
@@ -33,10 +33,13 @@ Implemented WP-4 on `w0801/tribe`:
 2. **Guest tool/hut purchases (`mods/coop/worldobj.cpp`, `mods/coop/tribe.h`, `mods/coop/tribe.cpp`, `mods/coop/tribe_rivals.h`, `mods/coop/tribe_rivals.cpp`, `mods/coop/tribe_rivals_logic.h`)**: routed `worldobj.cpp` `tool_buy` through `tribe::buy_player_tool_for(from, type, pos)` using `plan_tool_buy` to target `tribe_rivals::tribe_of_player(from)`, validate the 150 m distance from that player's village, check and deduct food from that player's tribe on new purchases (`spend_player_food` / `sync_player_food`), and build the tool in the sender's village.
 3. **`wsync.cpp` isolation (`mods/coop/wsync.cpp`, `mods/coop/tribe_host.cpp`, `mods/coop/tribe_rivals_logic.h`)**: gated `s_tlevel`, `s_goal`, and host `wsync::goal_target` pushes on `!tribe_rivals::active()`, gated `s_nest` on `!creature_rivals::active()`, and updated `r_tfood`/`s_tfood` so host's own village food is synced to guests in Tribe Rivals without clobbering the guest's own swapped tribe food (`should_sync_tribe_food`).
 4. **Rival tags, arrows, PvP diplomacy, co-op epic, `party::hit`, and Creature draft payout (`mods/coop/tribe.cpp`, `mods/coop/tribe_rivals.cpp`, `mods/coop/tribe_rivals_logic.h`)**: synced player-vs-player War/Ally/Neutral relations into `cRelationshipManager` (`sync_pvp_native_relations`), walked all player-owned tribes in `tribe::for_each_owned`, `chiefs_tick`, and `restore_chief_scales` (while skipping co-op `epic_tick`, `spread_chiefs`, and `place_chiefs` in Tribe Rivals), classified all player-owned tribes as `party::Side::Player` in `h_CitizenTD`, and delivered `rivals::take_pending_draft_payout_for(rivals::Stage::Creature, pid)` as Tribe starting food for both host and guests (`host_deliver_creature_payouts`).
-5. **F9 Influence UI NPC list (`mods/coop/tribe_rivals.cpp`, `mods/coop/tribe_rivals_logic.h`)**: implemented and registered `hooks.on_npc_ui_list` via `build_npc_ui_list` returning live non-player NPC tribes with readable labels (`NPC Tribe #...`), `allied`, `hostile`, `can_turn = true`, `can_protect = allied`, and `can_smooth = hostile`.
+5. **F9 Influence UI NPC list & fresh-planet auto-form (`mods/coop/tribe_rivals.cpp`, `mods/coop/tribe_rivals_logic.h`)**: implemented and registered `hooks.on_npc_ui_list` via `build_npc_ui_list` returning live non-player NPC tribes with readable labels (`NPC Tribe #...`), `allied`, `hostile`, `can_turn = true`, `can_protect = allied`, and `can_smooth = hostile`; added `host_try_auto_form_npc()` so fresh Tribe planets automatically spawn tribes for 3-4 players and retain at least 2 free NPC tribes for stage progression.
+- `switch: rivals.tribe` (`SPORE_FIX_OFF=rivals.tribe`).
 
 ## Verification
 - Native build (`make -j$(nproc)`): PASS, 0 warnings/0 errors on all modified files.
 - Native ASan+UBSan unit tests (`make unit-cpp`, including 11 test suites in `tests/tribe_rivals_tests.cpp` with 5 new suites covering War attack routing, guest tool buy routing/food charging, `wsync` isolation policy, PvP diplomacy + Creature->Tribe payout delivery, and NPC UI list generation): PASS.
 - Lint (`python3 tools/tests/test_lint.py`): PASS (`0 problem(s)`).
-- Wine/lab live verification pending merge/integration.
+- Wine lab verification:
+  - FAIL runs: `out/lab/20261125-111531` (`rivals_tribe_off` twin FAIL with `SPORE_FIX_OFF=rivals.tribe`), `out/lab/20261125-111537` (4-player `campaign_rivals` deadlocked on fresh Tribe planet with 0 free NPC tribes before `host_try_auto_form_npc`).
+  - PASS runs: `out/lab/20261125-114302` (`rivals_tribe` PASS 32 s), `out/lab/20261125-130606` (4-player `campaign_rivals` Tribe -> Civ natural transition).

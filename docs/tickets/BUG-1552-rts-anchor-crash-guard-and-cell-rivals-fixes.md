@@ -1,17 +1,17 @@
 ---
 id: BUG-1552
 title: Tribe crash guard in modes::rts_anchor, BUG-0359 tripwire, and Cell Rivals gameplay fixes
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-11-25
 source: v0.8.0 independent audit & campaign_rivals
 role: both
 versions: 0.8.0
-fixed_in:
+fixed_in: 0.8.0.1
 branch: w0801/cell-crash
-commits:
-tests:
+commits: d708934d
+tests: rivals_cell, rivals_cell_off, cell_rivals_tests, campaign_rivals
 signature:
 docs: docs/11-rivals.md
 related: BUG-0359, BUG-1538, BUG-1546
@@ -36,9 +36,12 @@ See `docs/plan-0.8.0.1.md` WP-2.
 6. `mods/coop/cell_rivals_logic.h` + `mods/coop/cell_rivals.cpp` (`draft_missing_union_mask`, `build_draft_items_for_pickers`, `resolve_draft_pick`, `on_cell_race_end`, `on_cell_draft_pick`): built 3-4 player Cell drafts from the union of missing parts across reported non-winner pickers (prioritizing universally-missing parts and skipping empty drafts) and resolved each pick against the picker's owned mask to prevent wasted no-op picks.
 7. `mods/coop/cell_rivals_logic.h` + `mods/coop/cellsync_host.cpp` + `mods/coop/cellsync_guest.cpp` + `mods/coop/cellsync_combat.cpp` + `mods/coop/cell_rivals.cpp`: encoded poison cloud owner ID (0..3) in unused `MSG_CELL_STATE` flag bits 4..6 (backwards-compatible), strictly gated 3-4p Cell Rivals poison cloud damage on `rivals::at_war(me, owner)` via `allow_poison_cloud_pvp`, and routed lethal war poison kills through `rivals_report_pvp_kill` (`kSubPvpKill`) for kill credit and 3 physical meat chunk drops.
 8. `mods/coop/cell_rivals_logic.h` + `mods/coop/cellsync_guest.cpp` + `tools/tests/monitor.py`: switched lagging guests in Cell Rivals to their local pool (refilling refused tiles) when `host_scale / own_scale` diverges beyond `[0.125, 8.0]` (with hysteresis `[0.25, 4.0]` to rejoin host pool), guarded `guest_tick` against over-scaling diverged mirrors, and added `Drawn.scale_quant_slack` (`0.05 * sqrt(3) * (ko / kv)`) in `tools/tests/monitor.py` for `ko > kv` Cell comparisons.
+- `switch: rivals.cell` (`SPORE_FIX_OFF=rivals.cell`).
 
 ## Verification
 - Built all Windows targets cleanly with `make -j$(nproc)` (0 warnings, 0 errors).
 - Added ASan+UBSan unit tests in `tests/cell_rivals_tests.cpp` covering stage-tagged draft payout non-theft, guest-wins-first host unlock policy, 3-4p draft filtering and no-op resolution, food rollback spent-DNA clamp, poison cloud owner flags and PvP attribution, and catch-up `wscale` divergence/hysteresis (`cell_rivals_tests`: 146 passed, 0 failed; full `make unit-cpp` green).
 - Ran `python3 tools/tests/test_lint.py` (0 problems) and verified `monitor.Drawn.scale_quant_slack` directly.
-- Wine/lab verification pending on rel/0.8.0.1 integration.
+- Wine lab verification:
+  - FAIL runs: `out/lab/20261125-093651` (`campaign_rivals` host crash in `modes::rts_anchor` -> `GetPlayerCivilization` & Cell `drawn 1000.2 m`), `out/lab/20261125-111531` (`rivals_cell_off` twin FAIL with `SPORE_FIX_OFF=rivals.cell`).
+  - PASS runs: `out/lab/20261125-105211` (`rivals_cell` PASS 64 s), `out/lab/20261125-130606` (4-player `campaign_rivals`: 0 crashes, 0 drawn violations).
