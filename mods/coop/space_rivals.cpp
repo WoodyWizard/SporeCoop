@@ -55,7 +55,7 @@ static uintptr_t a_StarMgr, a_GetEmpire, a_RequirePlanets, a_GetPlanets, a_Playe
     a_ActivePlanetRec, a_ActiveStarRec, a_AddMoney, a_AddStar, a_AddPlanet, a_SetHomePlanet, a_PlanetTech,
     a_FillPlanet, a_GameAlloc, a_CityName, a_CityCtor, a_AddCityData, a_Context, a_SpacePlayerData, a_SpaceGame,
     a_PlayerUFOGet, a_RelMgr, a_ApplyRel, a_CalcRel, a_MakeContact, a_ToolMgr, a_GetTool, a_AddItemByKey,
-    a_OnUseTool, a_DestroyPlanet, a_CaptureSystem, a_TransferStar, a_SetCaptureProgress, a_DestroyCity;
+    a_OnUseTool, a_DestroyPlanet, a_CaptureSystem, a_TransferStar, a_SetCaptureProgress, a_DestroyCity, a_NounMgr;
 
 // ---- R7 Hook originals ----
 using OnUseTool_t = bool(SK_THISCALL*)(void*, void*, const float*, int);
@@ -87,9 +87,7 @@ static std::map<uint8_t, EmigrationRecord> g_emig_by_id; // host: active guest i
 static std::map<uint8_t, uint16_t> g_guest_civ_cities;   // host: optional Civ city count per guest
 static EmigrationRecord g_my_emig;                       // guest: received assignment
 static bool g_my_emig_pending = false;
-static bool g_relinquish_pending = false;
-static uint32_t g_my_emig_applied_epoch = 0;
-static uint32_t g_my_emig_applied_planet = 0;
+static GuestEmigMachine g_emig_sm;                       // guest: CreateHome -> RelinquishHost -> TeleportHome
 static uint32_t g_relinquished_host_home_planet = 0;
 static uint32_t g_relinquished_host_home_star = 0;
 static std::string g_last_emig_notice;
@@ -103,6 +101,9 @@ static uint32_t g_capture_blocked = 0;
 // NPC Influence & Space budgets
 static uint32_t g_inf_seq = 0;
 static uint32_t g_inf_applied = 0;
+static uint32_t g_draft_payouts = 0;
+static int32_t g_queued_draft_money = 0;
+static bool g_draft_money_pending = false;
 static std::map<uint32_t, double> g_inf_earn_cd;
 static std::map<uint8_t, int32_t> g_guest_money;
 static double g_last_trickle = 0.0;
@@ -147,6 +148,12 @@ void set_guest_civ_cities(uint8_t player_id, uint16_t cities)
 {
     if (rivals::valid_player(player_id) && player_id > 0)
         g_guest_civ_cities[player_id] = clamp_emig_cities((int)cities);
+}
+
+uint16_t guest_civ_cities(uint8_t player_id)
+{
+    auto it = g_guest_civ_cities.find(player_id);
+    return it == g_guest_civ_cities.end() ? 0 : it->second;
 }
 
 // ---- Low-level game helpers ----
@@ -240,6 +247,14 @@ static uint32_t active_planet_id()
         return 0;
     void* rec = cdecl_call<void*>(a_ActivePlanetRec);
     return readable(rec, 0x188) ? F<uint32_t>(rec, 0x184) : 0;
+}
+
+static uint32_t active_star_id()
+{
+    if (!spaceext::in_space() || !a_ActiveStarRec)
+        return 0;
+    void* st = cdecl_call<void*>(a_ActiveStarRec);
+    return readable(st, 0x74) ? F<uint32_t>(st, 0x70) : 0;
 }
 
 static void* my_civ_on(void* rec, uint32_t pol)
@@ -775,15 +790,50 @@ static void host_ensure_guest_emigrations()
 }
 
 // ---- R5: Guest applies its emigrated homeworld (runs outside frame) ----
+static int popcount8_sr(uint8_t v)
+{
+    int n = 0;
+    for (; v; v &= (uint8_t)(v - 1))
+        n++;
+    return n;
+}
+
+static void recompute_civ_city_totals(void* civ)
+{
+    if (!readable(civ, 0x48))
+        return;
+    int turrets = 0, buildings = 0;
+    for (void* c : ptr_vec((uint8_t*)civ + 0x3C, 64)) {
+        if (!readable(c, 0x2C))
+            continue;
+        int t = popcount8_sr(F<uint8_t>(c, 0x28));
+        turrets += t;
+        buildings += std::max(0, F<int32_t>(c, 0x24) - t);
+    }
+    F<int32_t>(civ, 0x20) = turrets;
+    F<int32_t>(civ, 0x24) = buildings;
+}
+
 static void ensure_city_count(void* rec, uint32_t pol, uint16_t want)
 {
+    if (!readable(rec, 0x188) || active_planet_id() == F<uint32_t>(rec, 0x184))
+        return; // never mutate cCivData while live cCity objects point to its cCityData entries
     void* civ = my_civ_on(rec, pol);
     if (!civ)
         return;
+    want = clamp_emig_cities((int)want);
     auto cities = ptr_vec((uint8_t*)civ + 0x3C, 64);
     if (cities.size() > want) {
+        // cCityData (0xC4, docs/re/space.md#space-colony-cities) is a plain struct with no vtable (pos at +0x00),
+        // so never vcall Release on it: shrink end pointer, clear tail slots, and recompute civ turret/building sums.
         void** b = F<void**>(civ, 0x3C);
-        F<void**>(civ, 0x40) = b + want;
+        void** e = F<void**>(civ, 0x40);
+        if (b && e > b && (size_t)(e - b) == cities.size()) {
+            for (size_t i = want; i < cities.size(); i++)
+                b[i] = nullptr;
+            F<void**>(civ, 0x40) = b + want;
+            recompute_civ_city_totals(civ);
+        }
         return;
     }
     if (cities.size() == want || !a_GameAlloc || !a_CityName || !a_CityCtor || !a_AddCityData)
@@ -816,20 +866,17 @@ static void ensure_city_count(void* rec, uint32_t pol, uint16_t want)
     }
 }
 
-static void relinquish_host_home_now()
+static bool relinquish_host_home_now()
 {
     if (!g_my_emig.valid() || !g_my_emig.orig_home_star || !g_my_emig.orig_home_planet)
-        return;
+        return true; // nothing to relinquish
     void* emp = player_empire();
     void* orig_star = spacecoop::star_record(g_my_emig.orig_home_star);
     void* orig_rec = planet_record(g_my_emig.orig_home_planet);
     if (!emp || !orig_star || !orig_rec)
-        return;
-    if (context() == 0 && active_planet_id() == g_my_emig.orig_home_planet) {
-        g_relinquish_pending = true;
-        return;
-    }
-    g_relinquish_pending = false;
+        return false;
+    if (context() == 0 && active_planet_id() == g_my_emig.orig_home_planet)
+        return false; // deferred until liftoff off host's planet surface
     callguard::Hold emig_guard(g_emigrating_guard);
     erase_from_vec((uint8_t*)emp + 0x88, orig_star);
     remove_colony_from_spd(orig_rec);
@@ -838,9 +885,33 @@ static void relinquish_host_home_now()
     g_relinquished_host_home_star = g_my_emig.orig_home_star;
     g_relinquished_host_home_planet = g_my_emig.orig_home_planet;
     g_homes.set(0, g_my_emig.orig_home_star, g_my_emig.orig_home_planet);
+    g_emig_sm.host_relinquished = true;
     if (H && M)
         H->log(M, SK_INFO, "space_rivals: guest relinquished host home star %u planet %08X for rival mirror",
                g_my_emig.orig_home_star, g_my_emig.orig_home_planet);
+    return true;
+}
+
+static void teleport_to_new_home_now()
+{
+    if (!g_my_emig.valid() || !g_emig_sm.home_created || !g_emig_sm.host_relinquished || g_emig_sm.teleported)
+        return;
+    uint32_t act_sid = active_star_id();
+    int ctx = context();
+    if (act_sid == g_my_emig.orig_home_star) {
+        if (ctx == 0)
+            return; // still landed; retry after liftoff
+        if (ctx == 2)
+            spacecoop::teleport_in_galaxy(g_my_emig.new_home_star);
+        else
+            spacecoop::travel_to_star(g_my_emig.new_home_star);
+        g_emig_sm.teleported = true;
+        if (H && M)
+            H->log(M, SK_INFO, "space_rivals: guest jumped from host star %u to emigrated home star %u (ctx=%d)",
+                   g_my_emig.orig_home_star, g_my_emig.new_home_star, ctx);
+    } else if (act_sid != 0) {
+        g_emig_sm.teleported = true;
+    }
 }
 
 static void apply_guest_emigration_task(void*)
@@ -854,79 +925,71 @@ static void apply_guest_emigration_task(void*)
     if (!readable(emp, 0xD4))
         return;
     uint32_t epoch = spaceext::world_epoch();
-    if (g_my_emig_applied_epoch == epoch && g_my_emig_applied_planet == g_my_emig.new_home_planet &&
-        F<uint32_t>(emp, 0xB4) == g_my_emig.new_home_planet) {
-        if (g_relinquish_pending)
-            relinquish_host_home_now();
-        return;
-    }
+    uint32_t cur_hp = F<uint32_t>(emp, 0xB4);
 
-    void* new_star = spacecoop::star_record(g_my_emig.new_home_star);
-    void* new_rec = planet_record(g_my_emig.new_home_planet);
-    if (!new_star || !new_rec || !a_AddStar || !a_PlanetTech || !a_FillPlanet || !a_AddPlanet || !a_SetHomePlanet)
-        return;
+    // Phase 1: Create / re-apply guest's emigrated homeworld (on first arrival or rejoin reload).
+    if (g_emig_sm.needs_reapply(epoch, g_my_emig.new_home_planet, cur_hp)) {
+        void* new_star = spacecoop::star_record(g_my_emig.new_home_star);
+        void* new_rec = planet_record(g_my_emig.new_home_planet);
+        if (!new_star || !new_rec || !a_AddStar || !a_PlanetTech || !a_FillPlanet || !a_AddPlanet || !a_SetHomePlanet)
+            return;
 
-    callguard::Hold emig_guard(g_emigrating_guard);
-    uint32_t mp = my_pol();
+        callguard::Hold emig_guard(g_emigrating_guard);
+        uint32_t mp = my_pol();
 
-    // Ensure habitable T3 homeworld scores if the candidate started at lower T-score.
-    if (F<int32_t>(new_rec, 0x28) < 5) {
-        F<int32_t>(new_rec, 0x28) = 5;
-        F<float>(new_rec, 0xB0) = 0.5f;
-        F<float>(new_rec, 0xB4) = 0.5f;
-        F<float>(new_rec, 0xB8) = 0.5f;
-    }
-
-    // Claim the new star & colonize the new homeworld at tech 5 with target_cities.
-    F<uint32_t>(new_star, 0x54) = mp;
-    thiscall<void>(a_AddStar, emp, new_star);
-    if (F<int32_t>(new_rec, 0x194) != 5) {
-        cdecl_call<void>(a_PlanetTech, new_rec, 5);
-        cdecl_call<void>(a_FillPlanet, new_rec, 5);
-    }
-    auto civs = ptr_vec((uint8_t*)new_rec + 0x15C, 32);
-    for (void* cd : civs)
-        if (readable(cd, 0x18))
-            F<uint32_t>(cd, 0x14) = mp;
-    ensure_city_count(new_rec, mp, g_my_emig.target_cities);
-    thiscall<void>(a_AddPlanet, emp, new_rec);
-    thiscall<void>(a_SetHomePlanet, emp, new_rec);
-    F<uint32_t>(new_star, 0x5C) |= 0x05u;
-
-    g_homes.set(spaceext::my_id(), g_my_emig.new_home_star, g_my_emig.new_home_planet);
-    g_homes.set(0, g_my_emig.orig_home_star, g_my_emig.orig_home_planet);
-
-    // Relinquish host's original homeworld so space_allies mirrors it as host's rival empire.
-    relinquish_host_home_now();
-
-    // If our ship is still in the host's home system (and not landed), jump to our new home star.
-    if (a_ActiveStarRec) {
-        void* act = cdecl_call<void*>(a_ActiveStarRec);
-        uint32_t act_sid = readable(act, 0x74) ? F<uint32_t>(act, 0x70) : 0;
-        if (act_sid == g_my_emig.orig_home_star && context() != 0) {
-            if (context() == 2)
-                spacecoop::teleport_in_galaxy(g_my_emig.new_home_star);
-            else
-                spacecoop::travel_to_star(g_my_emig.new_home_star);
+        // Ensure habitable T3 homeworld scores if the candidate started at lower T-score.
+        if (F<int32_t>(new_rec, 0x28) < 5) {
+            F<int32_t>(new_rec, 0x28) = 5;
+            F<float>(new_rec, 0xB0) = 0.5f;
+            F<float>(new_rec, 0xB4) = 0.5f;
+            F<float>(new_rec, 0xB8) = 0.5f;
         }
+
+        // Claim the new star & colonize the new homeworld at tech 5 with target_cities.
+        F<uint32_t>(new_star, 0x54) = mp;
+        thiscall<void>(a_AddStar, emp, new_star);
+        if (F<int32_t>(new_rec, 0x194) != 5) {
+            cdecl_call<void>(a_PlanetTech, new_rec, 5);
+            cdecl_call<void>(a_FillPlanet, new_rec, 5);
+        }
+        auto civs = ptr_vec((uint8_t*)new_rec + 0x15C, 32);
+        for (void* cd : civs)
+            if (readable(cd, 0x18))
+                F<uint32_t>(cd, 0x14) = mp;
+        ensure_city_count(new_rec, mp, g_my_emig.target_cities);
+        thiscall<void>(a_AddPlanet, emp, new_rec);
+        thiscall<void>(a_SetHomePlanet, emp, new_rec);
+        F<uint32_t>(new_star, 0x5C) |= 0x05u;
+
+        g_homes.set(spaceext::my_id(), g_my_emig.new_home_star, g_my_emig.new_home_planet);
+        g_homes.set(0, g_my_emig.orig_home_star, g_my_emig.orig_home_planet);
+
+        g_emig_sm.mark_home_created(epoch, g_my_emig.new_home_planet);
+        g_my_emig.applied = true;
+
+        std::string old_n = g_my_emig.old_planet_name;
+        std::string new_n = str16((uint8_t*)new_rec + 0x18);
+        if (new_n.empty())
+            new_n = g_my_emig.new_planet_name;
+        g_last_emig_notice = format_emigration_notice(old_n, new_n, spaceext::russian());
+        spaceext::notice(g_last_emig_notice);
+
+        send_emig_msg(0, EMIG_ACK, g_my_emig);
+        if (H && M)
+            H->log(M, SK_INFO, "space_rivals: emigrated homeworld to star %u planet %08X '%s' (%u cities)",
+                   g_my_emig.new_home_star, g_my_emig.new_home_planet, new_n.c_str(),
+                   (unsigned)count_cities_on(new_rec, mp));
     }
 
-    g_my_emig_applied_epoch = epoch;
-    g_my_emig_applied_planet = g_my_emig.new_home_planet;
-    g_my_emig.applied = true;
+    // Phase 2: Relinquish host's original homeworld once off host's planet surface (deferred on Civ -> Space start).
+    if (g_emig_sm.home_created && !g_emig_sm.host_relinquished) {
+        if (!relinquish_host_home_now())
+            return; // still on host planet surface; tick() will retry after liftoff
+    }
 
-    std::string old_n = g_my_emig.old_planet_name;
-    std::string new_n = str16((uint8_t*)new_rec + 0x18);
-    if (new_n.empty())
-        new_n = g_my_emig.new_planet_name;
-    g_last_emig_notice = format_emigration_notice(old_n, new_n, spaceext::russian());
-    spaceext::notice(g_last_emig_notice);
-
-    send_emig_msg(0, EMIG_ACK, g_my_emig);
-    if (H && M)
-        H->log(M, SK_INFO, "space_rivals: emigrated homeworld to star %u planet %08X '%s' (%u cities)",
-               g_my_emig.new_home_star, g_my_emig.new_home_planet, new_n.c_str(),
-               (unsigned)count_cities_on(new_rec, mp));
+    // Phase 3: Jump away from host's star to our new homeworld once relinquished and lifted off (BUG-1555).
+    if (g_emig_sm.home_created && g_emig_sm.host_relinquished && !g_emig_sm.teleported)
+        teleport_to_new_home_now();
 }
 
 // ---- Space NPC Empire Influence (TurnAgainst / Protect / SmoothOver) ----
@@ -1012,16 +1075,17 @@ static bool on_buy_influence_space(uint8_t actor, int32_t price, int32_t /*gain*
 {
     if (!g_space_rivals_fix || !active())
         return false;
-    if (price <= 0)
+    int32_t cost = influence_buy_space_cost(price);
+    if (cost <= 0)
         return true;
     if (actor == 0) {
         void* emp = player_empire();
         if (!readable(emp, 0xD4) || !a_AddMoney)
             return false;
         int32_t cur = F<int32_t>(emp, 0xD0);
-        if (cur < price)
+        if (cur < cost)
             return false;
-        thiscall<void>(a_AddMoney, emp, -price);
+        thiscall<void>(a_AddMoney, emp, -cost);
         return true;
     }
     int32_t cur = 0;
@@ -1029,12 +1093,12 @@ static bool on_buy_influence_space(uint8_t actor, int32_t price, int32_t /*gain*
         cur = it->second;
     else if (const spacemap::Roster* r = spacemap::roster_of(actor))
         cur = r->money;
-    if (cur < price)
+    if (cur < cost)
         return false;
-    g_guest_money[actor] = cur - price;
+    g_guest_money[actor] = cur - cost;
     net::Writer w;
     w.u8((uint8_t)OP_CHARGE_MONEY);
-    write_i32(w, price);
+    write_i32(w, cost);
     return rivals::send_faction_to(actor, rivals::Stage::Space, wire::rivals_faction::SK_STAGE_CUSTOM, w);
 }
 
@@ -1278,10 +1342,22 @@ static void on_faction_msg(uint8_t from, uint8_t subkind, net::Reader& r)
                 [](void* u) {
                     int32_t pr = (int32_t)(intptr_t)u;
                     void* emp = player_empire();
-                    if (readable(emp, 0xD4) && a_AddMoney)
-                        thiscall<void>(a_AddMoney, emp, -pr);
+                    if (readable(emp, 0xD4) && a_AddMoney) {
+                        int32_t cur = F<int32_t>(emp, 0xD0);
+                        int32_t deduct = std::min(cur > 0 ? cur : 0, pr);
+                        if (deduct > 0)
+                            thiscall<void>(a_AddMoney, emp, -deduct);
+                    }
                 },
                 (void*)(intptr_t)price);
+        } else if (op == OP_GRANT_MONEY && from == 0 && !spaceext::is_host()) {
+            int32_t amt = read_i32(r);
+            if (!r.ok() || amt <= 0 || amt > 99999999)
+                return;
+            int64_t sum = (int64_t)g_queued_draft_money + amt;
+            g_queued_draft_money = sum > 99999999LL ? 99999999 : (int32_t)sum;
+            if (H && M)
+                H->log(M, SK_INFO, "space_rivals: queued +%d Space Sporebucks from Civ draft payout", (int)amt);
         } else if (op == OP_FINALE_SUMMARY && from == 0 && !spaceext::is_host()) {
             uint8_t first = r.u8();
             uint8_t win = r.u8();
@@ -1371,6 +1447,86 @@ static void disk_adopt(const std::string& from, const std::string& to)
 
 static bool g_store_reg = store::add({kStoreFeature, disk_save, disk_adopt, [] { disk_load_if_opened(); }});
 
+// ---- Civ -> Space Draft Payout Delivery (BUG-1555) ----
+static void apply_queued_draft_money_task(void*)
+{
+    g_draft_money_pending = false;
+    if (!active() || spaceext::is_host() || g_queued_draft_money <= 0)
+        return;
+    void* emp = player_empire();
+    if (!readable(emp, 0xD4) || !a_AddMoney)
+        return;
+    int32_t amt = g_queued_draft_money;
+    g_queued_draft_money = 0;
+    thiscall<void>(a_AddMoney, emp, amt);
+    g_draft_payouts++;
+    char b[160];
+    snprintf(b, sizeof b,
+             spaceext::russian() ? "Выплата драфта Цивилизации: +%d спорлингов!"
+                                 : "Civ draft payout: +%d Sporebucks!",
+             (int)amt);
+    spaceext::notice(b);
+    if (H && M)
+        H->log(M, SK_INFO, "space_rivals: applied +%d Space Sporebucks Civ draft payout", (int)amt);
+}
+
+static void host_deliver_civ_draft_payouts()
+{
+    if (!active() || !spaceext::is_host() || !spaceext::rivals() || !spaceext::connected())
+        return;
+    const auto& dr = rivals::draft_state();
+    // Host payout (wait until spaceext::rivals() so initial split does not halve winner's bonus).
+    if (dr.pending_payout[0] > 0 &&
+        (dr.pending_payout_stage[0] == rivals::Stage::None || dr.pending_payout_stage[0] == rivals::Stage::Civ)) {
+        void* emp = player_empire();
+        if (readable(emp, 0xD4) && a_AddMoney) {
+            int32_t raw = rivals::take_pending_draft_payout_for(rivals::Stage::Civ, 0);
+            int32_t amt = space_draft_payout_money(raw);
+            if (amt > 0) {
+                thiscall<void>(a_AddMoney, emp, amt);
+                g_draft_payouts++;
+                char b[160];
+                snprintf(b, sizeof b,
+                         spaceext::russian() ? "Выплата драфта Цивилизации: +%d спорлингов!"
+                                             : "Civ draft payout: +%d Sporebucks!",
+                         (int)amt);
+                spaceext::notice(b);
+                if (H && M)
+                    H->log(M, SK_INFO, "space_rivals: delivered Civ draft payout raw=%d (+%d Sporebucks) to host",
+                           (int)raw, (int)amt);
+            }
+        }
+    }
+    // Guest payouts (deliver once guest is connected and present in Space).
+    for (const auto& p : spaceext::ctx().sess->players()) {
+        if (p.id == 0 || !rivals::valid_player(p.id))
+            continue;
+        if (dr.pending_payout[p.id] <= 0)
+            continue;
+        if (dr.pending_payout_stage[p.id] != rivals::Stage::None &&
+            dr.pending_payout_stage[p.id] != rivals::Stage::Civ)
+            continue;
+        if (!rivals::peer_reads_faction(p.id))
+            continue;
+        bool guest_ready = (g_emig_by_id.count(p.id) && g_emig_by_id[p.id].applied) || spacemap::roster_of(p.id) != nullptr;
+        if (!guest_ready)
+            continue;
+        int32_t raw = rivals::take_pending_draft_payout_for(rivals::Stage::Civ, p.id);
+        int32_t amt = space_draft_payout_money(raw);
+        if (amt <= 0)
+            continue;
+        net::Writer w;
+        w.u8((uint8_t)OP_GRANT_MONEY);
+        write_i32(w, amt);
+        if (rivals::send_faction_to(p.id, rivals::Stage::Space, wire::rivals_faction::SK_STAGE_CUSTOM, w)) {
+            g_draft_payouts++;
+            if (H && M)
+                H->log(M, SK_INFO, "space_rivals: sent Civ draft payout raw=%d (+%d Sporebucks) to player %u",
+                       (int)raw, (int)amt, (unsigned)p.id);
+        }
+    }
+}
+
 // ---- Tick & Session Lifecycle ----
 static void tick(double now)
 {
@@ -1387,6 +1543,15 @@ static void tick(double now)
     if (spaceext::is_host() && !spaceext::rivals() && player_empire())
         rivals::sync_space_rivalry();
 
+    // Deliver pending Civ -> Space draft payouts once Space Rivals is active.
+    if (spaceext::is_host()) {
+        host_deliver_civ_draft_payouts();
+    } else if (g_queued_draft_money > 0 && !g_draft_money_pending && spaceext::rivals() && player_empire() &&
+               (!g_my_emig.valid() || g_emig_sm.home_created)) {
+        g_draft_money_pending = true;
+        H->run_outside_frame(apply_queued_draft_money_task, nullptr);
+    }
+
     // Host assigns & syncs guest emigrations and protected homeworlds periodically.
     if (spaceext::is_host() && now >= g_next_host_sync) {
         g_next_host_sync = now + 2.5;
@@ -1394,17 +1559,13 @@ static void tick(double now)
         send_homes_sync();
     }
 
-    // Guest: complete deferred emigration / relinquishing once off host's homeworld,
-    // and re-apply if the game reloaded the host's save on rejoin (cur_hp reverted to host's planet).
+    // Guest: drive 3-phase emigration state machine (CreateHome -> RelinquishHost -> TeleportHome),
+    // ensuring deferred post-liftoff retry runs both relinquishing and jumping to the new homeworld (BUG-1555).
     if (!spaceext::is_host() && g_my_emig.valid() && !g_my_emig_pending) {
         uint32_t epoch = spaceext::world_epoch();
         void* emp = player_empire();
         uint32_t cur_hp = readable(emp, 0xB8) ? F<uint32_t>(emp, 0xB4) : 0;
-        if (g_my_emig_applied_epoch != epoch || g_my_emig_applied_planet != g_my_emig.new_home_planet ||
-            (cur_hp && cur_hp != 0xFFFFFFFFu && cur_hp != g_my_emig.new_home_planet)) {
-            g_my_emig_pending = true;
-            H->run_outside_frame(apply_guest_emigration_task, nullptr);
-        } else if (g_relinquish_pending && context() != 0) {
+        if (g_emig_sm.needs_task(epoch, g_my_emig, cur_hp, context(), active_planet_id(), active_star_id())) {
             g_my_emig_pending = true;
             H->run_outside_frame(apply_guest_emigration_task, nullptr);
         }
@@ -1442,15 +1603,15 @@ static void on_session_end()
     g_guest_civ_cities.clear();
     g_my_emig = EmigrationRecord{};
     g_my_emig_pending = false;
-    g_relinquish_pending = false;
-    g_my_emig_applied_epoch = 0;
-    g_my_emig_applied_planet = 0;
+    g_emig_sm.reset();
     g_relinquished_host_home_planet = 0;
     g_relinquished_host_home_star = 0;
     g_last_emig_notice.clear();
     g_homes.clear();
     g_inf_earn_cd.clear();
     g_guest_money.clear();
+    g_queued_draft_money = 0;
+    g_draft_money_pending = false;
     g_race_stats.clear();
     g_have_sent_stats = false;
     g_last_trickle = 0.0;
@@ -1499,6 +1660,80 @@ static std::vector<rivals::UiRow> extra_rivals_ui_rows()
     return rows;
 }
 
+// Live discovered Space NPC empires for the F9 Influence UI (TurnAgainst / Protect / SmoothOver, BUG-1555).
+static std::vector<rivals::NpcUiEntry> space_npc_ui_list(uint8_t /*viewer*/)
+{
+    std::vector<rivals::NpcUiEntry> out;
+    if (!active() || !spaceext::connected())
+        return out;
+    uint32_t me = my_pol();
+    void* rm = rel_mgr();
+    if (me == 0xFFFFFFFFu)
+        return out;
+
+    std::map<uint32_t, SpaceNpcSnapshot> by_pol;
+    if (rm) {
+        walk_map((uint8_t*)rm + 0x24, [&](void* node) {
+            uint32_t a = F<uint32_t>(node, 0x10);
+            uint32_t b = F<uint32_t>(node, 0x14);
+            uint32_t npc = (a == me) ? b : ((b == me) ? a : 0);
+            if (!npc || !is_npc_empire_pol(npc))
+                return;
+            void* e = empire_of(npc);
+            if (!e)
+                return;
+            uint32_t flags = F<uint32_t>(node, 0x1C);
+            float rel = a_CalcRel ? thiscall<float>(a_CalcRel, rm, npc, me, 0) : 0.0f;
+            SpaceNpcSnapshot s;
+            s.pol_id = npc;
+            s.name = str16((uint8_t*)e + 0x3C);
+            s.rel = std::isfinite(rel) ? rel : 0.0f;
+            s.flag_war = (flags & 1u) != 0;
+            s.flag_ally = (flags & 2u) != 0;
+            by_pol[npc] = std::move(s);
+        });
+    }
+
+    // Also include met/contacted empires from cPlayer (+0x11D8) that do not yet have a relationship record.
+    if (void* nm = a_NounMgr ? cdecl_call<void*>(a_NounMgr) : nullptr) {
+        void* pl = readable(nm, 0x78) ? F<void*>(nm, 0x74) : nullptr;
+        if (pl && readable((uint8_t*)pl + 0x11D8, 8)) {
+            uint32_t* b = F<uint32_t*>(pl, 0x11D8);
+            uint32_t* e = F<uint32_t*>(pl, 0x11DC);
+            if (b && e > b && e - b <= 40000 && readable(b, (size_t)(e - b) * 4)) {
+                for (uint32_t* q = b; q + 1 < e; q += 2) {
+                    if (!(q[1] & 0x22u))
+                        continue; // 0x20 = met, 0x02 = contacted
+                    uint32_t npc = q[0];
+                    if (by_pol.count(npc) || !is_npc_empire_pol(npc))
+                        continue;
+                    void* emp = empire_of(npc);
+                    if (!emp)
+                        continue;
+                    float rel = (rm && a_CalcRel) ? thiscall<float>(a_CalcRel, rm, npc, me, 0) : 0.0f;
+                    SpaceNpcSnapshot s;
+                    s.pol_id = npc;
+                    s.name = str16((uint8_t*)emp + 0x3C);
+                    s.rel = std::isfinite(rel) ? rel : 0.0f;
+                    by_pol[npc] = std::move(s);
+                }
+            }
+        }
+    }
+
+    std::vector<SpaceNpcSnapshot> snaps;
+    snaps.reserve(by_pol.size());
+    for (auto& [pol, s] : by_pol)
+        snaps.push_back(std::move(s));
+
+    bool has_rival = spaceext::ctx().sess && spaceext::ctx().sess->players().size() >= 2;
+    auto built = build_space_npc_ui_list(std::move(snaps), has_rival);
+    out.reserve(built.size());
+    for (auto& it : built)
+        out.push_back({it.npc_id, std::move(it.label), it.allied, it.hostile, it.can_turn, it.can_protect, it.can_smooth});
+    return out;
+}
+
 static std::vector<spaceext::Row> space_page_rows()
 {
     std::vector<spaceext::Row> v;
@@ -1521,12 +1756,13 @@ static std::string status()
     char buf[512];
     snprintf(buf, sizeof buf,
              "space_rivals: fix=%d active=%d hooks=%d home_star=%u home_planet=%08X home_cities=%u "
-             "emigrated=%d relinq_host=%08X homes=%u buster_blocked=%u capture_blocked=%u "
-             "inf_applied=%u finale_awarded=%d finale_first=%u finale_winner=%u",
+             "emigrated=%d relinq_host=%08X teleported=%d homes=%u buster_blocked=%u capture_blocked=%u "
+             "inf_applied=%u draft_payouts=%u finale_awarded=%d finale_first=%u finale_winner=%u",
              (int)g_space_rivals_fix, (int)active(), (int)g_hooks_ok, hs == 0xFFFFFFFFu ? 0u : hs,
-             hp == 0xFFFFFFFFu ? 0u : hp, (unsigned)hcities, (int)(g_my_emig_applied_planet != 0),
-             g_relinquished_host_home_planet, (unsigned)g_homes.homes.size(), g_buster_blocked, g_capture_blocked,
-             g_inf_applied, (int)g_finale.awarded, (unsigned)g_finale.first_player, (unsigned)g_finale.winner);
+             hp == 0xFFFFFFFFu ? 0u : hp, (unsigned)hcities, (int)(g_emig_sm.applied_planet != 0),
+             g_relinquished_host_home_planet, (int)g_emig_sm.teleported, (unsigned)g_homes.homes.size(),
+             g_buster_blocked, g_capture_blocked, g_inf_applied, g_draft_payouts, (int)g_finale.awarded,
+             (unsigned)g_finale.first_player, (unsigned)g_finale.winner);
     return buf;
 }
 
@@ -1555,7 +1791,15 @@ static std::string debug(const std::vector<std::string>& a)
             return "rivals.space is off\n";
         if (a.size() >= 2) {
             uint16_t c = clamp_emig_cities(atoi(a[1].c_str()));
-            set_guest_civ_cities(1, c);
+            if (a.size() >= 3) {
+                uint8_t pid = (uint8_t)atoi(a[2].c_str());
+                if (!rivals::valid_player(pid) || pid == 0)
+                    return "error: invalid guest pid (expected 1..3)\n";
+                set_guest_civ_cities(pid, c);
+            } else {
+                for (uint8_t pid = 1; pid < rivals::kMaxPlayers; pid++)
+                    set_guest_civ_cities(pid, c);
+            }
         }
         if (spaceext::is_host()) {
             g_emig_by_id.clear();
@@ -1668,7 +1912,7 @@ static std::string debug(const std::vector<std::string>& a)
                std::to_string((unsigned)g_finale.first_player) + " winner=" +
                std::to_string((unsigned)g_finale.winner) + "\n";
     }
-    return "usage: coop.space rivals [status | homes | emigrate [cities] | test_buster | test_capture <star> | npc | race | test_core [id]]\n";
+    return "usage: coop.space rivals [status | homes | emigrate [cities [pid]] | test_buster | test_capture <star> | npc | race | test_core [id]]\n";
 }
 
 // ---- Initialization ----
@@ -1713,6 +1957,7 @@ static bool init(const SkHost* h, SkMod* m)
     a_TransferStar = S("SporeCoop::TransferStarOwnership");
     a_SetCaptureProgress = S("Simulator::cCity::SetCaptureProgress");
     a_DestroyCity = S("Simulator::cSimPlanetHighLOD::DestroyCity");
+    a_NounMgr = S("Simulator::cGameNounManager::Get");
 
     bool ok = true;
     if (a_OnUseTool)
@@ -1738,6 +1983,7 @@ static bool init(const SkHost* h, SkMod* m)
     rivals::StageHooks hooks;
     hooks.on_buy_influence = on_buy_influence_space;
     hooks.on_extra_ui_rows = extra_rivals_ui_rows;
+    hooks.on_npc_ui_list = space_npc_ui_list;
     rivals::register_stage_hooks(rivals::Stage::Space, std::move(hooks));
 
     H->log(M, g_hooks_ok ? SK_INFO : SK_WARN, "space_rivals: initialized (fix=%d hooks=%d)", (int)g_space_rivals_fix,

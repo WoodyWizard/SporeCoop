@@ -270,12 +270,126 @@ static void test_npc_influence_and_progress_and_finale()
           "RU finale summary mentions first player, winner, and continues");
 }
 
+static void test_civ_to_space_liftoff_state_machine()
+{
+    printf("space_rivals: Civ->Space liftoff emigration state machine (BUG-1555)\n");
+    using namespace spacerivals;
+
+    EmigrationRecord rec;
+    rec.player_id = 1;
+    rec.orig_home_star = 100;
+    rec.orig_home_planet = 1001;
+    rec.new_home_star = 200;
+    rec.new_home_planet = 2001;
+    rec.target_cities = 2;
+
+    GuestEmigMachine sm;
+    // 1. Natural Civ->Space arrival: guest starts landed on host's planet (ctx == 0).
+    CHECK(sm.needs_task(1, rec, 1001, 0, 1001, 100), "initial arrival schedules CreateHome");
+    CHECK(sm.next_step(1, rec, 1001, 0, 1001, 100) == EmigStep::CreateHome, "phase 1 is CreateHome");
+
+    sm.mark_home_created(1, 2001);
+    // Still landed on host planet: RelinquishHost and TeleportHome are deferred cleanly.
+    CHECK(!sm.needs_task(1, rec, 2001, 0, 1001, 100), "no task spam while landed on host surface");
+    CHECK(sm.next_step(1, rec, 2001, 0, 1001, 100) == EmigStep::None, "relinquish deferred while ctx==0 on host planet");
+
+    // 2. Guest lifts off into solar system view (ctx == 1) still at host star 100:
+    // MUST run RelinquishHost AND THEN TeleportHome (never stranded at host star!).
+    CHECK(sm.needs_task(1, rec, 2001, 1, 0, 100), "liftoff schedules deferred relinquish+teleport");
+    CHECK(sm.next_step(1, rec, 2001, 1, 0, 100) == EmigStep::RelinquishHost, "phase 2 after liftoff is RelinquishHost");
+
+    sm.host_relinquished = true;
+    CHECK(sm.needs_task(1, rec, 2001, 1, 0, 100), "after relinquish still at host star schedules TeleportHome");
+    CHECK(sm.next_step(1, rec, 2001, 1, 0, 100) == EmigStep::TeleportHome, "phase 3 after relinquish is TeleportHome");
+
+    sm.teleported = true;
+    CHECK(!sm.needs_task(1, rec, 2001, 1, 0, 200), "complete after arriving at new home star");
+    CHECK(sm.next_step(1, rec, 2001, 1, 0, 200) == EmigStep::None, "no further step when complete");
+
+    // 3. Rejoin / save reload (world epoch increments or empire home reverts to host planet) triggers full re-apply.
+    CHECK(sm.needs_reapply(2, 2001, 2001), "new epoch triggers reapply");
+    CHECK(sm.needs_reapply(1, 2001, 1001), "reverted empire home planet triggers reapply");
+    CHECK(sm.needs_task(2, rec, 1001, 2, 0, 100), "rejoin in galaxy view schedules CreateHome");
+    CHECK(sm.next_step(2, rec, 1001, 2, 0, 100) == EmigStep::CreateHome, "rejoin starts at CreateHome");
+}
+
+static void test_space_influence_scaling_and_draft_payout()
+{
+    printf("space_rivals: Space influence buy price scaling & Civ->Space draft payout\n");
+    using namespace spacerivals;
+
+    CHECK(influence_buy_space_cost(0) == 0, "0 base price -> 0");
+    CHECK(influence_buy_space_cost(-10) == 0, "negative base price -> 0");
+    CHECK(influence_buy_space_cost(50) == 10000, "base 50 -> 10,000 Space Sporebucks");
+    CHECK(influence_buy_space_cost(100) == 20000, "2nd buy 100 -> 20,000 Space Sporebucks");
+    CHECK(influence_buy_space_cost(150) == 30000, "3rd buy 150 -> 30,000 Space Sporebucks");
+    CHECK(influence_buy_space_cost(10000000) == 99999999, "overflow clamped safely");
+
+    CHECK(space_draft_payout_money(0) == 0, "0 draft payout -> 0");
+    CHECK(space_draft_payout_money(-5) == 0, "negative draft payout -> 0");
+    CHECK(space_draft_payout_money(100) == 10000, "1st Civ draft pick 100 -> 10,000 Space Sporebucks");
+    CHECK(space_draft_payout_money(150) == 15000, "2nd Civ draft pick 150 -> 15,000 Space Sporebucks");
+    CHECK(space_draft_payout_money(250) == 25000, "total 250 -> 25,000 Space Sporebucks");
+    CHECK(space_draft_payout_money(10000000) == 99999999, "draft payout overflow clamped safely");
+}
+
+static void test_space_npc_ui_list()
+{
+    printf("space_rivals: Space F9 NPC empire UI list\n");
+    using namespace spacerivals;
+
+    std::vector<SpaceNpcSnapshot> snaps = {
+        {0x80000003u, "Grox", -80.0f, false, true},
+        {0x80000001u, "Zealot Empire", 85.0f, true, false},
+        {0x80000002u, "Trader League", 15.0f, false, false},
+        {0x80000004u, "", 98.0f, true, false}, // unnamed allied maxed empire -> fallback label + can_smooth=false
+    };
+
+    auto list = build_space_npc_ui_list(snaps, true);
+    CHECK(list.size() == 4, "all 4 NPC empires included");
+    // Allied first (sorted by name: "" before "Zealot Empire"), then neutral, then hostile
+    CHECK(list[0].npc_id == 0x80000004u && list[0].allied && !list[0].hostile && list[0].can_protect &&
+              !list[0].can_smooth && list[0].can_turn,
+          "maxed allied empire has can_protect=true and can_smooth=false");
+    CHECK(list[0].label.find("Empire #") != std::string::npos && list[0].label.find("0x") == std::string::npos,
+          "unnamed empire uses readable fallback label");
+
+    CHECK(list[1].npc_id == 0x80000001u && list[1].allied && list[1].can_protect && list[1].can_smooth,
+          "allied Zealot Empire supports Protect and Smooth");
+    CHECK(list[1].label.find("Zealot Empire") != std::string::npos && list[1].label.find("Ally") != std::string::npos,
+          "allied label shows readable name and Ally");
+
+    CHECK(list[2].npc_id == 0x80000002u && !list[2].allied && !list[2].hostile && !list[2].can_protect &&
+              list[2].can_smooth && list[2].can_turn,
+          "neutral Trader League flags correct");
+
+    CHECK(list[3].npc_id == 0x80000003u && !list[3].allied && list[3].hostile && !list[3].can_protect &&
+              list[3].can_smooth && list[3].can_turn,
+          "hostile Grox sorted last with hostile=true");
+    CHECK(list[3].label.find("Grox") != std::string::npos && list[3].label.find("War") != std::string::npos,
+          "hostile label shows readable name and War");
+
+    // Without rival: can_turn is false
+    auto solo = build_space_npc_ui_list(snaps, false);
+    CHECK(!solo[0].can_turn && !solo[2].can_turn, "can_turn disabled when no rival present");
+
+    // Cap at kMaxSpaceNpcUiEntries (16)
+    std::vector<SpaceNpcSnapshot> many;
+    for (uint32_t i = 1; i <= 25; i++)
+        many.push_back({0x80001000u + i, "Emp-" + std::to_string(i), 0.0f, false, false});
+    auto capped = build_space_npc_ui_list(many, true);
+    CHECK(capped.size() == kMaxSpaceNpcUiEntries, "UI list capped at kMaxSpaceNpcUiEntries");
+}
+
 int main()
 {
     test_r5_emigration_filtering_and_scoring();
     test_r5_notice_and_store();
     test_r7_homeworld_protection();
     test_npc_influence_and_progress_and_finale();
+    test_civ_to_space_liftoff_state_machine();
+    test_space_influence_scaling_and_draft_payout();
+    test_space_npc_ui_list();
     printf("space_rivals_tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

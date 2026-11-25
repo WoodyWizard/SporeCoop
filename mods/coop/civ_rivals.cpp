@@ -21,6 +21,7 @@
 #include "modes.h"
 #include "rivals.h"
 #include "savestrip.h"
+#include "space_rivals.h"
 #include "species_line.h"
 #include "sporekit_game.hpp"
 #include "wire/rivals_faction.h"
@@ -115,6 +116,7 @@ static uint8_t g_draft_winner = 255;
 static std::map<uint8_t, std::vector<uint32_t>> g_draft_applied_ids; // pid -> applied design_ids
 static std::set<uint8_t> g_species_applied;
 static std::set<std::pair<uint8_t, uint32_t>> g_war_captured_from; // (winner, loser)
+static uint16_t g_last_city_counts[kMaxPlayers] = {};
 
 // ---- Diagnostics counters ----
 static struct {
@@ -136,6 +138,9 @@ static struct {
     uint32_t inf_protected = 0;
     uint32_t inf_smoothed = 0;
     uint32_t inf_trade = 0;
+    uint32_t inf_diplomacy = 0;
+    uint32_t rel_readbacks = 0;
+    uint32_t draft_payouts = 0;
     uint32_t assign_tx = 0;
     uint32_t assign_rx = 0;
     uint32_t npcrel_tx = 0;
@@ -369,8 +374,10 @@ static void reset_state()
                 F<uint8_t>(gc, kCivIsPlayer) = 0;
         }
     }
-    for (int i = 0; i < kMaxPlayers; i++)
+    for (int i = 0; i < kMaxPlayers; i++) {
         g_nations[i] = PlayerNation{(uint8_t)i, 0, {}, 0.0f, false};
+        g_last_city_counts[i] = 0;
+    }
     g_npc_rels.clear();
     g_guest_npc_rels.clear();
     g_orig_host_pol = 0;
@@ -707,7 +714,9 @@ static void host_sync_native_diplomacy(double now)
         }
     }
 
-    // 2. Refresh remaining NPC nations in g_npc_rels
+    // 2. Bidirectionally sync remaining NPC nations between cRelationshipManager and g_npc_rels (BUG-1555).
+    // Never overwrite real in-game diplomacy (gifts, insults, war declarations, alliances): read native deltas
+    // back into g_npc_rels, and only push to native when Rivals influence/actions marked a slot dirty.
     std::set<uint32_t> live_npcs;
     for (void* c : all_civs()) {
         if (!c)
@@ -722,17 +731,26 @@ static void host_sync_native_diplomacy(double now)
         if (!g_npc_rels.has_npc(pol)) {
             float init_rel = g_nations[0].assigned ? rel_get(pol, g_nations[0].pol_id) : 0.0f;
             g_npc_rels.ensure_npc(pol, init_rel);
-            for (int p = 0; p < kMaxPlayers; p++) {
-                if (g_nations[p].assigned)
-                    g_npc_rels.set(pol, (uint8_t)p, rel_get(pol, g_nations[p].pol_id));
-            }
             g_npcrel_dirty = true;
-        } else {
-            // Keep host's native cRelationshipManager aligned with our authoritative per-player table
-            for (int p = 0; p < kMaxPlayers; p++) {
-                if (!g_nations[p].assigned)
-                    continue;
-                rel_set(pol, g_nations[p].pol_id, g_npc_rels.get(pol, (uint8_t)p));
+        }
+        for (int p = 0; p < kMaxPlayers; p++) {
+            if (!g_nations[p].assigned)
+                continue;
+            float native_val = rel_get(pol, g_nations[p].pol_id);
+            NativeSyncResult sr = g_npc_rels.sync_native_slot(pol, (uint8_t)p, native_val);
+            if (sr.action == NativeSyncAction::PushNative) {
+                rel_set(pol, g_nations[p].pol_id, sr.target_native);
+                g_npc_rels.confirm_native_push(pol, (uint8_t)p, rel_get(pol, g_nations[p].pol_id));
+            } else if (sr.action == NativeSyncAction::ReadInit) {
+                g_npcrel_dirty = true;
+            } else if (sr.action == NativeSyncAction::ReadBack) {
+                g_st.rel_readbacks++;
+                g_npcrel_dirty = true;
+                if (sr.influence_award > 0) {
+                    rivals::grant_influence((uint8_t)p, sr.influence_award,
+                                            sr.newly_allied ? "npc alliance" : "npc diplomacy");
+                    g_st.inf_diplomacy++;
+                }
             }
         }
     }
@@ -746,6 +764,54 @@ static void host_sync_native_diplomacy(double now)
     for (uint32_t pol : gone) {
         g_npc_rels.remove_npc(pol);
         g_npcrel_dirty = true;
+    }
+}
+
+static void host_push_guest_civ_cities()
+{
+    if (!active() || !is_host())
+        return;
+    for (uint8_t pid = 1; pid < kMaxPlayers; pid++) {
+        if (!g_nations[pid].assigned)
+            continue;
+        void* c = civ_by_pol(g_nations[pid].pol_id);
+        if (!c)
+            continue;
+        int cnt = (int)civ::vec_of((uint8_t*)c + civ::kCivCities).size();
+        uint16_t clamped = clamp_space_handoff_cities(cnt);
+        g_last_city_counts[pid] = clamped;
+        spacerivals::set_guest_civ_cities(pid, clamped);
+    }
+}
+
+static void host_deliver_tribe_draft_payouts()
+{
+    if (!active() || !is_host())
+        return;
+    const auto& dr = rivals::draft_state();
+    for (uint8_t pid = 0; pid < kMaxPlayers; pid++) {
+        if (dr.pending_payout[pid] <= 0)
+            continue;
+        if (dr.pending_payout_stage[pid] != rivals::Stage::None &&
+            dr.pending_payout_stage[pid] != rivals::Stage::Tribe)
+            continue;
+        if (!g_nations[pid].assigned || !civ_of_player(pid))
+            continue; // wait until player's Civ nation exists on host
+        int32_t raw = rivals::take_pending_draft_payout_for(rivals::Stage::Tribe, pid);
+        if (raw <= 0)
+            continue;
+        float amt = civ_draft_payout_money(raw);
+        host_credit_player(pid, amt);
+        g_st.draft_payouts++;
+        if (H && M)
+            H->log(M, SK_INFO, "civ_rivals: delivered Tribe draft payout raw=%d (+%.0f Sporebucks) to player %u",
+                   (int)raw, amt, (unsigned)pid);
+        if (C.notice && C.sess) {
+            char b[160];
+            snprintf(b, sizeof b, "Tribe draft payout: %s received +%.0f Sporebucks",
+                     C.sess->name_of(pid).c_str(), amt);
+            C.notice(b);
+        }
     }
 }
 
@@ -782,6 +848,15 @@ static void host_eval_stage_progress(double now)
             cc.free_npc_cities++;
             cc.total_contestable++;
         }
+    }
+
+    // Keep Space Rivals updated with each guest's live Civ city count (clamped 1..3) for Civ -> Space handoff.
+    for (uint8_t pid = 1; pid < kMaxPlayers; pid++) {
+        if (!cc.present[pid])
+            continue;
+        uint16_t clamped = clamp_space_handoff_cities(cc.total_cities[pid]);
+        g_last_city_counts[pid] = clamped;
+        spacerivals::set_guest_civ_cities(pid, clamped);
     }
 
     int need = cities_needed_to_win(cc.total_contestable);
@@ -827,18 +902,38 @@ void host_sync_owners()
     }
 }
 
+float civ_money(void* civ)
+{
+    if (!civ || !skg::readable(civ, kCivWealth + 4))
+        return 0.0f;
+    float w = F<float>(civ, kCivWealth);
+    return std::isfinite(w) && w > 0.0f ? w : 0.0f;
+}
+
+bool host_spend_civ_money(void* civ, float cost)
+{
+    if (!active() || !is_host() || !civ || !skg::readable(civ, kCivExpansionBudget + 4))
+        return false;
+    spend_direct_wealth(F<float>(civ, kCivWealth), F<float>(civ, kCivDomesticBudget),
+                        F<float>(civ, kCivExpansionBudget), cost);
+    int pid = player_of_pol(civ::pol_of(civ));
+    if (pid >= 0 && pid < kMaxPlayers)
+        g_nations[pid].wealth = F<float>(civ, kCivWealth);
+    g_assign_dirty = true;
+    return true;
+}
+
 bool host_charge_player(uint8_t pid, float amount)
 {
     if (!active() || !is_host() || !std::isfinite(amount) || amount <= 0.0f)
         return false;
     void* c = civ_of_player(pid);
-    if (!c || !skg::readable(c, kCivWealth + 4))
+    if (!c || !skg::readable(c, kCivExpansionBudget + 4))
         return false;
-    float& w = F<float>(c, kCivWealth);
-    if (w < amount)
+    if (!deduct_direct_wealth(F<float>(c, kCivWealth), F<float>(c, kCivDomesticBudget),
+                              F<float>(c, kCivExpansionBudget), amount))
         return false;
-    w -= amount;
-    g_nations[pid].wealth = w;
+    g_nations[pid].wealth = F<float>(c, kCivWealth);
     g_assign_dirty = true;
     return true;
 }
@@ -993,6 +1088,7 @@ void on_city_captured(void* city, uint32_t new_pol)
     } else {
         civ::g_city_owner.erase(city);
     }
+    host_push_guest_civ_cities();
     g_assign_dirty = true;
 }
 
@@ -1156,6 +1252,7 @@ static bool on_npc_influence(rivals::Stage stage, rivals::InfluenceAction action
         if (!g_npc_rels.apply_turn_against(npc_id, rival_id, kNpcRelStep, &nv))
             return false;
         rel_set(npc_id, g_nations[rival_id].pol_id, nv);
+        g_npc_rels.confirm_native_push(npc_id, rival_id, rel_get(npc_id, g_nations[rival_id].pol_id));
         g_st.inf_turned++;
         g_npcrel_dirty = true;
         host_send_npc_rels(now_s());
@@ -1172,6 +1269,7 @@ static bool on_npc_influence(rivals::Stage stage, rivals::InfluenceAction action
         if (!g_npc_rels.apply_smooth_over(npc_id, actor, kNpcRelStep, &nv))
             return false;
         rel_set(npc_id, g_nations[actor].pol_id, nv);
+        g_npc_rels.confirm_native_push(npc_id, actor, rel_get(npc_id, g_nations[actor].pol_id));
         g_st.inf_smoothed++;
         g_npcrel_dirty = true;
         host_send_npc_rels(now_s());
@@ -1230,6 +1328,7 @@ static void hook_stage_race_end(uint8_t winner)
         return;
     g_race_ended = true;
     g_draft_winner = winner;
+    host_push_guest_civ_cities();
 
     // Collect available designs from winner's civilization for Civ Draft (11.6)
     std::vector<uint32_t> avail;
@@ -1260,7 +1359,7 @@ static std::vector<rivals::UiRow> hook_extra_ui_rows()
     std::vector<rivals::UiRow> rows;
     if (!active() || !C.sess)
         return rows;
-    uint32_t kGold = 0xFFF2D479, kGreen = 0xFF7BE882, kDim = 0xFFB0BEC8;
+    uint32_t kGold = 0xFFF2D479, kGreen = 0xFF7BE882;
     char buf[192];
     rows.push_back({"Civ Rivals: Nations & Capitals", "", nullptr, kGold});
     uint8_t me = my_id();
@@ -1269,29 +1368,81 @@ static std::vector<rivals::UiRow> hook_extra_ui_rows()
             continue;
         std::string nm = C.sess->name_of((uint8_t)i);
         bool is_ally = (i != me) && rivals::allied(me, (uint8_t)i);
-        snprintf(buf, sizeof buf, "  %s: pol=0x%08X $%.0f (capital protected)", nm.c_str(),
-                 (unsigned)g_nations[i].pol_id, g_nations[i].wealth);
+        snprintf(buf, sizeof buf, "  %s: $%.0f (capital protected)", nm.c_str(), g_nations[i].wealth);
         uint8_t tid = (uint8_t)i;
         rows.push_back({buf, is_ally ? "Gift $500" : "",
                         is_ally ? std::function<void()>([tid] { request_gift(tid, GiftKind::Money, 500.0f); }) : nullptr,
                         i == me ? kGreen : 0});
     }
-    // NPC nation relations for local player
-    rows.push_back({"Civ Rivals: NPC Nations", "", nullptr, kGold});
+    return rows;
+}
+
+static CivNpcSnapshot snapshot_civ_npc(uint32_t pol, float viewer_rel, bool any_rival_turnable)
+{
+    CivNpcSnapshot s;
+    s.pol_id = pol;
+    s.viewer_rel = viewer_rel;
+    s.any_rival_turnable = any_rival_turnable;
+    if (void* c = civ_by_pol(pol)) {
+        auto cs = civ::vec_of((uint8_t*)c + civ::kCivCities);
+        s.cities = (int)cs.size();
+        if (!cs.empty() && skg::readable(cs[0], civ::kCitySpecialty + 4))
+            s.specialty = F<int>(cs[0], civ::kCitySpecialty);
+        if (skg::readable(c, 0x64)) {
+            uint32_t cid = F<uint32_t>(c, 0x38); // cIdentityColorable::mIDColorID (0x053DBCxx)
+            float r = F<float>(c, 0x58), g = F<float>(c, 0x5C), b = F<float>(c, 0x60);
+            if ((cid >> 8) == 0x053DBC && std::isfinite(r) && std::isfinite(g) && std::isfinite(b) && r >= 0.0f &&
+                r <= 1.001f && g >= 0.0f && g <= 1.001f && b >= 0.0f && b <= 1.001f && (r + g + b) > 0.01f) {
+                s.has_color = true;
+                s.color_r = r;
+                s.color_g = g;
+                s.color_b = b;
+            }
+        }
+    }
+    return s;
+}
+
+static std::vector<rivals::NpcUiEntry> hook_npc_ui_list(uint8_t viewer)
+{
+    std::vector<rivals::NpcUiEntry> out;
+    if (!active() || viewer >= kMaxPlayers)
+        return out;
+    bool has_rival = false;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (i != viewer && g_nations[i].assigned) {
+            has_rival = true;
+            break;
+        }
+    }
+    std::vector<CivNpcSnapshot> snaps;
     if (is_host()) {
         for (const auto& [pol, arr] : g_npc_rels.scores) {
-            snprintf(buf, sizeof buf, "  NPC 0x%08X: rel=%.1f (cat=%d)", (unsigned)pol, arr[0], rel_category(arr[0]));
-            uint32_t np = pol;
-            rows.push_back({buf, "Smooth", [np] { rivals::request_influence(rivals::InfluenceAction::SmoothOver, np, 255); }, kDim});
+            void* c = civ_by_pol(pol);
+            if (!c || civ::vec_of((uint8_t*)c + civ::kCivCities).empty())
+                continue;
+            bool rival_turn = false;
+            for (int i = 0; i < kMaxPlayers; i++) {
+                if (i != viewer && g_nations[i].assigned && arr[i] > kNpcRelMin + 0.05f) {
+                    rival_turn = true;
+                    break;
+                }
+            }
+            snaps.push_back(snapshot_civ_npc(pol, arr[viewer], rival_turn));
         }
     } else {
         for (const auto& [pol, sc] : g_guest_npc_rels) {
-            snprintf(buf, sizeof buf, "  NPC 0x%08X: rel=%.1f (cat=%d)", (unsigned)pol, sc, rel_category(sc));
-            uint32_t np = pol;
-            rows.push_back({buf, "Smooth", [np] { rivals::request_influence(rivals::InfluenceAction::SmoothOver, np, 255); }, kDim});
+            void* c = civ_by_pol(pol);
+            if (!c || civ::vec_of((uint8_t*)c + civ::kCivCities).empty())
+                continue;
+            snaps.push_back(snapshot_civ_npc(pol, sc, has_rival));
         }
     }
-    return rows;
+    auto built = build_civ_npc_ui_list(std::move(snaps), has_rival);
+    out.reserve(built.size());
+    for (auto& it : built)
+        out.push_back({it.npc_id, std::move(it.label), it.allied, it.hostile, it.can_turn, it.can_protect, it.can_smooth});
+    return out;
 }
 
 // ---- Init & Tick ----
@@ -1345,6 +1496,7 @@ void init()
     hooks.on_draft_pick = hook_draft_pick;
     hooks.on_stage_race_end = hook_stage_race_end;
     hooks.on_extra_ui_rows = hook_extra_ui_rows;
+    hooks.on_npc_ui_list = hook_npc_ui_list;
     rivals::register_stage_hooks(rivals::Stage::Civ, std::move(hooks));
 
     H->log(M, SK_INFO, "civ_rivals: initialized (rivals.civ=%d, hooks=%d/%d/%d/%d/%d/%d/%d)",
@@ -1362,6 +1514,7 @@ void tick(double now)
     }
     if (is_host()) {
         host_ensure_assignments(now);
+        host_deliver_tribe_draft_payouts();
         host_sync_native_diplomacy(now);
         host_eval_stage_progress(now);
         if (g_assign_dirty || now - g_last_assign_tx >= 2.0)
@@ -1376,7 +1529,7 @@ void tick(double now)
 // ---- Console diagnostics (`coop.civ rivals ...`) ----
 std::string debug(const std::vector<std::string>& a)
 {
-    char b[512];
+    char b[640];
     if (!a.empty() && a[0] == "gift" && a.size() >= 4) {
         uint8_t to = (uint8_t)atoi(a[1].c_str());
         GiftKind k = (a[2] == "spice") ? GiftKind::Spice : GiftKind::Money;
@@ -1481,15 +1634,15 @@ std::string debug(const std::vector<std::string>& a)
              "civ_rivals: fix=%d active=%d assigned=%d swap=%d player_pol=0x%08X api_pol=0x%08X player_money=%.0f "
              "takeovers=%u ai_blocked=%u swap_hits=%u cap_blocked=%u conv_blocked=%u sw_blocked=%u "
              "pvp_allowed=%u pvp_blocked=%u war_captures=%u gifts=%u/%u spice=%u "
-             "inf_buy=%u inf_turn=%u inf_prot=%u inf_smooth=%u inf_trade=%u "
+             "inf_buy=%u inf_turn=%u inf_prot=%u inf_smooth=%u inf_trade=%u inf_diplo=%u rel_readbacks=%u "
              "assign_tx=%u assign_rx=%u npcrel_tx=%u npcrel_rx=%u "
-             "race_ended=%d draft_started=%d draft_applied=%u transition_ready=%d\n",
+             "race_ended=%d draft_started=%d draft_applied=%u draft_payouts=%u transition_ready=%d\n",
              (int)g_fix_rivals_civ, (int)active(), assigned_n, (int)g_swap_applied, (unsigned)cur_pol, (unsigned)api_pol,
              cur_money, g_st.takeovers, g_st.ai_blocked, g_st.swap_hits, g_st.cap_blocked, g_st.conv_blocked,
              g_st.sw_blocked, g_st.pvp_allowed, g_st.pvp_blocked, g_st.war_captures, g_st.gifts_done, g_st.gifts_rejected,
              g_st.spice_gifts, g_st.inf_bought, g_st.inf_turned, g_st.inf_protected, g_st.inf_smoothed, g_st.inf_trade,
-             g_st.assign_tx, g_st.assign_rx, g_st.npcrel_tx, g_st.npcrel_rx, (int)g_race_ended, (int)g_draft_started,
-             g_st.draft_applied, (int)g_transition_ready);
+             g_st.inf_diplomacy, g_st.rel_readbacks, g_st.assign_tx, g_st.assign_rx, g_st.npcrel_tx, g_st.npcrel_rx,
+             (int)g_race_ended, (int)g_draft_started, g_st.draft_applied, g_st.draft_payouts, (int)g_transition_ready);
     std::string out = b;
 
     for (int i = 0; i < kMaxPlayers; i++) {

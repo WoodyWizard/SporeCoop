@@ -32,6 +32,12 @@ constexpr int32_t kInfTradeGain = 10;
 constexpr int32_t kInfGiftGain = 10;
 constexpr int32_t kInfAllyTrickle = 2;
 constexpr double kInfAllyTrickleSecs = 60.0;
+constexpr int32_t kSpaceMoneyPerInfluenceUnit = 200; // 50 base -> 10,000, 100 -> 20,000, 150 -> 30,000 Sporebucks
+constexpr int32_t kSpaceDraftPayoutScale = 100;      // Civ->Space draft pick: 100 -> 10,000, 150 -> 15,000, 200 -> 20,000
+constexpr float kSpaceNpcAllyRel = 70.0f;
+constexpr float kSpaceNpcHostileRel = -25.0f;
+constexpr float kSpaceNpcMaxRel = 95.0f;
+constexpr size_t kMaxSpaceNpcUiEntries = 16;
 
 // MSG_RIVALS_FACTION (Stage::Space) subkind payload ops.
 enum EmigKind : uint8_t {
@@ -51,6 +57,7 @@ enum CustomOp : uint8_t {
     OP_FINALE_SUMMARY = 2, // host -> all: Chronicle Galaxy Core finale summary + winner
     OP_HOMES_SYNC = 3,     // host -> all: sync all players' protected homeworlds (R7)
     OP_CORE_ENTERED = 4,   // guest -> host: report entering the galactic core
+    OP_GRANT_MONEY = 5,    // host -> guest: grant Space sporebucks (Civ->Space draft payout)
 };
 
 // ---------------- R5: Emigration planet similarity & selection ----------------
@@ -284,6 +291,92 @@ struct EmigrationStore {
     }
 };
 
+// ---------------- R5: Guest Emigration Liftoff State Machine (BUG-1555) ----------------
+// Distinguishes home creation, relinquishing the host's original homeworld, and traveling/teleporting
+// away from the host's star so natural Civ -> Space entry (starting landed on host's planet with ctx==0)
+// never strands the guest at the host's star after liftoff.
+enum class EmigStep : uint8_t {
+    None = 0,           // done or waiting for liftoff
+    CreateHome = 1,     // claim/populate new homeworld + SetHomePlanet
+    RelinquishHost = 2, // remove host homeworld from guest empire & SpacePlayerData
+    TeleportHome = 3,   // jump away from host star to new home star (teleport_in_galaxy or travel_to_star)
+};
+
+struct GuestEmigMachine {
+    uint32_t applied_epoch = 0;
+    uint32_t applied_planet = 0;
+    bool home_created = false;
+    bool host_relinquished = false;
+    bool teleported = false;
+
+    void reset()
+    {
+        applied_epoch = 0;
+        applied_planet = 0;
+        home_created = false;
+        host_relinquished = false;
+        teleported = false;
+    }
+
+    bool needs_reapply(uint32_t epoch, uint32_t new_home_planet, uint32_t cur_empire_home_planet) const
+    {
+        if (!new_home_planet)
+            return false;
+        if (!home_created || applied_epoch != epoch || applied_planet != new_home_planet)
+            return true;
+        if (cur_empire_home_planet && cur_empire_home_planet != 0xFFFFFFFFu && cur_empire_home_planet != new_home_planet)
+            return true;
+        return false;
+    }
+
+    void mark_home_created(uint32_t epoch, uint32_t new_home_planet)
+    {
+        applied_epoch = epoch;
+        applied_planet = new_home_planet;
+        home_created = true;
+        host_relinquished = false;
+        teleported = false;
+    }
+
+    // Returns true when tick() should schedule apply_guest_emigration_task().
+    bool needs_task(uint32_t epoch, const EmigrationRecord& rec, uint32_t cur_empire_home_planet, int ctx,
+                    uint32_t active_planet, uint32_t active_star) const
+    {
+        if (!rec.valid())
+            return false;
+        if (needs_reapply(epoch, rec.new_home_planet, cur_empire_home_planet))
+            return true;
+        if (!host_relinquished) {
+            bool on_host_surface = (ctx == 0 && active_planet == rec.orig_home_planet);
+            return !on_host_surface;
+        }
+        if (!teleported) {
+            if (active_star == rec.orig_home_star)
+                return ctx != 0; // wait until liftoff before jumping to new homeworld
+            return active_star != 0;
+        }
+        return false;
+    }
+
+    // Returns the next pending phase to execute inside apply_guest_emigration_task().
+    EmigStep next_step(uint32_t epoch, const EmigrationRecord& rec, uint32_t cur_empire_home_planet, int ctx,
+                       uint32_t active_planet, uint32_t active_star) const
+    {
+        if (!rec.valid())
+            return EmigStep::None;
+        if (needs_reapply(epoch, rec.new_home_planet, cur_empire_home_planet))
+            return EmigStep::CreateHome;
+        if (!host_relinquished) {
+            if (ctx == 0 && active_planet == rec.orig_home_planet)
+                return EmigStep::None; // deferred while landed on host's planet
+            return EmigStep::RelinquishHost;
+        }
+        if (!teleported && active_star == rec.orig_home_star && ctx != 0)
+            return EmigStep::TeleportHome;
+        return EmigStep::None;
+    }
+};
+
 // ---------------- R7: Homeworld Inviolability Table ----------------
 struct ProtectedHome {
     uint8_t player_id = 0;
@@ -409,6 +502,101 @@ inline uint32_t friendly_influence_event(uint32_t seq)
 {
     static constexpr uint32_t kFriendly[4] = {0x0526E51Fu, 0x0526E4E5u, 0x0526E4F2u, 0x05B6CF09u};
     return kFriendly[seq % 4];
+}
+
+// Space-scaled influence purchase cost and Civ->Space draft payout (BUG-1555).
+inline int32_t influence_buy_space_cost(int32_t base_price)
+{
+    if (base_price <= 0)
+        return 0;
+    int64_t scaled = (int64_t)base_price * kSpaceMoneyPerInfluenceUnit;
+    if (scaled > 99999999LL)
+        scaled = 99999999LL;
+    return (int32_t)scaled;
+}
+
+inline int32_t space_draft_payout_money(int32_t raw_payout)
+{
+    if (raw_payout <= 0)
+        return 0;
+    int64_t scaled = (int64_t)raw_payout * kSpaceDraftPayoutScale;
+    if (scaled > 99999999LL)
+        scaled = 99999999LL;
+    return (int32_t)scaled;
+}
+
+// ---------------- F9 Influence UI: discovered Space NPC empires (BUG-1555) ----------------
+struct SpaceNpcSnapshot {
+    uint32_t pol_id = 0;
+    std::string name;
+    float rel = 0.0f;
+    bool flag_ally = false;
+    bool flag_war = false;
+};
+
+struct SpaceNpcUiItem {
+    uint32_t npc_id = 0;
+    std::string label;
+    bool allied = false;
+    bool hostile = false;
+    bool can_turn = false;
+    bool can_protect = false;
+    bool can_smooth = false;
+};
+
+inline std::string format_space_npc_label(const SpaceNpcSnapshot& s, int ordinal)
+{
+    std::string nm = s.name.empty() ? ("Empire #" + std::to_string(ordinal)) : s.name;
+    float r = std::isfinite(s.rel) ? s.rel : 0.0f;
+    bool ally = s.flag_ally || r >= kSpaceNpcAllyRel;
+    bool war = s.flag_war || (!ally && r <= kSpaceNpcHostileRel);
+    char tail[64];
+    if (ally)
+        snprintf(tail, sizeof tail, " (Ally, %+.0f)", r);
+    else if (war)
+        snprintf(tail, sizeof tail, " (War, %+.0f)", r);
+    else
+        snprintf(tail, sizeof tail, " (%+.0f)", r);
+    return nm + tail;
+}
+
+inline std::vector<SpaceNpcUiItem> build_space_npc_ui_list(std::vector<SpaceNpcSnapshot> snaps, bool has_rival)
+{
+    auto rank_of = [](const SpaceNpcSnapshot& s) -> int {
+        float r = std::isfinite(s.rel) ? s.rel : 0.0f;
+        if (s.flag_ally || r >= kSpaceNpcAllyRel)
+            return 0; // allied first
+        if (s.flag_war || r <= kSpaceNpcHostileRel)
+            return 2; // hostile last
+        return 1;     // neutral middle
+    };
+    std::sort(snaps.begin(), snaps.end(), [&](const SpaceNpcSnapshot& a, const SpaceNpcSnapshot& b) {
+        int ra = rank_of(a), rb = rank_of(b);
+        if (ra != rb)
+            return ra < rb;
+        if (a.name != b.name)
+            return a.name < b.name;
+        return a.pol_id < b.pol_id;
+    });
+    std::vector<SpaceNpcUiItem> out;
+    int ord = 1;
+    for (const auto& s : snaps) {
+        if (!s.pol_id)
+            continue;
+        if (out.size() >= kMaxSpaceNpcUiEntries)
+            break;
+        float r = std::isfinite(s.rel) ? s.rel : 0.0f;
+        SpaceNpcUiItem item;
+        item.npc_id = s.pol_id;
+        item.label = format_space_npc_label(s, ord++);
+        item.allied = s.flag_ally || r >= kSpaceNpcAllyRel;
+        item.hostile = s.flag_war || (!item.allied && r <= kSpaceNpcHostileRel);
+        item.can_turn = has_rival;
+        item.can_protect = item.allied;
+        item.can_smooth = r < kSpaceNpcMaxRel;
+        out.push_back(std::move(item));
+    }
+    return out;
 }
 
 // ---------------- Space Race Progress & Chronicle Galaxy Core Finale ----------------

@@ -34,6 +34,7 @@
 #include <string>
 #include <vector>
 
+#include "call_guard.h"
 #include "fixes.h"
 #include "game.h"
 #include "modes.h"
@@ -196,6 +197,11 @@ PLAYER_STATE("space_rivalry", [](uint8_t id) { g_budget.erase(id); g_merge_credi
              [](uint8_t id) -> size_t { return g_budget.count(id) + g_merge_credit_of.count(id) + g_adopt.count(id); });
 static std::vector<std::pair<uint8_t, std::string>> g_roster;
 static double g_last_state;
+static bool g_in_rivals_sync = false;
+CALL_GUARD("space_rivalry.rivals_sync", g_in_rivals_sync);
+static bool g_rivals_sync_pending = false;
+static bool g_rivals_sync_want = false;
+static std::vector<std::tuple<uint8_t, uint8_t, Relation>> g_rivals_sync_rels;
 
 static uint8_t me() { return spaceext::my_id(); }
 
@@ -429,6 +435,14 @@ static std::string host_apply(uint8_t action, uint8_t origin, uint8_t target)
         g_last_reported = -1;
         host_broadcast();
         host_event(action == A_RIVALS ? E_RIVALS : E_ALLIES, origin, 0);
+        // BUG-1555: keep rivals::config() Space stage mode in sync when toggled from the Space page / console.
+        if (!g_in_rivals_sync && rivals::enabled()) {
+            rivals::StageMode want = (action == A_RIVALS) ? rivals::StageMode::Rivals : rivals::StageMode::Together;
+            if (rivals::config().stage_mode(rivals::Stage::Space) != want) {
+                callguard::Hold sync_guard(g_in_rivals_sync);
+                rivals::set_stage_mode(rivals::Stage::Space, want);
+            }
+        }
         return "";
     }
     if (!spaceext::rivals())
@@ -1008,6 +1022,14 @@ static void tick(double now)
                                           "Режим соперников продолжается с прошлой сессии: каждый игрок снова своя империя"));
         }
     }
+    // BUG-1555: retry sync_from_rivals() once money_ptr() becomes valid after early Space load.
+    if (spaceext::is_host() && g_rivals_sync_pending && spaceext::in_space() && money_ptr()) {
+        bool want = g_rivals_sync_want;
+        auto rels = std::move(g_rivals_sync_rels);
+        g_rivals_sync_pending = false;
+        g_rivals_sync_rels.clear();
+        sync_from_rivals(want, rels);
+    }
     if (spaceext::is_host()) {
         auto r = roster();
         if (r != g_roster || now - g_last_state > 5.0) { // a player joined or left; and a safety net
@@ -1102,6 +1124,8 @@ static void session_end()
     g_merge_credit_of.clear();
     g_roster.clear();
     g_hold_set_until = 0;
+    g_rivals_sync_pending = false;
+    g_rivals_sync_rels.clear();
 }
 
 // ---------------- the Space page ----------------
@@ -1289,7 +1313,17 @@ void sync_from_rivals(bool space_rivals, const std::vector<std::tuple<uint8_t, u
     if (!spaceext::connected() || !spaceext::in_space())
         return;
     if (spaceext::is_host()) {
-        if (space_rivals != spaceext::rivals() && money_ptr())
+        if (!money_ptr()) {
+            // BUG-1555: during early Space load money_ptr() can still be null; defer and retry in tick().
+            g_rivals_sync_pending = true;
+            g_rivals_sync_want = space_rivals;
+            g_rivals_sync_rels = rels;
+            return;
+        }
+        g_rivals_sync_pending = false;
+        g_rivals_sync_rels.clear();
+        callguard::Hold sync_guard(g_in_rivals_sync);
+        if (space_rivals != spaceext::rivals())
             host_apply(space_rivals ? A_RIVALS : A_ALLIES, 0, 0);
         if (!spaceext::rivals())
             return;
