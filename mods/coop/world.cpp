@@ -16,6 +16,8 @@
 #include <map>
 
 #include "cellsync.h"
+#include "creature_rivals.h"
+#include "creature_rivals_logic.h"
 #include "game.h"
 #include "sporekit_game.hpp"
 #include "modes.h"
@@ -32,6 +34,10 @@
 #include "creations.h"
 #include "savestrip.h"
 #include "spacecoop.h"
+
+namespace creature_rivals {
+bool peer_recently_active(uint8_t peer, double max_age_s);
+}
 
 namespace world {
 
@@ -112,6 +118,91 @@ static double g_guest_key_check_at = -100.0;
 
 WORLD_STATE("world.warm_resume_host", &g_warm_reconnect_fix, [] { g_host_ledger.clear(); },
             []() -> size_t { return g_host_ledger.size(); });
+
+// WP-081-5 (BUG-1566): in Creature/Cell Rivals, each rival player has their own species, nest,
+// and evolution bar, and creations.cpp already syncs the host's evolved species live to guests.
+// Skipping unnecessary post-editor full MSG_WORLD shares lets rival guests keep playing
+// uninterrupted. Never skips manual shares (tag == 0), first-join shares, stage transitions,
+// planet changes, or menu/other-stage recovery shares.
+static bool g_editor_no_reload_fix = true;
+COOP_FIX("rivals.editor_no_reload", "BUG-1566", g_editor_no_reload_fix,
+         "rivals: skip unnecessary full world reload shares to rival guests when host returns from Creature/Cell Editor");
+static unsigned g_editor_share_skipped = 0;
+
+struct PeerShareRec {
+    uint32_t tag = 0;
+    uint32_t mode = 0;
+    uint32_t world = 0;
+};
+static std::map<uint8_t, PeerShareRec> g_peer_last_share;
+static uint32_t g_rivals_ed_prev_mode = 0;
+static uint32_t g_rivals_ed_from_mode = 0;
+static uint32_t g_rivals_ed_from_world = 0;
+static bool g_rivals_ed_in_editor = false;
+static bool g_rivals_ed_return_on = false;
+static double g_rivals_ed_return_until = 0.0;
+static uint32_t g_rivals_ed_return_mode = 0;
+static uint32_t g_rivals_ed_return_world = 0;
+
+static void reset_rivals_editor_tracker()
+{
+    g_peer_last_share.clear();
+    g_rivals_ed_in_editor = false;
+    g_rivals_ed_return_on = false;
+    g_rivals_ed_return_until = 0.0;
+    g_rivals_ed_from_mode = 0;
+    g_rivals_ed_from_world = 0;
+    g_rivals_ed_return_mode = 0;
+    g_rivals_ed_return_world = 0;
+}
+
+static bool is_stage_mode(uint32_t m)
+{
+    return m == modes::kCell || m == modes::kCreature || m == modes::kTribe || m == modes::kCiv || m == modes::kSpace;
+}
+
+static void update_rivals_editor_tracker()
+{
+    uint32_t m = game::mode_id();
+    bool is_ed = (m == modes::kEditor || m == modes::kEdit);
+    double now = H ? H->time_seconds() : 0.0;
+    if (m != g_rivals_ed_prev_mode) {
+        if (is_ed && (g_rivals_ed_prev_mode == modes::kCreature || g_rivals_ed_prev_mode == modes::kCell)) {
+            g_rivals_ed_in_editor = true;
+            g_rivals_ed_from_mode = g_rivals_ed_prev_mode;
+            g_rivals_ed_from_world = modes::current_world();
+            g_rivals_ed_return_on = false;
+        } else if (m == modes::kMenu) {
+            g_rivals_ed_in_editor = false;
+            g_rivals_ed_return_on = false;
+        } else if (is_stage_mode(m)) {
+            if (g_rivals_ed_in_editor) {
+                g_rivals_ed_in_editor = false;
+                uint32_t w = modes::current_world();
+                if (m == g_rivals_ed_from_mode && w != 0 && w == g_rivals_ed_from_world) {
+                    g_rivals_ed_return_on = true;
+                    g_rivals_ed_return_mode = m;
+                    g_rivals_ed_return_world = w;
+                    g_rivals_ed_return_until = now + 90.0;
+                } else {
+                    g_rivals_ed_return_on = false;
+                }
+            } else if (g_rivals_ed_return_on && m != g_rivals_ed_return_mode) {
+                g_rivals_ed_return_on = false;
+            }
+        }
+        g_rivals_ed_prev_mode = m;
+    }
+    if (g_rivals_ed_return_on) {
+        uint32_t w = modes::current_world();
+        if (w == 0 || w != g_rivals_ed_return_world)
+            g_rivals_ed_return_on = false;
+        else if (cinematic_playing())
+            g_rivals_ed_return_until = std::max(g_rivals_ed_return_until, now + 90.0);
+        else if (now > g_rivals_ed_return_until)
+            g_rivals_ed_return_on = false;
+    }
+}
 
 void on_host_save() { g_save_gen++; }
 void on_host_start() { g_guest_resume.clear(); }
@@ -792,6 +883,33 @@ bool share_in_flight(uint8_t peer)
 
 bool share_with(uint8_t peer, std::string& err, bool save_first, uint32_t tag)
 {
+    update_rivals_editor_tracker();
+    uint32_t cur_mode = game::mode_id();
+    uint32_t cur_world = modes::current_world();
+    {
+        bool cr = (cur_mode == modes::kCreature && creature_rivals::active());
+        bool cellr = (cur_mode == modes::kCell && cellsync::rivals_active());
+        creature_rivals_logic::EditorShareQuery q{};
+        q.fix_enabled = g_editor_no_reload_fix;
+        q.rivals_active = cr || cellr;
+        q.is_manual_share = (tag == 0);
+        q.same_stage_editor = g_rivals_ed_return_on && cur_mode == g_rivals_ed_return_mode;
+        q.is_stage_transition = g_rivals_ed_in_editor || (g_rivals_ed_return_on && cur_mode != g_rivals_ed_return_mode);
+        q.world_changed = !g_rivals_ed_return_on || cur_world == 0 || cur_world != g_rivals_ed_return_world;
+        auto it = g_peer_last_share.find(peer);
+        q.peer_already_in_world = (it != g_peer_last_share.end() && it->second.tag == tag &&
+                                   it->second.mode == cur_mode && it->second.world == cur_world);
+        q.peer_needs_recovery = cr ? !creature_rivals::peer_recently_active(peer, 4.5) : false;
+        if (creature_rivals_logic::should_skip_editor_world_share(q)) {
+            g_editor_share_skipped++;
+            H->log(M, SK_INFO,
+                   "world: skipped post-editor world share for rival player %u (%s, world %08X, rivals.editor_no_reload, BUG-1566)",
+                   peer, modes::mode_name(cur_mode), cur_world);
+            return true;
+        }
+    }
+    if (tag != 0 && is_stage_mode(cur_mode) && cur_world != 0)
+        g_peer_last_share[peer] = {tag, cur_mode, cur_world};
     g_share_asked[peer] = H->time_seconds(); // BUG-0754
     g_share_serial[peer]++;                  // BUG-1435
     if (save_first) {
@@ -1010,6 +1128,7 @@ static unsigned g_loads_held;          // guest: queued loads moved behind an ed
 
 void reset_shares()
 {
+    reset_rivals_editor_tracker();
     if (!g_share_reset_fix)
         return;
     if (!g_pending.empty() || !g_out.empty())
@@ -2021,6 +2140,7 @@ void guest_tick()
 
 void tick(net::Session& s)
 {
+    update_rivals_editor_tracker();
     intro_in_stage_tick();
     via_menu_tick();
     menu_intro_tick();
@@ -2051,6 +2171,12 @@ void tick(net::Session& s)
         for (auto& o : g_out)
             if (!o.done && !here(o.peer))
                 o.done = true;
+        for (auto it = g_peer_last_share.begin(); it != g_peer_last_share.end();) {
+            if (!here(it->first))
+                it = g_peer_last_share.erase(it);
+            else
+                ++it;
+        }
     }
     if (g_land_at && GetTickCount64() >= g_land_at) {
         g_land_at = 0;
@@ -2729,6 +2855,9 @@ std::string status()
              (int)g_warm_reconnect_fix, g_warm_resumes, g_warm_fallbacks, g_world_offers_sent, g_world_offers_recv,
              (unsigned)g_host_ledger.size(), (unsigned long long)g_guest_resume.active_receipt(),
              g_guest_resume.state_name()); // tests (BUG-0869)
+    s += b;
+    snprintf(b, sizeof b, "rivals_editor_no_reload: fix=%d editor_share_skipped=%u\n",
+             (int)g_editor_no_reload_fix, g_editor_share_skipped); // tests (BUG-1566)
     s += b;
     if (g_sw.m.coop) // BUG-1434: the slot the save database points to is a co-op copy
         s += "slot " + narrow(g_sw.slot) + ": a copy of " + g_sw.m.host + "'s world, made for " + g_sw.m.planet +

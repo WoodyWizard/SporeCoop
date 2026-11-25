@@ -488,6 +488,164 @@ static void test_wire_codecs()
     }
 }
 
+static void test_rivals_drama_isolation_policy()
+{
+    // Fix disabled or Together mode -> always Allow
+    {
+        DramaQuery q{};
+        q.fix_enabled = false;
+        q.creature_rivals = true;
+        q.is_host = true;
+        q.kind = 8;
+        q.is_summon_for_guest = true;
+        assert(evaluate_rivals_drama(q) == DramaAction::Allow);
+
+        q.fix_enabled = true;
+        q.creature_rivals = false;
+        q.tribe_rivals = false;
+        assert(evaluate_rivals_drama(q) == DramaAction::Allow);
+    }
+
+    // Creature Rivals: rival guest Summon Flock (K_FLOCK -> summon_for) blocked on host
+    {
+        DramaQuery q{};
+        q.fix_enabled = true;
+        q.creature_rivals = true;
+        q.is_host = true;
+        q.kind = 8;
+        q.is_summon_for_guest = true;
+        assert(evaluate_rivals_drama(q) == DramaAction::BlockEvent);
+
+        // Host's OWN Summon Flock is allowed in Creature Rivals
+        q.is_summon_for_guest = false;
+        assert(evaluate_rivals_drama(q) == DramaAction::Allow);
+
+        // Guest local Summon Flock blocked in Creature Rivals
+        q.is_host = false;
+        q.is_guest = true;
+        assert(evaluate_rivals_drama(q) == DramaAction::BlockEvent);
+    }
+
+    // Creature Rivals: host meteor (3) and rain (5) stay host-local (BlockRelay), never broadcast to rival guests
+    for (unsigned k : {3u, 5u}) {
+        DramaQuery host_tx{};
+        host_tx.fix_enabled = true;
+        host_tx.creature_rivals = true;
+        host_tx.is_host = true;
+        host_tx.kind = k;
+        assert(evaluate_rivals_drama(host_tx) == DramaAction::BlockRelay);
+
+        DramaQuery guest_rx{};
+        guest_rx.fix_enabled = true;
+        guest_rx.creature_rivals = true;
+        guest_rx.is_guest = true;
+        guest_rx.kind = k;
+        guest_rx.is_relay_rx = true;
+        assert(evaluate_rivals_drama(guest_rx) == DramaAction::BlockRelay);
+
+        // Together mode allows relay
+        host_tx.creature_rivals = false;
+        guest_rx.creature_rivals = false;
+        assert(evaluate_rivals_drama(host_tx) == DramaAction::Allow);
+        assert(evaluate_rivals_drama(guest_rx) == DramaAction::Allow);
+    }
+
+    // Creature Rivals: sea monster (6) remains local Allow on both host and guest
+    {
+        DramaQuery sea{};
+        sea.fix_enabled = true;
+        sea.creature_rivals = true;
+        sea.is_guest = true;
+        sea.kind = 6;
+        assert(evaluate_rivals_drama(sea) == DramaAction::Allow);
+    }
+
+    // Tribe Rivals: creature_attack (7) blocked on host and guest so converted rival villages are not unfairly raided
+    {
+        DramaQuery raid{};
+        raid.fix_enabled = true;
+        raid.tribe_rivals = true;
+        raid.is_host = true;
+        raid.kind = 7;
+        assert(evaluate_rivals_drama(raid) == DramaAction::BlockEvent);
+
+        raid.is_host = false;
+        raid.is_guest = true;
+        assert(evaluate_rivals_drama(raid) == DramaAction::BlockEvent);
+
+        // Together Tribe allows host creature_attack
+        raid.tribe_rivals = false;
+        raid.is_host = true;
+        raid.is_guest = false;
+        assert(evaluate_rivals_drama(raid) == DramaAction::Allow);
+    }
+}
+
+static void test_rivals_editor_no_reload_policy()
+{
+    EditorShareQuery base{};
+    base.fix_enabled = true;
+    base.rivals_active = true;
+    base.is_manual_share = false;
+    base.same_stage_editor = true;
+    base.is_stage_transition = false;
+    base.world_changed = false;
+    base.peer_already_in_world = true;
+    base.peer_needs_recovery = false;
+
+    // Same-stage host Creature Editor return in Creature Rivals for active peer -> SKIP reload share
+    assert(should_skip_editor_world_share(base));
+
+    // Fix OFF -> do NOT skip
+    {
+        auto q = base;
+        q.fix_enabled = false;
+        assert(!should_skip_editor_world_share(q));
+    }
+    // Together mode -> do NOT skip
+    {
+        auto q = base;
+        q.rivals_active = false;
+        assert(!should_skip_editor_world_share(q));
+    }
+    // Manual share (coop.share / UI share_all, tag == 0) -> NEVER skip
+    {
+        auto q = base;
+        q.is_manual_share = true;
+        assert(!should_skip_editor_world_share(q));
+    }
+    // Not a same-stage editor return -> NEVER skip
+    {
+        auto q = base;
+        q.same_stage_editor = false;
+        assert(!should_skip_editor_world_share(q));
+    }
+    // Stage transition (Cell->Creature, Creature->Tribe) -> NEVER skip
+    {
+        auto q = base;
+        q.is_stage_transition = true;
+        assert(!should_skip_editor_world_share(q));
+    }
+    // Planet / save changed -> NEVER skip
+    {
+        auto q = base;
+        q.world_changed = true;
+        assert(!should_skip_editor_world_share(q));
+    }
+    // Fresh joiner (peer not yet shared in this stage/world) -> NEVER skip
+    {
+        auto q = base;
+        q.peer_already_in_world = false;
+        assert(!should_skip_editor_world_share(q));
+    }
+    // Peer left to menu / another stage and needs recovery -> NEVER skip
+    {
+        auto q = base;
+        q.peer_needs_recovery = true;
+        assert(!should_skip_editor_world_share(q));
+    }
+}
+
 int main()
 {
     test_nest_selection_distances();
@@ -498,6 +656,8 @@ int main()
     test_npc_ui_list_generation();
     test_auto_tribe_transition_and_draft_items();
     test_wire_codecs();
+    test_rivals_drama_isolation_policy();
+    test_rivals_editor_no_reload_policy();
     std::printf("creature_rivals_tests: all passed\n");
     return 0;
 }

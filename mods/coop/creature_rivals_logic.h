@@ -828,4 +828,79 @@ inline bool read_pvp_hit(net::Reader& r, PvpHitMsg& out)
            std::isfinite(out.damage) && out.damage > 0.0f && out.damage <= 1000.0f;
 }
 
+// ---------------- Rivals Drama Isolation Policy (WP-081-5, BUG-1566) ----------------
+enum class DramaAction : uint8_t {
+    Allow = 0,      // keep normal Together / vanilla Drama Manager handling
+    BlockRelay = 1, // host: run locally only (no K_DRAMA relay); guest: drop incoming K_DRAMA
+    BlockEvent = 2, // refuse starting the event (rival guest Summon Flock on host, Tribe Rivals raid)
+};
+
+struct DramaQuery {
+    bool fix_enabled = false;         // COOP_FIX("rivals.drama_isolate", "BUG-1566")
+    bool creature_rivals = false;     // creature_rivals::active()
+    bool tribe_rivals = false;        // tribe_rivals::active()
+    bool is_host = false;
+    bool is_guest = false;
+    unsigned kind = 99;               // cDramaManager event kind (0..8)
+    bool is_relay_rx = false;         // guest handling K_DRAMA from host (drama::from_host)
+    bool is_summon_for_guest = false; // host handling K_FLOCK for a guest puppet (drama::summon_for)
+};
+
+// Pure decision table for Rivals Drama Manager isolation:
+//  - Creature Rivals:
+//    * Host summon_for(guest_puppet) -> BlockEvent (rival flock must not join host's pack)
+//    * Guest local kind 8 (summon) -> BlockEvent (refuse phantom AI-less local flock & count isolated)
+//    * Host own kind 8 (summon) -> Allow (host's own Summon Flock stays for host's own pack)
+//    * Kind 3 (meteor) & kind 5 (rain) -> BlockRelay on host TX and guest RX (host-centered events
+//      must not broadcast onto rival guests at distant nests)
+//  - Tribe Rivals:
+//    * Kind 7 (creature_attack) -> BlockEvent (host-centric wild animal village raids must not
+//      unfairly target a rival player's converted NPC village)
+//  - Together mode or fix disabled -> Allow (vanilla/Together behavior unchanged).
+inline DramaAction evaluate_rivals_drama(const DramaQuery& q)
+{
+    if (!q.fix_enabled || (!q.creature_rivals && !q.tribe_rivals))
+        return DramaAction::Allow;
+    if (q.creature_rivals) {
+        if (q.is_summon_for_guest)
+            return DramaAction::BlockEvent;
+        if (q.kind == 8 && q.is_guest)
+            return DramaAction::BlockEvent;
+        if (q.kind == 3 || q.kind == 5) {
+            if (q.is_relay_rx || q.is_host)
+                return DramaAction::BlockRelay;
+        }
+    }
+    if (q.tribe_rivals && q.kind == 7)
+        return DramaAction::BlockEvent;
+    return DramaAction::Allow;
+}
+
+// ---------------- Rivals Post-Editor World Share Skip Policy (WP-081-5, BUG-1566) ----------------
+struct EditorShareQuery {
+    bool fix_enabled = false;           // COOP_FIX("rivals.editor_no_reload", "BUG-1566")
+    bool rivals_active = false;         // creature_rivals::active() or cellsync::rivals_active()
+    bool is_manual_share = false;       // tag == 0 (coop.share / UI share_all / test queue)
+    bool same_stage_editor = false;     // host returned from same-stage editor within return window
+    bool is_stage_transition = false;   // stage changed (Cell->Creature, Creature->Tribe, etc.)
+    bool world_changed = false;         // planet / save CRC changed from pre-editor world
+    bool peer_already_in_world = false; // peer already received a share in this stage & world (same join_serial)
+    bool peer_needs_recovery = false;   // peer is not active in this stage (e.g. left to menu / other stage)
+};
+
+// Decide whether to skip a host -> guest MSG_WORLD save/share after a host same-stage editor visit in Rivals.
+// Never skips manual shares, first-join shares, stage transitions, planet switches, or menu recovery shares.
+inline bool should_skip_editor_world_share(const EditorShareQuery& q)
+{
+    if (!q.fix_enabled || !q.rivals_active)
+        return false;
+    if (q.is_manual_share || q.is_stage_transition || q.world_changed)
+        return false;
+    if (!q.same_stage_editor)
+        return false;
+    if (!q.peer_already_in_world || q.peer_needs_recovery)
+        return false;
+    return true;
+}
+
 } // namespace creature_rivals_logic

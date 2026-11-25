@@ -12,11 +12,14 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include "creature_rivals.h"
+#include "creature_rivals_logic.h"
 #include "fixes.h"
 #include "game.h"
 #include "modes.h"
 #include "player_rules.h"
 #include "sporekit_game.hpp"
+#include "tribe_rivals.h"
 
 namespace drama {
 
@@ -62,6 +65,19 @@ WORLD_STATE("drama.last_events", nullptr, [] {
 });
 
 static bool is_guest() { return S && S->role() == net::Role::Client && S->connected(); }
+static bool is_host() { return S && S->role() == net::Role::Host && S->connected(); }
+
+// WP-081-5 (BUG-1566): in Creature Rivals and Tribe Rivals, host-centric Drama Manager relays and
+// Summon Flock ownership must not cross rival boundaries:
+//   - Guest Summon Flock (K_FLOCK / drama::summon_for) must not join the host's pack in Creature Rivals.
+//   - Host meteor (3) and rain (5) events must not broadcast onto rival guests at distant nests.
+//   - Tribe Rivals creature_attack (7) must not raid converted player-owned rival villages.
+// `coop.fix rivals.drama_isolate off`: Together-mode drama relay/summon behavior (0.8.0.2).
+static bool g_rivals_drama_fix = true;
+COOP_FIX("rivals.drama_isolate", "BUG-1566", g_rivals_drama_fix,
+         "rivals: isolate host Drama Manager events and rival Summon Flock ownership in Creature and Tribe Rivals");
+static unsigned g_rivals_blocked = 0;
+static unsigned g_rivals_flock_isolated = 0;
 
 // BUG-0736 (class BUG-0418): a guest's Summon Flock (ability 0x33 -> DramaManager_StartKind(8), cSummonCreatureEvent
 // start 0xD50EA0: a herd of the event's species 70 m from the avatar, its members into the local pack, then made to
@@ -165,6 +181,35 @@ static void SK_THISCALL h_Start(void* mgr, void* ev, int arg)
     }
     if (kind < 9)
         g_last_event[kind] = ev;
+    creature_rivals_logic::DramaQuery dq{};
+    dq.fix_enabled = g_rivals_drama_fix;
+    dq.creature_rivals = creature_rivals::active();
+    dq.tribe_rivals = tribe_rivals::active();
+    dq.is_host = is_host();
+    dq.is_guest = is_guest();
+    dq.kind = kind;
+    auto ract = creature_rivals_logic::evaluate_rivals_drama(dq);
+    if (ract == creature_rivals_logic::DramaAction::BlockEvent) {
+        if (kind == 8) {
+            g_flock_refused++;
+            g_rivals_flock_isolated++;
+            g_rivals_blocked++;
+            if (g_rivals_flock_isolated <= 5)
+                H->log(M, SK_INFO, "drama: rival guest Summon Flock blocked locally (rivals.drama_isolate, BUG-1566)");
+            return;
+        }
+        if (kind == 7) {
+            if (is_host()) {
+                void* t = attack_tribe(ev);
+                if (t && tribe_rivals::is_player_owned_tribe(t) && a_EvSetObj)
+                    skg::thiscall<void>(a_EvSetObj, ev, kAttackTribeKey, (void*)nullptr);
+            }
+            g_rivals_blocked++;
+            if (g_refused[kind]++ < 5)
+                H->log(M, SK_INFO, "drama: creature_attack blocked in Tribe Rivals (rivals.drama_isolate, BUG-1566)");
+            return;
+        }
+    }
     bool tribe_attack = g_guest_attacks_fix && kind == 7 && game::mode_id() == modes::kTribe;
     if (g_flock_relay && kind == 8 && is_guest() && game::in_creature_stage()) {
         g_flock_refused++; // BUG-0736: the host makes it (player_rules sent the ability)
@@ -194,10 +239,16 @@ static void SK_THISCALL h_Start(void* mgr, void* ev, int arg)
                g_from_host ? ", the host's" : "");
     }
     o_Start(mgr, ev, arg);
-    if (g_shared_fix && kind < 9 && (kRelay >> kind & 1) && S && S->role() == net::Role::Host && S->connected() &&
+    if (g_shared_fix && kind < 9 && (kRelay >> kind & 1) && is_host() &&
         game::mode_id() == modes::kCreature) { // BUG-1282: the guests start it too
-        player_rules::drama_out((uint8_t)kind);
-        g_relayed_tx[kind]++;
+        if (ract == creature_rivals_logic::DramaAction::BlockRelay) {
+            g_rivals_blocked++;
+            H->log(M, SK_INFO, "drama: host %s not relayed to rival guests in Creature Rivals (rivals.drama_isolate, BUG-1566)",
+                   kKind[kind]);
+        } else {
+            player_rules::drama_out((uint8_t)kind);
+            g_relayed_tx[kind]++;
+        }
     }
 }
 
@@ -205,6 +256,18 @@ void from_host(uint8_t kind) // BUG-1282 (player_rules K_DRAMA, from the host)
 {
     if (!g_shared_fix || kind > 8 || !(kRelay >> kind & 1) || !is_guest() || game::mode_id() != modes::kCreature)
         return;
+    creature_rivals_logic::DramaQuery dq{};
+    dq.fix_enabled = g_rivals_drama_fix;
+    dq.creature_rivals = creature_rivals::active();
+    dq.tribe_rivals = tribe_rivals::active();
+    dq.is_guest = true;
+    dq.kind = kind;
+    dq.is_relay_rx = true;
+    if (creature_rivals_logic::evaluate_rivals_drama(dq) != creature_rivals_logic::DramaAction::Allow) {
+        g_rivals_blocked++;
+        H->log(M, SK_INFO, "drama: dropped host %s relay in Creature Rivals (rivals.drama_isolate, BUG-1566)", kKind[kind]);
+        return;
+    }
     void* mgr = a_Get ? skg::cdecl_call<void*>(a_Get) : nullptr;
     if (!mgr || !a_StartKind)
         return;
@@ -227,6 +290,8 @@ static SummonUpdate_t o_SummonUpdate;
 static unsigned g_flock_updates;
 static void SK_THISCALL h_SummonUpdate(void* ev, uint32_t a)
 {
+    if (g_rivals_drama_fix && creature_rivals::active() && ev && ev == g_flock_event)
+        forget_flock("Creature Rivals active (BUG-1566)");
     if (g_flock_forget && ev && ev == g_flock_event && !((const uint8_t*)ev)[0xC])
         forget_flock("its update found it inactive"); // BUG-0800
     void* nm = ev && ev == g_flock_event && g_flock_relay ? game::noun_manager() : nullptr;
@@ -271,6 +336,20 @@ void init(const SkHost* host, SkMod* mod, const net::Session* sess)
 
 bool summon_for(void* puppet)
 {
+    creature_rivals_logic::DramaQuery dq{};
+    dq.fix_enabled = g_rivals_drama_fix;
+    dq.creature_rivals = creature_rivals::active();
+    dq.tribe_rivals = tribe_rivals::active();
+    dq.is_host = is_host();
+    dq.is_guest = is_guest();
+    dq.kind = 8;
+    dq.is_summon_for_guest = true;
+    if (creature_rivals_logic::evaluate_rivals_drama(dq) == creature_rivals_logic::DramaAction::BlockEvent) {
+        g_rivals_flock_isolated++;
+        g_rivals_blocked++;
+        H->log(M, SK_INFO, "drama: rival guest Summon Flock isolated on host (will not join host pack in Creature Rivals, rivals.drama_isolate, BUG-1566)");
+        return false;
+    }
     void* mgr = a_Get ? skg::cdecl_call<void*>(a_Get) : nullptr;
     void* nm = game::noun_manager();
     if (!mgr || !a_StartKind || !nm || !puppet || !game::is_puppet(puppet) || is_guest())
@@ -386,10 +465,11 @@ std::string debug(const std::vector<std::string>& a)
         out += "\n";
     }
     snprintf(b, sizeof b, "drama: mask=%X guest=%d mode=%08X flock_relay=%d relayed=%u refused=%u updates=%u "
-             "flock_event=%p forgotten=%u shared=%d host_sends=%d\n",
+             "flock_event=%p forgotten=%u shared=%d host_sends=%d rivals_isolate=%d rivals_blocked=%u rivals_flock_isolated=%u\n",
              g_mask, (int)is_guest(), game::mode_id(), (int)g_flock_relay, g_flock_relayed, g_flock_refused,
              g_flock_updates, g_flock_event, g_flock_forgotten, (int)g_shared_fix,
-             (int)(is_guest() && player_rules::host_sends_drama())); // BUG-1282
+             (int)(is_guest() && player_rules::host_sends_drama()), (int)g_rivals_drama_fix,
+             g_rivals_blocked, g_rivals_flock_isolated); // BUG-1282, BUG-1566
     out += b;
     for (int k = 0; k < 9; k++) {
         const uint8_t* ev = (const uint8_t*)g_last_event[k];

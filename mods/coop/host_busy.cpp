@@ -19,6 +19,7 @@
 #include "busy_model.h"
 #include "host_busy.h"
 #include "net/manifest.h"
+#include "rivals.h"
 #include "stage_epoch.h"
 
 namespace coop_core {
@@ -208,7 +209,8 @@ static void guest_tick(double now)
     busy_model::Edge e = g_view.step(now, fb);
     g_edge = e;
     int stage = stage_epoch::index_of(g_mode);
-    busy_model::Act a = busy_model::act(stage, e, spaceext::rivals());
+    bool rivals_on = spaceext::rivals() || rivals::active_in_mode(g_mode);
+    busy_model::Act a = busy_model::act(stage, e, rivals_on);
     bool want = a == busy_model::Act::Wait && stage_on(stage) && in_host_world() && !game::leaving_stage();
     std::string host = g_sess.name_of(0);
     if (want && g_hold == Hold::None) {
