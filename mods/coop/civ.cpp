@@ -1,5 +1,6 @@
 #include "civ.h"
 #include "civ_internal.h"
+#include "civ_rivals.h"
 #include "party_difficulty.h"
 #include "civ_wallet.h"
 #include "own_world.h"
@@ -574,7 +575,10 @@ static int SK_THISCALL h_SetOrder(void* v, void* target, int type, int flag)
         }
     } else if (!g_applying && is_host() && game::mode_id() == modes::kCiv) {
         if (HvRef it = hv_find(v)) {
-            if (ff_try_order(it.id, v, it.h->owner, target, type))
+            if (civ_rivals::active() && (type == 1 || type == 2 || type == 3) &&
+                civ_rivals::block_attack_order(it.h->owner, target))
+                return 0;
+            if (!civ_rivals::active() && ff_try_order(it.id, v, it.h->owner, target, type))
                 return 0;
         }
     }
@@ -975,9 +979,11 @@ static CreateBuilding_t o_CreateBuilding;
 static void* SK_THISCALL h_CreateBuilding(void* city, uint32_t noun, uint32_t type)
 {
     uintptr_t ret = (uintptr_t)__builtin_return_address(0);
-    if (!g_applying && guest_holds() && (ret == a_GrowthRetBudget || ret == a_GrowthRetNew)) {
-        g_n.growth_blocked++;
-        return nullptr; // both callers ignore the result (the host's growth comes as MSG_CIV_BUILD)
+    if (!g_applying && (ret == a_GrowthRetBudget || ret == a_GrowthRetNew)) {
+        if (guest_holds() || (is_host() && civ_rivals::is_guest_city(city))) {
+            g_n.growth_blocked++;
+            return nullptr; // both callers ignore the result (the host's growth comes as MSG_CIV_BUILD; R2 blocks guest-nation AI)
+        }
     }
     return o_CreateBuilding(city, noun, type);
 }
@@ -1197,6 +1203,8 @@ static void SK_THISCALL h_AddMoney(void* civ, float amount, int difficulty)
                    skg::readable(civ, kCivWealth + sizeof(float));
     if (!passive) {
         o_AddMoney(civ, amount, difficulty);
+        if (in_civ && is_host() && civ_rivals::active() && civ_rivals::is_guest_nation(civ))
+            civ_rivals::host_mark_assign_dirty();
         return;
     }
     double before = (double)F<float>(civ, kCivWealth);
@@ -1204,6 +1212,10 @@ static void SK_THISCALL h_AddMoney(void* civ, float amount, int difficulty)
     double gain = (double)F<float>(civ, kCivWealth) - before; // the game's difficulty and its cap are in it
     if (!std::isfinite(gain) || gain == 0.0)
         return;
+    if (civ_rivals::active()) {
+        civ_rivals::host_mark_assign_dirty();
+        return; // Rivals: each player keeps its own nation's passive income
+    }
     double out = civ_wallet::host_income(civ, gain); // BUG-1468: the guests' parts by their cities
     if (g_income_cause_fix) {
         shared::note_passive(2, gain - out); // the guests' parts leave the money: what stays is still passive
@@ -1225,6 +1237,8 @@ using WealthToBudgets_t = void(__fastcall*)(void*);
 static WealthToBudgets_t o_WealthToBudgets;
 static void __fastcall h_WealthToBudgets(void* civ)
 {
+    if (civ && civ_rivals::active() && civ_rivals::is_guest_nation(civ))
+        return; // R2: guest-assigned nation keeps its wealth in mWealth (+0x98), never drained into NPC budgets
     if (g_npc_money_hold_fix && !g_applying && guest_holds() && civ && civ != player_civ() && host_busy::host_stands()) {
         g_npc_money_held++;
         return;
@@ -1248,9 +1262,10 @@ static uintptr_t g_ai_spawn_ret[6];
 static void* SK_THISCALL h_SpawnVehicle(void* city, int purpose, int loco, uint32_t k0, uint32_t k1, uint32_t k2, int space)
 {
     uintptr_t ret = (uintptr_t)__builtin_return_address(0);
-    if (!g_applying && guest_holds()) { // (BUG-1478)
-        g_local_spawns[ret - H->image_base() + 0x400000]++;
-        if (g_fix_aispawn)
+    if (!g_applying && (guest_holds() || (is_host() && civ_rivals::is_guest_city(city)))) { // (BUG-1478, BUG-1549 R2)
+        if (guest_holds())
+            g_local_spawns[ret - H->image_base() + 0x400000]++;
+        if (g_fix_aispawn || (is_host() && civ_rivals::is_guest_city(city)))
             for (uintptr_t a : g_ai_spawn_ret)
                 if (a && a == ret) {
                     g_n.ai_spawns_blocked++;
@@ -1299,9 +1314,16 @@ int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int a4, in
             g_away_capture_sent.clear();
         return 0; // captures happen on the host and come back with the snapshot
     }
+    if (is_host() && game::mode_id() == modes::kCiv && civ_rivals::block_capture(city, pol))
+        return 0; // BUG-1549 R7: capital inviolable & non-war rival cities protected
     int r = o_Capture(city, pol, type, a3, a4, a5);
     if (is_host() && game::mode_id() == modes::kCiv) {
         caption_arm(); // every capture the host's game runs may show a caption that waits for OK
+        if (civ_rivals::active()) {
+            civ_rivals::on_city_captured(city, pol);
+            autosave::milestone("a city captured");
+            return r;
+        }
         void* pc = player_civ();
         if (pc && pol == pol_of(pc) && !g_city_owner.count(city)) {
             // the city goes to the player whose vehicle is closest (who took it)
@@ -1393,6 +1415,8 @@ COOP_FIX("civ.buy_city", "BUG-0877", g_fix_buy_city,
 CityBuy_t o_CityBuy;
 static void SK_THISCALL h_CityBuy(void* city, uint32_t pol, float price)
 {
+    if (is_host() && game::mode_id() == modes::kCiv && civ_rivals::block_capture(city, pol))
+        return; // BUG-1549 R7: cannot buy a player's capital or non-war rival city
     void* pc = g_fix_buy_city && game::mode_id() == modes::kCiv && !g_applying ? player_civ() : nullptr;
     if (pc && pol == pol_of(pc) && guest_holds()) { // (BUG-1478: a guest in its own world buys there)
         int ci = host_index_of_city(city);
@@ -1661,18 +1685,34 @@ static int b_damage(BTakeDamage_t orig, void* self, float dmg, uint32_t pol, int
         return 0;
     uint8_t p = is_host() && active() ? player_of_combatant(att) : 0xFF;
     bool is_ff_hit = false;
-    if (is_host() && active() && p < net::kMaxPlayers && self) {
+    if (is_host() && active() && self) {
         if (void* city = city_of_building((uint8_t*)self - 0x120)) {
             uint8_t co = owner_of_city(city);
-            auto gate = civlogic::ff_damage_gate(ff_on(), p, co, (uint8_t)net::kMaxPlayers);
-            if (gate == civlogic::FfGate::Block) {
-                g_n.ff_blocked++;
-                return 0;
-            }
-            if (gate == civlogic::FfGate::Allow) {
-                pol = 0xFFFFFFFFu;
-                g_n.ff_hits++;
-                is_ff_hit = true;
+            if (civ_rivals::active()) {
+                uint8_t att_p = p;
+                if (att_p >= net::kMaxPlayers) {
+                    int pp = civ_rivals::player_of_pol(pol);
+                    if (pp >= 0)
+                        att_p = (uint8_t)pp;
+                }
+                auto rg = civ_rivals::damage_gate(att_p, co, civ_rivals::is_player_capital(city), type);
+                if (rg == civ_rivals_logic::CombatGate::Block) {
+                    g_n.ff_blocked++;
+                    return 0;
+                }
+                if (rg == civ_rivals_logic::CombatGate::Allow)
+                    is_ff_hit = true;
+            } else if (p < net::kMaxPlayers) {
+                auto gate = civlogic::ff_damage_gate(ff_on(), p, co, (uint8_t)net::kMaxPlayers);
+                if (gate == civlogic::FfGate::Block) {
+                    g_n.ff_blocked++;
+                    return 0;
+                }
+                if (gate == civlogic::FfGate::Allow) {
+                    pol = 0xFFFFFFFFu;
+                    g_n.ff_hits++;
+                    is_ff_hit = true;
+                }
             }
         }
     }
@@ -1713,12 +1753,14 @@ using AddCapture_t = void(SK_CDECL*)(void*, void*, void*, uint32_t, float, uint3
 static AddCapture_t o_AddCapture;
 void SK_CDECL h_AddCapture(void* ctx, void* city, void* meter, uint32_t owner, float dmg, uint32_t att, bool f)
 {
+    if (is_host() && active() && civ_rivals::block_capture_damage(city, g_hit_by, att))
+        return; // BUG-1549 R7: capital inviolable & non-war rival city capture blocked
     // BUG-0420: the owner of an NPC nation's vehicle is 0xFE: it counted as a second player (one guest and an NPC
     // army gave the joint-siege bonus). Only a player's vehicles count now; `coop.fix civ.siege_players off`: 0.7.10.
     bool player = g_hit_by != 0xFF && (!g_siege_players_fix || g_hit_by < net::kMaxPlayers);
     if (!player && g_hit_by != 0xFF)
         g_n.siege_npc++;
-    if (is_host() && active() && city && player) {
+    if (is_host() && active() && !civ_rivals::active() && city && player) {
         double now = H->time_seconds();
         auto& hits = g_siege[city];
         hits[g_hit_by] = now;
@@ -1753,7 +1795,9 @@ static void SK_THISCALL h_Convert(void* city, uint32_t pol, int count)
 {
     if (!g_applying && active() && guest_converts_blocked())
         return; // BUG-1285: the host's game converts; its follower maps come (civ_influence.cpp)
-    if (is_host() && active() && city && count > 0) {
+    if (is_host() && active() && civ_rivals::block_convert(city, pol))
+        return; // BUG-1549 R7: capital cannot be converted & non-war rival city protected
+    if (is_host() && active() && !civ_rivals::active() && city && count > 0) {
         net::Vec3 cp = city_pos(city);
         uint8_t preacher = 0xFF;
         game::LiveScope live; // BUG-1053: one walk of the object list (no game code runs in the loop)
@@ -1820,8 +1864,8 @@ static OnAttacked_t o_OnAttacked;
 void SK_THISCALL h_OnAttacked(void* city, int kind, uint32_t att)
 {
     o_OnAttacked(city, kind, att);
-    if (!is_host() || !active() || kind > 1)
-        return;
+    if (!is_host() || !active() || kind > 1 || civ_rivals::active())
+        return; // Rivals mode: no Together co-op alarm/speed boost
     uint8_t owner = owner_of_city(city);
     void* pc = player_civ();
     if (owner == 0xFF || (pc && att == pol_of(pc)))
@@ -1896,6 +1940,16 @@ CALL_GUARD("civ.sw_bypass", g_sw_bypass); // BUG-1047
 int g_sw_last_req = -1, g_sw_fired = -1; // host: last guest request, weapon type the last guest vote fired
 bool SK_THISCALL h_FireSW(void* civ, int type, const float* target)
 {
+    // BUG-1549 R7: in Civ Rivals, superweapons cannot target rival capitals, and rivals do not vote on each other's weapons.
+    if (civ_rivals::active() && !g_sw_bypass) {
+        if (civ_rivals::block_superweapon(C.sess->my_id(), type, target))
+            return false;
+        if (is_host()) {
+            bool ok = o_FireSW(civ, type, target);
+            civ_rivals::host_mark_assign_dirty();
+            return ok;
+        }
+    }
     // F3 (BUG-0768): civ.superweapon_vote off: the host's (and a guest's own) superweapon fires at once
     if (g_sw_bypass || !active() || C.sess->players().size() < 2)
         return o_FireSW(civ, type, target);
@@ -1953,9 +2007,27 @@ void host_superweapon_request(uint8_t from, net::Reader& r)
 {
     int type = (int)r.u32();
     float pos[3] = {r.f32(), r.f32(), r.f32()};
-    void* pc = player_civ();
+    void* pc = civ_rivals::active() ? civ_rivals::civ_of_player(from) : player_civ();
     // the game's superweapon types are 0..11 (GetSuperweaponCost, docs/re/civ.md)
-    if (!r.ok() || !pc || !C.vote || type < 0 || type > 11 || !net::finite3(pos))
+    if (!r.ok() || !pc || type < 0 || type > 11 || !net::finite3(pos))
+        return;
+    if (civ_rivals::active()) {
+        if (civ_rivals::block_superweapon(from, type, pos)) {
+            if (C.sess) {
+                net::Writer nw;
+                nw.str8("superweapon blocked: rival capitals are inviolable");
+                C.sess->send_reliable_to(from, net::MSG_NOTICE, nw);
+            }
+            return;
+        }
+        callguard::Hold sw_bypass(g_sw_bypass);
+        g_sw_last_req = type;
+        g_sw_fired = type;
+        o_FireSW(pc, type, pos);
+        civ_rivals::host_mark_assign_dirty();
+        return;
+    }
+    if (!C.vote)
         return;
     g_sw_last_req = type;
     if (!settings::on(settings::kCivSwVote)) { // F3 (BUG-0768): no vote, the guest's superweapon fires now
@@ -2001,10 +2073,11 @@ static std::unordered_map<void*, int> g_turret_seen;                          //
 static int __fastcall h_AddTurret(void* city)
 {
     uintptr_t ret = (uintptr_t)__builtin_return_address(0);
-    if (!g_applying && is_guest() && game::mode_id() == modes::kCiv && !local_play() &&
-        (ret == a_TurretRet1 || ret == a_TurretRet2)) {
+    if (!g_applying && (ret == a_TurretRet1 || ret == a_TurretRet2) &&
+        ((is_guest() && game::mode_id() == modes::kCiv && !local_play()) ||
+         (is_host() && civ_rivals::is_guest_city(city)))) {
         g_n.turrets_blocked++;
-        return 0; // both growth calls ignore the result (the host's turrets come with the snapshot)
+        return 0; // both growth calls ignore the result (the host's turrets come with the snapshot; R2 blocks guest-nation AI)
     }
     return o_AddTurret(city);
 }
@@ -2274,6 +2347,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     fields::add_kind({fields::K_CIV_VEHICLE, "civ_vehicle", nullptr, kVehFields, 1, veh_each, veh_mirror,
                       [] { return g_ok && game::mode_id() == modes::kCiv; }}); // BUG-0549
     species_init(); // WP-C1 (BUG-1273, optional)
+    civ_rivals::init(); // WP-R5 (BUG-1549): Civilization Rivals mode
     return true;
 }
 
@@ -2286,6 +2360,7 @@ void tick(double now)
         space_tick(now); // BUG-0766 / BUG-0884
     if (!active())
         return;
+    civ_rivals::tick(now); // WP-R5 (BUG-1549): nation takeover, perspective swap, NPC rels & stage end
     prune_gone();
     species_tick(now); // WP-C1 (BUG-1273)
     g_cmd_world = modes::current_world();
@@ -2726,7 +2801,14 @@ LIFECYCLE_HOOK("civ.world", lifecycle::kWorldChange, -44, [](const lifecycle::Ct
     on_world_change();
 }, true);
 // the Civ world's root object for world_id.h (coop.cpp): the player civilization, null outside Civ
-const void* world_anchor() { return game::mode_id() == modes::kCiv && g_ok && nm() ? player_civ() : nullptr; }
+const void* world_anchor()
+{
+    if (game::mode_id() != modes::kCiv || !g_ok || !nm())
+        return nullptr;
+    if (const void* orig = civ_rivals::orig_player_civ_ptr())
+        return orig;
+    return player_civ();
+}
 
 
 void for_each_owned(void (*fn)(void* obj, const net::Vec3& pos, uint8_t owner, bool city, void* user), void* user)

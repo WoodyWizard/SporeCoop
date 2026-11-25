@@ -1,6 +1,7 @@
 // Civilization: every player's own money (civ.own_money, BUG-1468; idea and rules from PR #205 by IltonBJSilva). See
 // civ_wallet.h and civ_wallet_logic.h; docs/re/civ.md#civ-own-money.
 #include "civ_internal.h"
+#include "civ_rivals.h"
 #include "civ_wallet.h"
 #include "civ_wallet_logic.h"
 #include "net/compat.h"
@@ -57,7 +58,7 @@ static bool setting() { return settings::on(settings::kCivOwnMoney); }
 static bool host() { return C.sess && C.sess->role() == net::Role::Host; }
 static bool guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
 
-bool active() { return C.sess && C.sess->role() != net::Role::None && setting(); }
+bool active() { return C.sess && C.sess->role() != net::Role::None && setting() && !civ_rivals::active(); }
 
 // host: guest `id`'s mod reads MSG_CIV_WALLET (civ family minor civwallet::kMinor or newer, the same rev)
 static bool peer_reads(uint8_t id)

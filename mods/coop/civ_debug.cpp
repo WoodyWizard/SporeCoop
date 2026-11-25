@@ -1,11 +1,14 @@
 // coop.civ: the Civ module's console command (tests and diagnostics); moved out of civ.cpp (C8 of 0.7.15,
 // BUG-1164).
 #include "civ_internal.h"
+#include "civ_rivals.h"
 
 namespace civ {
 
 std::string debug(const std::vector<std::string>& a)
 {
+    if (!a.empty() && a[0] == "rivals") // WP-R5 (BUG-1549): Civilization Rivals diagnostics & commands
+        return civ_rivals::debug(std::vector<std::string>(a.begin() + 1, a.end()));
     if (!a.empty() && a[0] == "factions") { // WP-R1 (BUG-0794): read-only cCivilization faction diagnostic
         if (game::mode_id() != modes::kCiv || !nm() || !a_GetAllCivs)
             return "civ factions: count=0 (not in civ stage)\n";
@@ -527,7 +530,9 @@ std::string debug(const std::vector<std::string>& a)
         int ci = atoi(a[1].c_str()), purpose = atoi(a[2].c_str()), loco = atoi(a[3].c_str());
         bool force = a.size() >= 5 && a[4] == "force";
         void* city = ci >= 0 && ci < (int)g_host_cities.size() ? g_host_cities[ci] : nullptr;
-        void* civ = player_civ();
+        void* civ = (city && civ_rivals::active()) ? F<void*>(city, kCityCiv) : player_civ();
+        if (!civ)
+            civ = player_civ();
         if (!city || !civ)
             return "no such city";
         int left = thiscall<int>(a_SlotsLeft, civ, purpose);
