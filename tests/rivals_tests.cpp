@@ -449,6 +449,222 @@ static void test_wire_roundtrip_and_fuzz_rejection()
     CHECK(wire::rivals::peer_reads(true, new_fams), "session 1.4 -> true");
 }
 
+static void test_editor_roundtrip_preserves_race_and_influence()
+{
+    printf("rivals: editor return preserves race and influence (BUG-1551)\n");
+    rivals::State st;
+    bool pres[4] = {true, true, false, false};
+
+    CHECK(st.on_stage_enter(rivals::Stage::Creature, pres), "entering Creature from None resets stage");
+    CHECK(st.race.stage == rivals::Stage::Creature, "race stage is Creature");
+    CHECK(st.race.players[0].present && st.race.players[1].present, "present flags populated");
+
+    rivals::PlayerProgress pp;
+    pp.primary = 3.5f;
+    pp.secondary = 180.0f;
+    st.race.set_progress(0, pp);
+    CHECK(st.race.report_complete(1, 2, 300.0, 100.0) == 1, "P1 finishes 1st");
+    CHECK(st.race.catchup_active && st.race.winner == 1, "catch-up active");
+
+    int32_t buy_c = 0;
+    CHECK(st.inf.buy(0, buy_c) && st.inf.buy(0, buy_c), "P0 buys influence twice");
+    CHECK(st.inf.spend_protect(0, 0xCAFEu, 105.0).empty(), "P0 protects NPC");
+    CHECK(st.inf.buys[0] == 2 && st.inf.balance[0] == 30 && st.inf.is_protected(0, 0xCAFEu, 110.0),
+          "influence state populated before editor");
+
+    // Stage -> Editor (Stage::None) -> same Stage (Creature): MUST NOT wipe race or influence!
+    CHECK(!st.on_stage_enter(rivals::Stage::None, pres), "entering Editor (None) does not reset");
+    CHECK(!st.on_stage_enter(rivals::Stage::Creature, pres), "returning from Editor to same stage does not reset");
+    CHECK(st.race.stage == rivals::Stage::Creature && st.race.winner == 1 && st.race.catchup_active,
+          "race winner and catch-up preserved across editor round-trip");
+    CHECK(std::fabs(st.race.players[0].primary - 3.5f) < 1e-6f, "progress preserved across editor round-trip");
+    CHECK(st.inf.buys[0] == 2 && st.inf.balance[0] == 30 && st.inf.is_protected(0, 0xCAFEu, 110.0),
+          "influence buys, balance, and protections preserved across editor round-trip");
+
+    // Advancing to a different real stage (Tribe) DOES reset race and stage-scoped influence, keeping balance.
+    CHECK(st.on_stage_enter(rivals::Stage::Tribe, pres), "advancing to Tribe resets stage");
+    CHECK(st.race.stage == rivals::Stage::Tribe && st.race.winner == 255 && !st.race.catchup_active,
+          "race reset for Tribe");
+    CHECK(st.inf.buys[0] == 0 && !st.inf.is_protected(0, 0xCAFEu, 110.0) && st.inf.balance[0] == 30,
+          "stage-scoped influence reset while keeping cumulative balance");
+}
+
+static void test_persistence_clear_and_keyed_history()
+{
+    printf("rivals: persistence clear on AllTogether and keyed Chronicle history (BUG-1551)\n");
+    rivals::PersistedWorld empty_pw;
+    CHECK(!empty_pw.has_non_default_data(), "default PersistedWorld has no non-default data");
+    CHECK(!empty_pw.should_write(false), "pure default world with no prior record skips write");
+    CHECK(empty_pw.should_write(true), "default world with prior disk record writes clean record to clear AllRivals");
+
+    // Simulate switching from AllRivals back to AllTogether and overwriting disk record
+    auto clean_blob = empty_pw.encode();
+    rivals::PersistedWorld reloaded;
+    reloaded.config.apply_preset(rivals::Preset::AllRivals);
+    CHECK(reloaded.decode(clean_blob), "clean default record decodes cleanly");
+    CHECK(reloaded.config.preset() == rivals::Preset::AllTogether && reloaded.rel_by_key.empty() &&
+              reloaded.chronicle_by_key.empty() && reloaded.history.empty(),
+          "reloading clean record restores AllTogether instead of resurrecting AllRivals");
+
+    // Keyed history (hisk) + legacy history (his) round-trip, adopt_key, and slot remapping
+    rivals::PersistedWorld pw;
+    pw.config.apply_preset(rivals::Preset::AllRivals);
+    pw.rel_by_key[rivals::PersistedWorld::norm_pair("host", "s:guestA")] = rivals::Relation::Ally;
+    pw.chronicle_by_key["host"] = 100;
+    pw.chronicle_by_key["s:guestA"] = 60;
+    pw.history.push_back({rivals::Stage::Cell, 0, 100, "stage win", "host"});
+    pw.history.push_back({rivals::Stage::Cell, 1, 60, "2nd place", "s:guestA"});
+    pw.history.push_back({rivals::Stage::Creature, 2, 35, "3rd place", ""}); // legacy entry without key
+
+    auto blob = pw.encode();
+    rivals::PersistedWorld pw2;
+    CHECK(pw2.decode(blob), "mixed hisk/his blob decodes cleanly");
+    CHECK(pw2.history.size() == 3, "all 3 history entries preserved");
+    CHECK(pw2.history[0].player_key == "host" && pw2.history[0].player_id == 0 && pw2.history[0].points == 100,
+          "hisk host entry preserved");
+    CHECK(pw2.history[1].player_key == "s:guestA" && pw2.history[1].player_id == 1 && pw2.history[1].reason == "2nd place",
+          "hisk guest entry preserved");
+    CHECK(pw2.history[2].player_key.empty() && pw2.history[2].player_id == 2 && pw2.history[2].reason == "3rd place",
+          "legacy his entry remains backwards-compatible");
+
+    // adopt_key remaps chronicle_by_key, rel_by_key, AND history player_key
+    pw2.adopt_key("s:guestA", "s:guestA_new");
+    CHECK(pw2.chronicle_by_key["s:guestA_new"] == 60 && !pw2.chronicle_by_key.count("s:guestA"),
+          "adopt_key moves chronicle total");
+    CHECK(pw2.rel_by_key[rivals::PersistedWorld::norm_pair("host", "s:guestA_new")] == rivals::Relation::Ally,
+          "adopt_key moves relation");
+    CHECK(pw2.history[1].player_key == "s:guestA_new", "adopt_key remaps history player_key");
+
+    // Rejoining in a different slot (3 instead of 1) remaps history player_id via stable key
+    std::map<std::string, uint8_t> key_to_id = {{"host", 0}, {"s:guestA_new", 3}};
+    rivals::PersistedWorld::remap_history_ids(pw2.history, key_to_id);
+    CHECK(pw2.history[0].player_id == 0 && pw2.history[1].player_id == 3 && pw2.history[2].player_id == 2,
+          "remap_history_ids updates guest slot to 3 without touching host or legacy entry");
+}
+
+static void test_protect_callback_rejection()
+{
+    printf("rivals: Protect callback rejection leaves influence and protections intact (BUG-1551)\n");
+    rivals::Influence inf;
+    inf.earn(0, 50);
+
+    // Rejecting callback: no influence spent, no protection added
+    int calls = 0;
+    std::string err = inf.try_spend_protect(0, 0x100u, 100.0, [&] {
+        calls++;
+        return false;
+    });
+    CHECK(!err.empty() && calls == 1, "rejecting callback fails Protect");
+    CHECK(inf.balance[0] == 50 && !inf.is_protected(0, 0x100u, 100.0) && inf.protections.empty(),
+          "rejected Protect deducts no influence and adds no protection");
+
+    // Accepting callback: deducts 20 and adds protection
+    err = inf.try_spend_protect(0, 0x100u, 100.0, [&] {
+        calls++;
+        return true;
+    });
+    CHECK(err.empty() && calls == 2, "accepting callback succeeds");
+    CHECK(inf.balance[0] == 30 && inf.is_protected(0, 0x100u, 100.0), "accepted Protect spends 20 and adds protection");
+
+    // Insufficient balance rejects BEFORE invoking callback
+    inf.spend_protect(0, 0x200u, 100.0); // balance now 10 (< 20)
+    err = inf.try_spend_protect(0, 0x300u, 100.0, [&] {
+        calls++;
+        return true;
+    });
+    CHECK(!err.empty() && calls == 2, "insufficient balance rejects before callback");
+    CHECK(inf.balance[0] == 10 && !inf.is_protected(0, 0x300u, 100.0), "balance and protections unchanged");
+}
+
+static void test_3p_4p_disconnect_race_completion()
+{
+    printf("rivals: 3-4 player disconnect race completion (BUG-1551)\n");
+
+    // Case 1: 3 players (P0, P1, P2). P1 wins, P1 disconnects, P0 finishes 2nd -> catch-up MUST stay active for P2!
+    {
+        rivals::Race r;
+        r.reset(rivals::Stage::Creature);
+        r.players[0].present = r.players[1].present = r.players[2].present = true;
+        CHECK(r.report_complete(1, 3, 300.0, 10.0) == 1 && r.catchup_active, "3p: P1 wins, catch-up starts");
+        CHECK(!r.on_player_leave(1, 2) && r.catchup_active && !r.stage_finished,
+              "3p: winner P1 disconnects -> catch-up stays active for P0 & P2");
+        CHECK(r.report_complete(0, 2, 300.0, 40.0) == 2 && r.catchup_active && !r.stage_finished,
+              "3p: P0 finishes 2nd after P1 left -> catch-up MUST stay active for P2 (departed finisher discounted)");
+        CHECK(r.report_complete(2, 2, 300.0, 70.0) == 3 && !r.catchup_active && r.stage_finished,
+              "3p: P2 finishes 3rd -> all remaining present players finished, catch-up ends");
+    }
+
+    // Case 2: 3 players (P0, P1, P2). P0 wins, P1 finishes 2nd, P2 (last unfinished) disconnects -> ends immediately!
+    {
+        rivals::Race r;
+        r.reset(rivals::Stage::Tribe);
+        r.players[0].present = r.players[1].present = r.players[2].present = true;
+        CHECK(r.report_complete(0, 3, 300.0, 10.0) == 1 && r.catchup_active, "3p: P0 wins");
+        CHECK(r.report_complete(1, 3, 300.0, 20.0) == 2 && r.catchup_active, "3p: P1 finishes 2nd, waiting on P2");
+        CHECK(r.on_player_leave(2, 2) && !r.catchup_active && r.stage_finished,
+              "3p: last unfinished player P2 leaves -> catch-up ends immediately");
+    }
+
+    // Case 3: 4 players (P0, P1, P2, P3). P1 wins, P2 finishes, P1 leaves, P0 finishes -> waiting on P3; P3 leaves -> ends!
+    {
+        rivals::Race r;
+        r.reset(rivals::Stage::Civ);
+        for (int i = 0; i < 4; i++)
+            r.players[i].present = true;
+        CHECK(r.report_complete(1, 4, 300.0, 10.0) == 1 && r.catchup_active, "4p: P1 wins");
+        CHECK(r.report_complete(2, 4, 300.0, 20.0) == 2 && r.catchup_active, "4p: P2 finishes 2nd");
+        CHECK(!r.on_player_leave(1, 3) && r.catchup_active, "4p: P1 leaves -> still waiting on P0 & P3");
+        CHECK(r.report_complete(0, 3, 300.0, 30.0) == 3 && r.catchup_active && !r.stage_finished,
+              "4p: P0 finishes 3rd -> still waiting on P3");
+        CHECK(r.on_player_leave(3, 2) && !r.catchup_active && r.stage_finished,
+              "4p: P3 leaves -> remaining P0 & P2 finished, catch-up ends immediately");
+    }
+
+    // Case 4: 2 players (P0, P1). P1 wins and leaves before P0 finishes -> catch-up stays active until P0 finishes.
+    {
+        rivals::Race r;
+        r.reset(rivals::Stage::Cell);
+        r.players[0].present = r.players[1].present = true;
+        CHECK(r.report_complete(1, 2, 300.0, 10.0) == 1 && r.catchup_active, "2p: P1 wins");
+        CHECK(!r.on_player_leave(1, 1) && r.catchup_active && !r.stage_finished,
+              "2p: P1 leaves -> P0 has not finished yet, catch-up continues");
+        CHECK(r.report_complete(0, 1, 300.0, 50.0) == 2 && !r.catchup_active && r.stage_finished,
+              "2p: P0 finishes -> catch-up ends");
+    }
+}
+
+static void test_draft_payout_stage_isolation()
+{
+    printf("rivals: draft payout stage isolation (BUG-1551)\n");
+    rivals::Draft d;
+    std::vector<rivals::Draft::Item> items = {{1, 1, "Spike"}, {2, 1, "Jet"}};
+    uint8_t ranks[4] = {1, 0, 0, 0};
+    bool pres[4] = {true, true, false, false};
+
+    CHECK(d.start(rivals::Stage::Cell, 0, items, 2, ranks, pres, 100.0), "Cell draft starts");
+    CHECK(d.pick(1, 1).empty() && d.pending_payout[0] == 100 && d.pending_payout_stage[0] == rivals::Stage::Cell,
+          "Cell draft sets Cell-scoped payout");
+    CHECK(d.take_pending_payout_for(rivals::Stage::Creature, 0) == 0 && d.pending_payout[0] == 100,
+          "Creature cannot steal Cell draft payout");
+    CHECK(d.take_pending_payout_for(rivals::Stage::Tribe, 0) == 0 && d.pending_payout[0] == 100,
+          "Tribe cannot steal Cell draft payout");
+    CHECK(d.take_pending_payout_for(rivals::Stage::Cell, 0) == 100 && d.pending_payout[0] == 0,
+          "Cell claims Cell draft payout once");
+    CHECK(d.take_pending_payout_for(rivals::Stage::Cell, 0) == 0, "second Cell claim returns 0");
+
+    // Creature draft payout isolated from Cell and Tribe
+    uint8_t ranks2[4] = {0, 1, 0, 0};
+    CHECK(d.start(rivals::Stage::Creature, 1, items, 2, ranks2, pres, 200.0), "Creature draft starts");
+    CHECK(d.pick(0, 1).empty() && d.pick(0, 2).empty(), "P0 picks 2 items -> 100+150=250");
+    CHECK(d.pending_payout[1] == 250 && d.pending_payout_stage[1] == rivals::Stage::Creature,
+          "Creature draft sets Creature-scoped payout");
+    CHECK(d.take_pending_payout_for(rivals::Stage::Cell, 1) == 0, "Cell cannot steal Creature draft payout");
+    CHECK(d.take_pending_payout_for(rivals::Stage::None, 1) == 0, "Stage::None rejected");
+    CHECK(d.take_pending_payout_for(rivals::Stage::Creature, 9) == 0, "invalid player rejected");
+    CHECK(d.take_pending_payout_for(rivals::Stage::Creature, 1) == 250 && d.pending_payout[1] == 0,
+          "Creature claims Creature draft payout cleanly");
+}
+
 int main()
 {
     test_stage_modes_and_config();
@@ -458,6 +674,11 @@ int main()
     test_draft_and_escalating_payouts();
     test_chronicle_and_store_roundtrip();
     test_wire_roundtrip_and_fuzz_rejection();
+    test_editor_roundtrip_preserves_race_and_influence();
+    test_persistence_clear_and_keyed_history();
+    test_protect_callback_rejection();
+    test_3p_4p_disconnect_race_completion();
+    test_draft_payout_stage_isolation();
     printf("rivals_tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

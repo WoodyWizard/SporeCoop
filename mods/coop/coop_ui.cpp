@@ -1285,8 +1285,8 @@ static void build_dialog()
         g_settings_page = false;
         g_dirty = true;
     });
-    // WP-R1 (BUG-0794): stage transition vote mode preview/toggle button (host toggles before Ready; right half of bottom row)
-    D.vote_mode_btn = add_button(L, "votemode", {410, 558, 720, 590}, "", [] {
+    // WP-R1 (BUG-0794, BUG-1551): stage transition vote mode preview/toggle button (host toggles before Ready; sits to the right of ask_btn)
+    D.vote_mode_btn = add_button(L, "votemode", {450, 558, 720, 592}, "", [] {
         if (A.vote_toggle_next_stage)
             A.vote_toggle_next_stage();
         g_dirty = true;
@@ -1850,7 +1850,13 @@ static void refresh_lobby()
                       : can_resume                    ? std::string(T("Continue ", "Продолжить ")) + resume
                                                       : T("Send my world", "Отправить мир"));
     text(D.leave_btn, host ? T("Close session", "Закрыть сессию") : T("Leave", "Выйти"));
-    show(D.ask_btn, host);
+    std::string vm_label;
+    bool show_vm = host && rivals::enabled() && A.vote_next_stage_mode && A.vote_next_stage_mode(vm_label);
+    bool round = host && A.report_round && A.report_round();
+    // BUG-1551: keep ask_btn, rline, and vote_mode_btn disjoint in every state.
+    // Normally ask_btn occupies 40..440 and vote_mode_btn occupies 450..720; while a report round runs
+    // simultaneously (ask_btn is already disabled and rline occupies 450..720), vote_mode_btn moves to 40..440.
+    show(D.ask_btn, host && !(show_vm && round));
     // F4 (BUG-0767): the guest's question and the host's line about the round, in the status line
     std::string rq;
     int asked = !host && A.report_prompt ? A.report_prompt(rq) : 0;
@@ -1859,9 +1865,13 @@ static void refresh_lobby()
     show(D.rnosend, asked);
     if (asked)
         text(D.rask, rq);
-    bool round = host && A.report_round && A.report_round();
     enable(D.ask_btn, !round);
     show(D.rline, round); // the answers while the round runs ("Reports: 1 of 3 answered"); the status keeps "Report saved"
+    show(D.vote_mode_btn, show_vm);
+    if (show_vm) {
+        sui::set_area(D.vote_mode_btn, round ? Rect{40, 558, 440, 592} : Rect{450, 558, 720, 592});
+        text(D.vote_mode_btn, vm_label);
+    }
     std::string rl = host ? (A.report_line ? A.report_line() : "")
                    : asked ? T("Sent: logs, a game summary, screenshots, crash files (paths masked)",
                                "Отправится: логи, сводка, снимки, сбои (пути скрыты)")
@@ -2128,6 +2138,8 @@ static void refresh_rivals()
 {
     auto rows = rivals::ui_rows();
     int n = (int)rows.size(), pages = std::max(1, (n + kRivalsRows - 1) / kRivalsRows);
+    if (g_rivals_first < 0)
+        g_rivals_first = 0;
     if (g_rivals_first >= n)
         g_rivals_first = (pages - 1) * kRivalsRows;
     bool in_stage = rivals::valid_stage(rivals::current_stage());
@@ -2150,6 +2162,8 @@ static void refresh_rivals()
     show(D.rivals_text[0], true);
     show(D.rivals_prev, pages > 1);
     show(D.rivals_next, pages > 1);
+    enable(D.rivals_prev, g_rivals_first > 0);
+    enable(D.rivals_next, g_rivals_first + kRivalsRows < n);
     show(D.rivals_pageno, pages > 1);
     text(D.rivals_pageno, std::to_string(g_rivals_first / kRivalsRows + 1) + "/" + std::to_string(pages));
 }
@@ -2327,6 +2341,12 @@ static std::string tooltip_for(const std::string& name)
         return T("Send your chat message to everyone in the session", "Отправить сообщение в чат всем игрокам");
     if (name == "space")
         return T("Open the Space stage co-op status and actions", "Открыть окно совместного этапа Космос");
+    if (name == "rivals")
+        return T("Open Rivals mode settings, race progress, relations, and influence",
+                 "Открыть настройки режима Соперники, прогресс гонки, отношения и влияние");
+    if (name == "votemode")
+        return T("Toggle Together or Rivals mode for the next stage",
+                 "Переключить режим Вместе или Соперники для следующего этапа");
     if (name == "colour")
         return T("Pick your next player colour", "Выбрать следующий цвет игрока");
     if (name == "cprev" || name == "cnext")
@@ -2541,12 +2561,6 @@ static void refresh()
         } else if (show_sbtn) {
             sui::set_area(D.space_btn, {580, 66, 720, 98});
         }
-        std::string vm_label;
-        bool show_vm = lobby && rivals_on && !g_space_page && !sett && !rpage && role == 1 &&
-                       A.vote_next_stage_mode && A.vote_next_stage_mode(vm_label);
-        show(D.vote_mode_btn, show_vm);
-        if (show_vm)
-            text(D.vote_mode_btn, vm_label);
     }
     { // BUG-1477
         const int lb = A.lineage_box ? A.lineage_box() : -1;

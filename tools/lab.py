@@ -1341,7 +1341,7 @@ def main():
     if a.cmd == 'run':
         return cmd_run(a)
     if a.cmd == 'lanes':
-        ensure_lanes(a.n)
+        ensure_lanes(range(2, a.n + 1))
     if a.cmd == 'reload':
         cmd_reload(a)
     if a.cmd == 'kill':

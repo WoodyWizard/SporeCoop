@@ -1150,6 +1150,11 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         for (uint8_t i = 0; i < n && i < 8 && r.ok(); i++) {
             net::Vec3 p{r.f32(), r.f32(), r.f32()};
             net::Quat q{r.f32(), r.f32(), r.f32(), r.f32()};
+            if (!r.ok())
+                return;
+            if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) ||
+                !std::isfinite(q.x) || !std::isfinite(q.y) || !std::isfinite(q.z) || !std::isfinite(q.w))
+                return;
             v.push_back({p, q});
         }
         if (r.ok() && from == 0 && is_guest())

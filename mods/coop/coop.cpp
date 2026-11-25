@@ -3050,7 +3050,11 @@ static void init_tribe_and_creations()
         rivals::Ctx rvc; // WP-R1 of 0.8.0 (BUG-0794): Rivals shared systems
         rvc.sess = &g_sess;
         rvc.feed = feed;
-        rvc.notice = [](const std::string& t) { notice(t, -1); };
+        // BUG-1551: local-only display; rivals.cpp delivers K_EVENT to guests so MSG_NOTICE is never duplicated or bounced.
+        rvc.notice = [](const std::string& t) {
+            feed(t);
+            chat_log("* " + t);
+        };
         rvc.mode = [] { return game::mode_id(); };
         rvc.russian = [] { return coop_ui::russian(); };
         rivals::init(H, M, std::move(rvc));
