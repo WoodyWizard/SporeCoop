@@ -13,10 +13,11 @@
 
 namespace spacelogic {
 
-// ---------------- the co-op jump's target (BUG-0072) ----------------
+// ---------------- the co-op jump's target (BUG-0072, BUG-1562) ----------------
 struct JumpPartner {
     uint8_t id;
-    uint32_t star; // the partner's star, or the last one known; 0 = not known
+    uint32_t star;      // the partner's star, or the last one known; 0 = not known
+    bool allied = true; // BUG-1562: true when Space Rivals is off, or partner's relation is Ally
 };
 
 // The partner a jump goes to: `to` = that partner, 0xFF = any partner. With `skip_mine`, partners
@@ -24,15 +25,28 @@ struct JumpPartner {
 // known star that is not mine and must jump to that one). The old jump(0xFF) took the first
 // partner with any known star (skip_mine = false): with 3 players and the first partner in my
 // system, every press was refused.
+// BUG-1562: when `allies_only` is true (Space Rivals with `rivals.space_jump_ally` on), non-allied
+// rivals (Neutral or War) are skipped; if `blocked_rival` is non-null and any matching partner was
+// skipped because `!p.allied`, `*blocked_rival` is set to true.
 inline bool pick_jump_target(const std::vector<JumpPartner>& partners, uint32_t here, uint8_t to, bool skip_mine,
-                             uint8_t& id, uint32_t& star)
+                             uint8_t& id, uint32_t& star, bool allies_only = false, bool* blocked_rival = nullptr)
 {
-    for (auto& p : partners)
-        if ((p.id == to || to == 0xFF) && p.star && (!skip_mine || p.star != here)) {
+    if (blocked_rival)
+        *blocked_rival = false;
+    for (auto& p : partners) {
+        if (p.id != to && to != 0xFF)
+            continue;
+        if (allies_only && !p.allied) {
+            if (blocked_rival)
+                *blocked_rival = true;
+            continue;
+        }
+        if (p.star && (!skip_mine || p.star != here)) {
             id = p.id;
             star = p.star;
             return true;
         }
+    }
     return false;
 }
 

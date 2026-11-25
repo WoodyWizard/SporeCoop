@@ -10,14 +10,18 @@
 
 #include "civ.h"
 #include "civ_editors.h"
+#include "civ_rivals.h"
 #include "creations.h"
 #include "fixes.h"
 #include "game.h"
 #include "lifecycle.h"
 #include "modes.h"
 #include "savestrip.h"
+#include "space_ext.h"
+#include "space_rivals.h"
 #include "species_line.h"
 #include "sporekit_game.hpp"
+#include "tribe_rivals.h"
 
 namespace coop_core {
 void feed(const std::string& s);
@@ -79,12 +83,34 @@ COOP_FIX("tribe.guest_outfitter", "BUG-1272", g_guest_outfitter_fix,
 bool g_own_offline_fix = true;
 COOP_FIX("designs.own_editor_offline", "BUG-1298", g_own_offline_fix,
          "tribe, civ: a guest's own editor open when the session ends keeps the shared tribe and civilization as they were and its result reaches the line at the next join");
+// BUG-1562: in active Rivals stages (Tribe Rivals, Civ Rivals, Space Rivals), each player owns their own tribe,
+// civilization, or empire. Host outfit/design sync must not overwrite a rival guest's player_tribe() or player_civ(),
+// and guest editors/outfitters must not be refused or rerouted as shared-world editors.
+static bool g_rivals_isolate_fix = true;
+COOP_FIX("rivals.designs_isolate", "BUG-1562", g_rivals_isolate_fix,
+         "rivals: isolate host outfit/design sync and guest editor guards in Tribe, Civ, and Space Rivals");
 
 // ---- counters (tests)
 static unsigned g_out_applied, g_out_failed, g_out_waits, g_out_restored, g_out_saves;
 static unsigned g_civ_set, g_civ_own_back, g_civ_own_line, g_veh_pending;
-static unsigned g_refused;
+static unsigned g_refused, g_rivals_skipped;
 static double g_told_at = -100;
+
+static bool tribe_rivals_on() { return g_rivals_isolate_fix && tribe_rivals::active(); }
+static bool civ_rivals_on() { return g_rivals_isolate_fix && civ_rivals::active(); }
+static bool space_rivals_on() { return g_rivals_isolate_fix && (spacerivals::active() || spaceext::rivals()); }
+static bool rivals_stage_on(uint32_t mode)
+{
+    if (!g_rivals_isolate_fix)
+        return false;
+    if (mode == modes::kTribe)
+        return tribe_rivals::active();
+    if (mode == modes::kCiv)
+        return civ_rivals::active();
+    if (mode == modes::kSpace)
+        return spacerivals::active() || spaceext::rivals();
+    return false;
+}
 
 // =====================================================================================================
 // Tribe: the outfit
@@ -130,7 +156,7 @@ bool outfit_read(std::vector<Val>& out)
     }
     out.push_back(e);
     // the creation itself, for a key of the host's own My Creations (once per guest and key; nothing for others)
-    if (g_outfit_fix && is_host())
+    if (g_outfit_fix && is_host() && !tribe_rivals_on())
         for (auto& pl : S->players())
             if (pl.id != 0)
                 creations::host_species_out(pl.id, {e.v[0], e.v[1], e.v[2]});
@@ -193,6 +219,10 @@ static void apply_outfit(void*)
     g_out_queued = false;
     if (!g_outfit_fix || !is_guest() || game::mode_id() != modes::kTribe || !g_out.host.instance)
         return;
+    if (tribe_rivals_on()) {
+        g_rivals_skipped++;
+        return;
+    }
     void* t = player_tribe();
     uint8_t* prof = tribe_profile(t);
     uintptr_t load = sym("SporeCoop::SpeciesProfile_Load"), size = sym("SporeCoop::cTribe_SpeciesSize");
@@ -230,6 +260,10 @@ int outfit_sync(const std::vector<Val>& want, bool apply)
 {
     if (want.empty() || !want[0].v[0])
         return 0;
+    if (tribe_rivals_on()) {
+        g_rivals_skipped++;
+        return 0;
+    }
     const Val& w = want[0];
     creations::Key hk{w.v[0], w.v[1], w.v[2]}, hm{w.v[3], w.v[4], w.v[5]};
     uint8_t* prof = tribe_profile(player_tribe());
@@ -420,6 +454,11 @@ static double g_own_told_at = -100;
 
 int civ_sync(const std::vector<Val>& want, bool apply)
 {
+    if (civ_rivals_on() || space_rivals_on()) {
+        if (!want.empty())
+            g_rivals_skipped++;
+        return 0;
+    }
     void* civ = player_civ();
     uintptr_t set = sym("SporeCoop::Civ_SetDesign");
     if (!civ || !set)
@@ -566,13 +605,24 @@ static void SK_THISCALL h_EditorReturn(void* ui)
             if (!is_guest())
                 g_oo_offline++; // BUG-1298: the session ended while the editor was open
             g_oo_result = {F<uint32_t>(res, 0x18), F<uint32_t>(res, 0x1C), F<uint32_t>(res, 0x20)};
-            F<void*>(ui, kUiResult) = nullptr;
-            vcall<void>(res, 0x8 / 4); // (its reference: released, as 0xCDCC90 does at its end)
-            g_oo_skipped++;
-            g_oo_result_at = H->time_seconds();
-            g_oo_try_at = -100;
-            H->log(M, SK_INFO, "designs: our own outfit %08X/%08X/%08X: the tribe's species slot stays (BUG-1272)",
-                   g_oo_result.instance, g_oo_result.type, g_oo_result.group);
+            if (tribe_rivals_on()) {
+                // BUG-1562: in Tribe Rivals, player_tribe() on the guest is the guest's own rival tribe (R1 swap),
+                // so let native o_EditorReturn reload its species profile and rebuild its members directly.
+                if (!species::own_mode())
+                    g_oo_result = {};
+                g_oo_result_at = H->time_seconds();
+                g_oo_try_at = -100;
+                H->log(M, SK_INFO, "designs: Tribe Rivals own outfit %08X/%08X/%08X: reloading guest rival tribe (BUG-1562)",
+                       F<uint32_t>(res, 0x18), F<uint32_t>(res, 0x1C), F<uint32_t>(res, 0x20));
+            } else {
+                F<void*>(ui, kUiResult) = nullptr;
+                vcall<void>(res, 0x8 / 4); // (its reference: released, as 0xCDCC90 does at its end)
+                g_oo_skipped++;
+                g_oo_result_at = H->time_seconds();
+                g_oo_try_at = -100;
+                H->log(M, SK_INFO, "designs: our own outfit %08X/%08X/%08X: the tribe's species slot stays (BUG-1272)",
+                       g_oo_result.instance, g_oo_result.type, g_oo_result.group);
+            }
         }
     }
     o_EditorReturn(ui);
@@ -656,7 +706,7 @@ SESSION_STATE("designs.own_outfitter", &g_guest_outfitter_fix, oo_reset, oo_held
 
 std::string refuse_own_editor(uint32_t mode, uint32_t editor, bool own_world, const std::string& host)
 {
-    if (!g_own_fix || !is_guest() || own_world)
+    if (!g_own_fix || !is_guest() || own_world || rivals_stage_on(mode))
         return "";
     // (creature.mode own: own_outfitter took the card's request before, BUG-1272; one it did not take is refused:
     // its return would reload the shared slot)
@@ -676,17 +726,19 @@ bool outfit_texts(uint32_t mode, uint32_t editor) { return g_outfit_fix && mode 
 // =====================================================================================================
 std::string status()
 {
-    char b[480];
+    char b[640];
     uint8_t* p = tribe_profile(player_tribe());
     void* civ = player_civ();
     snprintf(b, sizeof b,
              "designs: outfit fix=%d applied=%u failed=%u waits=%u saves=%u restored=%u here=%08X host=%08X | civ fix=%d "
-             "set=%u own_back=%u own_line=%u veh_pending=%u designs=%zu | own editors fix=%d refused=%u\n"
+             "set=%u own_back=%u own_line=%u veh_pending=%u designs=%zu | own editors fix=%d refused=%u | rivals "
+             "fix=%d rivals_skipped=%u\n"
              "tribe profile %p key=%08X/%08X/%08X model=%08X/%08X/%08X gen=%u\n",
              (int)g_outfit_fix, g_out_applied, g_out_failed, g_out_waits, g_out_saves, g_out_restored, g_out.here.instance,
              g_out.host.instance, (int)g_civ_fix, g_civ_set, g_civ_own_back, g_civ_own_line, g_veh_pending,
-             civ ? culture(civ).size() : (size_t)0, (int)g_own_fix, g_refused, (void*)p, p ? F<uint32_t>(p, kProfKey) : 0,
-             p ? F<uint32_t>(p, kProfKey + 4) : 0, p ? F<uint32_t>(p, kProfKey + 8) : 0, p ? F<uint32_t>(p, kProfModel) : 0,
+             civ ? culture(civ).size() : (size_t)0, (int)g_own_fix, g_refused, (int)g_rivals_isolate_fix,
+             g_rivals_skipped, (void*)p, p ? F<uint32_t>(p, kProfKey) : 0, p ? F<uint32_t>(p, kProfKey + 4) : 0,
+             p ? F<uint32_t>(p, kProfKey + 8) : 0, p ? F<uint32_t>(p, kProfModel) : 0,
              p ? F<uint32_t>(p, kProfModel + 4) : 0, p ? F<uint32_t>(p, kProfModel + 8) : 0, p ? F<uint32_t>(p, kProfGen) : 0);
     std::string o = b;
     // BUG-1272: the guest's own outfitter (the key it asked for, the card's: the slot's)

@@ -16,8 +16,10 @@
 #include "net/utf8.h"
 #include "net/validate.h"
 #include "own_world.h"
+#include "rivals.h"
 #include "space_ext.h"
 #include "space_logic.h"
+#include "space_rivals.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
 #include "settings.h"
@@ -102,7 +104,7 @@ COOP_FIX("space.down_ship_only", "BUG-0836", g_down_ship_only_fix,
 static uint32_t g_down_other_ship, g_down_other_cleared;
 static std::unordered_map<uint8_t, double> g_partner_down; // partner -> until
 static uint32_t g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
-    g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_respawns_forced;
+    g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_jump_rivals_blocked, g_respawns_forced;
 static uint32_t g_bad_origin; // MSG_SPACE dropped: a header that does not fit its sender
 static std::unordered_map<uint8_t, uint32_t> g_last_star; // partner -> last known StarID
 static uint64_t g_tut_last_peers; // BUG-1559: peers in Space already sent the host's tutorial mask
@@ -443,17 +445,36 @@ static std::string travel_to(uint32_t star, bool force = false);
 // the notice names that partner (it named player 0). `coop.space jumpfix 0`: the old pick (tests).
 static bool g_jump_fix = true;
 COOP_FIX("space.jump", "BUG-0072", g_jump_fix, "space: Jump to picks a partner whose star is not mine, the notice names it");
-static bool pick_jump_target(uint8_t to, uint8_t& id, uint32_t& star, bool skip_mine)
+// BUG-1562: in Space Rivals, Jump to only targets allied partners (Relation::Ally) and refuses Neutral/War rivals.
+static bool g_jump_ally_fix = true;
+COOP_FIX("rivals.space_jump_ally", "BUG-1562", g_jump_ally_fix,
+         "rivals: Space Jump to targets allied partners only and blocks jumping to Neutral or War rivals");
+
+static bool space_rivals_active() { return spaceext::rivals() || spacerivals::active(); }
+static bool partner_is_jump_ally(uint8_t me, uint8_t peer_id)
+{
+    if (!space_rivals_active())
+        return true;
+    if (spacerivals::active())
+        return rivals::relation(me, peer_id) == rivals::Relation::Ally;
+    return spaceext::relation(me, peer_id) == spaceext::Relation::Ally;
+}
+
+static bool pick_jump_target(uint8_t to, uint8_t& id, uint32_t& star, bool skip_mine, bool* blocked_rival = nullptr)
 {
     std::vector<spacelogic::JumpPartner> v;
+    const bool rivals_on = g_jump_ally_fix && space_rivals_active();
+    const uint8_t me = C.sess ? C.sess->my_id() : 0;
     if (C.partners)
         for (auto& p : C.partners()) {
             uint32_t s = star_of(p.place);
             if (!s && g_last_star.count(p.id))
                 s = g_last_star[p.id];
-            v.push_back({p.id, s});
+            bool allied = !rivals_on || partner_is_jump_ally(me, p.id);
+            v.push_back({p.id, s, allied});
         }
-    return spacelogic::pick_jump_target(v, star_of(C.my_place ? C.my_place() : 0), to, skip_mine, id, star);
+    return spacelogic::pick_jump_target(v, star_of(C.my_place ? C.my_place() : 0), to, skip_mine, id, star, rivals_on,
+                                        blocked_rival);
 }
 
 bool can_jump(std::string& to)
@@ -476,11 +497,20 @@ std::string jump(uint8_t to)
         return "the ship is disabled";
     uint8_t id = to;
     uint32_t star = 0;
+    bool blocked_rival = false;
     // a chosen partner in my system is still found (and refused below); "any partner" skips them
-    if (!pick_jump_target(to, id, star, to == 0xFF && g_jump_fix) && to == 0xFF && g_jump_fix)
-        pick_jump_target(to, id, star, false);
-    if (!star)
+    if (!pick_jump_target(to, id, star, to == 0xFF && g_jump_fix, &blocked_rival) && to == 0xFF && g_jump_fix) {
+        bool blocked2 = false;
+        pick_jump_target(to, id, star, false, &blocked2);
+        blocked_rival = blocked_rival || blocked2;
+    }
+    if (!star) {
+        if (blocked_rival) {
+            g_jump_rivals_blocked++;
+            return "cannot jump to a rival (allies only in Rivals mode)";
+        }
         return "the partner's star is not known (in the galaxy view?)";
+    }
     if (star == star_of(C.my_place ? C.my_place() : 0))
         return "already in the partner's system";
     std::string e = travel_to(star);
@@ -2519,14 +2549,14 @@ std::vector<syncdbg::Entry> nav_entries()
 
 std::string status()
 {
-    char b[1152];
+    char b[1280];
     snprintf(b, sizeof b,
              "space co-op: down=%d rescues=%u lost=%u raids=%u raids_told=%u raid_bonus=%u missions_sent=%u "
-             "tools_got=%u terra_sent=%u terra_got=%u terra_enabled=%u terra_rec_sent=%u terra_rec_got=%u terra_rec_set=%u terra_rec_skipped=%u terra_pending=%u terra_pended=%u terra_pend_applied=%u terra_kept=%u terra_resent=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u stores_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
+             "tools_got=%u terra_sent=%u terra_got=%u terra_enabled=%u terra_rec_sent=%u terra_rec_got=%u terra_rec_set=%u terra_rec_skipped=%u terra_pending=%u terra_pended=%u terra_pend_applied=%u terra_kept=%u terra_resent=%u gifts_sent=%u gifts_got=%u jumps=%u jump_rivals_blocked=%u planets_seeded=%u stores_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
              "partners_here=%u partners_down=%u bad_origin=%u disable_off=%u own_mirror_raids=%u terra_refused=%u "
              "down_jumps_refused=%u tut_sync_tx=%u tut_sync_rx=%u tut_flags_applied=%u tut_drive_granted=%u\n",
              (int)g_down, g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
-             g_terra_sent, g_terra_got, g_terra_enabled, g_terra_rec_sent, g_terra_rec_got, g_terra_rec_set, g_terra_rec_skipped, (unsigned)g_terra_pending.size(), g_terra_pended, g_terra_pend_applied, (unsigned)g_terra_kept.size(), g_terra_resent, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_stores_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
+             g_terra_sent, g_terra_got, g_terra_enabled, g_terra_rec_sent, g_terra_rec_got, g_terra_rec_set, g_terra_rec_skipped, (unsigned)g_terra_pending.size(), g_terra_pended, g_terra_pend_applied, (unsigned)g_terra_kept.size(), g_terra_resent, g_gifts_sent, g_gifts_got, g_jumps, g_jump_rivals_blocked, g_planets_seeded, g_stores_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
              (unsigned)partners_here().size(), (unsigned)g_partner_down.size(), g_bad_origin, g_disable_off, g_own_mirror_raids,
              g_terra_refused, g_down_jumps_refused, g_tut_sync_tx, g_tut_sync_rx, g_tut_flags_applied,
              g_tut_drive_granted);
@@ -3351,7 +3381,7 @@ static std::vector<spaceext::Row> squad_rows()
             r.text += spaceext::tr(" - ship disabled!", " - корабль подбит!");
             r.color = 0xFFFF6040;
         }
-        if (s && s != here) {
+        if (s && s != here && (!g_jump_ally_fix || !space_rivals_active() || partner_is_jump_ally(C.sess->my_id(), p.id))) {
             r.button = spaceext::tr("Jump there", "Прыгнуть");
             uint8_t id = p.id;
             r.on_click = [id] {

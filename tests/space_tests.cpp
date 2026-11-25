@@ -44,6 +44,60 @@ static void test_jump_target()
     CHECK(spacelogic::pick_jump_target(w, other, 0xFF, true, id, star) && id == 3);
 }
 
+static void test_jump_rivals()
+{
+    printf("jump target in Space Rivals (BUG-1562)\n");
+    const uint32_t mine = 0x100, other1 = 0x200, other2 = 0x300;
+    uint8_t id = 0xEE;
+    uint32_t star = 0;
+    bool blocked = false;
+
+    // 1. Single Neutral/War rival in another star
+    std::vector<JumpPartner> rival_only{{1, other1, false}};
+    // Space Rivals OFF (or fix off): rival is allowed for both any-partner and explicit jump
+    CHECK(spacelogic::pick_jump_target(rival_only, mine, 0xFF, true, id, star, false, &blocked) && id == 1 &&
+          star == other1 && !blocked);
+    CHECK(spacelogic::pick_jump_target(rival_only, mine, 1, false, id, star, false, &blocked) && id == 1 &&
+          star == other1 && !blocked);
+    // Space Rivals ON: both any-partner and explicit jump are blocked with blocked_rival=true
+    id = 0xEE;
+    star = 0;
+    CHECK(!spacelogic::pick_jump_target(rival_only, mine, 0xFF, true, id, star, true, &blocked) && blocked && star == 0);
+    CHECK(!spacelogic::pick_jump_target(rival_only, mine, 1, false, id, star, true, &blocked) && blocked && star == 0);
+
+    // 2. Rival with unknown star (galaxy view): explicit jump still reports blocked_rival=true
+    std::vector<JumpPartner> rival_unknown{{1, 0, false}};
+    CHECK(!spacelogic::pick_jump_target(rival_unknown, mine, 1, false, id, star, true, &blocked) && blocked);
+
+    // 3. Allied partner in another star: allowed for both any-partner and explicit jump
+    std::vector<JumpPartner> ally_only{{1, other1, true}};
+    CHECK(spacelogic::pick_jump_target(ally_only, mine, 0xFF, true, id, star, true, &blocked) && id == 1 &&
+          star == other1 && !blocked);
+    CHECK(spacelogic::pick_jump_target(ally_only, mine, 1, false, id, star, true, &blocked) && id == 1 &&
+          star == other1 && !blocked);
+
+    // 4. Mixed roster: non-allied rival first, allied partner second -> any-partner skips rival and picks ally
+    std::vector<JumpPartner> mixed{{1, other1, false}, {2, other2, true}};
+    CHECK(spacelogic::pick_jump_target(mixed, mine, 0xFF, true, id, star, true, &blocked) && id == 2 && star == other2);
+    // Explicit jump to rival 1 is still refused; explicit jump to ally 2 succeeds
+    star = 0;
+    CHECK(!spacelogic::pick_jump_target(mixed, mine, 1, false, id, star, true, &blocked) && blocked && star == 0);
+    CHECK(spacelogic::pick_jump_target(mixed, mine, 2, false, id, star, true, &blocked) && !blocked && id == 2 &&
+          star == other2);
+
+    // 5. Rival in another star + ally in my own star: skip_mine=true fails (can_jump false), skip_mine=false finds ally
+    std::vector<JumpPartner> ally_here{{1, other1, false}, {2, mine, true}};
+    star = 0;
+    CHECK(!spacelogic::pick_jump_target(ally_here, mine, 0xFF, true, id, star, true, &blocked) && blocked && star == 0);
+    CHECK(spacelogic::pick_jump_target(ally_here, mine, 0xFF, false, id, star, true, &blocked) && id == 2 &&
+          star == mine);
+
+    // 6. Allied partner with unknown star: returns false with blocked_rival=false (not a rival refusal)
+    std::vector<JumpPartner> ally_unknown{{2, 0, true}};
+    CHECK(!spacelogic::pick_jump_target(ally_unknown, mine, 0xFF, true, id, star, true, &blocked) && !blocked);
+    CHECK(!spacelogic::pick_jump_target(ally_unknown, mine, 2, false, id, star, true, &blocked) && !blocked);
+}
+
 // space_allies watch_raids with one raid address the allocator gives twice: an accepted raid
 // aborted before it was watched, then a new raid at the same address that is watched and won
 static bool second_raid_counts_as_won(bool prune)
@@ -731,6 +785,7 @@ static void test_tutorial_drive_sync()
 int main()
 {
     test_jump_target();
+    test_jump_rivals();
     test_aborted();
     test_wave_return();
     test_owed_action();
