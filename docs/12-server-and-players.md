@@ -2059,3 +2059,39 @@ captures); every stage change, editor, vote and crossing ran as the game's own. 
 * Not run: Space tools and the Space powers of the archetypes, trade and war between empires, an adventure to its end,
   impress help, four players, the owner's own alpha copy with the new build.
 * Questions for the owner: docs/ROADMAP.md 8T .. 8W.
+
+## The alpha becomes the live build (2026-11-24, feat/lineages-alpha)
+<a id="server-alpha-goes-live"></a>
+
+Owner 2026-11-24, after the deep playtest: "Fully push this to Lineages as Live." Release 0.7.14.1-lineages70-dev is
+the alpha branch: feat/lineages-47 (the live branch) fast-forwarded to it, mirrored to feat/lineages-duo12, built and
+uploaded as every live release. This reverses decision 5J B's "no releases from it" on the owner's word
+(docs/ROADMAP.md, the update of 2026-11-24). feat/lineages-alpha stays the working branch.
+
+What a live player without a galaxy server gets (the review before the release):
+
+* The galaxy's features need a galaxy server: the planets in the galaxy menu, parties of strangers, eras, visitors,
+  the stage end per party, nests apart, the nest refresh and rotation, difficulty and relations per party. Each of
+  their switches reads "on a galaxy planet"; a direct session keeps one party (everybody), as live.
+* In every session: the fixes (BUG-9360, BUG-9361, BUG-9365, BUG-9366, BUG-9271's own message for a big village
+  table), the compact Cell state (6F A), a partner's name plate in the player's colour (7D A), the Social Menu (F8).
+* Pausing: 6T held in every session. A direct session pauses again as live did; only a galaxy planet never pauses
+  (BUG-9376, switch `core.pause_direct`, decision 8X).
+* Not in the release: the galaxy server program (galaxy_server.exe; the package never held it). Decision 8Y.
+
+The release check: direct sessions (no galaxy server) on the release build with saves made by older builds.
+
+| Stage | Host save (profile) | Guest | Result |
+|---|---|---|---|
+| Cell | Diplomavil (DuoQAJiffHost, Game1) | the MSI over Tailscale | ✔ both in the world, each other's cell and Party card; the pause FAIL / PASS of BUG-9376 |
+| Creature | Vandh (Game0), Samuth (Game1), loaded by the host in the running session | the MSI | ✔ the guest follows each load. Samuth was stored with both players dead: both read "You were killed in battle", and after the check both stand at their nests alive (images/release70_direct_samuth_guest5.png) |
+| Tribe | Clyth (DuoQAClythHost, Game0) | the MSI | ✔ the same village on both (images/release70_direct_tribe_guest.png) |
+| Civ | Abber (DuoQACivHost, Game0; a 16 seat fixture) | a second game on TITAN | ✔ the same city and the shared money (images/release70_direct_civ_guest.png) |
+| Space | "Jiff Peanutbutter" (DuoQAJiffSpace, Game0) | a second game on TITAN | ✔ both ships in one system (images/release70_direct_space_guest.png) |
+
+* No crash report on TITAN in the whole check. The Civ and Space guests ran on TITAN because the MSI was busy with
+  another program's work then (its game answered no console command for minutes): those two are not cross-PC proof.
+* Not run for the release: a direct session of three or four, a stage end in a direct session on this build (the
+  deep playtest ran Cell to Creature directly, #server-deep-playtest), the installer's own update from 69-dev on a
+  player's PC.
+

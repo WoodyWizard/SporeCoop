@@ -9486,3 +9486,25 @@ What a by-hand playthrough on TITAN and the MSI needed (docs/12-server-and-playe
   restart (invite again), the planet's stored worlds are entered again with `coop.galaxy enter "<planet>|<stage>"`.
 * The galaxy server keeps three older copies of a stage's world (<planet>_<stage>-<id>.world.1 .. .3): with the server
   stopped an older one copied over the newest gives a stage back as it was (used to play Civ's end again).
+
+## A direct session per stage for a release check (2026-11-24, feat/lineages-alpha)
+<a id="testing-direct-release-check"></a>
+
+Saves of older builds, one per stage, for a quick "does a direct session still work" (about 25 min for all five;
+docs/12-server-and-players.md#server-alpha-goes-live). Host: instance 9, `coop.host 47839 <name>-NoShare- 4`, then
+`coop.load`; guest: `coop.join <address>:47839 <name>-NoShare-`.
+
+* Cell: profile DuoQAJiffHost, `coop.load Game1 Diplomavil`. Creature: the same profile, `coop.load Game0 Vandh`.
+  `coop.load Game1 Samuth` is Creature too, stored with both players dead: both read the death message first
+  (the check at 994,737 in a 1024x768 window), then stand at their nests.
+* A host's `coop.load` inside a running session takes the guest along (about 60 s at 10 FPS).
+* Tribe: DuoQAClythHost, `coop.load Game0 Clyth`. Civ: DuoQACivHost, `coop.load Game0 Abber` (the 16 seat fixture:
+  the status reads "Player slots: 16"). Space: DuoQAJiffSpace, `coop.load Game0 "Jiff Peanutbutter.spo"`; from bash
+  through qa.py the quotes must reach the console: `qa.py 9 coop.load Game0 '"Jiff Peanutbutter.spo"'` (without
+  them: "no Jiff.spo").
+* A host's pause by command: `coop.pauses add 04BF38A8` (P's reason), `coop.pauses sub 04BF38A8`; a guest held by
+  the host's pause shows `04BF38A7=1` (BUG-9260).
+* When the MSI's console goes silent, look at the MSI's CPU first (`Get-Process` twice, 4 s apart): another
+  program at full load starves the game and every ssh command takes a minute. Two games on TITAN do for the stage
+  logic then.
+

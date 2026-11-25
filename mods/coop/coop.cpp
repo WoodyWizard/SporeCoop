@@ -954,8 +954,15 @@ COOP_FIX("ui.paused_cover", "BUG-9227", g_paused_cover, "ui: guests see a 'Pause
 // host and sees no "Paused by host" cover (BUG-9227 / BUG-9260 stay for live). Off: pausing as on live.
 static bool g_no_pause = true;
 COOP_FIX("core.no_pause", "BUG-9262", g_no_pause, "alpha: in a session P and the pause menu do not stop the game; a guest never stands for the host");
+// BUG-9376 (the alpha becomes the live build, 2026-11-24): 6T is the rule of a galaxy planet, a world shared with
+// strangers. A direct session (friends who host and join by address, no galaxy server) pauses as live 69-dev did: the
+// host's pause stands everybody (BUG-9227 / BUG-9260). Off: no pausing in any session, as the alpha had it.
+static bool g_pause_direct = true;
+COOP_FIX("core.pause_direct", "BUG-9376", g_pause_direct, "core: a direct session (no galaxy server) pauses as on live; only a galaxy planet's session never pauses");
 static bool no_pause_session()
 {
+    if (g_pause_direct && !galaxy::relayed())
+        return false;
     return g_no_pause && g_sess.connected() && (g_sess.role() == net::Role::Client || g_sess.players().size() > 1);
 }
 bool stage_mode(uint32_t m);
