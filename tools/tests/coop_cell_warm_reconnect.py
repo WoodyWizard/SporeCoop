@@ -48,7 +48,6 @@ def warm_stats(con):
         host_receipts=int(m.group(6)),
         guest_receipt=int(m.group(7), 16),
         guest_state=m.group(8),
-        raw=out,
     )
 
 
@@ -192,11 +191,17 @@ def main():
     join2 = guest.call(f'coop.join 127.0.0.1:{lane.PORT}')['out'].strip()
     print(f'  Part 2 guest join: {join2}', flush=True)
 
-    # Wait for host to send a new MSG_WORLD_OFFER and guest to reload back into Cell
+    # Wait for host to send a new MSG_WORLD_OFFER and guest to finish downloading & reloading Cell
     ck(wait(lambda: (warm_stats(host) or {}).get('world_offers_sent', 0) > h2['world_offers_sent'], 45.0),
        'Part 2: host fell back to sending a new MSG_WORLD_OFFER after host save')
     ck(wait(lambda: (warm_stats(guest) or {}).get('world_offers_recv', 0) > g2['world_offers_recv'], 45.0),
        'Part 2: guest received the new MSG_WORLD_OFFER')
+    # Wait for the reload to actually begin (guest leaves Cell for menu/load) and then finish back in Cell
+    wait(lambda: 'Cell' not in mode(guest), 30.0)
+    if g2['enabled']:
+        ck(wait(lambda: (warm_stats(guest) or {}).get('guest_state') == 'active'
+                and (warm_stats(guest) or {}).get('guest_receipt', 0) not in (0, g2['guest_receipt']), 90.0),
+           'Part 2: guest finished reloading newly saved Cell world and armed a new receipt')
     ck(wait_cell_ready(host, guest, 90.0), 'Part 2: guest reloaded saved Cell world and partner cells returned')
 
     h3 = warm_stats(host)
