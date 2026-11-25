@@ -11,7 +11,7 @@ Creature fixture, two players (cold: the settings are lane knobs):
   2. The host evolves alone (`coop.vote evolve`: its editor opens at once) and waits in its editor.
   3. The guest joins as a new player (name Carol): refused ("does not take new players"), the host still alone; key
      frame of the guest's screen (the refusal toast, no host world).
-  4. In its editor the host tries to change a Session setting (`coop.settings set all.friendly_fire on`, no force):
+  4. In its editor the host tries to change a Session setting (`coop.settings set all.dna_pace off`, no force):
      refused ("a session setting").
   5. The host leaves its editor (the red cross); the guest joins as Bob again (a player who was in the session: it
      comes back), the settings back to their defaults.
@@ -29,7 +29,7 @@ from harness import mode, waiter
 from twoinst import Checks, keyframe, start, wait_guest_in
 
 wait = waiter(step=1.0)
-KEYS = ('all.late_join', 'all.friendly_fire')
+KEYS = ('all.late_join', 'all.dna_pace')
 DONE = (1416, 1062)    # the creature editor's green check (coop_editor_now.py)
 CANCEL = (1383, 1062)  # the red cross
 
@@ -72,10 +72,10 @@ def main():
         ck(told, 'the refused player is told why')
 
         # 4. a session setting during the host's editor
-        r = host.call('coop.settings set all.friendly_fire on')
+        r = host.call('coop.settings set all.dna_pace off')
         out = (r.get('out') or '').strip()
-        print('  host set all.friendly_fire on:', out[:160], flush=True)
-        ck(sl.get(host, 'all.friendly_fire') == 0 and not r.get('ok'),
+        print('  host set all.dna_pace off:', out[:160], flush=True)
+        ck(sl.get(host, 'all.dna_pace') == 1 and not r.get('ok'),
            f"in the host's editor a session setting cannot be changed ({out[:80]!r})")
 
         # 5. back
