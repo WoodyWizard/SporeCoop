@@ -39,8 +39,10 @@
 #include "modes.h"
 #include "net/validate.h"
 #include "own_world.h"
+#include "rivals.h"
 #include "space_logic.h"
 #include "space_ext.h"
+#include "space_rivals.h"
 #include "sporekit_game.hpp"
 #include "space_kept.h"
 #include "store.h"
@@ -504,6 +506,21 @@ static std::string request(uint8_t action, uint8_t target)
 {
     if (!spaceext::connected())
         return "not connected";
+    // WP-R6 (BUG-1550): when unified Space Rivals is active, route player relation actions through rivals.h
+    // so all 4x4 relations and the 60 s alliance break countdown stay unified across Space and the Rivals page.
+    if (spacerivals::active() && action != A_RIVALS && action != A_ALLIES) {
+        rivals::Relation cur = rivals::relation(me(), target);
+        if (action == A_PROPOSE_ALLY)
+            return rivals::request_relation(target, rivals::RelAction::ProposeAlly);
+        if (action == A_PROPOSE_PEACE)
+            return rivals::request_relation(target, rivals::RelAction::ProposePeace);
+        if (action == A_ACCEPT)
+            return rivals::request_relation(target, cur == rivals::Relation::War ? rivals::RelAction::AcceptPeace
+                                                                                 : rivals::RelAction::AcceptAlly);
+        if (action == A_WAR)
+            return rivals::request_relation(target, cur == rivals::Relation::Ally ? rivals::RelAction::BreakAlly
+                                                                                  : rivals::RelAction::DeclareWar);
+    }
     if (spaceext::is_host())
         return host_apply(action, 0, target);
     wire::space_rivalry::Req m;
@@ -1157,7 +1174,8 @@ static std::vector<spaceext::Row> rows()
             w.on_click = act(A_WAR, id);
             v.push_back(std::move(w));
         } else if (rel == Relation::Ally) {
-            r.button = spaceext::tr("Declare war", "Объявить войну");
+            r.button = spacerivals::active() ? spaceext::tr("Break alliance (60 s)", "Разорвать союз (60 с)")
+                                             : spaceext::tr("Declare war", "Объявить войну");
             r.on_click = act(A_WAR, id);
             v.push_back(std::move(r));
         } else {

@@ -29,6 +29,7 @@
 #include "modes.h"
 #include "own_world.h"
 #include "space_ext.h"
+#include "space_rivals.h"
 #include "spacecoop.h"
 #include "sporekit_game.hpp"
 #include "wire/space_finale.h"
@@ -316,7 +317,7 @@ static void __cdecl h_Enter()
         return;
     }
     bool before = has_flag(kFlagEnteredCore);
-    if (!before && !g_go && !g_alone) {
+    if (!before && !g_go && !g_alone && !spacerivals::active()) {
         auto miss = missing();
         if (!miss.empty()) {
             g_blocked++;
@@ -344,6 +345,8 @@ static void __cdecl h_Enter()
         g_reached_by[spaceext::my_id()] = spaceext::name_of(spaceext::my_id());
         H->log(M, SK_INFO, "finale: entered the galactic core");
         spaceext::send(K_REACHED, net::Writer());
+        if (spacerivals::active())
+            spacerivals::on_core_entered(spaceext::my_id());
         g_next_send = 0; // the new flags go out at once
     }
 }
@@ -445,6 +448,11 @@ static void partner_entered(uint8_t id, bool live)
 {
     std::string who = spaceext::name_of(id);
     g_reached_by[id] = who;
+    if (spacerivals::active()) {
+        if (live)
+            spacerivals::on_core_entered(id);
+        return; // Space Rivals: race to the core, no auto-entry or shared Staff of Life
+    }
     if (has_flag(kFlagEnteredCore))
         return;
     void* core = core_record();
@@ -466,6 +474,8 @@ static void partner_entered(uint8_t id, bool live)
 static double g_reward_next;
 static void reward_tick(double now)
 {
+    if (spacerivals::active())
+        return; // Space Rivals: rivals do not inherit Steve's gift
     if (now < g_reward_next || g_reward_pending || !spaceext::in_space() || g_flags & F_STAFF || busy() ||
         context() < 0 || g_enter_at || g_waiting)
         return;

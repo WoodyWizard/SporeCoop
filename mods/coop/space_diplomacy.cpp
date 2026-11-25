@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "space_ext.h"
+#include "space_rivals.h"
 #include "call_guard.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
@@ -342,12 +343,16 @@ static void tell_state(const std::string& who, uint32_t npc, uint8_t what, bool 
     spaceext::notice(s);
 }
 
-static bool sharing() { return spaceext::connected() && !spaceext::rivals() && spaceext::feature_allowed("diplomacy"); }
+static bool sharing()
+{
+    return spaceext::connected() && !spaceext::rivals() && !spacerivals::active() && spaceext::feature_allowed("diplomacy");
+}
 
 // ---------------- hooks ----------------
 static float SK_THISCALL h_ApplyEv(void* mgr, void* map, uint32_t a, uint32_t b, uint32_t ev, float scale)
 {
-    if (g_applying || g_depth > 0 || !sharing() || !spaceext::in_space())
+    bool riv_earn = !g_applying && g_depth == 0 && spaceext::in_space() && spacerivals::active();
+    if (g_applying || g_depth > 0 || (!sharing() && !riv_earn) || !spaceext::in_space())
         return o_ApplyEv(mgr, map, a, b, ev, scale);
     float r;
     {
@@ -358,8 +363,12 @@ static float SK_THISCALL h_ApplyEv(void* mgr, void* map, uint32_t a, uint32_t b,
     if (map == (uint8_t*)mgr + 0x24 && mgr == rel_mgr() && is_empire(a) && is_empire(b) && a != b &&
         (a == me || b == me) && !own_event(ev) && scale != 0.f) {
         uint32_t npc = a == me ? b : a;
-        if (!local_mirror(npc))
-            g_out.push_back({K_EVENT, npc, (uint8_t)(a == me), ev, scale, {}});
+        if (!local_mirror(npc)) {
+            if (riv_earn)
+                spacerivals::on_npc_diplomacy_event(npc, ev, scale);
+            if (sharing())
+                g_out.push_back({K_EVENT, npc, (uint8_t)(a == me), ev, scale, {}});
+        }
     }
     return r;
 }

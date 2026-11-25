@@ -34,6 +34,7 @@
 #include "world.h"
 #include "space_logic.h"
 #include "space_map.h"
+#include "space_rivals.h"
 #include "sporekit_game.hpp"
 #include "wire/space_allies.h"
 #include "wire/space_map.h"
@@ -469,6 +470,12 @@ static void restore_planet(Mirror& m, uint32_t id)
         s.civ.assign(civ.begin() + std::min(s.civ_before, civ.size()), civ.end());
         void** b = F<void**>(rec, 0x15C);
         F<void**>(rec, 0x160) = b + std::min(s.civ_before, civ.size());
+        if (m.id == 0 && spacerivals::is_relinquished_host_home(id) && s.civ_before > 0) {
+            uint32_t mp = my_pol();
+            for (size_t i = 0; i < std::min(s.civ_before, civ.size()); i++)
+                if (readable(civ[i], 0x18))
+                    F<uint32_t>(civ[i], 0x14) = mp;
+        }
         if (s.own)
             remove_colony(rec);
         F<uint32_t>(rec, 0x194) = s.tech;
@@ -608,14 +615,17 @@ static void add_planet(Mirror& m, void* rec)
     s.flags = F<uint32_t>(rec, 0x2C);
     s.civ_before = ptr_vec((uint8_t*)rec + 0x15C, 64).size();
     cdecl_call<void>(a_PlanetTech, rec, 5);
-    if (!s.civ.empty()) { // the cities of the last apply
+    bool keep_host_home = (m.id == 0 && spacerivals::is_relinquished_host_home(id) && s.civ_before > 0);
+    if (keep_host_home) {
+        F<uint32_t>(rec, 0x2C) |= 0x40;
+    } else if (!s.civ.empty()) { // the cities of the last apply
         for (void* c : s.civ)
             thiscall<void>(a_AddCivData, rec, c);
         F<uint32_t>(rec, 0x2C) |= 0x40;
     } else
         cdecl_call<void>(a_FillPlanet, rec, 5); // cCivData of the star's empire + its cCityData
     auto civ = ptr_vec((uint8_t*)rec + 0x15C, 64);
-    for (size_t i = s.civ_before; i < civ.size(); i++)
+    for (size_t i = keep_host_home ? 0 : s.civ_before; i < civ.size(); i++)
         if (readable(civ[i], 0x18))
             F<uint32_t>(civ[i], 0x14) = m.pol;
     thiscall<void>(a_AddPlanet, m.emp, rec);
@@ -695,7 +705,8 @@ static std::string blocked(Mirror& m, uint32_t planet, void*& rec, void*& star)
     if (F<uint32_t>(star, 0x5C) & 3)
         return "a home star";
     bool on = m.planets.count(planet) && m.planets[planet].on;
-    if (!on && F<uint32_t>(rec, 0x194) >= 4)
+    bool relinq = (m.id == 0 && spacerivals::is_relinquished_host_home(planet));
+    if (!on && !relinq && F<uint32_t>(rec, 0x194) >= 4)
         return "a civilization lives there";
     void* ap = active_planet_record();
     if (ap == rec && context() == 0 && !on)
