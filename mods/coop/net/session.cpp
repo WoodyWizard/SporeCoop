@@ -150,6 +150,8 @@ void Session::start_hello(const Endpoint& ep, uint32_t now)
     h.version = version;
     h.has_token = rejoin_token != 0;
     h.token = rejoin_token;
+    h.has_resume_receipt = resume_receipt != 0; // BUG-0869
+    h.resume_receipt = resume_receipt;
     h.families = families; // B6 (BUG-1137)
     if (!send_families)
         h.caps &= ~(uint32_t)CAP_FAMILIES;
@@ -294,6 +296,22 @@ bool Session::peer_families(uint8_t id, bool& has, std::vector<FamilyRev>& out) 
             has = p->has_families;
             out = p->families;
             return true;
+        }
+    return false;
+}
+
+bool Session::peer_resume_receipt(uint8_t id, uint64_t& receipt) const
+{
+    receipt = 0;
+    if (role_ != Role::Host)
+        return false;
+    for (auto& p : peers_)
+        if (p->accepted && p->id == id) {
+            if (p->has_resume_receipt && p->resume_receipt != 0) {
+                receipt = p->resume_receipt;
+                return true;
+            }
+            return false;
         }
     return false;
 }
@@ -897,6 +915,8 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             p.caps = h.caps;
             p.has_token = h.has_token;
             p.token = h.token;
+            p.has_resume_receipt = h.has_resume_receipt;
+            p.resume_receipt = h.resume_receipt;
             p.hello_name = h.name;
             if (h.has_token && std::find(seen_tokens_.begin(), seen_tokens_.end(), h.token) == seen_tokens_.end()) {
                 if (seen_tokens_.size() >= 64)

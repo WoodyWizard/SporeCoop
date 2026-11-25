@@ -199,8 +199,12 @@ enum Caps : uint32_t {
     // n x {u8 family, u16 rev, u16 minor}; in HELLO and WELCOME after CAP_VERSION's payload. Older readers ignore it
     // (unknown bit, trailing bytes); a peer without it counts as rev 1 minor 0 of every family
     CAP_FAMILIES = 8,
+    // WP-C of 0.8.0 (BUG-0869): HELLO only: u64 resume receipt for Cell warm reconnect (world_resume.h), after
+    // CAP_FAMILIES's payload; never in WELCOME or anything relayed. Bit 6 (64) keeps bit 7 (128) free for WP-Q's
+    // CAP_JOIN_PROOF (BUG-0867). Older hosts ignore unknown cap bits and trailing bytes and share the world normally.
+    CAP_RESUME_WORLD = 64,
 };
-constexpr uint32_t kMyCaps = CAP_SPLIT | CAP_VERSION | CAP_FAMILIES; // what this build supports (the token bit is per HELLO)
+constexpr uint32_t kMyCaps = CAP_SPLIT | CAP_VERSION | CAP_FAMILIES; // what this build supports (token & resume bits are per HELLO)
 
 struct FamilyRev {
     uint8_t family = 0;
@@ -249,12 +253,16 @@ struct Hello {
     std::string version; // CAP_VERSION ("" read: an older peer)
     bool has_families = false; // CAP_FAMILIES read (false: an older peer, or a bad payload)
     std::vector<FamilyRev> families; // written when caps has CAP_FAMILIES
+    bool has_resume_receipt = false; // CAP_RESUME_WORLD (BUG-0869): HELLO only, u64 Cell warm reconnect receipt
+    uint64_t resume_receipt = 0;
     void write(Writer& w) const
     {
         w.u16(proto); w.u32(build); w.str8(name);
         if (!ext)
             return;
-        uint32_t c = (caps & ~(uint32_t)CAP_TOKEN) | (has_token ? CAP_TOKEN : 0);
+        uint32_t c = (caps & ~((uint32_t)CAP_TOKEN | (uint32_t)CAP_RESUME_WORLD)) |
+                     (has_token ? CAP_TOKEN : 0) |
+                     (has_resume_receipt ? CAP_RESUME_WORLD : 0);
         w.u32(c);
         if (has_token)
             w.raw(&token, 8);
@@ -262,6 +270,8 @@ struct Hello {
             w.str8(version);
         if (c & CAP_FAMILIES)
             write_families(w, families);
+        if (has_resume_receipt)
+            w.raw(&resume_receipt, 8);
     }
     bool read(Reader& r)
     {
@@ -271,6 +281,8 @@ struct Hello {
         caps = 0;
         has_token = false;
         token = 0;
+        has_resume_receipt = false;
+        resume_receipt = 0;
         ext = r.left() >= 4;
         if (ext)
             caps = r.u32();
@@ -291,6 +303,11 @@ struct Hello {
         }
         families.clear();
         has_families = at_families && (caps & CAP_FAMILIES) && read_families(r, families);
+        bool at_resume = (caps & CAP_FAMILIES) ? has_families : at_families;
+        if (at_resume && !(caps & 0x30u) && (caps & CAP_RESUME_WORLD) && r.left() >= 8) {
+            r.raw(&resume_receipt, 8);
+            has_resume_receipt = true;
+        }
         return true;
     }
 };
@@ -318,7 +335,7 @@ struct Welcome {
         for (auto& p : players) { w.u8(p.id); w.str8(p.name); }
         if (!ext)
             return;
-        w.u32(caps & ~(uint32_t)CAP_TOKEN);
+        w.u32(caps & ~((uint32_t)CAP_TOKEN | (uint32_t)CAP_RESUME_WORLD));
         if (caps & CAP_VERSION) {
             w.str8(host_version);
             uint8_t n = 0;
@@ -349,7 +366,7 @@ struct Welcome {
         if (!r.ok())
             return false;
         ext = r.left() >= 4;
-        caps = ext ? r.u32() & ~(uint32_t)CAP_TOKEN : 0;
+        caps = ext ? r.u32() & ~((uint32_t)CAP_TOKEN | (uint32_t)CAP_RESUME_WORLD) : 0;
         host_version.clear();
         bool at_families = !(caps & CAP_VERSION); // the families follow the versions' payload
         if ((caps & CAP_VERSION) && r.left() >= 1) {

@@ -76,7 +76,7 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | 14 | `WORLD_OFFER` | R | host | Session | World (guest) | world | the host's save follows: u32 world, u32 size, u16 files, str8 planet |
 | 15 | `WORLD_FILE` | R | host | Session | World (guest) | world | a file header: u16 index, u32 size, str8 path |
 | 16 | `WORLD_CHUNK` | R | host | Session | World (guest) | world | file data: u16 index, u32 offset, u16 n, bytes |
-| 17 | `WORLD_DONE` | R | host | Session | World (guest) | world | end of the transfer |
+| 17 | `WORLD_DONE` | R | host | Session | World (guest) | world | end of the transfer: u32 world id; optional trailing u64 resume_receipt, u8 flags (bit 0: warm reconnect accepted, world_resume.h, BUG-0869) |
 | 18 | `ANIM` | R | any | Session | Anim | creature | an animation of a player's own creature (the host relays it) |
 | 19 | `NPC_SPAWN` | R | host | Module | Npc | npc | start mirroring an NPC (NpcSpawn) |
 | 20 | `NPC_DESPAWN` | R | host | Module | Npc | npc | stop mirroring an NPC: u16 id |

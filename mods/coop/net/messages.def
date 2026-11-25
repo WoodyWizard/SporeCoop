@@ -84,7 +84,7 @@
 // Rivals, BUG-1546), tribe 1.3 (WP-R4 Tribe Rivals, BUG-1548; WP-T epic fix, BUG-1542), civ 1.4 (WP-R5 Civ Rivals,
 // BUG-1549), space 1.6 (WP-R6 Space Rivals, BUG-1550).
 FAMILY(session,   1, 1, 4, STAGE_ALWAYS, "session", "net/protocol.h wire/history.h")
-FAMILY(world,     2, 1, 2, STAGE_ALWAYS, "world transfer", "")
+FAMILY(world,     2, 1, 2, STAGE_ALWAYS, "world transfer", "world_resume.h")
 FAMILY(creature,  3, 1, 5, STAGE_CREATURE, "Creature", "wire/adventure.h")
 FAMILY(npc,       4, 1, 3, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
 FAMILY(cell,      5, 1, 4, STAGE_CELL, "Cell", "")
@@ -116,7 +116,7 @@ MSG(13, NPC_STATE,    U,  Host,  Module,    Npc,         Both,   npc,       "u32
 MSG(14, WORLD_OFFER,  R,  Host,  Session,   World,       Client, world,     "the host's save follows: u32 world, u32 size, u16 files, str8 planet")
 MSG(15, WORLD_FILE,   R,  Host,  Session,   World,       Client, world,     "a file header: u16 index, u32 size, str8 path")
 MSG(16, WORLD_CHUNK,  R,  Host,  Session,   World,       Client, world,     "file data: u16 index, u32 offset, u16 n, bytes")
-MSG(17, WORLD_DONE,   R,  Host,  Session,   World,       Client, world,     "end of the transfer")
+MSG(17, WORLD_DONE,   R,  Host,  Session,   World,       Client, world,     "end of the transfer: u32 world id; optional trailing u64 resume_receipt, u8 flags (bit 0: warm reconnect accepted, world_resume.h, BUG-0869)")
 MSG(18, ANIM,         R,  Any,   Session,   Anim,        Both,   creature,  "an animation of a player's own creature (the host relays it)")
 MSG(19, NPC_SPAWN,    R,  Host,  Module,    Npc,         Both,   npc,       "start mirroring an NPC (NpcSpawn)")
 MSG(20, NPC_DESPAWN,  R,  Host,  Module,    Npc,         Both,   npc,       "stop mirroring an NPC: u16 id")
