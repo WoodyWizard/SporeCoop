@@ -614,6 +614,14 @@ extern unsigned g_evo_inplace;
 extern unsigned g_evo_saves;
 bool do_host(uint16_t port, std::string& err);
 bool do_join(const std::string& addr, std::string& err);
+// BUG-0867: optional session password & recent servers list
+extern bool g_recent_servers_fix;
+void set_session_password(const std::string& pw);
+bool has_session_password();
+void recent_load();
+void recent_record(const std::string& addr);
+void recent_clear();
+std::vector<std::string> recent_list();
 bool slow_lookup(const std::string& host, uint32_t& ip);
 const char* role_name(uint8_t r);
 const char* share_wait_reason();

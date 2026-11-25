@@ -91,6 +91,8 @@ void set_label_color(Win label, uint32_t argb);
 Win text_edit(Win parent, const Rect& r, const std::string& text, uint32_t font_id, int max_len);
 std::string edit_text(Win edit);
 void set_edit_text(Win edit, const std::string& text);
+void set_edit_password(Win edit, bool on); // BUG-0867: ITextEdit::SetTextEditFlag(0x80, on)
+bool edit_password(Win edit);
 
 // ---- images and button looks ----
 // Image* from a package (png), nullptr if missing. The caller owns one reference.
@@ -99,12 +101,17 @@ void* image(uint32_t instance, uint32_t type, uint32_t group);
 Win image_window(Win parent, uint32_t instance, uint32_t group, float x, float y);
 // a new SporeStdDrawable copying `src` (a SporeStdDrawable) with another icon image
 void* std_drawable_with_icon(void* src, void* icon);
+// BUG-0874: a new UTFWin::StdDrawable (9-slice, 1/3 borders) with `img` in all state slots
+void* std_drawable_9slice(void* img);
 void set_drawable(Win w, void* drawable);
+void set_button_borders(Win w, float l, float t, float r, float b);
 
 // ---- events ----
 // fn(window, message) -> handled. The handler object lives in sporekit (safe on hot reload).
 void* add_handler(Win w, std::function<bool(Win, const Msg&)> fn);
 void remove_handler(Win w, void* handler);
+// callback for `coop.ui state` (set by coop_ui::init)
+void set_state_provider(std::function<std::string()> fn);
 
 uint32_t fnv(const char* s); // Spore id()
 

@@ -89,6 +89,39 @@ int c_leave(void*, int, const char* const*, SkOut* out)
     return 0;
 }
 
+// BUG-0867: set/clear/check session password (never echoes or logs the raw password)
+int c_password(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc >= 2) {
+        if (!strcmp(argv[1], "clear"))
+            set_session_password("");
+        else if (!strcmp(argv[1], "set") && argc >= 3)
+            set_session_password(argv[2]);
+        else
+            set_session_password(argv[1]);
+    }
+    SAY("password=%s enabled=%d", g_sess.password.empty() ? "none" : "set", (int)net::g_fix.session_password);
+    return 0;
+}
+
+// BUG-0867: inspect/modify persisted recent servers list ([recent] server0..server7 in coop.ini)
+int c_recent(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc >= 2 && !strcmp(argv[1], "clear")) {
+        recent_clear();
+        SAY("recent cleared");
+        return 0;
+    }
+    if (argc >= 3 && !strcmp(argv[1], "add")) {
+        recent_record(argv[2]);
+    }
+    auto list = recent_list();
+    SAY("recent count=%zu enabled=%d\n", list.size(), (int)g_recent_servers_fix);
+    for (size_t i = 0; i < list.size(); i++)
+        SAY("  %zu: %s\n", i, list[i].c_str());
+    return 0;
+}
+
 int c_status(void*, int, const char* const*, SkOut* out)
 {
     SAY("%s%sbusy: %s\n", g_sess.status().c_str(), world::status().c_str(), busy::names(game_busy()).c_str());
@@ -1244,6 +1277,8 @@ void register_commands_core()
     const int MT = SK_CMD_MAIN_THREAD;
     H->command_add(M, "coop.host", "coop.host [port] [name] - host a session", c_host, nullptr, MT);
     H->command_add(M, "coop.join", "coop.join <ip[:port]> [name] - join a host", c_join, nullptr, MT);
+    H->command_add(M, "coop.password", "coop.password [set <pw> | <pw> | clear] - set/clear/check session password (masked)", c_password, nullptr, MT);
+    H->command_add(M, "coop.recent", "coop.recent [list | add <addr> | clear] - recently joined server addresses", c_recent, nullptr, MT);
     H->command_add(M, "coop.leave", "leave the session", c_leave, nullptr, MT);
     H->command_add(M, "coop.kick", "coop.kick <id | name> - host: remove a player from the session (it is told why; BUG-1108)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {

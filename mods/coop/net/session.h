@@ -21,6 +21,9 @@ extern SpawnFn g_spawn_thread;
 
 std::vector<FamilyRev> compat_families(); // net::compat::my_families() (session.cpp: compat.h stays out of this header)
 
+// BUG-0867: connection-bound password proof: sha256_hex(u32_le conn_id || password bytes)
+std::string join_proof(uint32_t conn_id, const std::string& password);
+
 struct Peer {
     uint8_t id = 0xFF; // player id (host side: guest id; client side: 0 = host)
     std::string name;
@@ -103,6 +106,10 @@ public:
         "join again";
     uint32_t timeouts_told() const { return timeouts_told_; } // BUG-1420: guests dropped for silence and told so
     std::string lobby_info;  // host: shown to players looking for games on the network
+    // BUG-0867: optional session password (host: required from joining guests; guest: hashed into CAP_JOIN_PROOF).
+    // Never logged, written to ini, or printed in status / crash reports.
+    std::string password;
+    static constexpr const char* kBadPasswordText = "Incorrect or missing server password.";
     // F3 (BUG-0768), host: the players the session takes, the host counted (all.max_players, 2..kMaxPlayers), and
     // whether a new player is refused now (all.late_join off while the host plays its world). A player who was in
     // this session already (its name, or its rejoin token) may always come back. coop.cpp sets both every frame

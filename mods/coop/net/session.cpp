@@ -12,8 +12,28 @@
 #include "ipmask.h"
 #include "compat.h"
 #include "manifest.h"
+#include "../../../updater/sha256.h"
 
 namespace net {
+
+std::string join_proof(uint32_t conn_id, const std::string& password)
+{
+    Writer w;
+    w.u32(conn_id);
+    if (!password.empty())
+        w.raw(password.data(), password.size());
+    return upd::sha256_hex(w.data);
+}
+
+static bool proof_equal(const std::string& a, const std::string& b)
+{
+    if (a.size() != b.size() || a.empty())
+        return false;
+    uint8_t diff = 0;
+    for (size_t i = 0; i < a.size(); i++)
+        diff |= (uint8_t)(a[i] ^ b[i]);
+    return diff == 0;
+}
 
 static constexpr size_t kVersionMax = 120; // BUG-0774: a peer's version text ("coop X, SporeKit Y, <build> <hash>")
 
@@ -153,6 +173,10 @@ void Session::start_hello(const Endpoint& ep, uint32_t now)
     h.families = families; // B6 (BUG-1137)
     if (!send_families)
         h.caps &= ~(uint32_t)CAP_FAMILIES;
+    if (g_fix.session_password && !password.empty()) { // BUG-0867: connection-bound password proof
+        h.has_join_proof = true;
+        h.join_proof = join_proof(p->conn.conn_id, password);
+    }
     Writer w;
     h.write(w);
     if (!test_hello.empty()) // test seam (BUG-1281): another program's HELLO bytes
@@ -417,8 +441,9 @@ std::string Session::status() const
     if (role_ == Role::None)
         return "offline\n";
     if (role_ == Role::Host)
-        snprintf(b, sizeof b, "host port=%u players=%d/%d\n", tr_->local_port(),
-                 (int)players().size(), max_players);
+        snprintf(b, sizeof b, "host port=%u players=%d/%d%s\n", tr_->local_port(),
+                 (int)players().size(), max_players,
+                 (g_fix.session_password && !password.empty()) ? " password=yes" : "");
     else
         snprintf(b, sizeof b, "client id=%u %s\n", my_id_, welcomed_ ? "connected" : "connecting");
     s += b;
@@ -783,6 +808,19 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
                 p.conn.send_reliable(MSG_REJECT, w);
                 logf(cb, "rejected %s: %s", p.conn.remote.masked().c_str(), rej.text.c_str());
                 return;
+            }
+            // BUG-0867: validate connection-bound join proof before dropping any existing peer or admitting the guest
+            if (g_fix.session_password && !password.empty()) {
+                const std::string expect = join_proof(p.conn.conn_id, password);
+                if (!h.has_join_proof || !proof_equal(h.join_proof, expect)) {
+                    rej.reason = REJ_VERSION; // older clients display the message text
+                    rej.text = kBadPasswordText;
+                    Writer w;
+                    rej.write(w);
+                    p.conn.send_reliable(MSG_REJECT, w);
+                    logf(cb, "rejected %s: %s", p.conn.remote.masked().c_str(), rej.text.c_str());
+                    return;
+                }
             }
             // BUG-0235: the same game after a crash (its HELLO carries the token of the old entry,
             // which has been silent for 2 s) replaces that entry now, before the full check (a crash
@@ -1366,6 +1404,10 @@ void Session::update()
             rep.info = lobby_info;
             rep.has_id = g_fix.lan_dedup;
             rep.host_id = lan_id_;
+            if (g_fix.session_password && rep.has_id) { // BUG-0867: optional trailing lock flag
+                rep.has_flags = true;
+                rep.flags = password.empty() ? 0 : DF_PASSWORD;
+            }
             Writer w;
             rep.write(w);
             tr_->send_to(from, w.data.data(), w.size());
@@ -1389,7 +1431,9 @@ void Session::update()
                 // has been silent for 2 s (the old game is gone); until then the new HELLO waits (it is sent again)
                 Hello nh;
                 bool hello = carries_hello(buf, (size_t)n, &nh);
-                bool same = hello && nh.has_token && p->has_token && nh.token == p->token;
+                bool pw_ok = !g_fix.session_password || password.empty() ||
+                             (hello && nh.has_join_proof && proof_equal(nh.join_proof, join_proof(conn, password)));
+                bool same = hello && pw_ok && nh.has_token && p->has_token && nh.token == p->token;
                 if (!same && now - p->conn.last_recv_ms <= 2000) {
                     if (replace_refused_++ < 5 || replace_refused_ % 100 == 0)
                         logf(cb, "a new connection from %s waits: player %u is live (%u so far)", from.masked().c_str(), p->id,

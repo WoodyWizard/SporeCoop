@@ -308,6 +308,14 @@ static void hello_welcome_ext()
     Writer fb = base;
     fb.u32(CAP_VERSION | CAP_FAMILIES); fb.u8(200); fb.u8(1); // a version longer than the message
     CHECK(rd(fb.data, h) && !h.has_families && h.version.empty() && h.name == "Bob", "Hello families after a bad version");
+    // WP-Q (BUG-0867): CAP_JOIN_PROOF after CAP_FAMILIES; truncated proof leaves HELLO readable with has_join_proof=false
+    Writer fp = f;
+    fp.data[base.data.size()] |= CAP_JOIN_PROOF; // add CAP_JOIN_PROOF bit to caps u32
+    fp.str8("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    CHECK(rd(fp.data, h) && h.has_families && h.has_join_proof && h.join_proof.size() == 64, "Hello join proof");
+    Writer fpc = fp;
+    fpc.data.pop_back();
+    CHECK(rd(fpc.data, h) && h.has_families && !h.has_join_proof && h.join_proof.empty(), "Hello join proof cut");
 }
 
 static void fuzz_protocol(uint64_t seed, int iters)
@@ -317,7 +325,8 @@ static void fuzz_protocol(uint64_t seed, int iters)
     fuzz_struct<DiscoverReply>("DiscoverReply", R, iters, [](Rng& R) {
         DiscoverReply d; d.proto = R.u16(); d.port = R.u16(); d.name = R.str(255); d.players = R.u8();
         d.max_players = R.u8(); d.info = R.str(255);
-        d.has_id = R.below(2); d.host_id = d.has_id ? R.u32() : 0; return d; // BUG-0210 appended id
+        d.has_id = R.below(2); d.host_id = d.has_id ? R.u32() : 0; // BUG-0210 appended id
+        d.has_flags = d.has_id && R.below(2); d.flags = d.has_flags ? R.u8() : 0; return d; // BUG-0867 lock flag
     }, [](const DiscoverReply& d) {
         return (size_t)(4 + 2 + 2 + 1 + std::min<size_t>(d.name.size(), 255) + 2 + 1 + std::min<size_t>(d.info.size(), 255));
     });
@@ -328,6 +337,7 @@ static void fuzz_protocol(uint64_t seed, int iters)
         h.has_token = R.below(2); h.token = ((uint64_t)R.u32() << 32) | R.u32();
         if (R.below(2)) h.version = R.str(60);
         for (int n = (int)R.below(12), i = 0; i < n; i++) h.families.push_back({R.u8(), R.u16(), R.u16()}); // B6
+        h.has_join_proof = R.below(2); if (h.has_join_proof) h.join_proof = R.str(64); // BUG-0867
         return h;
     }, [](const Hello& h) { return (size_t)(2 + 4 + 1 + std::min<size_t>(h.name.size(), 255)); });
     fuzz_struct<Welcome>("Welcome", R, iters, [](Rng& R) {

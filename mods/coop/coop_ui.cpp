@@ -88,8 +88,18 @@ constexpr int kRivalsRows = 12;
 static bool g_space_page;  // the lobby shows the Space page instead
 static bool g_rivals_page; // the lobby shows the Rivals / Race page instead
 static int g_lan_first;    // the first game on the network listed (pages of three, BUG-0183)
+static int g_rec_first;    // BUG-0867: the first recent server listed (pages of three)
+static bool g_host_pw_show, g_join_pw_show; // BUG-0867: password mask toggle on Host / Join steps
 bool g_lan_pages_fix = true; // `coop.fix core.lan_pages off`: only the first three games, no "More" (BUG-0183)
 COOP_FIX("core.lan_pages", "BUG-0183", g_lan_pages_fix, "ui: every network game is listed, with More pages");
+// BUG-0874: native Spore-style tooltips on co-op window buttons after 0.8 s mouse rest
+static bool g_tooltips_fix = true;
+COOP_FIX("ui.tooltips", "BUG-0874", g_tooltips_fix, "ui: show Spore-style hover tooltips on co-op window buttons after 0.8 s rest");
+static constexpr double kTooltipDelay = 0.8;
+static int g_tip_mx = -99999, g_tip_my = -99999;
+static double g_tip_rest_since = 0;
+static std::string g_tip_hover_btn, g_tip_shown_btn, g_tip_shown_text;
+static bool g_tip_clicked = false;
 static int g_space_first;  // the first row shown (pages of kSpaceRows rows)
 static int g_rivals_first; // the first row shown on the Rivals / Race page
 
@@ -376,10 +386,18 @@ struct Dialog {
     std::vector<Win> page_name, page_choose, page_host, page_join;
     Win name_edit = nullptr, name_ok = nullptr, me_line = nullptr, back_btn = nullptr;
     Win addr_edit = nullptr, port_edit = nullptr, join_btn = nullptr, host_btn = nullptr;
+    Win host_pw_lbl = nullptr, host_pw_edit = nullptr, host_pw_eye = nullptr; // BUG-0867
+    Win join_pw_lbl = nullptr, join_pw_edit = nullptr, join_pw_eye = nullptr; // BUG-0867
     Win lan_hdr = nullptr, host_hint = nullptr, status = nullptr, update_btn = nullptr;
     Win lan_rows[3] = {};
     std::string lan_addr[3];
+    bool lan_locked[3] = {}; // BUG-0867
     Win lan_more = nullptr; // BUG-0183: the next three games on the network
+    Win rec_hdr = nullptr, rec_more = nullptr; // BUG-0867: persisted recent servers list
+    Win rec_rows[3] = {};
+    std::string rec_addr[3];
+    Win tip_win = nullptr;       // BUG-0874: native Spore-style hover tooltip overlay
+    void* tip_drawable = nullptr;
     // lobby page
     std::vector<Win> page_lobby;
     Win session = nullptr, address = nullptr, world = nullptr, chat_edit = nullptr, send_btn = nullptr;
@@ -574,6 +592,8 @@ static Win add_edit(std::vector<Win>& page, const char* name, const Rect& r, con
 // (the chat: send). It stops at the next click anywhere else, when the window closes, or as soon as the
 // game changes the line's text itself (it has the focus after all: never typed twice).
 static void do_send_chat();
+static void do_host();
+static void do_join(const std::string& address);
 COOP_FIX("core.ui_locked_edit_utf16", "BUG-1027", typed_text::g_utf16_fix, "ui: a line typed under the input lock counts characters (not UTF-8 bytes) against its limit, drops DEL, keeps emoji whole");
 static Win g_locked_edit;          // the line clicked under the lock, typed by the mod
 static std::string g_locked_text;  // its text as the mod left it (the game changing it: it has the focus)
@@ -600,6 +620,10 @@ static void locked_edit_apply(void*)
     if (enter && w == D.chat_edit) {
         do_send_chat();
         g_locked_text = sui::edit_text(w);
+    } else if (enter && w == D.host_pw_edit) {
+        do_host();
+    } else if (enter && w == D.join_pw_edit) {
+        do_join(sui::edit_text(D.addr_edit));
     }
 }
 
@@ -726,6 +750,8 @@ static void do_join(const std::string& address)
                    kRed);
         return;
     }
+    if (net::g_fix.session_password && A.set_password && D.join_pw_edit)
+        A.set_password(sui::edit_text(D.join_pw_edit));
     std::string err;
     if (!A.join(addr, err)) {
         set_status(std::string(T("Cannot join: ", "Не удалось подключиться: ")) + err, kRed, g_status_fix ? 30 : 0);
@@ -744,6 +770,8 @@ static void do_host()
     int port = atoi(sui::edit_text(D.port_edit).c_str());
     if (port <= 0 || port > 65535)
         port = A.default_port;
+    if (net::g_fix.session_password && A.set_password && D.host_pw_edit)
+        A.set_password(sui::edit_text(D.host_pw_edit));
     std::string err;
     if (!A.host((uint16_t)port, err)) {
         set_status(std::string(T("Cannot host: ", "Не удалось создать игру: ")) + err, kRed);
@@ -1063,48 +1091,88 @@ static void build_dialog()
     add_label(HP, {340, 170, 720, 198},
               (std::string(T("(", "(")) + std::to_string(net::kDefaultPort) + T(" if you are not sure)", ", если не уверены)")),
               kDim);
-    D.host_btn = add_button(HP, "host", {540, 214, 720, 254}, T("Host", "Создать"), do_host);
-    add_label(HP, {40, 274, 720, 298}, T("Friends on your network find your game in their list.",
+    D.host_pw_lbl = add_label(HP, {40, 216, 225, 244}, T("Password", "Пароль"), kWhite);
+    D.host_pw_edit = add_edit(HP, "hostpw", {230, 212, 520, 244}, "", 64);
+    if (D.host_pw_edit)
+        sui::set_edit_password(D.host_pw_edit, !g_host_pw_show);
+    D.host_pw_eye = add_button(HP, "hostpweye", {540, 210, 720, 246}, T("Show", "Показать"), [] {
+        g_host_pw_show = !g_host_pw_show;
+        if (D.host_pw_edit)
+            sui::set_edit_password(D.host_pw_edit, !g_host_pw_show);
+        g_dirty = true;
+    });
+    D.host_btn = add_button(HP, "host", {540, 258, 720, 298}, T("Host", "Создать"), do_host);
+    add_label(HP, {40, 314, 720, 338}, T("Friends on your network find your game in their list.",
                                          "Друзья в вашей сети увидят игру в списке."),
               kDim);
-    add_label(HP, {40, 300, 720, 324}, T("Over the internet: forward the UDP port on your router,",
+    add_label(HP, {40, 340, 720, 364}, T("Over the internet: forward the UDP port on your router,",
                                          "Через интернет: откройте UDP-порт на роутере"),
               kDim);
-    add_label(HP, {40, 326, 720, 350}, T("or play over a VPN (ZeroTier, Tailscale, Radmin VPN).",
+    add_label(HP, {40, 366, 720, 390}, T("or play over a VPN (ZeroTier, Tailscale, Radmin VPN).",
                                          "или играйте через VPN (ZeroTier, Tailscale)."),
               kDim);
-    D.host_hint = add_label(HP, {40, 366, 720, 392}, "", kWhite);
+    D.host_hint = add_label(HP, {40, 406, 720, 432}, "", kWhite);
 
     // ---- step 3b: Join ----
     auto& J = D.page_join;
     add_label(J, {200, 108, 720, 134}, T("Join a game", "Подключиться к игре"), kGold);
-    D.lan_hdr = add_label(J, {40, 148, 590, 174}, "", kDim);
-    D.lan_more = add_button(J, "lanmore", {600, 144, 720, 174}, T("More >", "Ещё >"), [] {
+    D.lan_hdr = add_label(J, {40, 144, 590, 168}, "", kDim);
+    D.lan_more = add_button(J, "lanmore", {600, 140, 720, 170}, T("More >", "Ещё >"), [] {
         g_lan_first += 3; // refresh_connect wraps it to the first page
         g_dirty = true;
     });
     for (int i = 0; i < 3; i++) {
         char nm[16];
         snprintf(nm, sizeof nm, "lan%d", i);
-        D.lan_rows[i] = add_button(J, nm, {40, 178.f + i * 38, 720, 212.f + i * 38}, "", [i] {
+        D.lan_rows[i] = add_button(J, nm, {40, 174.f + i * 36, 720, 206.f + i * 36}, "", [i] {
             if (!D.lan_addr[i].empty()) {
                 sui::set_edit_text(D.addr_edit, D.lan_addr[i]);
+                if (D.lan_locked[i] && net::g_fix.session_password && D.join_pw_edit &&
+                    sui::edit_text(D.join_pw_edit).empty()) {
+                    set_status(T("This server requires a password - enter it below and click Join",
+                                 "Для входа нужен пароль - введите его ниже и нажмите Подключиться"),
+                               kYellow, 15);
+                    return;
+                }
                 do_join(D.lan_addr[i]);
             }
         });
     }
-    add_label(J, {40, 306, 720, 332}, T("Or type the host's address", "Или введите адрес хоста"), kGold);
-    add_label(J, {40, 344, 225, 372}, T("Address", "Адрес"), kWhite);
-    D.addr_edit = add_edit(J, "address", {230, 340, 520, 372}, load_str("ui", "last_address", ""), 64);
-    D.join_btn = add_button(J, "join", {540, 336, 720, 376}, T("Join", "Подключиться"),
+    add_label(J, {40, 286, 720, 310}, T("Or type the host's address", "Или введите адрес хоста"), kGold);
+    add_label(J, {40, 320, 225, 348}, T("Address", "Адрес"), kWhite);
+    D.addr_edit = add_edit(J, "address", {230, 316, 520, 348}, load_str("ui", "last_address", ""), 64);
+    D.join_btn = add_button(J, "join", {540, 314, 720, 350}, T("Join", "Подключиться"),
                             [] { do_join(sui::edit_text(D.addr_edit)); });
-    add_label(J, {40, 384, 720, 408}, T("An IP address or a host name: 192.168.1.5, sporecoop.local",
-                                        "IP-адрес или имя: 192.168.1.5, sporecoop.local"),
+    D.join_pw_lbl = add_label(J, {40, 360, 225, 388}, T("Password", "Пароль"), kWhite);
+    D.join_pw_edit = add_edit(J, "joinpw", {230, 356, 520, 388}, "", 64);
+    if (D.join_pw_edit)
+        sui::set_edit_password(D.join_pw_edit, !g_join_pw_show);
+    D.join_pw_eye = add_button(J, "joinpweye", {540, 354, 720, 390}, T("Show", "Показать"), [] {
+        g_join_pw_show = !g_join_pw_show;
+        if (D.join_pw_edit)
+            sui::set_edit_password(D.join_pw_edit, !g_join_pw_show);
+        g_dirty = true;
+    });
+    add_label(J, {40, 396, 720, 418},
+              std::string(T("IP or host name (default port ", "IP или имя хоста (порт по умолчанию ")) +
+                  std::to_string(net::kDefaultPort) + T(", e.g. 192.168.1.5)", ", например 192.168.1.5)"),
               kDim);
-    add_label(J, {40, 410, 720, 434},
-              std::string(T("The port is ", "Порт ")) + std::to_string(net::kDefaultPort) +
-                  T(" unless you type one (sporecoop.local:47811)", ", если не указан (sporecoop.local:47811)"),
-              kDim);
+    D.rec_hdr = add_label(J, {40, 424, 590, 448}, "", kDim);
+    D.rec_more = add_button(J, "recmore", {600, 420, 720, 450}, T("More >", "Ещё >"), [] {
+        g_rec_first += 3;
+        g_dirty = true;
+    });
+    for (int i = 0; i < 3; i++) {
+        char nm[16];
+        snprintf(nm, sizeof nm, "rec%d", i);
+        D.rec_rows[i] = add_button(J, nm, {40, 454.f + i * 30, 720, 482.f + i * 30}, "", [i] {
+            if (!D.rec_addr[i].empty()) {
+                sui::set_edit_text(D.addr_edit, D.rec_addr[i]);
+                set_status(std::string(T("Selected ", "Выбран ")) + D.rec_addr[i], kYellow, 8);
+                g_dirty = true;
+            }
+        });
+    }
 
     // shared by the connect steps: Back (Host / Join), the status line and the update button
     std::vector<Win> steps;
@@ -1394,6 +1462,22 @@ static void build_dialog()
             }
             return false;
         });
+    if (D.host_pw_edit)
+        sui::add_handler(D.host_pw_edit, [](Win, const sui::Msg& m) {
+            if (m.type == sui::kMsgKeyDown && (m.b & 0xFFFF) == VK_RETURN) {
+                do_host();
+                return true;
+            }
+            return false;
+        });
+    if (D.join_pw_edit)
+        sui::add_handler(D.join_pw_edit, [](Win, const sui::Msg& m) {
+            if (m.type == sui::kMsgKeyDown && (m.b & 0xFFFF) == VK_RETURN) {
+                do_join(sui::edit_text(D.addr_edit));
+                return true;
+            }
+            return false;
+        });
     if (D.name_edit)
         sui::add_handler(D.name_edit, [](Win, const sui::Msg& m) {
             if (m.type == sui::kMsgKeyDown && (m.b & 0xFFFF) == VK_RETURN) {
@@ -1403,6 +1487,22 @@ static void build_dialog()
             }
             return false;
         });
+    // BUG-0874: native Spore-style hover tooltip overlay (StdDrawable 9-slice + centered caption, mouse-transparent)
+    D.tip_win = sui::label(D.root, {0, 0, 220, 32}, "", D.font_body, 0xFFF2F8FF, sui::kAlignCenter);
+    if (D.tip_win) {
+        sui::set_button_borders(D.tip_win, 12.f, 5.f, 12.f, 5.f);
+        void* img = sui::image(sui::fnv("tooltip_bg"), 0x2F7D0004, sui::fnv("sporecoop"));
+        if (img) {
+            D.tip_drawable = sui::std_drawable_9slice(img);
+            if (D.tip_drawable)
+                sui::set_drawable(D.tip_win, D.tip_drawable);
+            if (sui::g_release_fix)
+                sui::release(img);
+        }
+        sui::set_flag(D.tip_win, sui::kFlagIgnoreMouse, true);
+        sui::set_flag(D.tip_win, sui::kFlagAlwaysInFront, true);
+        sui::set_visible(D.tip_win, false);
+    }
     for (Win w : common)
         (void)w;
     sui::set_visible(root, false);
@@ -1413,6 +1513,16 @@ static void build_dialog()
 static void refresh_connect()
 {
     bool scanning = A.role() == 0 && g_step == kStepJoin;
+    bool hosting_step = A.role() == 0 && g_step == kStepHost;
+    bool pw_on = net::g_fix.session_password;
+    show(D.host_pw_lbl, hosting_step && pw_on);
+    show(D.host_pw_edit, hosting_step && pw_on);
+    show(D.host_pw_eye, hosting_step && pw_on);
+    text(D.host_pw_eye, g_host_pw_show ? T("Hide", "Скрыть") : T("Show", "Показать"));
+    show(D.join_pw_lbl, scanning && pw_on);
+    show(D.join_pw_edit, scanning && pw_on);
+    show(D.join_pw_eye, scanning && pw_on);
+    text(D.join_pw_eye, g_join_pw_show ? T("Hide", "Скрыть") : T("Show", "Показать"));
     text(D.me_line, std::string(T("Your name: ", "Ваше имя: ")) + A.name());
     auto games = A.lan_games ? A.lan_games() : std::vector<LanGame>{};
     // BUG-0183: only the first three answers were listed; with more hosts on the network (lab lanes,
@@ -1435,14 +1545,46 @@ static void refresh_connect()
         bool have = k < (int)games.size();
         if (have) {
             const auto& g = games[k];
-            char b[256];
-            snprintf(b, sizeof b, "%s  -  %s  -  %d/%d  -  %s", g.name.c_str(), g.info.c_str(), g.players,
-                     g.max_players, g.address.c_str());
+            char b[280];
+            snprintf(b, sizeof b, "%s%s  -  %s  -  %d/%d  -  %s",
+                     g.locked ? T("[Locked] ", "[Пароль] ") : "",
+                     g.name.c_str(), g.info.c_str(), g.players, g.max_players, g.address.c_str());
             text(D.lan_rows[i], b);
             D.lan_addr[i] = g.address;
-        } else
+            D.lan_locked[i] = g.locked;
+        } else {
             D.lan_addr[i].clear();
+            D.lan_locked[i] = false;
+        }
         show(D.lan_rows[i], have && scanning);
+    }
+    // BUG-0867: recently joined server addresses (up to 8 persisted in coop.ini [recent], pages of 3)
+    auto recs = A.recent_servers ? A.recent_servers() : std::vector<std::string>{};
+    bool rec_pages = recs.size() > 3;
+    if (!rec_pages || g_rec_first >= (int)recs.size() || g_rec_first < 0)
+        g_rec_first = 0;
+    show(D.rec_hdr, scanning && !recs.empty());
+    show(D.rec_more, scanning && rec_pages);
+    if (!recs.empty()) {
+        if (rec_pages) {
+            char b[160];
+            snprintf(b, sizeof b, T("Recent servers: %d-%d of %d (click to fill)", "Недавние серверы: %d-%d из %d (нажмите)"),
+                     g_rec_first + 1, std::min(g_rec_first + 3, (int)recs.size()), (int)recs.size());
+            text(D.rec_hdr, b);
+        } else {
+            text(D.rec_hdr, T("Recent servers (click to fill address):", "Недавние серверы (нажмите, чтобы подставить):"));
+        }
+    }
+    for (int i = 0; i < 3; i++) {
+        int k = g_rec_first + i;
+        bool have = k < (int)recs.size();
+        if (have) {
+            text(D.rec_rows[i], recs[k]);
+            D.rec_addr[i] = recs[k];
+        } else {
+            D.rec_addr[i].clear();
+        }
+        show(D.rec_rows[i], have && scanning);
     }
     std::string hint;
     if (A.local_addresses) {
@@ -2137,6 +2279,176 @@ static void apply_test_nudges()
     }
 }
 
+// ---------------- Spore-style hover tooltips (BUG-0874) ----------------
+static std::string tooltip_for(const std::string& name)
+{
+    if (name == "nameok")
+        return T("Save your display name and continue", "Сохранить имя и продолжить");
+    if (name == "rename")
+        return T("Change the name other players see", "Изменить имя, которое видят игроки");
+    if (name == "gohost")
+        return T("Host a co-op session in your world", "Создать совместную игру в своём мире");
+    if (name == "gojoin")
+        return T("Join a friend's co-op session", "Подключиться к совместной игре друга");
+    if (name == "back")
+        return T("Return to Host or Join", "Вернуться к выбору: создать или войти");
+    if (name == "host")
+        return T("Start hosting on this UDP port", "Открыть сервер на этом UDP-порту");
+    if (name == "hostpweye")
+        return T("Show or hide the session password", "Показать или скрыть пароль сессии");
+    if (name == "join")
+        return T("Connect to the host address", "Подключиться по указанному адресу");
+    if (name == "joinpweye")
+        return T("Show or hide the server password", "Показать или скрыть пароль сервера");
+    if (name == "lanmore")
+        return T("Show more games found on your network", "Показать другие игры в локальной сети");
+    if (name == "recmore")
+        return T("Show more recently joined servers", "Показать другие недавние серверы");
+    if (name == "lan0" || name == "lan1" || name == "lan2")
+        return T("Click to join this game on your network", "Нажмите, чтобы войти в эту сетевую игру");
+    if (name == "rec0" || name == "rec1" || name == "rec2")
+        return T("Click to fill the host address field", "Нажмите, чтобы подставить адрес хоста");
+    if (name == "update")
+        return T("Download and install the new SporeCoop version", "Скачать и установить новую версию SporeCoop");
+    if (name == "report")
+        return T("Save a zip with logs and diagnostics for bug reports", "Сохранить архив с логами для отчёта об ошибке");
+    if (name == "settings")
+        return T("View or change session rules and display options", "Правила сессии и настройки экрана");
+    if (name == "ready")
+        return T("Mark yourself ready for stage transitions and votes", "Отметить готовность к переходам и голосованиям");
+    if (name == "share")
+        return T("Send your current world save to all joined players", "Отправить сохранение мира всем игрокам");
+    if (name == "leave")
+        return T("Close this session or disconnect from the host", "Закрыть сессию или отключиться от хоста");
+    if (name == "askreports")
+        return T("Ask all joined players to send their problem reports", "Попросить всех игроков прислать отчёты");
+    if (name == "send")
+        return T("Send your chat message to everyone in the session", "Отправить сообщение в чат всем игрокам");
+    if (name == "space")
+        return T("Open the Space stage co-op status and actions", "Открыть окно совместного этапа Космос");
+    if (name == "colour")
+        return T("Pick your next player colour", "Выбрать следующий цвет игрока");
+    if (name == "cprev" || name == "cnext")
+        return T("Choose a different creation or role", "Выбрать другое творение или роль");
+    if (name == "cupprev" || name == "cupnext")
+        return T("Choose a different creature from My Creations", "Выбрать другое существо из Моих творений");
+    if (name == "give")
+        return T("Transfer the selected units or spice to this partner", "Передать выбранные юниты или специю напарнику");
+    if (name == "givenext")
+        return T("Pick another partner to receive the gift", "Выбрать другого напарника для передачи");
+    if (name == "jump")
+        return T("Fly to your partner's star system", "Перелететь в звёздную систему напарника");
+    if (name == "rsend")
+        return T("Include your logs and summary in the host's report", "Отправить ваши логи в общий отчёт хоста");
+    if (name == "rnosend")
+        return T("Decline sending your report this time", "Не отправлять ваш отчёт в этот раз");
+    if (name == "setback" || name == "sback")
+        return T("Return to the co-op lobby", "Вернуться в лобби кооператива");
+    if (name == "close")
+        return T("Close the co-op window (press F9 to reopen)", "Закрыть окно кооператива (F9 - открыть снова)");
+    return {};
+}
+
+static void tooltip_clear()
+{
+    g_tip_hover_btn.clear();
+    if (!g_tip_shown_btn.empty() || !g_tip_shown_text.empty()) {
+        g_tip_shown_btn.clear();
+        g_tip_shown_text.clear();
+        g_dirty = true;
+    }
+}
+
+static void tooltip_tick(double now, bool clicked)
+{
+    if (!g_tooltips_fix || !g_want_open || !D.root || !sui::visible(D.root)) {
+        tooltip_clear();
+        g_tip_clicked = false;
+        return;
+    }
+    if (clicked) {
+        g_tip_clicked = true;
+        if (!g_tip_shown_btn.empty()) {
+            g_tip_shown_btn.clear();
+            g_tip_shown_text.clear();
+            g_dirty = true;
+        }
+    }
+    int mx = 0, my = 0;
+    bool have_move = mouse::last_move(mx, my);
+    std::string hit;
+    if (have_move) {
+        for (const auto& [name, w] : g_named) {
+            if (!w || !sui::visible(w) || tooltip_for(name).empty())
+                continue;
+            Rect r = sui::screen_rect(w);
+            if (mx >= r.x1 && mx < r.x2 && my >= r.y1 && my < r.y2) {
+                hit = name;
+                break;
+            }
+        }
+    }
+    bool moved = (mx != g_tip_mx || my != g_tip_my);
+    if (moved) {
+        g_tip_mx = mx;
+        g_tip_my = my;
+        g_tip_clicked = false;
+        g_tip_rest_since = now;
+        g_tip_hover_btn = hit;
+        if (!g_tip_shown_btn.empty()) {
+            g_tip_shown_btn.clear();
+            g_tip_shown_text.clear();
+            g_dirty = true;
+        }
+        return;
+    }
+    if (hit != g_tip_hover_btn) {
+        g_tip_hover_btn = hit;
+        g_tip_rest_since = now;
+        if (!g_tip_shown_btn.empty()) {
+            g_tip_shown_btn.clear();
+            g_tip_shown_text.clear();
+            g_dirty = true;
+        }
+        return;
+    }
+    if (!g_tip_hover_btn.empty() && !g_tip_clicked && g_tip_shown_btn.empty() &&
+        (now - g_tip_rest_since >= kTooltipDelay)) {
+        g_tip_shown_btn = g_tip_hover_btn;
+        g_tip_shown_text = tooltip_for(g_tip_shown_btn);
+        g_dirty = true;
+    }
+}
+
+static void refresh_tooltip()
+{
+    if (!D.tip_win)
+        return;
+    if (!g_tooltips_fix || !g_want_open || !D.root || !sui::visible(D.root) || g_tip_shown_btn.empty() ||
+        g_tip_shown_text.empty()) {
+        sui::set_visible(D.tip_win, false);
+        return;
+    }
+    auto it = g_named.find(g_tip_shown_btn);
+    if (it == g_named.end() || !it->second || !sui::visible(it->second)) {
+        g_tip_shown_btn.clear();
+        g_tip_shown_text.clear();
+        sui::set_visible(D.tip_win, false);
+        return;
+    }
+    Rect br = sui::area(it->second);
+    float tw = std::min(kW - 24.f, std::max(140.f, std::round(caption_width(g_tip_shown_text) + 38.f)));
+    float th = 32.f;
+    float tx = std::max(12.f, std::min(kW - 12.f - tw, (br.x1 + br.x2 - tw) * 0.5f));
+    float ty = br.y1 - th - 6.f;
+    if (ty < 40.f)
+        ty = br.y2 + 6.f;
+    sui::set_area(D.tip_win, {tx, ty, tx + tw, ty + th});
+    sui::set_caption(D.tip_win, g_tip_shown_text);
+    sui::bring_to_front(D.root, D.tip_win);
+    sui::set_visible(D.tip_win, true);
+}
+
 static void refresh()
 {
     g_pending = false;
@@ -2173,6 +2485,8 @@ static void refresh()
     if (g_shot_hide && D.root && !sui::visible(D.root))
         g_shot_hidden_applied = true;
     if (!g_want_open) {
+        if (D.tip_win)
+            sui::set_visible(D.tip_win, false);
         if (A.lan_scan)
             A.lan_scan(false);
         return;
@@ -2257,6 +2571,7 @@ static void refresh()
         refresh_lobby();
     else
         refresh_connect();
+    refresh_tooltip();
     if (!g_nudges.empty())
         apply_test_nudges();
 }
@@ -2271,8 +2586,10 @@ void init(const SkHost* host, SkMod* mod, Api api)
     g_ok = sui::init(H, M);
     std::string lang = load_str("ui", "lang", "auto");
     g_ru = lang == "ru" || (lang == "auto" && PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_RUSSIAN);
-    if (g_ok)
+    if (g_ok) {
+        sui::set_state_provider(debug_state);
         sui::register_commands();
+    }
     // BUG-0765: the first start (no name chosen yet: coop.ini still has the default name) begins with the name
     bool chosen = load_str("ui", "name_chosen", "0") == "1";
     g_step = g_name_first_fix && !chosen && (A.name().empty() || A.name() == "Player") ? kStepName : kStepChoose;
@@ -2296,6 +2613,8 @@ void open(bool on)
         g_raise = true;
         if (D.root)
             sui::set_edit_text(D.name_edit, A.name()); // fresh values when the dialog appears
+    } else {
+        tooltip_clear();
     }
     g_dirty = true;
 }
@@ -2312,6 +2631,12 @@ void test_reset()
     g_shot_hidden_applied = false;
     g_shot_tag.clear();
     g_shot_caption.clear();
+    tooltip_clear();
+    g_tip_clicked = false;
+    if (D.host_pw_edit)
+        sui::set_edit_text(D.host_pw_edit, "");
+    if (D.join_pw_edit)
+        sui::set_edit_text(D.join_pw_edit, "");
     open(false);
 }
 
@@ -2407,6 +2732,7 @@ void tick()
         }
     }
     double now = H->time_seconds();
+    tooltip_tick(now, mouse::g_fix && lb);
     shot_hide_tick(now);
     report_tick(now);
     if (g_status_until > 0 && now >= g_status_until) { // a message of a finished action (BUG-0104)
@@ -2429,6 +2755,9 @@ void shutdown()
     g_shot_hidden_applied = false;
     g_shot_tag.clear();
     g_shot_caption.clear();
+    tooltip_clear();
+    if (D.tip_win)
+        sui::set_visible(D.tip_win, false);
     if (D.root)
         sui::set_visible(D.root, false);
     if (g_ok)
@@ -2451,7 +2780,8 @@ std::string debug_state()
                     " modal_seen=" + std::to_string(g_modal_seen) + " locked_clicks=" + std::to_string(g_locked_clicks) +
                     " locked_native=" + std::to_string(g_locked_native) +
                     " locked_typed=" + std::to_string(g_locked_typed) +
-                    " share_enabled=" + (D.share_btn && (sui::flags(D.share_btn) & sui::kFlagEnabled) ? "1" : "0") + "\n";
+                    " share_enabled=" + (D.share_btn && (sui::flags(D.share_btn) & sui::kFlagEnabled) ? "1" : "0") +
+                    " tooltip_btn=" + (g_tip_shown_btn.empty() ? std::string("none") : g_tip_shown_btn) + "\n";
     char b[256];
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
@@ -2487,11 +2817,28 @@ std::string debug_state()
     for (auto& [name, w] : g_named) {
         Rect r = sui::screen_rect(w);
         bool vis = sui::visible(w) && D.root && sui::visible(D.root);
-        std::string cap = name == "name" || name == "address" || name == "port" || name == "chatedit"
-                              ? sui::edit_text(w) : sui::caption(w);
+        std::string cap;
+        if (name == "hostpw" || name == "joinpw")
+            cap.assign(sui::edit_text(w).size(), '*'); // BUG-0867: never leak raw password in uistate / logs
+        else if (name == "name" || name == "address" || name == "port" || name == "chatedit")
+            cap = sui::edit_text(w);
+        else
+            cap = sui::caption(w);
         snprintf(b, sizeof b, "%s %.0f %.0f %.0f %.0f %d '%s'\n", name.c_str(), r.x1, r.y1, r.x2, r.y2, (int)vis,
                  cap.c_str());
         s += b;
+    }
+    if (D.tip_win) { // BUG-0874: hover tooltip state for UI tests
+        Rect tr = sui::screen_rect(D.tip_win);
+        bool tvis = sui::visible(D.tip_win) && D.root && sui::visible(D.root);
+        snprintf(b, sizeof b, "tooltip %.0f %.0f %.0f %.0f %d '%s'\n", tr.x1, tr.y1, tr.x2, tr.y2, (int)tvis,
+                 tvis ? g_tip_shown_text.c_str() : "");
+        s += b;
+    }
+    if (A.recent_servers) {
+        auto recs = A.recent_servers();
+        for (size_t i = 0; i < recs.size(); i++)
+            s += "recent " + std::to_string(i) + " '" + recs[i] + "'\n";
     }
     for (int i = 0; i < 4; i++)
         if (D.row_name[i] && sui::visible(D.row_name[i]))

@@ -514,6 +514,13 @@ static std::vector<uint8_t> redacted_ini(const std::vector<uint8_t>& d)
         std::string line = s.substr(i, e == std::string::npos ? std::string::npos : e - i + 1);
         if (line.rfind("last_address=", 0) == 0)
             line = "last_address=(hidden in reports)\n";
+        else if (line.rfind("password=", 0) == 0)
+            line = "password=(hidden in reports)\n";
+        else if (line.size() > 7 && line.rfind("server", 0) == 0 && line[6] >= '0' && line[6] <= '9') {
+            size_t eq = line.find('=');
+            if (eq != std::string::npos)
+                line = line.substr(0, eq + 1) + "(hidden in reports)\n";
+        }
         out += line;
         if (e == std::string::npos)
             break;
