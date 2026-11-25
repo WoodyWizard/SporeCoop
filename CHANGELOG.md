@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.8.0.2] - 2026-11-25
+
+Rivals mode quality-of-life improvements and community-reported co-op fixes from Discord and GitHub.
+
+### Added
+- **Rivals Per-Player Evolutionary Paths & Space Philosophies** (`rivals.own_history`): guests in Rivals mode now earn their own Tribe consequence cards (from allied vs conquered NPC tribes) and Civilization consequence cards (from their own city captures, conversions, buyouts, and starting nation specialty), prefer matching NPC nations on Civ takeover, and receive their own resulting Space philosophy/archetype (`cEmpire +0x58` and archetype tool) cleanly after Space Rivals homeworld emigration. (BUG-1557)
+- **Automatic Rivals vs Together Default Settings Presets & Live Friendly Fire** (`rivals.settings_preset`): switching between `All rivals` and `All together` on the host now automatically applies mode-appropriate default settings (enabling `all.friendly_fire`, `civ.own_money`, full solo `all.dna_pace=off`, own creatures, and disabling co-op teamplay bonuses in Rivals; restoring Together defaults on switch-back while keeping lobby settings intact), and `all.friendly_fire` is now `Scope::Live` so the host can toggle it mid-game without returning to the main menu. (BUG-1558)
+
+### Fixed
+- **Space Tutorial Skip & Interstellar Drive Sync** (`space.tutorial_drive_sync`, GitHub #221): skipping or completing the Space tutorial on the host now monotonically syncs `cMissionManager` tutorial unlock flags (`+0x16/+0x17/+0x18`) and grants missing starter drives (`interstellardrive` / `interplanetarydrive`) to guests so they are no longer stuck inside the home star system. (BUG-1559)
+- **Creature Pack Cap & Editor Leak** (`npc.pack_editor_cap`): prevented guest-recruited pack companions from leaking into the host's pack and UI after entering the Creature Editor or saving/reloading, preserved guest pack ownership across host species evolution, stripped transient guest members cleanly during saves, and added `posse_reconcile()` to keep `cPosseSimulator::mNumTransientPosseMembers` in sync (automatically repairing existing saves and strictly enforcing the 3-member host pack limit). (BUG-1560)
+- **Creature & Tribe Guest Befriending** (`tribe.guest_social`, `social.guest_befriend`): fixed Tribal stage befriending for guests (including when the host gives all tribe members to Player 2) by allowing non-leader social orders (`0x27`), rebuilding the guest HUD instrument bar for synced racks, displaying the native `[TribeGameUI + 0x50]` social meter, and forwarding instrument keys `1`/`2`/`3` to the host's social session; in Creature stage, held engaged NPCs facing the guest during social games, always kept the host's own species allied (`relation = 6`) for own-species guests across evolutions, scored with the guest's own ability points plus pack bonus, and fixed repeat/target-switch clicks. (BUG-1561)
+
 ## [0.8.0.1] - 2026-11-25
 
 Stability and real-gameplay patch release for Rivals mode and Shared Adventure Editor based on an independent v0.8.0 code audit and full 4-player Cell-to-Galactic-Core bot campaigns.
