@@ -2093,6 +2093,44 @@ static void test_updater()
     for (const char* bad : {"https://github.com/WoodyWizard/SporeCoop/releases", "/releases/tag/", "/releases/tag/v1/../x",
                             "/releases/tag/v1%2F..", "/releases/tag/vX", "/releases/tag/v..1"})
         CHECK(!upd::release_from_redirect(web, bad, r));
+    // BUG-1545: multiple releases for the setup's version picker (API array, Atom fallback, version lookup)
+    CHECK(upd::releases_api_url(api) == "https://api.github.com/repos/WoodyWizard/SporeCoop/releases?per_page=30");
+    CHECK(upd::releases_api_url("http://127.0.0.1:47999/repos/o/r/releases/latest") ==
+          "http://127.0.0.1:47999/repos/o/r/releases?per_page=30");
+    CHECK(upd::releases_api_url("https://api.github.com/repos/o/r/releases").empty());
+    CHECK(upd::web_releases_atom_url(api) == "https://github.com/WoodyWizard/SporeCoop/releases.atom");
+    CHECK(upd::web_releases_atom_url("http://127.0.0.1:47999/repos/o/r/releases/latest") ==
+          "http://127.0.0.1:47999/o/r/releases.atom");
+    const char* list_json = R"([
+      {"tag_name":"v0.8.0-beta","draft":true,"prerelease":true,"html_url":"https://github.com/WoodyWizard/SporeCoop/releases/tag/v0.8.0-beta",
+       "assets":[{"browser_download_url":"https://github.com/WoodyWizard/SporeCoop/releases/download/v0.8.0-beta/SporeCoop-0.8.0-beta.pack"},
+                 {"browser_download_url":"https://github.com/WoodyWizard/SporeCoop/releases/download/v0.8.0-beta/SHA256SUMS.txt"}]},
+      {"tag_name":"v0.8.0","draft":false,"prerelease":true,"body":"not a \"draft\": true","html_url":"https://github.com/WoodyWizard/SporeCoop/releases/tag/v0.8.0",
+       "assets":[{"browser_download_url":"https://github.com/WoodyWizard/SporeCoop/releases/download/v0.8.0/SporeCoop-0.8.0.pack"},
+                 {"browser_download_url":"https://github.com/WoodyWizard/SporeCoop/releases/download/v0.8.0/SHA256SUMS.txt"}]},
+      {"tag_name":"v0.7.99.1","draft":false,"prerelease":false,"html_url":"https://github.com/WoodyWizard/SporeCoop/releases/tag/v0.7.99.1",
+       "assets":[{"browser_download_url":"https://github.com/WoodyWizard/SporeCoop/releases/download/v0.7.99.1/SporeCoop-0.7.99.1.pack"},
+                 {"browser_download_url":"https://github.com/WoodyWizard/SporeCoop/releases/download/v0.7.99.1/SHA256SUMS.txt"}]},
+      {"tag_name":"v0.4.0","draft":false,"prerelease":false,"html_url":"https://github.com/WoodyWizard/SporeCoop/releases/tag/v0.4.0",
+       "assets":[{"browser_download_url":"https://github.com/WoodyWizard/SporeCoop/releases/download/v0.4.0/SporeCoop-0.4.0.zip"}]}
+    ])";
+    std::vector<upd::Release> rels;
+    CHECK(upd::parse_releases(list_json, rels) && rels.size() == 2);
+    CHECK(rels[0].version == "0.8.0" && rels[0].prerelease && !rels[0].from_web);
+    CHECK(rels[1].version == "0.7.99.1" && !rels[1].prerelease);
+    CHECK(upd::find_release(rels, "v0.7.99.1", r) && r.version == "0.7.99.1");
+    CHECK(upd::find_release(rels, "0.8.0", r) && r.prerelease);
+    CHECK(!upd::find_release(rels, "0.4.0", r));
+    const char* atom = R"(<?xml version="1.0"?><feed>
+      <entry><link rel="alternate" href="https://github.com/WoodyWizard/SporeCoop/releases/tag/v0.8.0"/></entry>
+      <entry><link rel="alternate" href="https://github.com/WoodyWizard/SporeCoop/releases/tag/v0.7.99.1"/></entry>
+      <entry><link rel="alternate" href="https://github.com/WoodyWizard/SporeCoop/releases/tag/v0.7.99.1"/></entry>
+      <entry><link rel="alternate" href="https://github.com/WoodyWizard/SporeCoop/releases/tag/v0.7.17.1"/></entry>
+    </feed>)";
+    std::vector<upd::Release> atom_rels;
+    CHECK(upd::parse_releases_atom(web, atom, atom_rels) && atom_rels.size() == 3);
+    CHECK(atom_rels[0].version == "0.8.0" && atom_rels[0].from_web);
+    CHECK(atom_rels[1].version == "0.7.99.1" && atom_rels[2].version == "0.7.17.1");
 }
 
 // A Session host for the fakepeer interoperability test (no game required).

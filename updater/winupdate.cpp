@@ -308,6 +308,44 @@ bool latest_release(const std::string& api_url, Release& out, std::string& err)
     return true;
 }
 
+bool list_releases(const std::string& api_url, std::vector<Release>& out, std::string& err)
+{
+    out.clear();
+    std::string api_err;
+    if (std::string list_url = releases_api_url(api_url); !list_url.empty()) {
+        std::vector<uint8_t> body;
+        if (http_get(list_url, body, api_err, {}, 8u << 20)) {
+            if (parse_releases(std::string(body.begin(), body.end()), out)) {
+                err.clear();
+                return true;
+            }
+            api_err = "no installable releases found";
+        }
+    }
+    if (g_web_fallback_fix) {
+        std::string atom_url = web_releases_atom_url(api_url);
+        std::string web = web_latest_url(api_url);
+        if (!atom_url.empty() && !web.empty()) {
+            std::vector<uint8_t> body;
+            std::string atom_err;
+            if (http_get(atom_url, body, atom_err, {}, 4u << 20) &&
+                parse_releases_atom(web, std::string(body.begin(), body.end()), out)) {
+                err.clear();
+                return true;
+            }
+        }
+    }
+    Release rel;
+    std::string latest_err;
+    if (latest_release(api_url, rel, latest_err)) {
+        out.push_back(std::move(rel));
+        err.clear();
+        return true;
+    }
+    err = !latest_err.empty() ? latest_err : api_err;
+    return false;
+}
+
 bool download_pack(const Release& r, Pack& out, std::string& err, const Progress& progress)
 {
     if (r.pack_url.empty() || r.sums_url.empty()) {

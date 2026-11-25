@@ -152,9 +152,7 @@ sha256sum "SPORE/SporebinEP1/SporeApp.exe"
    administrator (Windows does not let normal programs write there).
 5. Start SPORE as usual.
 
-The same window updates SporeCoop (**Update to x.y.z**) and removes it (**Uninstall**). Without
-internet, run the `SporeCoopSetup.exe` from the release zip: it installs the update pack
-(`SporeCoop-<version>.pack`) lying next to it.
+The same window updates SporeCoop (**Update to x.y.z**), switches to another release via the **Version to install** dropdown (for example, to stay on a stable release while a newer major version is tested; every player still needs the same version), and removes it (**Uninstall**). In silent mode, `/version:<ver>` selects a specific release (`/downgrade` is also needed when switching to an older version). Without internet, run the `SporeCoopSetup.exe` from the release zip: it installs the update pack (`SporeCoop-<version>.pack`) lying next to it.
 
 The setup and the in-game update ask GitHub's API for the newest release. GitHub allows 60 such
 requests an hour per IP address without a login, so on a shared address or a VPN the API can answer

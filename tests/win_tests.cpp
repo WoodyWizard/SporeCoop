@@ -1484,6 +1484,13 @@ static void test_real_steam()
 
 // a local stand-in for api.github.com and github.com: the API path refuses, the release page
 // redirects to the tag, the assets are under releases/download/<tag>/
+struct FakeRel {
+    std::string tag, version;
+    bool prerelease = false, draft = false;
+    std::vector<uint8_t> pack;
+    std::string sums;
+};
+
 struct FakeGithub {
     int api_status = 403;          // the API's answer (200: a JSON release)
     int web_status = 302;          // the release page: 302 to the tag, else this status
@@ -1491,7 +1498,8 @@ struct FakeGithub {
     std::string tag = "v0.12.0";
     std::vector<uint8_t> pack;     // served as SporeCoop-<tag without v>.pack
     std::string sums;              // SHA256SUMS.txt
-    int api_hits = 0, web_hits = 0, asset_hits = 0, tag_hits = 0; // tag_hits: the redirect was followed
+    std::vector<FakeRel> list;     // BUG-1545: multi-release list (/releases?per_page=30 and releases.atom)
+    int api_hits = 0, web_hits = 0, asset_hits = 0, tag_hits = 0, list_hits = 0, atom_hits = 0;
     // BUG-0755: the next fail_left requests of a path ending in fail_path fail: fail_status 0 = the
     // connection is closed without an answer, -1 = the body breaks off halfway, else that status
     // (with Retry-After: retry_after when >= 0)
@@ -1560,6 +1568,37 @@ static void gh_answer(SOCKET c)
         g_gh.tag_hits++;
         status = "200 OK";
         body = "<html>release " + g_gh.tag + "</html>";
+    } else if (!g_gh.list.empty() && path.rfind("/repos" + repo + "?", 0) == 0) {
+        g_gh.list_hits++;
+        if (g_gh.api_status == 200) {
+            status = "200 OK";
+            body = "[";
+            for (size_t i = 0; i < g_gh.list.size(); i++) {
+                const auto& r = g_gh.list[i];
+                std::string dl = base + repo + "/download/" + r.tag + "/";
+                if (i)
+                    body += ",";
+                body += "{\"tag_name\":\"" + r.tag + "\",\"draft\":" + (r.draft ? "true" : "false") +
+                        ",\"prerelease\":" + (r.prerelease ? "true" : "false") + ",\"html_url\":\"" + base + repo +
+                        "/tag/" + r.tag + "\",\"assets\":[{\"browser_download_url\":\"" + dl + "SporeCoop-" +
+                        r.version + ".pack\"},{\"browser_download_url\":\"" + dl + "SHA256SUMS.txt\"}]}";
+            }
+            body += "]";
+        } else {
+            status = std::to_string(g_gh.api_status) + (g_gh.api_status == 429 ? " Too Many Requests" : " Forbidden");
+            body = "{\"message\":\"API rate limit exceeded for 127.0.0.1.\"}";
+        }
+    } else if (!g_gh.list.empty() && path == repo + ".atom") {
+        g_gh.atom_hits++;
+        if (g_gh.web_status == 302) {
+            status = "200 OK";
+            body = "<?xml version=\"1.0\"?><feed>";
+            for (const auto& r : g_gh.list)
+                if (!r.draft)
+                    body += "<entry><link rel=\"alternate\" href=\"" + base + repo + "/tag/" + r.tag + "\"/></entry>";
+            body += "</feed>";
+        } else
+            status = std::to_string(g_gh.web_status) + " Refused";
     } else if (path == repo + "/download/" + g_gh.tag + "/SHA256SUMS.txt") {
         g_gh.asset_hits++;
         status = "200 OK";
@@ -1568,6 +1607,21 @@ static void gh_answer(SOCKET c)
         g_gh.asset_hits++;
         status = "200 OK";
         bin = g_gh.pack;
+    } else if (!g_gh.list.empty()) {
+        for (const auto& r : g_gh.list) {
+            if (path == repo + "/download/" + r.tag + "/SHA256SUMS.txt") {
+                g_gh.asset_hits++;
+                status = "200 OK";
+                body = r.sums;
+                break;
+            }
+            if (path == repo + "/download/" + r.tag + "/SporeCoop-" + r.version + ".pack") {
+                g_gh.asset_hits++;
+                status = "200 OK";
+                bin = r.pack;
+                break;
+            }
+        }
     }
     if (bin.empty())
         bin.assign(body.begin(), body.end());
@@ -1626,7 +1680,8 @@ static void gh_release(const std::string& version, const std::string& pack_versi
     g_gh.api_status = 403;
     g_gh.web_status = 302;
     g_gh.relative = false;
-    g_gh.api_hits = g_gh.web_hits = g_gh.asset_hits = g_gh.tag_hits = 0;
+    g_gh.api_hits = g_gh.web_hits = g_gh.asset_hits = g_gh.tag_hits = g_gh.list_hits = g_gh.atom_hits = 0;
+    g_gh.list.clear();
     g_gh.fail_path.clear();
     g_gh.fail_left = g_gh.fail_hits = 0;
     g_gh.fail_status = 504;
@@ -1850,6 +1905,152 @@ static void test_setup_retry()
     CHECK(l.find("attempt 2 of 3") != std::string::npos);
 }
 
+// ---------------- BUG-1545: version selector in SporeCoopSetup.exe ----------------
+
+struct RelSpec {
+    std::string ver;
+    bool pre = false, draft = false;
+};
+
+static void gh_set_list(const std::vector<RelSpec>& specs, int api_status = 200)
+{
+    std::lock_guard<std::mutex> l(g_gh_mu);
+    g_gh.list.clear();
+    for (const auto& sp : specs) {
+        FakeRel r;
+        r.tag = "v" + sp.ver;
+        r.version = sp.ver;
+        r.prerelease = sp.pre;
+        r.draft = sp.draft;
+        r.pack = upd::write_pack(make_pack(sp.ver));
+        std::string h = upd::sha256_hex(r.pack);
+        r.sums = h + "  SporeCoop-" + sp.ver + ".pack\n";
+        g_gh.list.push_back(std::move(r));
+    }
+    for (const auto& r : g_gh.list)
+        if (!r.draft && !r.prerelease) {
+            g_gh.tag = r.tag;
+            g_gh.pack = r.pack;
+            g_gh.sums = r.sums;
+            break;
+        }
+    g_gh.api_status = api_status;
+    g_gh.web_status = 302;
+    g_gh.api_hits = g_gh.web_hits = g_gh.asset_hits = g_gh.tag_hits = g_gh.list_hits = g_gh.atom_hits = 0;
+    g_gh.fail_path.clear();
+    g_gh.fail_left = g_gh.fail_hits = 0;
+}
+
+static void test_version_picker()
+{
+    printf("setup: choose which version to install (BUG-1545)\n");
+    if (!exists(setup_exe()) || (g_gh_port == 0 && !gh_start())) {
+        printf("  FAIL no setup or no local server\n");
+        g_fail++;
+        return;
+    }
+    // 1. list_releases via API: skips drafts, keeps prerelease flag, default_release picks latest stable
+    gh_set_list({{"0.8.1-draft", true, true}, {"0.8.0", true, false}, {"0.7.99.1", false, false}, {"0.7.17.1", false, false}}, 200);
+    std::vector<upd::Release> list;
+    std::string err;
+    CHECK(upd::list_releases(gh_api(), list, err) && list.size() == 3);
+    CHECK(list.size() >= 3 && list[0].version == "0.8.0" && list[0].prerelease);
+    CHECK(list.size() >= 3 && list[1].version == "0.7.99.1" && !list[1].prerelease && list[2].version == "0.7.17.1");
+    const upd::Release* def = inst::default_release(list);
+    CHECK(def && def->version == "0.7.99.1");
+    // 2. list_releases with API 403 -> falls back to releases.atom (from_web = true)
+    gh_set_list({{"0.8.0", false, false}, {"0.7.99.1", false, false}, {"0.7.17.1", false, false}}, 403);
+    CHECK(upd::list_releases(gh_api(), list, err) && list.size() == 3 && list[0].from_web && g_gh.atom_hits == 1);
+    // 3. do_install with opt.version picks the older release even though 0.8.0 is latest
+    std::wstring g = fake_game(L"verpick_inst");
+    inst::Options o;
+    o.pack_dir = fresh_dir(L"verpick_dl");
+    o.api = gh_api();
+    o.version = "0.7.17.1";
+    upd::ReleaseBox box;
+    std::string msg;
+    inst::Result res = inst::do_install(g, o, box, msg);
+    printf("  pick 0.7.17.1 (api 403 -> atom): %s\n", msg.c_str());
+    CHECK(res == inst::Result::Ok && all_of_version(g, "0.7.17.1"));
+    // 4. upgrade to 0.8.0, then pick 0.7.99.1: blocked as Older without downgrade, succeeds with downgrade
+    o.version = "0.8.0";
+    CHECK(inst::do_install(g, o, box, msg) == inst::Result::Ok && all_of_version(g, "0.8.0"));
+    o.version = "0.7.99.1";
+    std::string older, have;
+    CHECK(inst::do_install(g, o, box, msg, {}, &older, &have) == inst::Result::Older && older == "0.7.99.1" && have == "0.8.0");
+    o.downgrade = true;
+    CHECK(inst::do_install(g, o, box, msg) == inst::Result::Ok && all_of_version(g, "0.7.99.1"));
+    // 5. SporeCoopSetup.exe /S /version:0.7.17.1 /downgrade installs the requested older version
+    gh_set_list({{"0.8.0", false, false}, {"0.7.99.1", false, false}, {"0.7.17.1", false, false}}, 200);
+    std::wstring log = g + L"\\setup_verpick.log";
+    std::wstring cmd = L"\"" + setup_exe() + L"\" /S \"/dir:" + g + L"\" /api:" + upd::widen(gh_api()) +
+                       L" /version:0.7.17.1 /downgrade \"/log:" + log + L"\"" +
+                       (inst::g_version_pick_fix ? L"" : L" /oldverpick");
+    STARTUPINFOW si{sizeof si};
+    PROCESS_INFORMATION pi{};
+    CHECK(CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi));
+    if (pi.hProcess) {
+        CHECK(WaitForSingleObject(pi.hProcess, 30000) == WAIT_OBJECT_0);
+        DWORD code = 99;
+        GetExitCodeProcess(pi.hProcess, &code);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        printf("  setup /S /version:0.7.17.1: exit %lu, %s", code, get(log).c_str());
+        CHECK(code == 0 && all_of_version(g, "0.7.17.1"));
+    }
+    // 6. Real GUI window populates the version dropdown (ID_VERSION = 15) and installs the user's pick
+    std::wstring g2 = fake_game(L"verpick_gui");
+    std::wstring gcmd = L"\"" + setup_exe() + L"\" \"/dir:" + g2 + L"\" /api:" + upd::widen(gh_api()) +
+                        (inst::g_version_pick_fix ? L"" : L" /oldverpick");
+    SetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DELAY", L"1"); // skip running-Spore check
+    STARTUPINFOW si2{sizeof si2};
+    si2.dwFlags = STARTF_USESHOWWINDOW;
+    si2.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi2{};
+    BOOL started = CreateProcessW(nullptr, gcmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si2, &pi2);
+    SetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DELAY", nullptr);
+    CHECK(started);
+    if (started) {
+        HWND w = nullptr;
+        for (int i = 0; i < 100 && !w; i++) {
+            Sleep(100);
+            w = setup_window(pi2.dwProcessId);
+        }
+        CHECK(w != nullptr);
+        HWND cb = w ? GetDlgItem(w, 15) : nullptr; // ID_VERSION
+        int count = 0;
+        for (int i = 0; i < 100 && cb; i++) {
+            count = (int)SendMessageW(cb, CB_GETCOUNT, 0, 0);
+            if (count >= 3)
+                break;
+            Sleep(100);
+        }
+        printf("  GUI version dropdown items: %d\n", count);
+        CHECK(count == 3);
+        if (count >= 3) {
+            SendMessageW(cb, CB_SETCURSEL, 2, 0); // 0.7.17.1
+            SendMessageW(w, WM_COMMAND, MAKEWPARAM(15, CBN_SELCHANGE), (LPARAM)cb);
+            HWND btn = GetDlgItem(w, 11); // ID_INSTALL
+            wchar_t btxt[128] = {};
+            GetWindowTextW(btn, btxt, 128);
+            printf("  GUI button after selecting 0.7.17.1: %s\n", upd::narrow(btxt).c_str());
+            CHECK(upd::narrow(btxt).find("0.7.17.1") != std::string::npos);
+            PostMessageW(w, WM_COMMAND, MAKEWPARAM(11, BN_CLICKED), (LPARAM)btn);
+            for (int i = 0; i < 150 && upd::installed_version(g2) != "0.7.17.1"; i++)
+                Sleep(100);
+            CHECK(all_of_version(g2, "0.7.17.1"));
+        }
+        if (w) {
+            for (int i = 0; i < 50 && WaitForSingleObject(pi2.hProcess, 100) != WAIT_OBJECT_0; i++)
+                PostMessageW(w, WM_CLOSE, 0, 0);
+        }
+        if (WaitForSingleObject(pi2.hProcess, 1000) != WAIT_OBJECT_0)
+            TerminateProcess(pi2.hProcess, 1);
+        CloseHandle(pi2.hProcess);
+        CloseHandle(pi2.hThread);
+    }
+}
+
 // ---------------- BUG-0851: the uninstaller ----------------
 
 // a fake game with SporeCoop 0.9.0 installed by do_install, the release's symbol file names and a
@@ -2021,6 +2222,8 @@ int main(int argc, char** argv)
             g_close_wait_fix = false;
         else if (!strcmp(argv[i], "--old-uninstall")) // BUG-0851 (setup only)
             inst::g_uninstall_fix = false;
+        else if (!strcmp(argv[i], "--old-verpick")) // BUG-1545 (setup only)
+            inst::g_version_pick_fix = false;
         else if (!strcmp(argv[i], "--ubat") && i + 1 < argc)
             g_ubat = upd::widen(argv[++i]);
         else if (!strcmp(argv[i], "--setup") && i + 1 < argc)
@@ -2044,6 +2247,7 @@ int main(int argc, char** argv)
         upd::g_lock_fix = false;
         inst::g_ga_fix = inst::g_ga_dir_fix = false;
         inst::g_uninstall_fix = false;
+        inst::g_version_pick_fix = false;
         g_close_wait_fix = false;
         upd::g_web_fallback_fix = false;
         upd::g_retry_fix = false;
@@ -2087,6 +2291,7 @@ int main(int argc, char** argv)
     test_setup_api403();
     test_retry();
     test_setup_retry();
+    test_version_picker();
     rmtree(g_tmp);
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;

@@ -8,6 +8,15 @@ namespace inst {
 
 bool g_fix = true;
 bool g_uninstall_fix = true; // not a lab switch: setup only (BUG-0851; setup /olduninstall, win_tests --old-uninstall)
+bool g_version_pick_fix = true; // not a lab switch: setup only (BUG-1545; setup /oldverpick, win_tests --old-verpick)
+
+const upd::Release* default_release(const std::vector<upd::Release>& list)
+{
+    for (const auto& r : list)
+        if (!r.prerelease)
+            return &r;
+    return list.empty() ? nullptr : &list[0];
+}
 
 static bool exists(const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES; }
 
@@ -229,7 +238,48 @@ Result do_install(const std::wstring& root, const Options& opt, upd::ReleaseBox&
     std::wstring lp = local_pack(opt);
     bool have_local = !lp.empty() && upd::read_pack_file(lp, pack, err);
     upd::ReleaseInfo ri = box.get(); // BUG-0077: a copy; the check thread may set the box meanwhile
-    if (!have_local || (ri.ok && upd::compare_versions(ri.rel.version, pack.version) > 0)) {
+    if (g_version_pick_fix && !opt.version.empty()) {
+        // BUG-1545: install the specific version the user chose (from a matching local pack or GitHub's release list)
+        std::string want = opt.version;
+        if (!want.empty() && (want[0] == 'v' || want[0] == 'V'))
+            want.erase(0, 1);
+        upd::Release local_r;
+        local_r.version = have_local ? pack.version : std::string();
+        upd::Release matched_local;
+        bool use_local = have_local && upd::find_release({local_r}, want, matched_local);
+        if (!use_local) {
+            upd::Release target;
+            bool found = upd::find_release(ri.releases, want, target) ||
+                         (ri.ok && upd::find_release({ri.rel}, want, target));
+            if (!found) {
+                std::vector<upd::Release> list;
+                std::string list_err;
+                if (upd::list_releases(opt.api, list, list_err)) {
+                    ri.releases = list;
+                    if (!ri.ok)
+                        if (const upd::Release* def = default_release(list))
+                            ri.rel = *def;
+                    ri.ok = ri.done = true;
+                    ri.err.clear();
+                    box.merge(ri);
+                    found = upd::find_release(list, want, target);
+                } else {
+                    err = list_err;
+                }
+            }
+            if (!found) {
+                if (!ri.releases.empty())
+                    msg = "SporeCoop " + want + " was not found among the available GitHub releases. " + kManualInstall;
+                else
+                    msg = "cannot get SporeCoop " + want + " from GitHub: " + err + ". " + kManualInstall;
+                return Result::Failed;
+            }
+            if (!upd::download_pack(target, pack, err, progress)) {
+                msg = "download failed: " + err + ". " + kManualInstall;
+                return Result::Failed;
+            }
+        }
+    } else if (!have_local || (ri.ok && upd::compare_versions(ri.rel.version, pack.version) > 0)) {
         if (!ri.ok) {
             if (!upd::latest_release(opt.api, ri.rel, err)) {
                 msg = "cannot get SporeCoop from GitHub: " + err + ". " + kManualInstall;

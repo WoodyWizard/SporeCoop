@@ -55,8 +55,20 @@ struct Release {
     std::string pack_url, sums_url;    // update pack, SHA256SUMS.txt
     std::string setup_url, page_url;   // SporeCoopSetup.exe, the release page
     bool from_web = false;             // BUG-0392: found through the release page, not the API
+    bool prerelease = false;           // BUG-1545: marked prerelease on GitHub
 };
 bool parse_release(const std::string& json, Release& out);
+// BUG-1545: list of installable releases (those with a .pack and SHA256SUMS.txt, drafts skipped)
+// from GitHub's /repos/<O>/<R>/releases JSON array, newest first
+bool parse_releases(const std::string& json, std::vector<Release>& out);
+// /repos/<O>/<R>/releases/latest -> /repos/<O>/<R>/releases?per_page=30 ("" if not a releases/latest url)
+std::string releases_api_url(const std::string& api_url);
+// /repos/<O>/<R>/releases/latest -> https://github.com/<O>/<R>/releases.atom (or local test server twin)
+std::string web_releases_atom_url(const std::string& api_url);
+// BUG-1545: fallback release list from GitHub's releases.atom feed when the API refuses (403 / 429)
+bool parse_releases_atom(const std::string& web_latest, const std::string& atom_xml, std::vector<Release>& out);
+// find a release matching `version` (optional leading 'v'/'V' ignored)
+bool find_release(const std::vector<Release>& list, const std::string& version, Release& out);
 
 // BUG-0392: the GitHub API allows 60 calls an hour per IP without a login; a shared IP or a VPN
 // gets 403 (or 429) and the setup could not install at all. The web page <owner>/<repo>/releases/latest
@@ -83,6 +95,7 @@ extern bool g_pick_fix; // not a lab switch: setup only
 // access (tests: ThreadSanitizer must report it).
 struct ReleaseInfo {
     Release rel;
+    std::vector<Release> releases; // BUG-1545: all available releases (newest first) for the setup's version picker
     bool ok = false;   // rel is valid
     bool done = false; // the check has finished (ok or not)
     std::string err;

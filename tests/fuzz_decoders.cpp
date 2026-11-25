@@ -844,9 +844,13 @@ static void fuzz_pack(uint64_t seed, int iters)
                        R"({"name":"SHA256SUMS.txt","browser_download_url":"https://example.invalid/s"}]})";
     for (int i = 0; i < iters; i++) {
         auto m = mutate(R, std::vector<uint8_t>(json.begin(), json.end()));
+        std::string s(m.begin(), m.end());
         upd::Release rel;
-        upd::parse_release(std::string(m.begin(), m.end()), rel);
-        upd::sums_lookup(std::string(m.begin(), m.end()), "SporeCoop-0.7.3.pack");
+        upd::parse_release(s, rel);
+        std::vector<upd::Release> rels;
+        upd::parse_releases("[" + s + "]", rels);
+        upd::parse_releases_atom("https://github.com/WoodyWizard/SporeCoop/releases/latest", s, rels);
+        upd::sums_lookup(s, "SporeCoop-0.7.3.pack");
         upd::compare_versions(std::string(m.begin(), m.begin() + (long)std::min<size_t>(m.size(), 12)), "0.7.3");
     }
     printf("  %d packs (%d accepted), %d JSON answers\n", iters, ok, iters);

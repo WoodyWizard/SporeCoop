@@ -14,6 +14,7 @@ struct Options {
     std::wstring pack;          // /pack: a pack file to use; empty = SporeCoop-*.pack in pack_dir
     std::wstring pack_dir;      // the setup's own folder
     std::string api = upd::kLatestUrl;
+    std::string version;        // /version: specific version to install (BUG-1545; empty = newest)
     bool downgrade = false;     // /downgrade or the player said yes: a version older than the installed one is fine
 };
 
@@ -79,5 +80,10 @@ extern bool g_ga_fix; // not a lab switch: setup only
 extern bool g_ga_dir_fix; // not a lab switch: setup only
 // tests: false = the uninstall before BUG-0851 (setup `/olduninstall`, win_tests --old-uninstall)
 extern bool g_uninstall_fix; // not a lab switch: setup only
+// tests: false = the installer before BUG-1545 (no version selection: always latest / local pack; setup `/oldverpick`, win_tests --old-verpick)
+extern bool g_version_pick_fix; // not a lab switch: setup only
+
+// newest non-prerelease in `list`, or list[0] when all are prereleases (nullptr if empty)
+const upd::Release* default_release(const std::vector<upd::Release>& list);
 
 } // namespace inst

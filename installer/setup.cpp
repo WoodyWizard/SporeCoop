@@ -5,8 +5,8 @@
 //
 // Silent mode for scripts and tests:
 //   SporeCoopSetup.exe /S [/dir:<game folder>] [/pack:<file.pack>] [/api:<releases/latest url>]
-//                      [/uninstall] [/downgrade] [/log:<file>]       exit code 0 = done
-// (/downgrade: install the setup's pack also when it is older than the installed SporeCoop)
+//                      [/version:<ver>] [/uninstall] [/downgrade] [/log:<file>]   exit code 0 = done
+// (/downgrade: install the setup's pack or chosen version also when it is older than the installed SporeCoop)
 #include <windows.h>
 #include <commctrl.h>
 #include <shlobj.h>
@@ -41,8 +41,11 @@ struct Options {
     inst::Options inst;
 } g_opt;
 
-HWND g_wnd, g_dir, g_game, g_inst, g_latest, g_status, g_install, g_remove, g_close;
+HWND g_wnd, g_dir, g_game, g_inst, g_latest, g_ver, g_status, g_install, g_remove, g_close;
 HFONT g_font, g_bold;
+// BUG-1545: versions shown in g_ver (empty string = placeholder such as "Checking GitHub...")
+std::vector<std::string> g_ver_values;
+std::string g_selected_ver;
 // BUG-0077: the release check's result, shared by the check thread, the window and the install job
 // (each copies it under the box's lock; the job never writes a global the others read)
 upd::ReleaseBox g_rel;
@@ -248,6 +251,74 @@ std::wstring dir_text()
 // SporebinEP1 (BUG-0391)
 std::wstring chosen_root(std::string* note = nullptr) { return inst::resolve_root(dir_text(), g_libs, note); }
 
+void rebuild_versions()
+{
+    if (!g_ver)
+        return;
+    SendMessageW(g_ver, CB_RESETCONTENT, 0, 0);
+    g_ver_values.clear();
+    if (!inst::g_version_pick_fix) {
+        g_selected_ver.clear();
+        EnableWindow(g_ver, FALSE);
+        return;
+    }
+    upd::ReleaseInfo ri = g_rel.get();
+    std::string lp_ver = upd::pack_version_of(upd::narrow(inst::local_pack(g_opt.inst)));
+    auto add_item = [&](const std::string& label, const std::string& val) {
+        SendMessageW(g_ver, CB_ADDSTRING, 0, (LPARAM)upd::widen(label).c_str());
+        g_ver_values.push_back(val);
+    };
+    bool lp_listed = false;
+    std::vector<upd::Release> list = ri.releases;
+    if (list.empty() && ri.ok)
+        list.push_back(ri.rel);
+    for (const auto& r : list) {
+        std::string label = "SporeCoop " + r.version;
+        if (ri.ok && r.version == ri.rel.version)
+            label += " (latest)";
+        else if (r.prerelease)
+            label += " (prerelease)";
+        if (!lp_ver.empty() && upd::compare_versions(r.version, lp_ver) == 0) {
+            label += " [local file]";
+            lp_listed = true;
+        }
+        add_item(label, r.version);
+    }
+    if (!lp_ver.empty() && !lp_listed) {
+        std::string label = "SporeCoop " + lp_ver + " (local file)";
+        SendMessageW(g_ver, CB_INSERTSTRING, 0, (LPARAM)upd::widen(label).c_str());
+        g_ver_values.insert(g_ver_values.begin(), lp_ver);
+    }
+    if (g_ver_values.empty()) {
+        add_item(ri.done ? "No versions available (offline)" : "Checking GitHub...", "");
+        SendMessageW(g_ver, CB_SETCURSEL, 0, 0);
+        return;
+    }
+    auto find_idx = [&](const std::string& want) -> int {
+        std::string w = want;
+        if (!w.empty() && (w[0] == 'v' || w[0] == 'V'))
+            w.erase(0, 1);
+        if (w.empty())
+            return -1;
+        for (size_t i = 0; i < g_ver_values.size(); i++)
+            if (!_stricmp(g_ver_values[i].c_str(), w.c_str()))
+                return (int)i;
+        for (size_t i = 0; i < g_ver_values.size(); i++)
+            if (!g_ver_values[i].empty() && upd::compare_versions(g_ver_values[i], w) == 0)
+                return (int)i;
+        return -1;
+    };
+    int sel = find_idx(g_selected_ver);
+    if (sel < 0 && !lp_ver.empty() && (!ri.ok || upd::compare_versions(lp_ver, ri.rel.version) >= 0))
+        sel = find_idx(lp_ver);
+    if (sel < 0 && ri.ok)
+        sel = find_idx(ri.rel.version);
+    if (sel < 0)
+        sel = 0;
+    SendMessageW(g_ver, CB_SETCURSEL, sel, 0);
+    g_selected_ver = g_ver_values[(size_t)sel];
+}
+
 void refresh()
 {
     std::string note; // BUG-0391: "Galactic Adventures is installed in ...\Spore 24720: using that folder."
@@ -283,19 +354,24 @@ void refresh()
                          : !ri.done ? "Newest release: checking GitHub..."
                                     : "Newest release: GitHub not reachable (" + ri.err + ")";
     SetWindowTextW(g_latest, upd::widen(latest).c_str());
-    // BUG-0094: the version the button installs, as do_install chooses it: the pack next to the
-    // setup, or GitHub's release when that is newer
-    std::string next = upd::pack_version_of(upd::narrow(inst::local_pack(g_opt.inst)));
-    if (ri.ok && (next.empty() || upd::compare_versions(ri.rel.version, next) > 0))
+    // BUG-0094 / BUG-1545: the version the button installs: the chosen version from the dropdown, or
+    // the pack next to the setup / GitHub's newest release
+    std::string next = (inst::g_version_pick_fix && !g_selected_ver.empty())
+                           ? g_selected_ver
+                           : upd::pack_version_of(upd::narrow(inst::local_pack(g_opt.inst)));
+    if ((!inst::g_version_pick_fix || g_selected_ver.empty()) && ri.ok &&
+        (next.empty() || upd::compare_versions(ri.rel.version, next) > 0))
         next = ri.rel.version;
     if (!inst::g_fix) // the old label: GitHub's release only
         next = ri.ok ? ri.rel.version : "";
     int cmp = next.empty() || v.empty() ? 0 : upd::compare_versions(next, v);
-    std::string btn = v.empty() ? "Install"
+    std::string btn = v.empty() ? (next.empty() ? "Install" : "Install " + next)
                       : cmp > 0 ? "Update to " + next
                       : cmp < 0 && inst::g_fix ? "Install older " + next
-                                               : "Reinstall";
+                                               : (next.empty() ? "Reinstall" : "Reinstall " + next);
     SetWindowTextW(g_install, upd::widen(btn).c_str());
+    if (g_ver)
+        EnableWindow(g_ver, inst::g_version_pick_fix && !g_busy && !g_ver_values.empty() && !g_ver_values[0].empty());
     EnableWindow(g_install, is_game(root) && !unsupported && !g_busy);
     EnableWindow(g_remove, is_game(root) && inst::has_sporecoop(root) && !g_busy); // BUG-0851: also half removed
     if (g_close && inst::g_fix) // BUG-0139: no closing while files are swapped
@@ -305,7 +381,17 @@ void refresh()
 DWORD WINAPI check_thread(void*)
 {
     upd::ReleaseInfo ri;
-    ri.ok = upd::latest_release(g_opt.inst.api, ri.rel, ri.err);
+    if (inst::g_version_pick_fix) {
+        ri.ok = upd::list_releases(g_opt.inst.api, ri.releases, ri.err);
+        if (ri.ok) {
+            if (const upd::Release* def = inst::default_release(ri.releases))
+                ri.rel = *def;
+            else
+                ri.ok = false;
+        }
+    } else {
+        ri.ok = upd::latest_release(g_opt.inst.api, ri.rel, ri.err);
+    }
     ri.done = true;
     if (ri.ok)
         ri.err.clear();
@@ -362,6 +448,8 @@ void start_job(bool uninstall, bool downgrade = false)
     refresh();
     auto* j = new Job{uninstall, chosen_root(), g_opt.inst, {}, false};
     j->opt.downgrade = j->opt.downgrade || downgrade;
+    if (inst::g_version_pick_fix && !g_selected_ver.empty())
+        j->opt.version = g_selected_ver;
     if (g_job)
         CloseHandle(g_job);
     g_job = CreateThread(nullptr, 0, job_thread, j, 0, nullptr);
@@ -372,6 +460,8 @@ void elevate()
     wchar_t self[MAX_PATH];
     GetModuleFileNameW(nullptr, self, MAX_PATH);
     std::wstring args = L"\"/dir:" + chosen_root() + L"\"";
+    if (inst::g_version_pick_fix && !g_selected_ver.empty())
+        args += L" \"/version:" + upd::widen(g_selected_ver) + L"\"";
     if ((INT_PTR)ShellExecuteW(g_wnd, L"runas", self, args.c_str(), nullptr, SW_SHOWNORMAL) > 32)
         PostQuitMessage(0);
 }
@@ -384,13 +474,14 @@ HWND add(const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int
     return c;
 }
 
-enum { ID_BROWSE = 10, ID_INSTALL, ID_REMOVE, ID_CLOSE, ID_DIR };
+enum { ID_BROWSE = 10, ID_INSTALL, ID_REMOVE, ID_CLOSE, ID_DIR, ID_VERSION };
 
 LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
 {
     switch (m) {
     case WM_CREATE: {
         g_wnd = w;
+        g_selected_ver = g_opt.inst.version;
         NONCLIENTMETRICSW nm{sizeof nm};
         SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof nm, &nm, 0);
         g_font = CreateFontIndirectW(&nm.lfMessageFont);
@@ -409,12 +500,15 @@ LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         g_game = add(L"STATIC", L"", 0, 20, 134, 520, 50);
         g_inst = add(L"STATIC", L"", 0, 20, 186, 520, 18);
         g_latest = add(L"STATIC", L"", 0, 20, 208, 520, 34);
-        g_install = add(L"BUTTON", L"Install", BS_DEFPUSHBUTTON, 20, 252, 170, 32, ID_INSTALL);
-        g_remove = add(L"BUTTON", L"Uninstall", BS_PUSHBUTTON, 200, 252, 120, 32, ID_REMOVE);
-        g_close = add(L"BUTTON", L"Close", BS_PUSHBUTTON, 440, 252, 100, 32, ID_CLOSE);
-        g_status = add(L"STATIC", L"", 0, 20, 296, 520, 52);
+        add(L"STATIC", L"Version to install:", 0, 20, 249, 125, 20);
+        g_ver = add(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 150, 245, 390, 220, ID_VERSION);
+        g_install = add(L"BUTTON", L"Install", BS_DEFPUSHBUTTON, 20, 286, 190, 32, ID_INSTALL);
+        g_remove = add(L"BUTTON", L"Uninstall", BS_PUSHBUTTON, 220, 286, 120, 32, ID_REMOVE);
+        g_close = add(L"BUTTON", L"Close", BS_PUSHBUTTON, 440, 286, 100, 32, ID_CLOSE);
+        g_status = add(L"STATIC", L"", 0, 20, 330, 520, 54);
         add(L"STATIC", L"github.com/WoodyWizard/SporeCoop  -  every player needs the same SporeCoop version", 0, 20,
-            356, 520, 18);
+            394, 520, 18);
+        rebuild_versions();
         refresh();
         CloseHandle(CreateThread(nullptr, 0, check_thread, nullptr, 0, nullptr));
         return 0;
@@ -445,6 +539,14 @@ LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
             if (HIWORD(wp) == EN_CHANGE)
                 refresh();
             return 0;
+        case ID_VERSION:
+            if (HIWORD(wp) == CBN_SELCHANGE) {
+                LRESULT sel = SendMessageW(g_ver, CB_GETCURSEL, 0, 0);
+                if (sel >= 0 && (size_t)sel < g_ver_values.size())
+                    g_selected_ver = g_ver_values[(size_t)sel];
+                refresh();
+            }
+            return 0;
         case ID_INSTALL:
             start_job(false);
             return 0;
@@ -461,6 +563,7 @@ LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         }
         break;
     case WM_INFO: {
+        rebuild_versions();
         refresh();
         // BUG-0392: GitHub did not answer (API and release page) and there is no pack next to the
         // setup: say how to install without the setup before the player presses Install
@@ -544,6 +647,10 @@ void parse_args()
             upd::g_retry_fix = false;
         else if (s == L"/oldmerge") // tests: the check thread's get-then-set before BUG-0244
             upd::g_release_merge_fix = false;
+        else if (s == L"/oldverpick") // tests: no version selector before BUG-1545
+            inst::g_version_pick_fix = false;
+        else if (!val(L"/version:").empty())
+            g_opt.inst.version = upd::narrow(val(L"/version:"));
         else if (!val(L"/pack:").empty())
             g_opt.inst.pack = val(L"/pack:");
         else if (!val(L"/api:").empty())
@@ -593,7 +700,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int show)
     wc.hIcon = LoadIconW(inst, MAKEINTRESOURCEW(1));
     wc.lpszClassName = L"SporeCoopSetup";
     RegisterClassW(&wc);
-    RECT r{0, 0, 560, 386};
+    RECT r{0, 0, 560, 424};
     AdjustWindowRect(&r, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, FALSE);
     HWND w = CreateWindowW(L"SporeCoopSetup", L"SporeCoop Setup", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
                            CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left, r.bottom - r.top, nullptr, nullptr, inst, nullptr);

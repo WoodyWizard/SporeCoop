@@ -37,6 +37,9 @@ bool http_location(const std::string& url, std::string& location, std::string& e
 // the newest release from the GitHub API; when the API fails (BUG-0392: 403 / 429 rate limit) from
 // the redirect of the release page web_latest_url(api_url) (out.from_web)
 bool latest_release(const std::string& api_url, Release& out, std::string& err);
+// BUG-1545: available releases for the setup's version picker (GitHub /releases?per_page=30,
+// falling back to releases.atom when the API refuses, then latest_release)
+bool list_releases(const std::string& api_url, std::vector<Release>& out, std::string& err);
 // download the release's pack, check it against SHA256SUMS.txt of the same release, parse it
 bool download_pack(const Release& r, Pack& out, std::string& err, const Progress& progress = {});
 bool read_pack_file(const std::wstring& path, Pack& out, std::string& err);

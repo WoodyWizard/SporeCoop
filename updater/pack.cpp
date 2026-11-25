@@ -355,6 +355,86 @@ bool github_download(const std::string& url)
     return url.rfind("https://github.com/", 0) == 0 || url.rfind("http://127.0.0.1:", 0) == 0;
 }
 
+// true when a top-level JSON key of `obj` (a single "{ ... }" object) has boolean value `true`
+bool json_top_bool(const std::string& obj, const std::string& key)
+{
+    int depth = 0;
+    bool in_str = false, esc = false;
+    for (size_t i = 0; i < obj.size(); i++) {
+        char c = obj[i];
+        if (in_str) {
+            if (esc)
+                esc = false;
+            else if (c == '\\')
+                esc = true;
+            else if (c == '"')
+                in_str = false;
+            continue;
+        }
+        if (c == '{' || c == '[') {
+            depth++;
+            continue;
+        }
+        if (c == '}' || c == ']') {
+            depth--;
+            continue;
+        }
+        if (c != '"')
+            continue;
+        size_t s = i + 1;
+        in_str = true;
+        size_t j = s;
+        for (; j < obj.size(); j++) {
+            if (esc)
+                esc = false;
+            else if (obj[j] == '\\')
+                esc = true;
+            else if (obj[j] == '"') {
+                in_str = false;
+                break;
+            }
+        }
+        if (in_str)
+            break;
+        bool match = depth == 1 && (j - s) == key.size() && obj.compare(s, key.size(), key) == 0;
+        i = j;
+        if (!match)
+            continue;
+        size_t p = j + 1;
+        while (p < obj.size() && (obj[p] == ' ' || obj[p] == '\t' || obj[p] == '\r' || obj[p] == '\n'))
+            p++;
+        if (p >= obj.size() || obj[p] != ':')
+            continue;
+        p++;
+        while (p < obj.size() && (obj[p] == ' ' || obj[p] == '\t' || obj[p] == '\r' || obj[p] == '\n'))
+            p++;
+        return obj.compare(p, 4, "true") == 0;
+    }
+    return false;
+}
+
+bool plain_numeric_ver(const std::string& v)
+{
+    bool digit = false;
+    for (char c : v) {
+        if (isdigit((unsigned char)c))
+            digit = true;
+        else if (c != '.')
+            return false;
+    }
+    return digit;
+}
+
+bool ieq_ascii(const std::string& a, const std::string& b)
+{
+    if (a.size() != b.size())
+        return false;
+    for (size_t i = 0; i < a.size(); i++)
+        if (tolower((unsigned char)a[i]) != tolower((unsigned char)b[i]))
+            return false;
+    return true;
+}
+
 } // namespace
 
 bool parse_release(const std::string& json, Release& out)
@@ -362,6 +442,7 @@ bool parse_release(const std::string& json, Release& out)
     out = Release{};
     out.tag = json_str(json, "tag_name", 0);
     out.page_url = json_str(json, "html_url", 0);
+    out.prerelease = json_top_bool(json, "prerelease");
     if (out.tag.empty())
         return false;
     out.version = out.tag[0] == 'v' || out.tag[0] == 'V' ? out.tag.substr(1) : out.tag;
@@ -383,6 +464,138 @@ bool parse_release(const std::string& json, Release& out)
             out.setup_url = url;
     }
     return !out.version.empty();
+}
+
+bool parse_releases(const std::string& json, std::vector<Release>& out)
+{
+    out.clear();
+    size_t i = 0;
+    while (i < json.size() && (json[i] == ' ' || json[i] == '\t' || json[i] == '\r' || json[i] == '\n'))
+        i++;
+    if (i >= json.size() || json[i] != '[')
+        return false;
+    int arr_depth = 0, obj_depth = 0;
+    bool in_str = false, esc = false;
+    size_t obj_start = std::string::npos;
+    for (; i < json.size() && out.size() < 64; i++) {
+        char c = json[i];
+        if (in_str) {
+            if (esc)
+                esc = false;
+            else if (c == '\\')
+                esc = true;
+            else if (c == '"')
+                in_str = false;
+            continue;
+        }
+        if (c == '"') {
+            in_str = true;
+            continue;
+        }
+        if (c == '[')
+            arr_depth++;
+        else if (c == ']') {
+            arr_depth--;
+            if (arr_depth <= 0)
+                break;
+        } else if (c == '{') {
+            if (arr_depth == 1 && obj_depth == 0)
+                obj_start = i;
+            obj_depth++;
+        } else if (c == '}') {
+            if (obj_depth > 0)
+                obj_depth--;
+            if (arr_depth == 1 && obj_depth == 0 && obj_start != std::string::npos) {
+                std::string obj = json.substr(obj_start, i - obj_start + 1);
+                obj_start = std::string::npos;
+                if (json_top_bool(obj, "draft"))
+                    continue;
+                Release r;
+                if (!parse_release(obj, r) || r.pack_url.empty() || r.sums_url.empty())
+                    continue;
+                bool dup = false;
+                for (const auto& x : out)
+                    if (ieq_ascii(x.version, r.version)) {
+                        dup = true;
+                        break;
+                    }
+                if (!dup)
+                    out.push_back(std::move(r));
+            }
+        }
+    }
+    return !out.empty();
+}
+
+std::string releases_api_url(const std::string& api_url)
+{
+    const std::string tail = "/releases/latest";
+    if (api_url.size() <= tail.size() || api_url.compare(api_url.size() - tail.size(), tail.size(), tail) != 0)
+        return {};
+    return api_url.substr(0, api_url.size() - 7) + "?per_page=30"; // replace "/latest" with "?per_page=30"
+}
+
+std::string web_releases_atom_url(const std::string& api_url)
+{
+    std::string web = web_latest_url(api_url);
+    const std::string tail = "/latest";
+    if (web.size() <= tail.size() || web.compare(web.size() - tail.size(), tail.size(), tail) != 0)
+        return {};
+    return web.substr(0, web.size() - tail.size()) + ".atom";
+}
+
+bool parse_releases_atom(const std::string& web_latest, const std::string& atom_xml, std::vector<Release>& out)
+{
+    out.clear();
+    const std::string mark = "/releases/tag/";
+    size_t pos = 0;
+    while (pos < atom_xml.size() && out.size() < 64) {
+        size_t k = atom_xml.find(mark, pos);
+        if (k == std::string::npos)
+            break;
+        size_t s = k;
+        while (s > 0 && atom_xml[s - 1] != '"' && atom_xml[s - 1] != '\'' && atom_xml[s - 1] != '<' &&
+               atom_xml[s - 1] != ' ' && atom_xml[s - 1] != '\t' && atom_xml[s - 1] != '\n' && atom_xml[s - 1] != '\r')
+            s--;
+        size_t e = k + mark.size();
+        while (e < atom_xml.size() && atom_xml[e] != '"' && atom_xml[e] != '\'' && atom_xml[e] != '<' &&
+               atom_xml[e] != '>' && atom_xml[e] != ' ' && atom_xml[e] != '\t' && atom_xml[e] != '\n' && atom_xml[e] != '\r')
+            e++;
+        pos = e;
+        Release r;
+        if (!release_from_redirect(web_latest, atom_xml.substr(s, e - s), r))
+            continue;
+        bool dup = false;
+        for (const auto& x : out)
+            if (ieq_ascii(x.version, r.version)) {
+                dup = true;
+                break;
+            }
+        if (!dup)
+            out.push_back(std::move(r));
+    }
+    return !out.empty();
+}
+
+bool find_release(const std::vector<Release>& list, const std::string& version, Release& out)
+{
+    std::string want = version;
+    if (!want.empty() && (want[0] == 'v' || want[0] == 'V'))
+        want.erase(0, 1);
+    if (want.empty())
+        return false;
+    for (const auto& r : list)
+        if (ieq_ascii(r.version, want)) {
+            out = r;
+            return true;
+        }
+    if (plain_numeric_ver(want))
+        for (const auto& r : list)
+            if (plain_numeric_ver(r.version) && compare_versions(r.version, want) == 0) {
+                out = r;
+                return true;
+            }
+    return false;
 }
 
 std::string web_latest_url(const std::string& api_url)
