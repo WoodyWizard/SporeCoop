@@ -2,10 +2,53 @@
 // load, guest_tick; the guest's own pool while the host is away, BUG-0205); moved out of cellsync.cpp (C8 of
 // 0.7.15, BUG-1183).
 #include "cellsync_internal.h"
+#include "cell_rivals_logic.h"
+#include "rivals.h"
 
 namespace cellsync {
 
 // ---------------- guest ----------------
+// BUG-1552: per-mirror poison cloud owner ID (host index -> player id 0..3) and Cell Rivals wscale divergence state.
+static std::unordered_map<uint32_t, uint8_t> g_mirror_cloud_owner;
+static float g_last_host_scale = 0.f;
+static bool g_scale_solo = false;
+static void solo_start();
+
+SESSION_STATE(
+    "cell.guest_rivals", nullptr,
+    [] {
+        g_mirror_cloud_owner.clear();
+        g_last_host_scale = 0.f;
+        g_scale_solo = false;
+    },
+    []() -> size_t { return g_mirror_cloud_owner.size() + (g_scale_solo ? 1u : 0u); });
+
+bool mirror_cloud_owner(uint32_t hidx, uint8_t* out_owner)
+{
+    auto it = g_mirror_cloud_owner.find(hidx);
+    if (it == g_mirror_cloud_owner.end())
+        return false;
+    if (out_owner)
+        *out_owner = it->second;
+    return true;
+}
+
+static void drop_mirrors_for_scale_solo()
+{
+    for (auto& [h, m] : g_mirrors) {
+        if (m.local) {
+            g_host_of.erase(m.local);
+            destroy_local(m.local);
+        }
+    }
+    g_mirrors.clear();
+    g_host_of.clear();
+    g_mirror_cloud_owner.clear();
+    g_touched.clear();
+    g_swallowed.clear();
+    g_cycle_seen.clear();
+    g_rounds.reset();
+}
 static void* ref_for(uint32_t inst)
 {
     return inst ? skg::cdecl_call<void*>(a_RefCreate, inst, (void*)a_Serializer) : nullptr;
@@ -116,6 +159,24 @@ void guest_state(net::Reader& r)
         if (!std::isfinite(host_scale) || host_scale <= 1e-6f || host_scale > 1e9f)
             host_scale = 0.f;
     }
+    if (host_scale > 0.f)
+        g_last_host_scale = host_scale;
+    // BUG-1552: during Cell Rivals catch-up, extreme host_scale / own_scale divergence (e.g. host level 10 wscale=15000
+    // vs guest level 1 wscale=0.5, ratio 30,000x) over-scales mirrors and purges the guest's pool empty. Switch to the
+    // guest's local pool (refilling refused tiles) so the lagging rival can eat food and catch up.
+    if (rivals_active() && cell_rivals_logic::should_use_local_pool(true, host_scale, own_scale, g_scale_solo)) {
+        if (!g_scale_solo) {
+            g_scale_solo = true;
+            H->log(M, SK_INFO,
+                   "cell_rivals: wscale diverged (host=%.4g own=%.4g ratio=%.4g) -> guest plays local pool to catch up (BUG-1552)",
+                   host_scale, own_scale, own_scale > 0.f ? host_scale / own_scale : 0.f);
+        }
+        if (!g_solo) {
+            drop_mirrors_for_scale_solo();
+            solo_start();
+        }
+        return;
+    }
     float k = host_scale > 0 && own_scale > 0 ? host_scale / own_scale : 1.f;
     if (k != 1.f)
         g_n.scale_conv++;
@@ -148,6 +209,11 @@ void guest_state(net::Reader& r)
         m.pos = p; m.vel = v; m.rot = q; m.size = size; m.hp = hp; m.seen = now;
         m.product = (flags & 4) != 0; // BUG-0958
         m.own_product = (flags & 8) != 0; // BUG-1513
+        uint8_t cowner = 0;
+        if (m.product && cell_rivals_logic::decode_cloud_owner_flags(flags, &cowner))
+            g_mirror_cloud_owner[hidx] = cowner;
+        else
+            g_mirror_cloud_owner.erase(hidx);
         m.scale = host_scale; // the pose stays in the host's scale; drawn in ours
         size *= k;
         uint8_t* c = m.local ? modes::cell_at(m.local) : nullptr;
@@ -199,6 +265,7 @@ void guest_state(net::Reader& r)
                 destroy_local(it->second.local);
                 g_n.destroyed++;
             }
+            g_mirror_cloud_owner.erase(it->first);
             it = g_mirrors.erase(it);
         } else
             ++it;
@@ -425,7 +492,10 @@ void guest_tick(double now)
         net::Vec3 want{m.pos.x + m.vel.x * (float)age, m.pos.y + m.vel.y * (float)age, m.pos.z};
         // BUG-0511: in our world scale now (it moves for ~3 s after a level change, at another moment
         // than the host's)
-        float own = m.scale > 0 ? world_scale() : 0.f, k = own > 0 ? m.scale / own : 1.f;
+        float own = m.scale > 0 ? world_scale() : 0.f;
+        if (rivals_active() && cell_rivals_logic::scale_diverged(m.scale, own))
+            continue; // BUG-1552: never over-scale mirrors during extreme Cell Rivals scale divergence
+        float k = own > 0 ? m.scale / own : 1.f;
         want.x *= k;
         want.y *= k;
         want.z *= k;
@@ -471,6 +541,9 @@ void solo_reset()
     }
     g_solo = g_solo_owed = false;
     g_solo_food[0] = g_solo_food[1] = 0;
+    g_mirror_cloud_owner.clear();
+    g_last_host_scale = 0.f;
+    g_scale_solo = false;
     solo_refill_stop(); // BUG-1408
 }
 
@@ -491,6 +564,7 @@ static void solo_start()
     }
     g_mirrors.clear();
     g_host_of.clear();
+    g_mirror_cloud_owner.clear();
     g_touched.clear();
     g_swallowed.clear();
     g_cycle_seen.clear();
@@ -512,6 +586,11 @@ static void solo_start()
 void solo_send()
 {
     g_solo_owed = false;
+    if (rivals_active()) {
+        // Cell Rivals tracks each player's food independently via SK_PROGRESS; never flush solo meals into host food.
+        g_solo_food[0] = g_solo_food[1] = 0;
+        return;
+    }
     for (int k = 0; k < 2; k++)
         while (g_solo_food[k] > 0) {
             int n = std::min(g_solo_food[k], 999); // the host refuses one meal of 1000 or more
@@ -529,18 +608,50 @@ void solo_send()
 
 void solo_tick()
 {
+    bool in_rivals_cell = is_guest() && in_cell() && rivals_active();
+    if (in_rivals_cell && g_last_host_scale > 0.f) {
+        float own_sc = world_scale();
+        bool want_scale = cell_rivals_logic::should_use_local_pool(true, g_last_host_scale, own_sc, g_scale_solo);
+        // If host was behind guest (host_scale < own_scale), MSG_CELL_STATE is paused while g_solo is true;
+        // detect host catching up via synced Rivals host food level so guest can seamlessly rejoin host's pool.
+        if (g_scale_solo && want_scale && own_sc > 0.f && g_last_host_scale < own_sc) {
+            int own_food = 0;
+            const auto& hp = rivals::race_state().players[0];
+            if (hp.present && food_total(own_food)) {
+                int host_lvl = cell_logic::level_of_food((int)hp.extra);
+                int own_lvl = cell_logic::level_of_food(own_food);
+                if (std::abs(host_lvl - own_lvl) <= 1) {
+                    want_scale = false;
+                    g_last_host_scale = 0.f;
+                }
+            }
+        }
+        if (g_scale_solo && !want_scale) {
+            H->log(M, SK_INFO,
+                   "cell_rivals: wscale converged (host=%.4g own=%.4g) -> returning to host pool (BUG-1552)",
+                   g_last_host_scale, own_sc);
+        }
+        g_scale_solo = want_scale;
+    } else if (g_scale_solo) {
+        g_scale_solo = false;
+    }
     bool want = is_guest() && in_cell() &&
-                ((C.host_away && C.host_away()) || (g_fix_solo_elsewhere && (own_world::elsewhere() || own_world::host_left())));
+                ((C.host_away && C.host_away()) || (g_fix_solo_elsewhere && (own_world::elsewhere() || own_world::host_left())) ||
+                 g_scale_solo);
     if (want == g_solo)
         return;
     if (want) {
+        if (g_scale_solo)
+            drop_mirrors_for_scale_solo();
         solo_start();
         return;
     }
     if (is_guest() && in_cell()) { // the host is back: its pool replaces ours at its first state
         g_solo = false;
         solo_refill_stop(); // BUG-1408
-        g_solo_owed = g_solo_food[0] || g_solo_food[1];
+        g_solo_owed = !rivals_active() && (g_solo_food[0] || g_solo_food[1]);
+        if (rivals_active())
+            g_solo_food[0] = g_solo_food[1] = 0;
         trace::line("cell", "host back: the host's pool replaces the guest's at its first state");
     } else if (is_guest() && solo_keep_in_editor())
         return; // BUG-1433: our own editor: the food eaten alone is kept, decided again back in Cell

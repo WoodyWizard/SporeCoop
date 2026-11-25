@@ -116,6 +116,97 @@ inline int32_t clamp_food_rollback(int32_t cur_food, int32_t delta)
     return neg < 0 ? neg : 0;
 }
 
+// BUG-1538 / BUG-1552: after rolling back late food, cap spent DNA at DNAForFood(new_food) so the Cell editor budget
+// never drops below 0 (preserving negative spent from selling starting parts).
+inline int32_t clamp_spent_after_rollback(int32_t cur_spent, int32_t dna_for_food)
+{
+    if (dna_for_food < 0)
+        return cur_spent;
+    return std::min(cur_spent, dna_for_food);
+}
+
+// BUG-1552: when a guest wins Cell first and both catch-up and draft have completely finished, unlock the host's
+// local Cell->Creature evolution bar (1000 food) if the host is still below 1000 so the party is never stranded.
+inline bool should_unlock_host_stage_end(bool is_host, bool rivals_active, bool race_end_handled, bool stage_finished,
+                                         bool catchup_active, bool draft_active, uint8_t winner, int32_t host_food,
+                                         bool already_unlocked)
+{
+    if (!is_host || !rivals_active || !race_end_handled || !stage_finished || catchup_active || draft_active ||
+        already_unlocked)
+        return false;
+    if (!rivals::valid_player(winner) || winner == 0)
+        return false;
+    return host_food < kCellFullFood;
+}
+
+// BUG-1552: bits 4..6 of MSG_CELL_STATE cell flags carry the player owner ID (0..3) of a player's poison cloud
+// (bit 4 = owner present, bits 5..6 = owner ID 0..3). Older guests ignore bits 4..7; older hosts leave bit 4 clear.
+constexpr uint8_t kCloudFlagHasOwner = 0x10u;
+constexpr uint8_t kCloudFlagOwnerShift = 5u;
+constexpr uint8_t kCloudFlagOwnerMask = 0x03u;
+
+inline uint8_t encode_cloud_owner_flags(uint8_t base_flags, uint8_t owner)
+{
+    if (!rivals::valid_player(owner))
+        return base_flags;
+    return (uint8_t)(base_flags | kCloudFlagHasOwner | ((owner & kCloudFlagOwnerMask) << kCloudFlagOwnerShift));
+}
+
+inline bool decode_cloud_owner_flags(uint8_t flags, uint8_t* out_owner)
+{
+    if ((flags & kCloudFlagHasOwner) == 0)
+        return false;
+    if (out_owner)
+        *out_owner = (uint8_t)((flags >> kCloudFlagOwnerShift) & kCloudFlagOwnerMask);
+    return true;
+}
+
+// BUG-1552: 3-4 player poison cloud PvP permission. In Cell Rivals, when the cloud owner is known, damage is allowed
+// strictly when victim and cloud owner are at War (never self-damage, never hurting neutral players while at war with a
+// third player). Falls back to `can_pvp_any` only when talking to an older host that omitted owner bits.
+inline bool allow_poison_cloud_pvp(bool cell_rivals_active, uint8_t victim_id, bool has_owner, uint8_t owner_id,
+                                   bool at_war_with_owner, bool can_pvp_any_now, bool together_allow)
+{
+    if (!cell_rivals_active)
+        return together_allow;
+    if (has_owner) {
+        if (!rivals::valid_player(owner_id) || owner_id == victim_id)
+            return false;
+        return at_war_with_owner;
+    }
+    return can_pvp_any_now;
+}
+
+// BUG-1552: during Cell Rivals catch-up when host and guest world scales diverge wildly (e.g. host at level 10
+// wscale=15000 vs guest at level 1 wscale=0.5, ratio 30,000x), stop mirroring over-scaled host cells and let the guest
+// play its own local pool so it can eat food and catch up. Hysteresis [0.25, 4.0] avoids thrashing at the boundary.
+constexpr float kScaleDivergeHigh = 8.0f;
+constexpr float kScaleDivergeLow = 0.125f;
+constexpr float kScaleConvergeHigh = 4.0f;
+constexpr float kScaleConvergeLow = 0.25f;
+
+inline bool scale_diverged(float host_scale, float own_scale)
+{
+    if (!std::isfinite(host_scale) || !std::isfinite(own_scale) || host_scale <= 1e-6f || own_scale <= 1e-6f)
+        return false;
+    float r = host_scale / own_scale;
+    return !std::isfinite(r) || r > kScaleDivergeHigh || r < kScaleDivergeLow;
+}
+
+inline bool should_use_local_pool(bool cell_rivals_active, float host_scale, float own_scale, bool currently_local)
+{
+    if (!cell_rivals_active)
+        return false;
+    if (!std::isfinite(host_scale) || !std::isfinite(own_scale) || host_scale <= 1e-6f || own_scale <= 1e-6f)
+        return currently_local;
+    float r = host_scale / own_scale;
+    if (!std::isfinite(r))
+        return true;
+    if (currently_local)
+        return r > kScaleConvergeHigh || r < kScaleConvergeLow;
+    return r > kScaleDivergeHigh || r < kScaleDivergeLow;
+}
+
 // ---- Policy gates (11.3.1) ----
 inline bool can_pvp_damage(bool cell_rivals_active, bool war_between_pair, bool friendly_fire_on)
 {
@@ -228,28 +319,104 @@ inline int item_id_to_part_index(uint32_t item_id)
     return (item_id >= 1u && item_id <= (uint32_t)kCellParts) ? (int)(item_id - 1u) : -1;
 }
 
-// Builds the Cell part draft list from the winner's 13-bit unlocked Cell part mask.
-// Unlockable parts (indices 2..11) are listed first, followed by remaining unlocked slots (0, 1, 12).
-// `common_mask` optionally excludes parts already owned by every picker.
-inline std::vector<rivals::Draft::Item> build_draft_items(uint16_t winner_mask, uint16_t common_mask = 0)
+inline bool picker_needs_part(uint16_t picker_mask, int part_idx)
+{
+    if (part_idx < 0 || part_idx >= kCellParts)
+        return false;
+    return (picker_mask & (uint16_t)(1u << part_idx)) == 0;
+}
+
+// BUG-1552: union of winner parts missing from at least one non-winner picker.
+// Returns `winner_mask` only when no picker masks were supplied (`picker_count == 0`); if every picker already owns
+// every winner part, returns 0 so no pointless no-op draft is started.
+inline uint16_t draft_missing_union_mask(uint16_t winner_mask, const uint16_t* picker_masks, size_t picker_count)
+{
+    if (!picker_masks || picker_count == 0)
+        return winner_mask;
+    uint16_t missing_union = 0;
+    for (size_t i = 0; i < picker_count; i++)
+        missing_union |= (uint16_t)(winner_mask & (uint16_t)(~picker_masks[i]));
+    return missing_union;
+}
+
+// Builds the Cell part draft list for a 2-4 player race from the winner's unlocked part mask and each non-winner
+// picker's owned mask. Only parts missing from at least one picker are offered, ordered with parts lacking on the most
+// pickers first (tie-breaking on unlockable slots 2..11 before starting slots 0, 1, 12).
+inline std::vector<rivals::Draft::Item> build_draft_items_for_pickers(uint16_t winner_mask,
+                                                                      const uint16_t* picker_masks,
+                                                                      size_t picker_count)
 {
     std::vector<rivals::Draft::Item> items;
-    uint16_t offer = (uint16_t)(winner_mask & (uint16_t)(~common_mask));
+    uint16_t offer = draft_missing_union_mask(winner_mask, picker_masks, picker_count);
     if (offer == 0)
-        offer = winner_mask; // fall back to all winner parts if pickers share everything
+        return items;
     static constexpr int kOrder[kCellParts] = {2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0, 1, 12};
+    struct Cand {
+        int idx;
+        size_t missing_by;
+        int order_pos;
+    };
+    std::vector<Cand> cands;
+    cands.reserve(kCellParts);
     for (int i = 0; i < kCellParts; i++) {
         int idx = kOrder[i];
         if ((offer & (uint16_t)(1u << idx)) == 0)
             continue;
-        const PartDesc& pd = part_desc(idx);
+        size_t miss = 0;
+        if (picker_masks && picker_count > 0) {
+            for (size_t p = 0; p < picker_count; p++)
+                if (picker_needs_part(picker_masks[p], idx))
+                    miss++;
+        }
+        cands.push_back({idx, miss, i});
+    }
+    std::stable_sort(cands.begin(), cands.end(), [](const Cand& a, const Cand& b) {
+        if (a.missing_by != b.missing_by)
+            return a.missing_by > b.missing_by;
+        return a.order_pos < b.order_pos;
+    });
+    items.reserve(cands.size());
+    for (const auto& c : cands) {
+        const PartDesc& pd = part_desc(c.idx);
         rivals::Draft::Item it;
-        it.id = part_index_to_item_id(idx);
+        it.id = part_index_to_item_id(c.idx);
         it.kind = (uint8_t)pd.kind;
         it.label = pd.name;
         items.push_back(std::move(it));
     }
     return items;
+}
+
+// Builds the Cell part draft list from the winner's 13-bit unlocked Cell part mask.
+// Unlockable parts (indices 2..11) are listed first, followed by remaining unlocked slots (0, 1, 12).
+// `common_mask` optionally excludes parts already owned by every picker (if all winner parts are excluded, returns empty).
+inline std::vector<rivals::Draft::Item> build_draft_items(uint16_t winner_mask, uint16_t common_mask = 0)
+{
+    if (common_mask == 0)
+        return build_draft_items_for_pickers(winner_mask, nullptr, 0);
+    return build_draft_items_for_pickers(winner_mask, &common_mask, 1);
+}
+
+// BUG-1552: resolves a picker's draft pick against the winner's parts and the picker's own owned parts so a 3-4p draft
+// never wastes a pick on a part the picker already owns (substitutes the first winner part the picker still lacks, or
+// returns -1 if the picker already owns every winner part).
+inline int resolve_draft_pick(uint16_t winner_mask, uint16_t picker_mask, int requested_part)
+{
+    if (requested_part >= 0 && requested_part < kCellParts &&
+        (winner_mask & (uint16_t)(1u << requested_part)) != 0 &&
+        picker_needs_part(picker_mask, requested_part)) {
+        return requested_part;
+    }
+    uint16_t missing = (uint16_t)(winner_mask & (uint16_t)(~picker_mask));
+    if (missing == 0)
+        return -1;
+    static constexpr int kOrder[kCellParts] = {2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0, 1, 12};
+    for (int i = 0; i < kCellParts; i++) {
+        int idx = kOrder[i];
+        if ((missing & (uint16_t)(1u << idx)) != 0)
+            return idx;
+    }
+    return -1;
 }
 
 // ---- Wire codecs (carried inside MSG_RIVALS_FACTION = 81, Stage::Cell) ----

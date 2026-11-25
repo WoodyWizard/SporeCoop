@@ -647,6 +647,17 @@ class Drawn(Hook):
             return o['pos']
         return tuple(x * ko / kv for x in o['pos'])
 
+    def scale_quant_slack(self, o, v):
+        """BUG-1552: `pos=` is logged with %.1f (<= 0.05 error per axis in subject's scale). When scaling from a coarser
+        Cell world (ko > kv, e.g. level 10 wscale=15000 vs level 1 wscale=0.5 during Cell Rivals catch-up), multiplying
+        o['pos'] by ko / kv amplifies that rounding error by ko / kv (~1500 m for a 0.05 rounding delta). Add the 3D
+        quantization bound 0.05 * sqrt(3) * (ko / kv) to the limit so rounding never causes false failures while real
+        drawing bugs remain caught."""
+        ko, kv = o.get('wscale'), v.get('wscale')
+        if not self.c['drawn_scale'] or o['stage'] != 'Cell' or not ko or not kv or ko <= kv:
+            return 0.0
+        return 0.05 * (3.0 ** 0.5) * (ko / kv)
+
     def check(self, tl):
         out = []
         for (viewer, pid), lst in tl.partner.items():
@@ -677,8 +688,9 @@ class Drawn(Hook):
                 # before it, SPORE_MONITOR='{"drawn_age": -1}')
                 if self.c['drawn_age'] >= 0 and p['age'] > self.c['drawn_age'] + max(p['rtt'], 0) / 1000.0:
                     return False
-                lim = DRAWN_BASE.get(p['stage'], 6.0) + p['drawn_v'] * (self.c['drawn_lag'] + max(p['rtt'], 0) / 1000.0
-                                                                       + abs(o['t'] - p['t']))
+                lim = (DRAWN_BASE.get(p['stage'], 6.0)
+                       + p['drawn_v'] * (self.c['drawn_lag'] + max(p['rtt'], 0) / 1000.0 + abs(o['t'] - p['t']))
+                       + self.scale_quant_slack(o, v))
                 d = dist(p['drawn'], self.in_scale(o, v))
                 p['_drawn'] = (d, lim, subj)
                 return d > lim

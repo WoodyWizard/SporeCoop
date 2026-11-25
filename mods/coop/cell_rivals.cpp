@@ -47,6 +47,8 @@ static bool g_sent_prog_once = false;
 static double g_last_host_check = -100.0;
 static bool g_host_prog_dirty[rivals::kMaxPlayers] = {};
 static bool g_draft_started_for_race = false;
+static bool g_race_end_handled = false;
+static bool g_host_stage_end_unlocked = false;
 static uint32_t g_meat_res_inst = 0;
 static uint32_t g_meat_model_key[3] = {};
 static uintptr_t a_CellCollect_rivals = 0;
@@ -68,6 +70,8 @@ static void rivals_reset_session()
     g_sent_prog_once = false;
     g_last_host_check = -100.0;
     g_draft_started_for_race = false;
+    g_race_end_handled = false;
+    g_host_stage_end_unlocked = false;
     g_meat_res_inst = 0;
     g_meat_model_key[0] = g_meat_model_key[1] = g_meat_model_key[2] = 0;
     g_unlock_queue = 0;
@@ -79,7 +83,8 @@ static void rivals_reset_session()
 SESSION_STATE(
     "cell.rivals", nullptr, [] { rivals_reset_session(); },
     []() -> size_t {
-        size_t n = (g_draft_started_for_race ? 1 : 0) + (g_unlock_queue ? 1 : 0) + (g_queued_creature_dna > 0 ? 1 : 0);
+        size_t n = (g_draft_started_for_race ? 1 : 0) + (g_race_end_handled ? 1 : 0) +
+                   (g_host_stage_end_unlocked ? 1 : 0) + (g_unlock_queue ? 1 : 0) + (g_queued_creature_dna > 0 ? 1 : 0);
         for (int i = 0; i < rivals::kMaxPlayers; i++)
             if (g_rp[i].reported)
                 n++;
@@ -288,6 +293,28 @@ static void on_rival_killed_host(uint8_t killer, uint8_t victim, const net::Vec3
     }
 }
 
+// ---- Report lethal rival PvP kill (direct bite/spike/electric or poison cloud) for kill credit & meat drops ----
+void rivals_report_pvp_kill(uint8_t killer, const net::Vec3& pos, float scale, int victim_level)
+{
+    if (!rivals_active() || !rivals::valid_player(killer) || !C.sess || !C.sess->connected())
+        return;
+    uint8_t me = C.sess->my_id();
+    if (killer == me || !rivals::at_war(killer, me))
+        return;
+    if (is_host()) {
+        on_rival_killed_host(killer, 0, pos, victim_level);
+    } else if (is_guest()) {
+        net::Writer w;
+        cell_rivals_logic::PvpKillMsg km{
+            killer, pos.x, pos.y, pos.z,
+            (std::isfinite(scale) && scale > 0.f) ? scale : 1.f,
+            (uint8_t)std::clamp(victim_level, 0, 16),
+        };
+        cell_rivals_logic::write_pvp_kill(w, km);
+        rivals::send_faction_to(0, rivals::Stage::Cell, cell_rivals_logic::kSubPvpKill, w);
+    }
+}
+
 // ---- Apply real PvP damage on victim's machine (vanilla death on lethal, no KO/revive) ----
 static void apply_rivals_pvp_damage(uint8_t attacker, int dmg, int type)
 {
@@ -305,17 +332,7 @@ static void apply_rivals_pvp_damage(uint8_t attacker, int dmg, int type)
         return;
     }
     // Lethal war PvP hit: drop physical meat on host and let victim die & respawn normally as in vanilla (no KO).
-    net::Vec3 p = pos_of(a);
-    float sc = world_scale();
-    int lvl = F<int>(a, kLevel);
-    if (is_host()) {
-        on_rival_killed_host(attacker, 0, p, lvl);
-    } else if (is_guest()) {
-        net::Writer w;
-        cell_rivals_logic::PvpKillMsg km{attacker, p.x, p.y, p.z, sc > 0.f ? sc : 1.f, (uint8_t)std::clamp(lvl, 0, 16)};
-        cell_rivals_logic::write_pvp_kill(w, km);
-        rivals::send_faction_to(0, rivals::Stage::Cell, cell_rivals_logic::kSubPvpKill, w);
-    }
+    rivals_report_pvp_kill(attacker, pos_of(a), world_scale(), F<int>(a, kLevel));
     F<int>(a, kHp) = 0;
     h_KillCell(a, avatar_idx(), F<void*>(a, kRes), false, type, 0.f);
 }
@@ -358,12 +375,13 @@ void rivals_on_late_food(uint8_t from, int food)
         g_rv.rollbacks_out++;
 }
 
-// ---- Draft payout delivery (next-stage Creature DNA via take_pending_draft_payout) ----
+// ---- Draft payout delivery (next-stage Creature DNA via stage-tagged take_pending_draft_payout_for) ----
 static int32_t deliver_payout_host(uint8_t pid)
 {
     if (!is_host() || !rivals::valid_player(pid))
         return 0;
-    int32_t pay = rivals::take_pending_draft_payout(pid);
+    // BUG-1552: claim only Stage::Cell draft payouts so Cell Rivals never steals Creature Rivals payouts
+    int32_t pay = rivals::take_pending_draft_payout_for(rivals::Stage::Cell, pid);
     if (pay <= 0)
         return 0;
     if (pid == 0) {
@@ -403,7 +421,8 @@ static void on_faction_message(uint8_t from, uint8_t subkind, net::Reader& r)
             g_host_prog_dirty[from] = true;
             push_player_progress_host(from);
         }
-        if (bar_is_full(rp.food) && rivals::race_state().players[from].finish_rank == 0)
+        if (!rivals::race_state().stage_finished && bar_is_full(rp.food) &&
+            rivals::race_state().players[from].finish_rank == 0)
             rivals::report_stage_complete(from);
         return;
     }
@@ -505,8 +524,16 @@ static void on_faction_message(uint8_t from, uint8_t subkind, net::Reader& r)
             int32_t adj = cell_rivals_logic::clamp_food_rollback(cur, delta);
             if (adj == 0)
                 return;
-            callguard::Hold food_guard(g_food_guard);
-            o_AddFood(adj, false);
+            {
+                callguard::Hold food_guard(g_food_guard);
+                o_AddFood(adj, false);
+            }
+            // BUG-1538 / BUG-1552: late food rollback cannot push Cell DNA below 0 (cap spent S+0x2C at DNAForFood)
+            int cur_sp = F<int32_t>(s, 0x2C);
+            set_spent_dna(cur_sp);
+            int next_sp = F<int32_t>(s, 0x2C);
+            if (next_sp != cur_sp)
+                H->log(M, SK_INFO, "cell_rivals: food rollback (%+d) capped spent %d -> %d (BUG-1538)", (int)adj, cur_sp, next_sp);
             H->log(M, SK_INFO, "cell_rivals: food chunk eaten first by rival -> rolled back %+d food", (int)adj);
         });
     }
@@ -517,6 +544,7 @@ static void on_cell_race_end(uint8_t winner)
 {
     if (!is_host() || !rivals_active() || g_draft_started_for_race || !rivals::valid_player(winner))
         return;
+    g_race_end_handled = true;
     // Refresh host's own parts mask before building the draft list
     cell_rivals_logic::ProgressMsg pm{};
     if (read_local_progress(pm)) {
@@ -526,21 +554,19 @@ static void on_cell_race_end(uint8_t winner)
         g_rp[0].reported = true;
     }
     uint16_t winner_mask = g_rp[winner].parts_mask;
-    uint16_t common_mask = 0xFFFFu;
-    bool any_other = false;
+    // BUG-1552: collect owned masks of reported non-winner pickers and offer union of missing winner parts
+    uint16_t picker_masks[rivals::kMaxPlayers] = {};
+    size_t picker_count = 0;
     if (C.sess) {
         for (const auto& p : C.sess->players()) {
-            if (!rivals::valid_player(p.id) || p.id == winner)
+            if (!rivals::valid_player(p.id) || p.id == winner || !g_rp[p.id].reported)
                 continue;
-            any_other = true;
-            common_mask &= g_rp[p.id].parts_mask;
+            picker_masks[picker_count++] = g_rp[p.id].parts_mask;
         }
     }
-    if (!any_other)
-        common_mask = 0;
-    auto items = cell_rivals_logic::build_draft_items(winner_mask, common_mask);
+    auto items = cell_rivals_logic::build_draft_items_for_pickers(winner_mask, picker_masks, picker_count);
     if (items.empty()) {
-        H->log(M, SK_INFO, "cell_rivals: race ended (winner=%u) but winner has no unlocked Cell parts to draft",
+        H->log(M, SK_INFO, "cell_rivals: race ended (winner=%u) but no unowned winner Cell parts to draft",
                (unsigned)winner);
         return;
     }
@@ -559,13 +585,30 @@ static void on_cell_draft_pick(uint8_t actor, uint32_t item_id, uint8_t /*kind*/
     int part_idx = cell_rivals_logic::item_id_to_part_index(item_id);
     if (part_idx < 0)
         return;
-    H->log(M, SK_INFO, "cell_rivals: player %u picked Cell part %d (%s) from draft", (unsigned)actor, part_idx,
-           label.c_str());
+    // BUG-1552: in 3-4p drafts a picker may pick a part they already own (offered because another picker lacked it);
+    // resolve against the picker's known parts mask so picks are never wasted no-ops.
+    int granted = part_idx;
+    uint8_t winner = rivals::draft_state().winner;
+    if (rivals::valid_player(winner) && g_rp[actor].reported) {
+        granted = cell_rivals_logic::resolve_draft_pick(g_rp[winner].parts_mask, g_rp[actor].parts_mask, part_idx);
+        if (granted < 0) {
+            H->log(M, SK_INFO, "cell_rivals: player %u already owns all winner Cell parts (skipped no-op pick %d)",
+                   (unsigned)actor, part_idx);
+            return;
+        }
+        if (granted != part_idx) {
+            H->log(M, SK_INFO, "cell_rivals: player %u already owned part %d (%s) -> substituted missing part %d (%s)",
+                   (unsigned)actor, part_idx, label.c_str(), granted, cell_rivals_logic::part_desc(granted).name);
+        }
+        g_rp[actor].parts_mask |= (uint16_t)(1u << granted);
+    }
+    H->log(M, SK_INFO, "cell_rivals: player %u picked Cell part %d (%s) from draft", (unsigned)actor, granted,
+           cell_rivals_logic::part_desc(granted).name);
     if (actor == 0) {
-        queue_local_part_unlock(part_idx);
+        queue_local_part_unlock(granted);
     } else {
         net::Writer w;
-        cell_rivals_logic::write_draft_apply(w, {cell_rivals_logic::kDraftOpUnlockPart, (uint32_t)part_idx});
+        cell_rivals_logic::write_draft_apply(w, {cell_rivals_logic::kDraftOpUnlockPart, (uint32_t)granted});
         if (rivals::send_faction_to(actor, rivals::Stage::Cell, wire::rivals_faction::SK_DRAFT_APPLY, w))
             g_rv.draft_unlocks_sent++;
     }
@@ -635,9 +678,12 @@ void rivals_tick(double now)
 
     // Deliver / apply escalating next-stage Creature DNA payout upon entering Creature stage
     if (game::mode_id() == modes::kCreature && game::avatar() && !game::cinematic_playing()) {
-        if (is_host() && !rivals::draft_state().active) {
+        const auto& ds = rivals::draft_state();
+        if (is_host() && !ds.active) {
             for (uint8_t pid = 0; pid < rivals::kMaxPlayers; pid++) {
-                if (rivals::draft_state().pending_payout[pid] > 0)
+                if (ds.pending_payout[pid] > 0 &&
+                    (ds.pending_payout_stage[pid] == rivals::Stage::Cell ||
+                     ds.pending_payout_stage[pid] == rivals::Stage::None))
                     deliver_payout_host(pid);
             }
         }
@@ -670,8 +716,13 @@ void rivals_tick(double now)
 
     if (is_host()) {
         cache_meat_resource();
-        if (rivals::race_state().winner == 255)
+        const auto& race = rivals::race_state();
+        const auto& draft = rivals::draft_state();
+        if (race.winner == 255) {
             g_draft_started_for_race = false;
+            g_race_end_handled = false;
+            g_host_stage_end_unlocked = false;
+        }
 
         cell_rivals_logic::ProgressMsg pm{};
         if (read_local_progress(pm)) {
@@ -685,12 +736,30 @@ void rivals_tick(double now)
             }
         }
 
+        // BUG-1552: if a guest won Cell first and both catch-up AND draft have completely finished while host is still
+        // below 1000 food, unlock the host's local evolution bar to 1000 so Spore's Cell->Creature evolve button opens
+        // and the party is never stranded in Cell.
+        if (g_rp[0].reported &&
+            cell_rivals_logic::should_unlock_host_stage_end(true, true, g_race_end_handled, race.stage_finished,
+                                                            race.catchup_active, draft.active, race.winner,
+                                                            g_rp[0].food, g_host_stage_end_unlocked)) {
+            g_host_stage_end_unlocked = true;
+            set_food_total(cell_rivals_logic::kCellFullFood);
+            H->log(M, SK_INFO,
+                   "cell_rivals: guest %u won Cell and catch-up/draft finished (host food=%d) -> unlocked host Cell->Creature bar (1000)",
+                   (unsigned)race.winner, (int)g_rp[0].food);
+            if (C.notice)
+                C.notice("Cell Rivals race & draft finished! Evolve button unlocked to advance to Creature stage.");
+        }
+
         // Check every player's Cell bar every second (and immediately if anyone just reached 1000)
         bool any_new_finish = false;
-        for (int i = 0; i < rivals::kMaxPlayers; i++) {
-            if (g_rp[i].reported && cell_rivals_logic::bar_is_full(g_rp[i].food) &&
-                rivals::race_state().players[i].finish_rank == 0) {
-                any_new_finish = true;
+        if (!race.stage_finished) {
+            for (int i = 0; i < rivals::kMaxPlayers; i++) {
+                if (g_rp[i].reported && cell_rivals_logic::bar_is_full(g_rp[i].food) &&
+                    race.players[i].finish_rank == 0) {
+                    any_new_finish = true;
+                }
             }
         }
         if (any_new_finish || now - g_last_host_check >= 1.0) {
@@ -698,7 +767,8 @@ void rivals_tick(double now)
             for (int i = 0; i < rivals::kMaxPlayers; i++) {
                 if (g_host_prog_dirty[i])
                     push_player_progress_host((uint8_t)i);
-                if (g_rp[i].reported && cell_rivals_logic::bar_is_full(g_rp[i].food) &&
+                if (!rivals::race_state().stage_finished && g_rp[i].reported &&
+                    cell_rivals_logic::bar_is_full(g_rp[i].food) &&
                     rivals::race_state().players[i].finish_rank == 0) {
                     rivals::report_stage_complete((uint8_t)i);
                 }
