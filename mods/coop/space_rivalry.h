@@ -5,6 +5,12 @@
 #pragma once
 
 #include <cstdint>
+#include <tuple>
+#include <vector>
+
+namespace spaceext {
+enum class Relation : uint8_t;
+}
 
 namespace rivalry {
 
@@ -22,5 +28,8 @@ bool at_war(uint8_t id);
 // budget is still in its game, shared.cpp holds the host's Space money totals until the merge's correction went out
 // (false on the host and with `coop.fix space.merge_hold_totals off`; each true answer is counted as a held total)
 bool merge_pending();
+
+// WP-R1 (BUG-0794): synchronize Space rivals mode and player relations from the unified rivals module when in Space.
+void sync_from_rivals(bool space_rivals, const std::vector<std::tuple<uint8_t, uint8_t, spaceext::Relation>>& rels);
 
 } // namespace rivalry

@@ -1266,6 +1266,45 @@ static std::string debug(const std::vector<std::string>& a)
     return e.empty() ? "ok" : e;
 }
 
+void sync_from_rivals(bool space_rivals, const std::vector<std::tuple<uint8_t, uint8_t, Relation>>& rels)
+{
+    if (!spaceext::connected() || !spaceext::in_space())
+        return;
+    if (spaceext::is_host()) {
+        if (space_rivals != spaceext::rivals() && money_ptr())
+            host_apply(space_rivals ? A_RIVALS : A_ALLIES, 0, 0);
+        if (!spaceext::rivals())
+            return;
+        bool changed = false;
+        for (const auto& [a, b, rel] : rels) {
+            if (a == b)
+                continue;
+            std::string na = spaceext::name_of(a), nb = spaceext::name_of(b);
+            if (na.empty() || nb.empty())
+                continue;
+            auto k = key(na, nb);
+            Relation cur = g_rel_names.count(k) ? g_rel_names[k] : Relation::Neutral;
+            if (cur != rel) {
+                g_rel_names[k] = rel;
+                drop_props(na, nb);
+                changed = true;
+            }
+            if (spaceext::relation(a, b) != rel) {
+                spaceext::set_relation(a, b, rel);
+                changed = true;
+            }
+        }
+        if (changed)
+            host_broadcast();
+    } else {
+        if (space_rivals && spaceext::rivals()) {
+            for (const auto& [a, b, rel] : rels)
+                if (a != b)
+                    spaceext::set_relation(a, b, rel);
+        }
+    }
+}
+
 static bool init(const SkHost* h, SkMod* m)
 {
     H = h;

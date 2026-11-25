@@ -84,6 +84,7 @@
 #include "creations.h"
 #include "species_line.h"
 #include "history.h"
+#include "rivals.h"
 #include "own_captain.h"
 #include "designs.h"
 #include "notify.h"
@@ -1030,6 +1031,7 @@ static void frame_observe(double now)
     creations::tick(now);
     species::tick(now); // WP-0 (BUG-1270): the species line (after the creations: it reads their keys)
     history::tick(now); // WP-H1 (BUG-1470): every player's own stage history
+    rivals::tick(now);  // WP-R1 (BUG-0794): shared Rivals systems (break timers, catch-up, draft, store)
     own_captain::tick(now); // WP-K1 (BUG-1475): a guest's own captain in Space
     designs::tick(now); // BUG-1272: a guest's own outfit to its species line
     civedit::tick(now); // WP-C3 (BUG-1275): a guest's own Civ editors' results into its line
@@ -1979,8 +1981,16 @@ std::string ui_world_line()
             n++;
             ready += g_ready.count(p.id) && g_ready[p.id];
         }
-        char b[200];
-        snprintf(b, sizeof b, "%s - ready %d/%d - %d s", g_vote.text.c_str(), ready, n, g_vote.left);
+        char b[256];
+        uint8_t ns = vote_next_stage();
+        if (rivals::enabled() && ns < rivals::kStages) {
+            rivals::Stage s = (rivals::Stage)ns;
+            snprintf(b, sizeof b, "%s [%s: %s] - ready %d/%d - %d s", g_vote.text.c_str(),
+                     rivals::stage_name(s, coop_ui::russian()),
+                     rivals::mode_name(rivals::config().stage_mode(s), coop_ui::russian()), ready, n, g_vote.left);
+        } else {
+            snprintf(b, sizeof b, "%s - ready %d/%d - %d s", g_vote.text.c_str(), ready, n, g_vote.left);
+        }
         return b;
     }
     uint32_t got = 0, total = 0;
@@ -2324,6 +2334,22 @@ void init_ui()
             share_all();
     };
     a.vote_active = [] { return g_vote.active; };
+    a.vote_next_stage_mode = [](std::string& label) {
+        uint8_t ns = vote_next_stage();
+        if (!rivals::enabled() || ns >= rivals::kStages)
+            return false;
+        rivals::Stage s = (rivals::Stage)ns;
+        bool ru = coop_ui::russian();
+        label = std::string(rivals::stage_name(s, ru)) + ": " + rivals::mode_name(rivals::config().stage_mode(s), ru);
+        return true;
+    };
+    a.vote_toggle_next_stage = [] {
+        uint8_t ns = vote_next_stage();
+        if (!rivals::enabled() || ns >= rivals::kStages || g_sess.role() != net::Role::Host)
+            return;
+        rivals::Stage s = (rivals::Stage)ns;
+        rivals::set_stage_mode(s, rivals::stage_is_rivals(s) ? rivals::StageMode::Together : rivals::StageMode::Rivals);
+    };
     a.one_creature = [] { return g_sess.role() == net::Role::Client && host_creature_mode(); };
     a.evolve_offer = [] { // BUG-0516
         return g_offer_editor && !g_vote.active ? std::max(1, (int)(g_offer_until - H->time_seconds())) : 0;
@@ -3012,6 +3038,15 @@ static void init_tribe_and_creations()
     creations::init(H, M, std::move(crc));
     species::init(H, M, &g_sess); // WP-0 (BUG-1270)
     history::init(H, M, &g_sess); // WP-H1 (BUG-1470, BUG-1471)
+    {
+        rivals::Ctx rvc; // WP-R1 of 0.8.0 (BUG-0794): Rivals shared systems
+        rvc.sess = &g_sess;
+        rvc.feed = feed;
+        rvc.notice = [](const std::string& t) { notice(t, -1); };
+        rvc.mode = [] { return game::mode_id(); };
+        rvc.russian = [] { return coop_ui::russian(); };
+        rivals::init(H, M, std::move(rvc));
+    }
     {
         adventure::Ctx ac; // WP-A of 0.7.99 (BUG-1474, BUG-0793): co-op Galactic Adventures
         ac.sess = &g_sess;

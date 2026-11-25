@@ -21,6 +21,7 @@
 #include "net/udp.h"
 #include "notify_text.h"
 #include "space_ext.h"
+#include "rivals.h"
 #include "settings.h"
 #include "sui.h"
 #include "typed_text.h"
@@ -83,11 +84,14 @@ constexpr uint32_t kGold = 0xFFFFCC4D, kWhite = 0xFFFFFFFF, kDim = 0xFF9DB8CC, k
                    kRed = 0xFFFF7A6A, kYellow = 0xFFFFD866;
 constexpr float kW = 760, kH = 660; // the lobby rows, the host's "Ask the players" row, the footer (version, "Report a problem")
 constexpr int kSpaceRows = 12;
-static bool g_space_page; // the lobby shows the Space page instead
-static int g_lan_first;   // the first game on the network listed (pages of three, BUG-0183)
+constexpr int kRivalsRows = 12;
+static bool g_space_page;  // the lobby shows the Space page instead
+static bool g_rivals_page; // the lobby shows the Rivals / Race page instead
+static int g_lan_first;    // the first game on the network listed (pages of three, BUG-0183)
 bool g_lan_pages_fix = true; // `coop.fix core.lan_pages off`: only the first three games, no "More" (BUG-0183)
 COOP_FIX("core.lan_pages", "BUG-0183", g_lan_pages_fix, "ui: every network game is listed, with More pages");
-static int g_space_first; // the first row shown (pages of kSpaceRows rows)
+static int g_space_first;  // the first row shown (pages of kSpaceRows rows)
+static int g_rivals_first; // the first row shown on the Rivals / Race page
 
 static const char* T(const char* en, const char* ru) { return g_ru ? ru : en; }
 
@@ -389,7 +393,9 @@ struct Dialog {
     Win chat_up = nullptr, chat_down = nullptr;
     Win creation = nullptr, creation_prev = nullptr, creation_next = nullptr, give_btn = nullptr, give_next = nullptr, jump_btn = nullptr;
     Win creation_up = nullptr, cup_prev = nullptr, cup_next = nullptr; // BUG-1403: the creature row above the role row
-    Win space_btn = nullptr; // lobby -> the Space page (Space stage only)
+    Win space_btn = nullptr;   // lobby -> the Space page (Space stage only)
+    Win rivals_btn = nullptr;  // lobby -> the Rivals / Race page (WP-R1, BUG-0794)
+    Win vote_mode_btn = nullptr; // stage transition vote: next stage Together/Rivals toggle (host)
     Win lineage_btn = nullptr; // BUG-1477: a guest's consent box "my old cells as wild species" (Cell, setting on)
     // settings page: group headers and the rows of settings_core.h kDefs, a value button and a scope tag each
     std::vector<Win> page_settings;
@@ -402,6 +408,11 @@ struct Dialog {
     Win space_title = nullptr, space_back = nullptr, space_prev = nullptr, space_next = nullptr, space_pageno = nullptr;
     Win space_text[kSpaceRows] = {}, space_button[kSpaceRows] = {};
     std::function<void()> space_action[kSpaceRows];
+    // Rivals / Race page: stage modes, relations, influence, race progress, draft, chronicle (rivals.h, BUG-0794)
+    std::vector<Win> page_rivals;
+    Win rivals_title = nullptr, rivals_back = nullptr, rivals_prev = nullptr, rivals_next = nullptr, rivals_pageno = nullptr;
+    Win rivals_text[kRivalsRows] = {}, rivals_button[kRivalsRows] = {};
+    std::function<void()> rivals_action[kRivalsRows];
 };
 static Dialog D;
 static std::map<std::string, Win> g_named; // for tests (coop.uistate)
@@ -1195,6 +1206,20 @@ static void build_dialog()
     });
     D.space_btn = add_button(L, "space", {580, 66, 720, 98}, T("Space >", "Космос >"), [] {
         g_space_page = true;
+        g_rivals_page = false;
+        g_dirty = true;
+    });
+    // WP-R1 (BUG-0794): dedicated Rivals / Race page button in the lobby top bar
+    D.rivals_btn = add_button(L, "rivals", {260, 66, 405, 98}, T("Rivals >", "Соперники >"), [] {
+        g_rivals_page = true;
+        g_space_page = false;
+        g_settings_page = false;
+        g_dirty = true;
+    });
+    // WP-R1 (BUG-0794): stage transition vote mode preview/toggle button (host toggles before Ready)
+    D.vote_mode_btn = add_button(L, "votemode", {415, 66, 570, 98}, "", [] {
+        if (A.vote_toggle_next_stage)
+            A.vote_toggle_next_stage();
         g_dirty = true;
     });
     D.chat_edit = add_edit(L, "chatedit", {40, 466, 560, 498}, "", 120);
@@ -1315,6 +1340,41 @@ static void build_dialog()
     D.space_pageno = add_label(S, {575, 554, 645, 582}, "", kDim, sui::kAlignCenter);
     D.space_next = add_button(S, "snext", {650, 548, 720, 588}, ">", [] {
         g_space_first += kSpaceRows;
+        g_dirty = true;
+    });
+
+    // ---- Rivals / Race page (WP-R1, BUG-0794) ----
+    auto& R = D.page_rivals;
+    D.rivals_title = add_label(R, {40, 104, 720, 130}, T("Rivals & Race", "Соперники и гонка"), kGold);
+    for (int i = 0; i < kRivalsRows; i++) {
+        float y = 136.f + i * 29;
+        char nm[16];
+        D.rivals_text[i] = add_label(R, {40, y + 2, 545, y + 27}, "", kWhite);
+        snprintf(nm, sizeof nm, "rbtn%d", i);
+        D.rivals_button[i] = add_button(R, nm, {555, y, 720, y + 27}, "", [i] {
+            if (!D.rivals_action[i])
+                return;
+            H->run_outside_frame(
+                [](void* p) {
+                    auto* f = (std::function<void()>*)p;
+                    (*f)();
+                    delete f;
+                },
+                new std::function<void()>(D.rivals_action[i]));
+            g_dirty = true;
+        });
+    }
+    D.rivals_back = add_button(R, "rback", {40, 548, 240, 588}, T("< Lobby", "< Лобби"), [] {
+        g_rivals_page = false;
+        g_dirty = true;
+    });
+    D.rivals_prev = add_button(R, "rprev", {500, 548, 570, 588}, "<", [] {
+        g_rivals_first = std::max(0, g_rivals_first - kRivalsRows);
+        g_dirty = true;
+    });
+    D.rivals_pageno = add_label(R, {575, 554, 645, 582}, "", kDim, sui::kAlignCenter);
+    D.rivals_next = add_button(R, "rnext", {650, 548, 720, 588}, ">", [] {
+        g_rivals_first += kRivalsRows;
         g_dirty = true;
     });
     // Enter in a field does what its button does: the chat sends, the address joins, the name continues
@@ -1921,6 +1981,36 @@ static void refresh_space()
     text(D.space_pageno, std::to_string(g_space_first / kSpaceRows + 1) + "/" + std::to_string(pages));
 }
 
+static void refresh_rivals()
+{
+    auto rows = rivals::ui_rows();
+    int n = (int)rows.size(), pages = std::max(1, (n + kRivalsRows - 1) / kRivalsRows);
+    if (g_rivals_first >= n)
+        g_rivals_first = (pages - 1) * kRivalsRows;
+    bool in_stage = rivals::valid_stage(rivals::current_stage());
+    text(D.rivals_title, in_stage ? T("Race, Relations & Chronicle", "Гонка, отношения и хроника")
+                                  : T("Rivals Stage Modes", "Режимы этапов: Соперники"));
+    for (int i = 0; i < kRivalsRows; i++) {
+        int k = g_rivals_first + i;
+        bool have = k < n;
+        show(D.rivals_text[i], have);
+        D.rivals_action[i] = have ? rows[k].on_click : nullptr;
+        show(D.rivals_button[i], have && !rows[k].button.empty() && rows[k].on_click);
+        if (!have)
+            continue;
+        text(D.rivals_text[i], rows[k].text);
+        color(D.rivals_text[i], rows[k].color ? rows[k].color : kWhite);
+        text(D.rivals_button[i], rows[k].button);
+    }
+    if (rows.empty())
+        text(D.rivals_text[0], T("Nothing here yet", "Пока ничего"));
+    show(D.rivals_text[0], true);
+    show(D.rivals_prev, pages > 1);
+    show(D.rivals_next, pages > 1);
+    show(D.rivals_pageno, pages > 1);
+    text(D.rivals_pageno, std::to_string(g_rivals_first / kRivalsRows + 1) + "/" + std::to_string(pages));
+}
+
 // ---------------- "Report a problem" in the game's pause menu (0.7.12 F1, docs/08-ui.md#ui-window-steps) ----
 // The pause menu (Esc in a stage: "Options", window 0x064C23F8 inside 0x0615B50D, loaded once per stage and shown /
 // hidden) is a column of buttons (Resume Game, Spore Guide, Spy Glass, Ban, Settings, Save, Exit to Main Menu, Quit
@@ -2090,11 +2180,15 @@ static void refresh()
     int role = A.role();
     bool lobby = role != 0;
     bool space = lobby && A.mode && A.mode() == modes::kSpace;
+    bool rivals_on = rivals::enabled();
     if (!space)
         g_space_page = false;
+    if (!lobby || !rivals_on)
+        g_rivals_page = false;
     if (!lobby)
         g_settings_page = false;
-    bool sett = lobby && g_settings_page && !g_space_page;
+    bool sett = lobby && g_settings_page && !g_space_page && !g_rivals_page;
+    bool rpage = lobby && g_rivals_page && !g_space_page && !sett;
     for (Win w : D.page_name)
         show(w, !lobby && g_step == kStepName);
     for (Win w : D.page_choose)
@@ -2108,24 +2202,44 @@ static void refresh()
     if (lobby)
         show(D.update_btn, false);
     for (Win w : D.page_lobby)
-        show(w, lobby && !g_space_page && !sett);
+        show(w, lobby && !g_space_page && !sett && !rpage);
     for (Win w : D.page_settings)
         show(w, sett);
     for (Win w : D.page_space)
         show(w, lobby && g_space_page);
-    show(D.space_btn, space && !g_space_page && !sett);
+    for (Win w : D.page_rivals)
+        show(w, rpage);
+    show(D.space_btn, space && !g_space_page && !sett && !rpage);
+    { // WP-R1 (BUG-0794): Rivals / Race button in lobby top bar
+        bool show_rbtn = lobby && rivals_on && !g_space_page && !sett && !rpage;
+        show(D.rivals_btn, show_rbtn);
+        if (show_rbtn) {
+            bool in_stage = rivals::valid_stage(rivals::current_stage());
+            text(D.rivals_btn, in_stage ? T("Race >", "Гонка >") : T("Rivals >", "Соперники >"));
+        }
+        std::string vm_label;
+        bool show_vm = lobby && rivals_on && !g_space_page && !sett && !rpage && role == 1 &&
+                       A.vote_next_stage_mode && A.vote_next_stage_mode(vm_label);
+        show(D.vote_mode_btn, show_vm);
+        if (show_vm)
+            text(D.vote_mode_btn, vm_label);
+    }
     { // BUG-1477
         const int lb = A.lineage_box ? A.lineage_box() : -1;
-        show(D.lineage_btn, lobby && !g_space_page && !sett && !space && lb >= 0);
-        if (lb >= 0)
+        show(D.lineage_btn, lobby && !g_space_page && !sett && !rpage && !space && lb >= 0);
+        if (lb >= 0) {
+            if (rivals_on)
+                sui::set_area(D.lineage_btn, {415, 66, 720, 98});
             text(D.lineage_btn, lb ? T("[x] My old cells as wild species", "[x] Мои старые клетки как дикие виды")
                                    : T("[ ] My old cells as wild species", "[ ] Мои старые клетки как дикие виды"));
+        }
     }
-    if (!lobby || g_space_page || sett) {
+    if (!lobby || g_space_page || sett || rpage) {
         show(D.chat_up, false);
         show(D.chat_down, false);
     }
     text(D.subtitle, lobby && g_space_page ? T("CO-OP: SPACE", "КООПЕРАТИВ: КОСМОС")
+                     : rpage               ? T("CO-OP: RIVALS", "КООПЕРАТИВ: СОПЕРНИКИ")
                      : sett                ? T("CO-OP: SETTINGS", "КООПЕРАТИВ: НАСТРОЙКИ")
                      : lobby               ? T("CO-OP LOBBY", "ЛОББИ КООПЕРАТИВА")
                                            : T("CO-OP", "КООПЕРАТИВ"));
@@ -2135,6 +2249,8 @@ static void refresh()
         A.lan_scan(!lobby);
     if (lobby && g_space_page)
         refresh_space();
+    else if (rpage)
+        refresh_rivals();
     else if (sett)
         refresh_settings();
     else if (lobby)
@@ -2190,6 +2306,8 @@ void test_reset()
 {
     g_settings_page = false;
     g_space_page = false;
+    g_rivals_page = false;
+    g_rivals_first = 0;
     g_shot_hide = false;
     g_shot_hidden_applied = false;
     g_shot_tag.clear();
@@ -2201,6 +2319,7 @@ void open_lobby()
 {
     g_settings_page = false;
     g_space_page = false;
+    g_rivals_page = false;
     open(true);
 }
 
@@ -2324,7 +2443,8 @@ std::string debug_state()
 {
     static const char* const steps[] = {"name", "choose", "host", "join"};
     std::string s = "open=" + std::to_string(g_want_open) + " page=" +
-                    (A.role() ? (g_space_page ? "space" : g_settings_page ? "settings" : "lobby") : "connect") +
+                    (A.role() ? (g_space_page ? "space" : g_rivals_page ? "rivals" : g_settings_page ? "settings" : "lobby")
+                              : "connect") +
                     " step=" + steps[g_step & 3] +
                     " menu_button=" + (g_menu_btn ? "yes" : "no") + " in_menu=" + (in_menu() ? "1" : "0") +
                     " input_lock=" + std::to_string(input_lock()) + " modal=" + (game_modal() ? "1" : "0") +
@@ -2400,6 +2520,14 @@ std::string debug_state()
     s += "status '" + g_status + "'\n";
     s += "joinline '" + g_join_line + "'\n";
     s += "spage first=" + std::to_string(g_space_first) + " rows=" + std::to_string(kSpaceRows) + "\n";
+    s += "rpage first=" + std::to_string(g_rivals_first) + " rows=" + std::to_string(kRivalsRows) + "\n";
+    if (g_rivals_page) {
+        for (int i = 0; i < kRivalsRows; i++)
+            if (D.rivals_text[i] && sui::visible(D.rivals_text[i]))
+                s += "rrow " + std::to_string(i) + " '" + sui::caption(D.rivals_text[i]) + "' '" +
+                     (D.rivals_button[i] && sui::visible(D.rivals_button[i]) ? sui::caption(D.rivals_button[i]) : "") +
+                     "'\n";
+    }
     if (D.address)
         s += "hostaddr '" + sui::caption(D.address) + "'\n";
     for (int i = 0; i < kSetRows; i++) // the settings rows on the page now: key, value, editable, tag

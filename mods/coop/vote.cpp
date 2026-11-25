@@ -11,8 +11,26 @@
 #include "arrival_rule.h"
 #include "designs.h"
 #include "civ_editors.h"
+#include "rivals.h"
 
 namespace coop_core {
+
+// WP-R1 (BUG-0794, docs/11-rivals.md 11.2): target stage of an active stage-transition vote (rivals::Stage::None if none).
+uint8_t vote_next_stage()
+{
+    if (!g_vote.active)
+        return (uint8_t)rivals::Stage::None;
+    const std::string& t = g_vote.text;
+    if (t.find("Creature stage") != std::string::npos)
+        return (uint8_t)rivals::Stage::Creature;
+    if (t.find("Tribe stage") != std::string::npos)
+        return (uint8_t)rivals::Stage::Tribe;
+    if (t.find("Civilization stage") != std::string::npos)
+        return (uint8_t)rivals::Stage::Civ;
+    if (t.find("Space stage") != std::string::npos)
+        return (uint8_t)rivals::Stage::Space;
+    return (uint8_t)rivals::Stage::None;
+}
 
 // Civilization and Space editors change designs (buildings, vehicles, ships, the anthem), not the
 // species: the vote and the notices say so (until 2026-10-23 a house design "evolved the species")

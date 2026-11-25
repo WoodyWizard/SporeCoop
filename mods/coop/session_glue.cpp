@@ -19,6 +19,7 @@
 #include "own_progress.h"
 #include "revive.h"
 #include "history.h"
+#include "rivals.h"
 #include "designs.h"
 #include "net/compat.h"
 #include "net/manifest.h"
@@ -156,6 +157,7 @@ void on_mode_change(uint32_t from, uint32_t to)
     }
     if (!stage_mode(to))
         return;
+    rivals::on_stage_change(from, to); // WP-R1 (BUG-0794): stage race / Space rivalry sync
     bool new_stage = g_last_stage && to != g_last_stage;
     bool evolved = g_was_in_editor && !new_stage;
     g_was_in_editor = false;
@@ -1275,6 +1277,9 @@ void setup_callbacks()
             return;
         case net::Route::History: // WP-H1 (BUG-1470): every player's own stage history
             history::on_message(from, r);
+            return;
+        case net::Route::Rivals: // WP-R1 (BUG-0794): Rivals shared systems
+            rivals::on_message(from, r);
             return;
         case net::Route::Tribe: {
             tribe::on_message(type, from, r);

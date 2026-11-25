@@ -11,6 +11,7 @@
 #include "cocoon.h"
 #include "fov.h"
 #include "editor_depth.h"
+#include "rivals.h"
 #include "net/compat.h"
 #include "net/kick.h"
 #include "net/manifest.h"
@@ -1688,6 +1689,13 @@ void register_commands_core()
         "coop.adventure [status|goals|actors|bodies|act <n>|place <hex>|credit <slot>|state <5|6>|hit <id> <dmg>|kill <id>|spawn_extra] - co-op Galactic Adventures status and test controls (BUG-0845, BUG-1474, BUG-0793)";
     H->command_add(M, "coop.adventure", adv_help, adv_cmd, nullptr, MT);
     H->command_add(M, "coop.adv", adv_help, adv_cmd, nullptr, MT);
+    H->command_add(
+        M, "coop.rivals",
+        "coop.rivals [status | mode <stage> <together|rivals> | preset <all_together|all_rivals> | catchup <s> | "
+        "draftpicks <n> | distance <near|middle|far> | ally|war|break|peace|accept|decline <id> | "
+        "influence <add|buy|turn|protect|smooth> ... | win <id> | draft <start|pick|skip|payout> ... | chronicle | "
+        "fasttimers <1|0>] - Rivals shared systems status and controls (BUG-0794)",
+        rivals::command, nullptr, MT);
     H->command_add(M, "coop.awaytest", "coop.awaytest 1|0 - tests (BUG-1084, a guest): the host counts as in an editor (away after 4 s) until 0",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1)

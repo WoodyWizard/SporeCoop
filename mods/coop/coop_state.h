@@ -397,6 +397,7 @@ void own_dna_credit_now(); // BUG-1341: the totals phase credits this frame's pa
 std::string own_dna_status();
 
 // ---- defined in vote.cpp ----
+uint8_t vote_next_stage(); // rivals::Stage (0..4, or 255 if current vote is not a stage transition)
 alignas(16) extern uint8_t g_blank_e84[0x1000];
 extern BlockingErrors_t o_BlockingErrors;
 extern CellToCreature_t o_CellToCreature;

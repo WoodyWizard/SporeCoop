@@ -48,6 +48,9 @@ struct Api {
     std::function<void(bool)> set_ready;
     std::function<void()> share_world; // host (during a vote: start the evolution now)
     std::function<bool()> vote_active;
+    // WP-R1 (BUG-0794): stage transition vote next-stage mode preview and host toggle
+    std::function<bool(std::string& label)> vote_next_stage_mode;
+    std::function<void()> vote_toggle_next_stage;
     // BUG-0516 (guest): the host evolves without a vote and offers this guest its own editor: the seconds the
     // offer still holds (0 = none). The ready button then reads "Evolve now" and set_ready(true) takes the offer.
     std::function<int()> evolve_offer;

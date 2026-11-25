@@ -6,6 +6,34 @@ namespace civ {
 
 std::string debug(const std::vector<std::string>& a)
 {
+    if (!a.empty() && a[0] == "factions") { // WP-R1 (BUG-0794): read-only cCivilization faction diagnostic
+        if (game::mode_id() != modes::kCiv || !nm() || !a_GetAllCivs)
+            return "civ factions: count=0 (not in civ stage)\n";
+        auto cs = vec_of(thiscall<void*>(a_GetAllCivs, nm()));
+        char b[256];
+        snprintf(b, sizeof b, "civ factions: count=%u\n", (unsigned)cs.size());
+        std::string out = b;
+        for (size_t i = 0; i < cs.size(); i++) {
+            void* c = cs[i];
+            if (!c || !skg::readable(c, 0xC0))
+                continue;
+            uint32_t pol = F<uint32_t>(c, kPol);
+            uint8_t is_pl = F<uint8_t>(c, 0x89);
+            float money = a_GetMoney ? thiscall<float>(a_GetMoney, c) : F<float>(c, 0x98);
+            void** cb = F<void**>(c, kCivCities);
+            void** ce = F<void**>(c, kCivCities + 4);
+            unsigned n_cities = (cb && ce >= cb && ce - cb < 512) ? (unsigned)(ce - cb) : 0;
+            void** vb = F<void**>(c, 0xB0);
+            void** ve = F<void**>(c, 0xB4);
+            unsigned n_vehs = (vb && ve >= vb && ve - vb < 512) ? (unsigned)(ve - vb) : 0;
+            void* culture = (uint8_t*)c + 0x6C;
+            snprintf(b, sizeof b,
+                     "  civ #%u ptr=%p pol=0x%08X player=%u money=%.0f cities=%u vehicles=%u culture=%p\n",
+                     (unsigned)i, c, (unsigned)pol, (unsigned)is_pl, money, n_cities, n_vehs, culture);
+            out += b;
+        }
+        return out;
+    }
     if (!a.empty() && a[0] == "owndesign") // BUG-1274: owndesign [set <hex id> <hex inst> | did <city> <loco> | hpref ...]
         return own_designs_debug(std::vector<std::string>(a.begin() + 1, a.end()));
     if (!a.empty() && (a[0] == "influence" || a[0] == "canbuy" || ((a[0] == "convert" || a[0] == "unroad") && is_host()))) // BUG-1284..1287 (tests)

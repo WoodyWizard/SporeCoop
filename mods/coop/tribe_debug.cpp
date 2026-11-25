@@ -93,6 +93,32 @@ std::string debug(const std::vector<std::string>& a)
             return "usage: coop.tribe fix chiefs|gameover|ko|epic_players|epic_herd|away 0|1";
         return "fix " + a[1] + " " + (on ? "on" : "off");
     }
+    if (!a.empty() && a[0] == "factions") { // WP-R1 (BUG-0794): read-only cTribe faction diagnostic
+        if (game::mode_id() != modes::kTribe)
+            return "tribe factions: count=0 (not in tribe stage)\n";
+        void* pt = player_tribe();
+        auto ts = all_tribes();
+        char b[256];
+        snprintf(b, sizeof b, "tribe factions: count=%u\n", (unsigned)ts.size());
+        std::string out = b;
+        for (size_t i = 0; i < ts.size(); i++) {
+            void* t = ts[i];
+            if (!t || !skg::readable(t, 0x558))
+                continue;
+            net::Vec3 p = tribe_pos(t);
+            size_t mc = members(t).size();
+            void* hut = F<void*>(t, 0x368);
+            int food = vcall<int>(t, 0xA4 / 4);
+            int arch = F<int>(t, 0x550);
+            void* cont = (uint8_t*)t + 0x20C;
+            void* planner = F<void*>(t, 0x290);
+            snprintf(b, sizeof b,
+                     "  tribe #%u ptr=%p player=%d pos=(%.1f,%.1f,%.1f) members=%u hut=%p food=%d arch=%d cont=%p planner=%p\n",
+                     (unsigned)i, t, t == pt ? 1 : 0, p.x, p.y, p.z, (unsigned)mc, hut, food, arch, cont, planner);
+            out += b;
+        }
+        return out;
+    }
     if (a.size() >= 2 && a[0] == "ring") { // ring <id>: the HUD shows the target ring under member / NPC creature <id>
         void* c = local_of((uint16_t)atoi(a[1].c_str()));
         char b[96];
