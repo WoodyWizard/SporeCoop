@@ -814,6 +814,32 @@ static void recompute_civ_city_totals(void* civ)
     F<int32_t>(civ, 0x24) = buildings;
 }
 
+static void sanitize_city_pose(void* c, size_t idx)
+{
+    if (!readable(c, 0x20))
+        return;
+    float x = F<float>(c, 0x00), y = F<float>(c, 0x04), z = F<float>(c, 0x08);
+    bool bad_pos = !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) || (x * x + y * y + z * z < 100.0f);
+    if (bad_pos) {
+        // FillPlanetDataForTechLevel on unvisited planets leaves cCityData::pos at (0,0,0), which causes
+        // 0/0 NaN cube-map projection faults at PlanetRecord_EcoLevel+0x858 (0x00BBD808) on landing (BUG-1555).
+        float angle = (float)idx * 2.0943951f; // ~120 deg spacing
+        float lat = (idx % 2 == 0) ? 0.35f : -0.35f;
+        float rad = 160.0f;
+        F<float>(c, 0x00) = rad * std::cos(lat) * std::cos(angle);
+        F<float>(c, 0x04) = rad * std::cos(lat) * std::sin(angle);
+        F<float>(c, 0x08) = rad * std::sin(lat);
+    }
+    float qx = F<float>(c, 0x0C), qy = F<float>(c, 0x10), qz = F<float>(c, 0x14), qw = F<float>(c, 0x18);
+    float qn = qx * qx + qy * qy + qz * qz + qw * qw;
+    if (!std::isfinite(qn) || qn < 0.01f) {
+        F<float>(c, 0x0C) = 0.0f;
+        F<float>(c, 0x10) = 0.0f;
+        F<float>(c, 0x14) = 0.0f;
+        F<float>(c, 0x18) = 1.0f;
+    }
+}
+
 static void ensure_city_count(void* rec, uint32_t pol, uint16_t want)
 {
     if (!readable(rec, 0x188) || active_planet_id() == F<uint32_t>(rec, 0x184))
@@ -823,6 +849,8 @@ static void ensure_city_count(void* rec, uint32_t pol, uint16_t want)
         return;
     want = clamp_emig_cities((int)want);
     auto cities = ptr_vec((uint8_t*)civ + 0x3C, 64);
+    for (size_t i = 0; i < cities.size() && i < want; i++)
+        sanitize_city_pose(cities[i], i);
     if (cities.size() > want) {
         // cCityData (0xC4, docs/re/space.md#space-colony-cities) is a plain struct with no vtable (pos at +0x00),
         // so never vcall Release on it: shrink end pointer, clear tail slots, and recompute civ turret/building sums.

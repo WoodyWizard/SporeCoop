@@ -903,6 +903,9 @@ uint8_t report_stage_complete(uint8_t player_id)
         return 0;
     if (g_state.race.stage == Stage::None)
         g_state.race.stage = current_stage();
+    // Idempotent: never re-award Chronicle points or re-emit stage win notices for a player already ranked.
+    if (g_state.race.players[player_id].finish_rank != 0)
+        return g_state.race.players[player_id].finish_rank;
     bool pres[kMaxPlayers];
     fill_present(pres);
     for (int i = 0; i < kMaxPlayers; i++)

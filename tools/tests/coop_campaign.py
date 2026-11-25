@@ -628,6 +628,11 @@ class Campaign:
         finally:
             for p in [self.host] + ([self.guests[0]] if self.guests else []):
                 try:
+                    # Return to main Lobby page so subsequent stage-vote clicks find the "I'm ready" button.
+                    ui = Ui(p.con, p.name)
+                    if 'page=rivals' in (p.call('coop.uistate') or ''):
+                        ui.click('rback')
+                        time.sleep(0.2)
                     p.call('coop.uistate 0')
                 except (OSError, ValueError):
                     pass
@@ -1258,9 +1263,12 @@ class Campaign:
                 # BUG-1351: in Civ also each guest's own arrival editors done (they open 20 s after its arrival; the
                 # 20 s of "together" below could end before them, and the play phase then met them)
                 arr = {g.name: arrival_phase(g.con) for g in self.guests} if nxt == 'civ' else {}
+                # Space Rivals (R5): guests emigrate to their own homeworld stars, so same_place=0 is expected.
+                rivals_space_ok = (self.a.rivals and nxt == 'space' and all(v == 'space' for v in st.values())
+                                   and all('emigrated=1' in (g.call('coop.space rivals') or '') for g in self.guests))
                 if any(v in ARRIVAL_BUSY for v in arr.values()):
                     good = None
-                elif all(v == nxt for v in st.values()) and all(g.pid in tog for g in self.guests):
+                elif rivals_space_ok or (all(v == nxt for v in st.values()) and all(g.pid in tog for g in self.guests)):
                     # together for 20 s: right after a stage change the guests can still be in their
                     # old copy (the host's world arrives a few seconds later and they reload)
                     good = good or time.time()
@@ -1958,7 +1966,12 @@ class Campaign:
         rival_pols = set()
         if self.a.rivals:
             cr = h.call('coop.civ rivals') or ''
-            rival_pols = {m.group(1).upper() for m in re.finditer(r'p[1-3]:\s*pol=0x([0-9A-Fa-f]+)', cr)}
+            if 'transition_ready=1' in cr:
+                self.note('civ rivals: transition_ready=1 -> clicking History to advance to Space')
+                self.history()
+                return
+            rival_pols = {m.group(1).upper() for m in re.finditer(r'nation p=[1-3]\s+pol=0x([0-9A-Fa-f]+)', cr)}
+            rival_pols |= {m.group(1).upper() for m in re.finditer(r'p[1-3]:\s*pol=0x([0-9A-Fa-f]+)', cr)}
             rival_pols |= {m.group(1).upper() for m in re.finditer(r'pid=[1-3]\s+pol=(?:0x)?([0-9A-Fa-f]+)', cr)}
         took = 0
         left = [o for o in others if o[1] != pol and o[1].upper() not in rival_pols]
@@ -2130,6 +2143,16 @@ class Campaign:
                 break
         f = fz.fin(h.con)
         ck(f.get('waiting') == '1' or f.get('entered') == '1', f'the host waits at the core ({f["line"]})')
+        if self.a.rivals:
+            # Space Rivals (11.7): first player entering the Galactic Core immediately wins Chronicle Finale (+250)
+            # without partner-wait or "Fly to Alice"; verify finale_awarded=1 synced across host and guests.
+            awarded = fz.wait(
+                lambda: 'finale_awarded=1' in (h.call('coop.space rivals') or '')
+                and all('finale_awarded=1' in (g.call('coop.space rivals') or '') for g in self.guests),
+                30,
+            )
+            ck(bool(awarded), f'rivals Space Chronicle Finale awarded & synced ({(h.call("coop.space rivals") or "").splitlines()[0]})')
+            return
         if getattr(self.a, 'finale_from_galaxy', False):  # tests (BUG-0335): the guests wait in the galaxy view
             for g in self.guests:
                 self.take_off(g)
