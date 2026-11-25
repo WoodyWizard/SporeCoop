@@ -2167,4 +2167,12 @@ update still does not touch it, and the server does not update the game.
   to out/dist).
 * Not done: the helper does not update the game on the server's PC; no Linux; a host who said N is asked again at
   the next start only.
+* Published 2026-11-24 about 19:50 as "Lineages 71-dev" (8201f078, five files: the .srvpack is new; their SHA-256 on
+  GitHub equal SHA256SUMS.txt). Checked on the release's own files: the setup with `/server` into a dummy game
+  folder, the start file's check against GitHub ("up to date"), a stripped 71-dev game connected to that server
+  (encrypted) and hosted and loaded a Cell save. After publishing: a QA game on 70-dev answers `coop.update`:
+  `available running=0.7.14.1-lineages70-dev latest=0.7.14.1-lineages71-dev` (the old updater reads the release with
+  its new asset), and a server folder whose version file says 70-dev is told "Lineages 0.7.14.1-lineages71-dev is
+  out". Not run: the download of a server pack from GitHub itself (no release newer than the first one with a server
+  exists yet) and a planet on the installed server.
 
