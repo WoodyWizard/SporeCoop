@@ -117,6 +117,9 @@ constexpr ReservedMsg kReservedMsgs[] = {
     {77, "RESCUE", Family::creature, "WP-R1 revive (feat/w71-revive): K_DOWN, K_RESULT, K_LINES"},
     {78, "UFO_LEAD", Family::space, "WP-S1 fleets (fix/w73-fleet, BUG-1288; the agy branch's 74 moves here)"},
     {79, "ADVENTURE", Family::creature, "WP-A co-op Galactic Adventures (0.7.99, BUG-1474/BUG-0793): shared run + host actors"},
+    {80, "RIVALS", Family::session, "WP-R1 Rivals shared systems (0.8.0, BUG-0794): stage modes, relations, influence, race, draft, chronicle"},
+    {81, "RIVALS_FACTION", Family::npc, "WP-R3..R6 Rivals faction ownership, base sites, per-player NPC diplomacy, perspective, emigration (0.8.0)"},
+    {82, "ADV_EDITOR", Family::creature, "WP-AE shared Adventure Editor (0.8.0, BUG-0863): placements, transforms, acts, goals, captain, leases, undo/redo"},
 };
 inline const ReservedMsg* reserved_msg(uint8_t id)
 {

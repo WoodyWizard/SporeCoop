@@ -77,14 +77,20 @@
 // tribe 1.2 (WP-G Tribe friendly fire BUG-0899; WP-F chief hold/facing BUG-1347/1458), civ 1.3 (WP-G Civ friendly fire
 // BUG-0899, citizen gestures BUG-1231; WP-F city decorations BUG-1456, vehicle burst BUG-0438), space 1.5 (WP-F colony
 // citizen lead BUG-1404), creations 1.3 (WP-Q shared creations library BUG-0873).
-FAMILY(session,   1, 1, 3, STAGE_ALWAYS, "session", "net/protocol.h wire/history.h")
-FAMILY(world,     2, 1, 1, STAGE_ALWAYS, "world transfer", "")
-FAMILY(creature,  3, 1, 4, STAGE_CREATURE, "Creature", "wire/adventure.h")
-FAMILY(npc,       4, 1, 2, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
-FAMILY(cell,      5, 1, 3, STAGE_CELL, "Cell", "")
-FAMILY(tribe,     6, 1, 2, STAGE_TRIBE, "Tribe", "wire/tribe_anim.h")
-FAMILY(civ,       7, 1, 3, STAGE_CIV | STAGE_SPACE, "Civilization", "")
-FAMILY(space,     8, 1, 5, STAGE_SPACE, "Space", "wire/common.h wire/space_core.h wire/space_map.h wire/space_contracts.h wire/space_diplomacy.h wire/space_finale.h wire/space_rivalry.h wire/space_allies.h wire/space_trade.h wire/space_planets.h wire/space_badges.h wire/space_eco.h wire/space_ufo.h")
+// WP-0 of 0.8.0 (docs/plan-0.8.md): Rivals + 0.8.0 release minors bumped once so parallel WPs never collide:
+// session 1.4 (WP-R1 MSG 80 RIVALS, BUG-0794; WP-Q CAP_JOIN_PROOF password, BUG-0867; WP-C CAP_RESUME_WORLD, BUG-0869),
+// world 1.2 (WP-C Cell warm reconnect receipt, BUG-0869), creature 1.5 (WP-AE MSG 82 ADV_EDITOR, BUG-0863; WP-R3 Creature
+// Rivals, BUG-1547), npc 1.3 (WP-R3..R6 MSG 81 RIVALS_FACTION; WP-T Tribe UFO mirror, BUG-1543), cell 1.4 (WP-R2 Cell
+// Rivals, BUG-1546), tribe 1.3 (WP-R4 Tribe Rivals, BUG-1548; WP-T epic fix, BUG-1542), civ 1.4 (WP-R5 Civ Rivals,
+// BUG-1549), space 1.6 (WP-R6 Space Rivals, BUG-1550).
+FAMILY(session,   1, 1, 4, STAGE_ALWAYS, "session", "net/protocol.h wire/history.h")
+FAMILY(world,     2, 1, 2, STAGE_ALWAYS, "world transfer", "")
+FAMILY(creature,  3, 1, 5, STAGE_CREATURE, "Creature", "wire/adventure.h")
+FAMILY(npc,       4, 1, 3, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
+FAMILY(cell,      5, 1, 4, STAGE_CELL, "Cell", "")
+FAMILY(tribe,     6, 1, 3, STAGE_TRIBE, "Tribe", "wire/tribe_anim.h")
+FAMILY(civ,       7, 1, 4, STAGE_CIV | STAGE_SPACE, "Civilization", "")
+FAMILY(space,     8, 1, 6, STAGE_SPACE, "Space", "wire/common.h wire/space_core.h wire/space_map.h wire/space_contracts.h wire/space_diplomacy.h wire/space_finale.h wire/space_rivalry.h wire/space_allies.h wire/space_trade.h wire/space_planets.h wire/space_badges.h wire/space_eco.h wire/space_ufo.h")
 FAMILY(shared,    9, 1, 0, STAGE_TRIBE | STAGE_CIV | STAGE_SPACE, "shared resources", "wire/common.h wire/shared_res.h")
 FAMILY(creations, 10, 1, 3, STAGE_ALWAYS, "creations", "species_line_core.h library_core.h")
 

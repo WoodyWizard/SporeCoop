@@ -140,14 +140,14 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 
 | Family | Id | Rev | Used in | Covers |
 |---|---|---|---|---|
-| session (session) | 1 | 1.3 | every stage and the menus | `HELLO`, `WELCOME`, `REJECT`, `PLAYER_JOIN`, `PLAYER_LEAVE`, `PLAYER_STATE`, `CHAT`, `PING`, `PONG`, `BYE`, `ABILITY`, `PING_MARK`, `READY`, `LOBBY`, `NOTICE`, `DIAG`, `SETTINGS`, `COLORS`, `REPORT`, `HOST_WORLD`, `HOST_BUSY`, `PLAYER_HISTORY` |
-| world (world transfer) | 2 | 1.1 | every stage and the menus | `WORLD_OFFER`, `WORLD_FILE`, `WORLD_CHUNK`, `WORLD_DONE` |
-| creature (Creature) | 3 | 1.4 | Creature | `ANIM`, `WORLD_TIME`, `DNA`, `DNA_ADD`, `VOTE`, `SPECIES`, `SOCIAL`, `NEST`, `PARTS`, `EFFECT`, `PROGRESS`, `RESCUE`, `ADVENTURE` |
-| npc (mirrored creature and world state) | 4 | 1.2 | Creature, Tribe, Civilization | `DAMAGE`, `NPC_STATE`, `NPC_SPAWN`, `NPC_DESPAWN`, `DAMAGE_REQ`, `WOBJ`, `FIELDS`, `NPC_RESYNC`, `NPC_ANIM`, `WSTATE`, `PLAYER_RULE`, `MIRROR_FX`, `NPC_MEAT` |
-| cell (Cell) | 5 | 1.3 | Cell | `CELL_STATE`, `CELL_HIT`, `CELL_EAT`, `CELL_FOOD`, `CELL_KO`, `CELL_BITTEN`, `CELL_MATE` |
-| tribe (Tribe) | 6 | 1.2 | Tribe | `TRIBE_STATE`, `TRIBE_CMD`, `TRIBE_ANIM` |
-| civ (Civilization) | 7 | 1.3 | Civilization, Space | `CIV_STATE`, `CIV_CMD`, `CIV_BUILD`, `ROLE`, `CIV_ALARM`, `CIV_WALLET` |
-| space (Space) | 8 | 1.5 | Space | `UFO_STATE`, `UFO_HIT`, `UFO_DAMAGE`, `SPACE`, `UFO_LEAD` |
+| session (session) | 1 | 1.4 | every stage and the menus | `HELLO`, `WELCOME`, `REJECT`, `PLAYER_JOIN`, `PLAYER_LEAVE`, `PLAYER_STATE`, `CHAT`, `PING`, `PONG`, `BYE`, `ABILITY`, `PING_MARK`, `READY`, `LOBBY`, `NOTICE`, `DIAG`, `SETTINGS`, `COLORS`, `REPORT`, `HOST_WORLD`, `HOST_BUSY`, `PLAYER_HISTORY` |
+| world (world transfer) | 2 | 1.2 | every stage and the menus | `WORLD_OFFER`, `WORLD_FILE`, `WORLD_CHUNK`, `WORLD_DONE` |
+| creature (Creature) | 3 | 1.5 | Creature | `ANIM`, `WORLD_TIME`, `DNA`, `DNA_ADD`, `VOTE`, `SPECIES`, `SOCIAL`, `NEST`, `PARTS`, `EFFECT`, `PROGRESS`, `RESCUE`, `ADVENTURE` |
+| npc (mirrored creature and world state) | 4 | 1.3 | Creature, Tribe, Civilization | `DAMAGE`, `NPC_STATE`, `NPC_SPAWN`, `NPC_DESPAWN`, `DAMAGE_REQ`, `WOBJ`, `FIELDS`, `NPC_RESYNC`, `NPC_ANIM`, `WSTATE`, `PLAYER_RULE`, `MIRROR_FX`, `NPC_MEAT` |
+| cell (Cell) | 5 | 1.4 | Cell | `CELL_STATE`, `CELL_HIT`, `CELL_EAT`, `CELL_FOOD`, `CELL_KO`, `CELL_BITTEN`, `CELL_MATE` |
+| tribe (Tribe) | 6 | 1.3 | Tribe | `TRIBE_STATE`, `TRIBE_CMD`, `TRIBE_ANIM` |
+| civ (Civilization) | 7 | 1.4 | Civilization, Space | `CIV_STATE`, `CIV_CMD`, `CIV_BUILD`, `ROLE`, `CIV_ALARM`, `CIV_WALLET` |
+| space (Space) | 8 | 1.6 | Space | `UFO_STATE`, `UFO_HIT`, `UFO_DAMAGE`, `SPACE`, `UFO_LEAD` |
 | shared (shared resources) | 9 | 1.0 | Tribe, Civilization, Space | `RES`, `RES_ADD` |
 | creations (creations) | 10 | 1.3 | every stage and the menus | `CREATION`, `SPECIES_LINE` |
 
