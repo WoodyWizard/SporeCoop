@@ -2129,4 +2129,42 @@ Decision 8Y C (owner 2026-11-24): the galaxy server is an optional part of the i
   older than its sources).
 * Not done: the server updated by the in-game updater (a second pack the new updater fetches when the server folder
   exists); a Start menu entry; the firewall rule made by the setup (Windows asks at the first start); Linux.
+* Released in 0.7.14.1-lineages71-dev (owner 2026-11-24: "Yes, release 71").
+
+## The galaxy server checks for updates before it runs (BUG-9378, 2026-11-24, feat/lineages-alpha)
+<a id="server-update-check"></a>
+
+Owner 2026-11-24: "Can we allow the Galaxy Server to check for updates before running?" Built into 0.7.14.1-lineages71-dev, the first
+release with the server. docs/tickets/BUG-9378-*.
+
+CORRECTION (2026-11-24, feat/lineages-alpha) to #server-in-the-installer: "the host runs the new setup once after an
+update" and "Not done: the server updated by ..." no longer hold. The server updates itself (below); the game's own
+update still does not touch it, and the server does not update the game.
+
+* What a host sees: Start-Galaxy-Server.cmd first prints "Update check: ...". Up to date: the server starts. A newer
+  Lineages build: "Update the galaxy server now (Y by itself in 30 seconds) [Y,N]?"; Y (or no answer) downloads and
+  installs the server of that build and starts it, N starts the old one. GALAXY_UPDATE in galaxy-settings.cmd: ask,
+  auto (no question), off (no check). GitHub not reachable: one line, and the server starts as it is.
+* How: galaxy_update.exe beside the server (server/galaxy/update_main.cpp + updater/: the game's release check,
+  download checks and file swap). The server's version is galaxy-server.version in its folder. The update is the
+  release asset GalaxyServer-<version>.srvpack, checked against the release's SHA256SUMS.txt.
+* ✔ The asset must not be named *.pack: updater/pack.cpp parse_release takes every "*.pack" asset as the game's
+  update pack (the last one wins) and parse_preview_releases drops a release whose pack is not
+  SporeCoop-<version>.pack. A second ".pack" asset can hide a release from every older game's updater. Any new
+  release asset: check its name against parse_release first.
+* ✔ (runtime) A 32-bit program without a manifest whose name holds "update", "setup", "install" or "patch" is refused
+  by Windows without administrator rights (installer detection). galaxy_update.exe carries a manifest (asInvoker):
+  server/galaxy/update.manifest.
+* ✔ (runtime) A batch file that is replaced while cmd runs it goes on at the old byte offset in the new file. The
+  start file's update line is `galaxy_update.exe --apply & "%~f0" updated`: cmd has read the whole line before the
+  update runs, and the new file starts from its top (with "updated": no second check).
+* ✔ (runtime) A running .exe can be renamed: upd::apply_pack swaps galaxy_server.exe and the helper itself while
+  they run; the old file stays as *.sporecoop-old until the next cleanup (upd::cleanup_old knows the server's folder
+  now).
+* The helper only works inside a game folder (it applies the pack to <game>, three folders up, as the setup does). A
+  server folder copied somewhere else is told to use the setup.
+* A release: the .srvpack is uploaded with the other files and is in SHA256SUMS.txt (tools/package_duo.py writes it
+  to out/dist).
+* Not done: the helper does not update the game on the server's PC; no Linux; a host who said N is asked again at
+  the next start only.
 

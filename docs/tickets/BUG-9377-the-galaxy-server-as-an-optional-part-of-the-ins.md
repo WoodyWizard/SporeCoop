@@ -8,7 +8,7 @@ reported: 2026-11-24
 source: decision 8Y C (owner 2026-11-24)
 role: host
 versions:
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages71-dev
 branch: feat/lineages-alpha
 commits: b86c58af
 tests: build/win_tests.exe --server-only (test_setup_server); by hand: the packaged setup, silent and its window, and the installed server with a QA game
@@ -60,3 +60,6 @@ no-fail-run: a feature (nothing failed before; the checks above would fail witho
 ## History
 - 2026-11-24: opened.
 - 2026-11-24: built on feat/lineages-alpha (8Y C), not released yet.
+- 2026-11-24: its update check added (BUG-9378): the server's pack also holds galaxy_update.exe and
+  galaxy-server.version, and "the host runs the new setup after an update" no longer holds.
+- 2026-11-24: released in 0.7.14.1-lineages71-dev.

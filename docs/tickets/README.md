@@ -1490,4 +1490,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9374](BUG-9374-creature-a-player-new-to-a-galaxy-era-starts-at.md) | open | bug | Creature | 2026-11-24 |  | Creature: a player new to a galaxy era starts at the host's nest when its own nest is far away |
 | [BUG-9375](BUG-9375-a-partner-s-game-can-keep-the-pause-0x4bf38a6-af.md) | open | bug | Civ | 2026-11-24 |  | A partner's game can keep the pause 0x4BF38A6 after a refused stage-end request and a later editor |
 | [BUG-9376](BUG-9376-a-direct-session-no-longer-pauses-once-the-alpha.md) | fixed | bug | All | 2026-11-24 | 0.7.14.1-lineages70-dev | A direct session no longer pauses once the alpha is the live build |
-| [BUG-9377](BUG-9377-the-galaxy-server-as-an-optional-part-of-the-ins.md) | fixed | feature | Galaxy | 2026-11-24 | unreleased | The galaxy server as an optional part of the installer |
+| [BUG-9377](BUG-9377-the-galaxy-server-as-an-optional-part-of-the-ins.md) | fixed | feature | Galaxy | 2026-11-24 | 0.7.14.1-lineages71-dev | The galaxy server as an optional part of the installer |
+| [BUG-9378](BUG-9378-the-galaxy-server-checks-for-updates-before-it-r.md) | fixed | feature | Galaxy | 2026-11-24 | 0.7.14.1-lineages71-dev | The galaxy server checks for updates before it runs |

@@ -2,10 +2,16 @@
 
 ## [Unreleased]
 
+## [0.7.14.1-lineages71-dev] - 2026-11-24
+
+The game plays as 70-dev does; the new part is in the installer. Everyone in a session needs the same build.
+
 - Online worlds (alpha): the installer can add the galaxy server, the program that hosts online worlds: the box
   "Also install the galaxy server", off by default. It puts the program, a start file and a read-me into
-  SporebinEP1/mods/galaxy-server (decision 8Y C, BUG-9377). The in-game update does not update the server: run the
-  new setup on the server's PC after an update.
+  SporebinEP1/mods/galaxy-server (decision 8Y C, BUG-9377).
+- Online worlds (alpha): each time it starts, the galaxy server looks for a newer Lineages build and offers to
+  update itself (yes by itself after 30 seconds; a setting makes it automatic or switches it off). The download is
+  checked as the game's own updates are; the host's settings and planets are not touched (BUG-9378).
 
 ## [0.7.14.1-lineages70-dev] - 2026-11-24
 
