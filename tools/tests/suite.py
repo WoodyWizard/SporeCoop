@@ -1330,8 +1330,8 @@ add('cell_spare', P + 'coop_cell_spare.py', warm=True, minutes=6, fixture='cell'
 # the lab's suites; campaign_short is the first stage change only (a quick check of the tool itself)
 add('campaign', P + 'coop_campaign.py --minutes 8', ('campaign',), minutes=150,
     timeout=5 * 3600, quick={'--minutes': 3})
-add('campaign_rivals', P + 'coop_campaign.py --players 2 --minutes 3 --rivals', ('campaign',), minutes=90,
-    timeout=5 * 3600, quick={'--minutes': 2})
+add('campaign_rivals', P + 'coop_campaign.py --players 4 --minutes 3 --rivals', ('campaign',), minutes=120,
+    timeout=5 * 3600, quick={'--players': 2, '--minutes': 2})
 add('campaign_short', P + 'coop_campaign.py --to creature --minutes 3 --advance-minutes 8', ('campaign', 'detector'),
     minutes=25, timeout=3600, quick={'--minutes': 2})
 # BUG-0276: the guests get the host's world after a live stage change with four players (the share

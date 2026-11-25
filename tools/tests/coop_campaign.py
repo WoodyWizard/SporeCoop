@@ -553,7 +553,7 @@ class Campaign:
             self.finding('info', f'check:{e!r}'[:80], f'a check could not read a game: {e!r}')
 
     def check_rivals_stage(self, hst, alive, tog):
-        """Verify Rivals shared systems and the current stage's Rivals module stay active and synced."""
+        """Verify Rivals shared systems, 4x4 relations, and the current stage's Rivals module stay active and synced."""
         stage_cmd = {
             'cell': 'coop.pool rivals',
             'creature': 'coop.crivals',
@@ -566,6 +566,8 @@ class Campaign:
         hr = self.host.call('coop.rivals') or ''
         if 'preset=All rivals' not in hr:
             self.finding('rivals', f'{hst}:host_preset', f'host lost All rivals preset in {hst}: {hr.splitlines()[0] if hr else ""}', [self.host])
+        if len(self.P) >= 2 and '0-1=War' not in hr:
+            self.finding('rivals', f'{hst}:host_war', f'host lost 0-1=War relation in {hst}: {hr.splitlines()[0] if hr else ""}', [self.host])
         hs = self.host.call(stage_cmd) or ''
         if 'active=1' not in hs:
             self.finding('rivals', f'{hst}:host_active', f'host {stage_cmd} not active in {hst}: {hs.splitlines()[0] if hs else ""}', [self.host])
@@ -575,9 +577,57 @@ class Campaign:
             gr = g.call('coop.rivals') or ''
             if 'preset=All rivals' not in gr:
                 self.finding('rivals', f'{hst}:{g.name}:preset', f'{g.name} lost All rivals preset in {hst}: {gr.splitlines()[0] if gr else ""}', [self.host, g])
+            if len(self.P) >= 2 and '0-1=War' not in gr:
+                self.finding('rivals', f'{hst}:{g.name}:war', f'{g.name} lost 0-1=War relation in {hst}: {gr.splitlines()[0] if gr else ""}', [self.host, g])
             gs = g.call(stage_cmd) or ''
             if 'active=1' not in gs:
                 self.finding('rivals', f'{hst}:{g.name}:active', f'{g.name} {stage_cmd} not active in {hst}: {gs.splitlines()[0] if gs else ""}', [self.host, g])
+
+    def rivals_setup_diplomacy(self):
+        """Set up mixed 4x4 Rivals diplomacy (War + Ally + Neutral + guest-vs-guest War) at campaign start."""
+        if len(self.P) >= 2:
+            out = self.host.call('coop.rivals war 1') or ''
+            self.note(f'rivals diplomacy: Alice declares War on Bob: {out.strip()[:100]}')
+        if len(self.P) >= 3:
+            o1 = self.P[2].call('coop.rivals ally 0') or ''
+            time.sleep(0.8)
+            o2 = self.host.call('coop.rivals accept 2') or ''
+            self.note(f'rivals diplomacy: Carol <-> Alice Ally: {o1.strip()[:60]} / {o2.strip()[:60]}')
+        if len(self.P) >= 4:
+            o3 = self.P[3].call('coop.rivals war 1') or ''
+            self.note(f'rivals diplomacy: Dave declares War on Bob: {o3.strip()[:100]}')
+        time.sleep(1.0)
+
+    def rivals_ui_probe(self, stage):
+        """Open F9 Rivals/Race UI on host and first guest, verify rows, and take a keyframe screenshot."""
+        opened = []
+        try:
+            targets = [self.host] + ([self.guests[0]] if self.guests else [])
+            for p in targets:
+                p.call('coop.uistate 1')
+                ui = Ui(p.con, p.name)
+                deadline = time.time() + 4.0
+                while time.time() < deadline:
+                    if ui.click('rivals'):
+                        opened.append(p)
+                        break
+                    time.sleep(0.3)
+            time.sleep(0.8)
+            roles = {('host-' if i == 0 else 'guest-') + p.name: p.con for i, p in enumerate(self.P)}
+            keyframe(f'rivals-ui-{stage}', f'F9 Rivals/Race UI in {stage}', players=roles, kind='rivals_ui',
+                     extra=[f'opened on {[p.name for p in opened]}'])
+            for p in opened:
+                st = p.call('coop.uistate') or ''
+                if 'page=rivals' not in st:
+                    self.finding('rivals', f'ui:{stage}:{p.name}', f'{p.name} F9 Rivals page did not stay open in {stage}', [p])
+        except (OSError, ValueError) as e:
+            self.note(f'rivals ui probe error in {stage}: {e!r}')
+        finally:
+            for p in [self.host] + ([self.guests[0]] if self.guests else []):
+                try:
+                    p.call('coop.uistate 0')
+                except (OSError, ValueError):
+                    pass
 
     def ground_probe(self, host, hst):
         """BUG-0332 (CAMPAIGN_GROUND=1): the game's own ground (coop.ground) on every machine at a place of the host's
@@ -2325,6 +2375,7 @@ def main():
         for cmd in ('coop.rivals preset all_rivals', 'coop.rivals fasttimers 1'):
             camp.note(f'rivals setup on host: {cmd}: {players[0].call(cmd).strip()[:120]}')
         time.sleep(2.0)
+        camp.rivals_setup_diplomacy()
     for cmd in filter(None, os.environ.get('CAMPAIGN_HOST_CMDS', '').split(';')):
         camp.note(f'on the host: {cmd}: {players[0].call(cmd).strip()[:120]}')
     if a.save:  # A6: the failed segment's own save, loaded in game (the guests follow)
@@ -2344,6 +2395,8 @@ def main():
                     break  # the stage change before it failed and no jump was allowed
                 camp.segment_save(stage)  # A6: the save this segment starts from
                 camp.play(stage, a.minutes)
+                if a.rivals and not camp.dead:
+                    camp.rivals_ui_probe(stage)
             elif kind == 'advance':
                 nxt = cl.STAGES[cl.STAGES.index(stage) + 1]
                 ok = camp.advance(stage)
@@ -2387,8 +2440,8 @@ def main():
     print(f'  findings: {len(camp.F.items)} ({camp.F.summary()}), file {os.path.relpath(camp.F.md, lane.ROOT)}')
     for it in camp.F.items:
         print(f'    [{it["kind"]}] {it["time"]} {it["stage"]}: {it["text"]}' + (f' (x{it["repeats"] + 1})' if it['repeats'] else ''))
-    print(f'  replay: SPORE_LANE={lane.LANE} python3 tools/tests/coop_campaign.py --from {a.start} --to {a.end} '
-          f'--minutes {a.minutes} --seed {seed}')
+    print(f'  replay: SPORE_LANE={lane.LANE} python3 tools/tests/coop_campaign.py --players {a.players} --from {a.start} --to {a.end} '
+          f'--minutes {a.minutes} --seed {seed}' + (' --rivals' if a.rivals else ''))
     with open(os.path.join(run_dir, 'summary.txt'), 'w') as f:
         f.write(f'reached {" -> ".join(reached)}; jumps {camp.jumps}; findings {camp.F.summary()}\n')
         f.write('\n'.join(camp.timeline) + '\n')
