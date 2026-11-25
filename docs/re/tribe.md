@@ -5147,3 +5147,33 @@ BUG-1548 (`docs/11-rivals.md` 11.3.3, 11.4-11.9). GOG 2024 `dc04aee5` (`objdump`
   Vector3* dir, cCombatant* att) ret 0x14` at `0xC9DB41`): skips firepit (`combatant+0xDC == 10`), reads owner tribe at
   `combatant+0xD8` (`tool+0x1F8`), and calls `cCombatant::TakeDamage` (`0x00BFCF10`). Extra tool huts can be damaged
   and burned during war while blocked when neutral or allied.
+
+## Guest Tribal Social Performance (BUG-1561)
+
+Verified via Ghidra (`dc04aee5`, GOG 2024) and Wine lab runtime (`20261125-164407`):
+
+* ✔ `Simulator::cTribeInputStrategy::ChooseInputActionID` `0x00CCF130`: when right-clicking a living NPC citizen
+  (`0x18EB4B7`) of a non-defeated (`tribe+0x556 == 0`), neutral/friendly (`rel_level > 1`) tribe in Social Mode
+  (`TribeUI+0x390 == 0`), calls `cCommunity::GetLeader` (`0x00C00790` -> `*(void**)(playerTribe + 0x11C)`). If the
+  native leader exists and is not selected or is dead, returns `0x2B` (hint `0xF0FDA5C1` "Select your Chieftain to
+  socialize!") instead of `0x27` (`CitizenAction 26`). In Together mode, `tribe.guest_social` overrides `0x2B` -> `0x27`
+  for guests and non-leader owners who have at least one living own member selected.
+* ✔ `SporeCoop::AbilityBar_Rebuild` `0x00D49400`: in Tribe mode (`0x1654C02`), iterates the six `TribeAbilities`
+  (`0x0169DE64`, slots `0..5`) and places each slot in `AbilityBar` only when `AbilityBar_OnBar` (`0x00D48ED0`) and
+  `0x00D1FA20` (`playerTribe->GetToolByType(tool) != 0`, tools `4/5/6` for instrument slots `3/4/5`) succeed. When the
+  host buys an instrument rack and mirrors it via `make_tool_in`, the guest must also run `AbilityBar_Rebuild` outside
+  the frame so row 0 populates and keys `1`/`2`/`3` map to instrument slots `3`/`4`/`5`.
+* ✔ `SporeCoop::AbilityBar_Status` `0x00D49220` -> `0x00D1FB30(slot)` and `SporeCoop::AbilityBar_Use` `0x00D49560` ->
+  `0x00D1FE00(slot)`: for instrument slots `3/4/5` (tools `4/5/6`: Didgeridoo, Maracas, Horn), scans selected citizens
+  in BT node `0xB46E8803`, checks `SocialSession +0x51 != 0` (`can_play`), resolves ability index via
+  `Creature_AbilityIndex` (`0x00D1E5C0`), verifies cooldown `*(float*)(*(uint8_t**)(c + 0xC28) + idx * 0x10 + 4) >= 1.0f`,
+  and posts `BT_PostStimulus(c->ai + 8, 0x10000000, 0, 10.0f, nullptr)` with `*(int*)(stim + 0xC) = idx`. Status returns
+  `0` usable, `0xF` wait/cooldown, `0xE` no matching musician.
+* ✔ `SocialSession` (`SporeCoop::SocialSession_Get` `0x00D9F490`): `+0x04` state (`1` walking, `4` pre-performance
+  intro before `5` playing, `6` failed), `+0x0C` target `cTribe*`, `+0x51` `can_play` byte, `+0xE8` native performance
+  UI `[TribeGameUI + 0x50]`, `+0x1DC` requested instrument (`2` Didgeridoo / tool 4, `0` Maracas / tool 5, `1` Horn /
+  tool 6, `-1` none). Performance UI `[TribeGameUI + 0x50]` (`TribeGameUI = vcall(cTribeUI_Get(), 0x6C/4)`): `+0x0C`
+  `UILayout*` (shown/hidden via `UTFWin::UILayout::SetVisible`, reachable via `SocialMeter_SetVisible` `0x00E319D0` with
+  `layout - 0xC`), `+0x68` float progress `0..1`, `+0x7C` fail drain byte, `+0x84..0x98` bar widgets, `+0x9C/+0xA0`
+  relation face icons, `+0xA4` win icon. Note: `0x00DA1F20` spawns the NPC audience thought-bubble prompt effects
+  (`0xC3933F3F`, `0x4EA19703`, `0x9DE794A4`) via `CreateEffectForPool2Renamed`, which `mirror_fx.cpp` already relays.

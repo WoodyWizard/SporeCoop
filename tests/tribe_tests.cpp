@@ -600,6 +600,39 @@ static void epic_hostile_and_ufo_stage()
     CHECK(!ufo_mirror_stage(true, 0x1654C05u));      // Space
 }
 
+static void guest_social_befriend()
+{
+    printf("guest Tribal social befriending (BUG-1561)\n");
+    const bool fix = !g_nofix;
+    // ChooseInputActionID 0x2B -> 0x27 for guest or non-leader owner with selected own living members
+    CHECK(choose_social_override(fix, true, false, 0x2B, true, false, true) == (fix ? 0x27 : 0x2B)); // FAILS with --nofix
+    CHECK(choose_social_override(fix, true, false, 0x2B, true, true, true) == (fix ? 0x27 : 0x2B));
+    CHECK(choose_social_override(fix, true, false, 0x2B, true, false, false) == (fix ? 0x27 : 0x2B)); // host gave leader away
+    CHECK(choose_social_override(true, true, false, 0x2B, true, true, false) == 0x2B);                // host still owns leader
+    CHECK(choose_social_override(true, true, false, 0x2B, false, false, true) == 0x2B);               // nothing selected
+    CHECK(choose_social_override(true, true, true, 0x2B, true, false, true) == 0x2B);                 // Rivals untouched
+    CHECK(choose_social_override(true, false, false, 0x2B, true, false, true) == 0x2B);               // inactive session
+    CHECK(choose_social_override(true, true, false, 0x0A, true, false, true) == 0x0A);                // non-0x2B untouched
+
+    // Instrument slot <-> specialized tool mapping (TribeAbilities[3..5] -> tools 4..6)
+    CHECK(instrument_tool_for_slot(3) == 4);
+    CHECK(instrument_tool_for_slot(4) == 5);
+    CHECK(instrument_tool_for_slot(5) == 6);
+    CHECK(instrument_tool_for_slot(0) == 0 && instrument_tool_for_slot(2) == 0 && instrument_tool_for_slot(6) == 0);
+
+    // Guest instrument ability bar status during synced Tribal social session
+    CHECK(tribe_social_ability_status(fix, true, true, true, true) == (fix ? 0u : 1u)); // FAILS with --nofix
+    CHECK(tribe_social_ability_status(true, true, false, true, true) == 0xFu);          // waiting for village prompt
+    CHECK(tribe_social_ability_status(true, true, true, false, false) == 0xEu);         // no matching instrument performer
+    CHECK(tribe_social_ability_status(true, true, true, true, false) == 0xFu);          // on cooldown
+    CHECK(tribe_social_ability_status(true, false, true, true, true) == 1u);            // no active session
+
+    // BUG-1068 / BUG-1561: village goal mission actions include social performance (26)
+    CHECK(guest_mission_action(15, false) && guest_mission_action(9, false));
+    CHECK(guest_mission_action(26, fix) == fix); // FAILS with --nofix
+    CHECK(!guest_mission_action(4, true));
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && !strcmp(argv[1], "--nofix");
@@ -620,6 +653,7 @@ int main(int argc, char** argv)
     hold_track_and_hand_side();
     friendly_fire();
     epic_hostile_and_ufo_stage();
+    guest_social_befriend();
     if (g_fail) {
         printf("tribe_tests: %d FAILED\n", g_fail);
         return 1;

@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "game.h"
+#include "modes.h"
 #include "player_life.h"
 #include "net/compat.h"
 #include "net/validate.h"
@@ -48,6 +49,17 @@ enum Kind : uint8_t { K_ACT = 0, K_PROGRESS = 1, K_RESULT = 2, K_GOAL = 3, K_ENG
 bool g_guest_recruit_fix = true;
 COOP_FIX("social.guest_recruit", "BUG-1256", g_guest_recruit_fix,
          "creature: guests can recruit allied or kin creatures into their own pack (follows the guest, respects brain limit, releases on leave)");
+// BUG-1561: Creature stage guest befriending reliability (host holds engaged NPC still facing guest, always includes
+// host's own species as allied in MSG_SPECIES for own-species guests, allows re-engage on repeat clicks, notifies guest
+// on expired games, and uses guest's own ability kind/points plus pack bonus rather than fallback puppet stats).
+static bool g_guest_befriend_fix = true;
+COOP_FIX("social.guest_befriend", "BUG-1561", g_guest_befriend_fix,
+         "creature: guest befriending holds the engaged NPC in range, keeps host species allied for own-species guests, allows re-engage, and uses guest ability points + pack bonus");
+static uint32_t g_reengages = 0, g_npc_holds = 0, g_guest_pts_used = 0, g_host_sp_added = 0, g_expired_told = 0;
+static double g_engage_sent_at = -100;
+static bool (*g_tribe_bar_use)(int) = nullptr;
+void set_tribe_bar_use(bool (*fn)(int)) { g_tribe_bar_use = fn; }
+
 static std::map<uint8_t, int> g_guest_pack_cap; // host: each guest's last reported max pack size (0..3)
 static uint32_t g_recruited = 0;
 static double g_pack_sent_at = 0;
@@ -389,12 +401,18 @@ static void* SK_THISCALL h_Post(void* stimuli, uint32_t lo, uint32_t hi, float v
         if ((lo & kSocialStimulus) && is_guest()) {
             int id = npc::proxy_id_of_ai(ai);
             if (id >= 0) {
-                if (id != g_engaged) {
+                double now = H->time_seconds();
+                bool stale_same = g_guest_befriend_fix && id == g_engaged && now - g_engage_sent_at >= 1.5 &&
+                                  (g_prompt_npc != id || now - g_prompt_at > kPromptWait);
+                if (id != g_engaged || stale_same) {
+                    if (stale_same)
+                        g_reengages++;
                     g_engages++;
+                    g_engage_sent_at = now;
                     send_engage((uint16_t)id);
                 }
                 g_engaged = id;
-                g_engaged_at = H->time_seconds();
+                g_engaged_at = now;
             }
         }
     }
@@ -579,12 +597,16 @@ static bool play_ability(void* c, int idx)
     return a_PlayAbility && c && idx >= 0 && thiscall<int>(a_PlayAbility, c, idx, (void*)nullptr) != -1;
 }
 
-static void send_act(uint16_t id, uint32_t type)
+static void send_act(uint16_t id, uint32_t type, uint32_t key = 0xFFFFFFFFu, float pts = 0.f)
 {
     net::Writer w;
     w.u8(K_ACT);
     w.u16(id);
     w.u32(type);
+    if (g_guest_befriend_fix && key != 0xFFFFFFFFu) {
+        w.u32(key);
+        w.f32(pts);
+    }
     C.sess->send_reliable_to(0, net::MSG_SOCIAL, w);
     g_acts_sent++;
 }
@@ -601,8 +623,10 @@ static bool act_index(int idx)
     if (idx < 0 || !play_ability(av, idx))
         return false; // no such ability, cooling down or no energy
     void* a = ability(av, idx);
-    send_act((uint16_t)g_engaged, field<uint32_t>(a, 8));
-    g_kind_acts[std::min<uint32_t>(field<uint32_t>(a, 0x10), 4)]++;
+    uint32_t key = field<uint32_t>(a, 0x10);
+    float pts = std::max(1.f, field<float>(a, 0x3C));
+    send_act((uint16_t)g_engaged, field<uint32_t>(a, 8), key, pts);
+    g_kind_acts[std::min<uint32_t>(key, 4)]++;
     g_engaged_at = g_last_act = H->time_seconds();
     return true;
 }
@@ -624,9 +648,20 @@ typedef void(SK_CDECL* BarUse_t)(int);
 static BarUse_t o_BarUse;
 static void SK_CDECL h_BarUse(int idx)
 {
+    if (g_tribe_bar_use && game::mode_id() == modes::kTribe && g_tribe_bar_use(idx))
+        return; // BUG-1561: Tribe guest instrument play during synced Tribal social performance
     void* av = is_guest() && g_engaged >= 0 && game::in_creature_stage() && !(C.blocked && C.blocked())
                    ? game::avatar()
                    : nullptr;
+    if (av && g_guest_befriend_fix && skg::readable((uint8_t*)av + 0xE7C, 4)) {
+        // BUG-1561: cCreatureBase::GetAnimalTarget (0xC0EFD0): if the player targeted a different NPC proxy,
+        // pass through to o_BarUse so clicking/engaging the new target does not send K_ACT to the old NPC.
+        void* comb = field<void*>(av, 0xE7C);
+        void* tgt = comb && skg::readable(comb, 4) ? vcall<void*>(comb, 0x5C / 4, (uint32_t)0xCE9F6639u) : nullptr;
+        int tid = tgt ? npc::proxy_id(tgt) : -1;
+        if (tid >= 0 && tid != g_engaged)
+            av = nullptr;
+    }
     if (av && a_AbilityMode && cdecl_call<int>(a_AbilityMode) == 0 && idx >= 0 && idx < ability_count(av)) {
         void* a = ability(av, idx);
         if (is_social(a)) { // a social ability (sing, charm, dance, pose; BUG-1242)
@@ -919,6 +954,8 @@ struct Game {
     double prompt_at = 0, next_at = 0;
     float score = 0, needed = 0;
     bool recruit = false; // BUG-1256
+    net::Vec3 anchor{};   // BUG-1561: NPC position at engagement so it stays in range
+    bool has_anchor = false;
 };
 static std::map<std::pair<uint8_t, uint16_t>, Game> g_games;
 static uint32_t g_acts_in = 0, g_impressed = 0, g_refused = 0;
@@ -1212,6 +1249,62 @@ static void fail_game(uint8_t player, uint16_t id)
     send_result(id, player, false, kFailAnim, 0);
 }
 
+// BUG-1561: quaternion whose forward (+Y) points from `at` toward `to` and up (+Z) is planet up at `at`
+static net::Quat facing_quat(const net::Vec3& at, const net::Vec3& to, const net::Quat& fallback)
+{
+    float l = std::sqrt(at.x * at.x + at.y * at.y + at.z * at.z);
+    if (l < 1.f)
+        return fallback;
+    net::Vec3 u{at.x / l, at.y / l, at.z / l}, d{to.x - at.x, to.y - at.y, to.z - at.z};
+    float k = d.x * u.x + d.y * u.y + d.z * u.z;
+    net::Vec3 f{d.x - k * u.x, d.y - k * u.y, d.z - k * u.z};
+    float fl = std::sqrt(f.x * f.x + f.y * f.y + f.z * f.z);
+    if (fl < 1e-3f)
+        return fallback;
+    f = {f.x / fl, f.y / fl, f.z / fl};
+    net::Vec3 r{f.y * u.z - f.z * u.y, f.z * u.x - f.x * u.z, f.x * u.y - f.y * u.x};
+    float m00 = r.x, m01 = f.x, m02 = u.x, m10 = r.y, m11 = f.y, m12 = u.y, m20 = r.z, m21 = f.z, m22 = u.z;
+    float tr = m00 + m11 + m22;
+    if (tr > 0) {
+        float s = std::sqrt(tr + 1.f) * 2.f;
+        return {(m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s, 0.25f * s};
+    } else if (m00 > m11 && m00 > m22) {
+        float s = std::sqrt(1.f + m00 - m11 - m22) * 2.f;
+        return {0.25f * s, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s};
+    } else if (m11 > m22) {
+        float s = std::sqrt(1.f + m11 - m00 - m22) * 2.f;
+        return {(m01 + m10) / s, 0.25f * s, (m12 + m21) / s, (m02 - m20) / s};
+    }
+    float s = std::sqrt(1.f + m22 - m00 - m11) * 2.f;
+    return {(m02 + m20) / s, (m12 + m21) / s, 0.25f * s, (m10 - m01) / s};
+}
+
+// BUG-1561: host-side pack social bonus for guest `from` performing social kind `key` (native Spore adds
+// pack members' matching social abilities at a fraction; capped cleanly so pack members help without trivializing).
+static float guest_pack_bonus(uint8_t from, uint32_t key)
+{
+    if (!g_guest_befriend_fix || key < 1 || key > 4)
+        return 0.f;
+    float bonus = 0.f;
+    for (auto& [nid, owner] : npc::pack_owners_snapshot()) {
+        if (owner != from)
+            continue;
+        void* mc = npc::host_npc(nid);
+        if (!mc || game::is_dead(mc))
+            continue;
+        int n = ability_count(mc);
+        float best = 0.f;
+        for (int i = 0; i < n && i < 64; i++) {
+            uint8_t* a = (uint8_t*)ability(mc, i);
+            if (a && !IsBadReadPtr(a, 0x40) && field<uint32_t>(a, 0x10) == key)
+                best = std::max(best, std::max(1.f, field<float>(a, 0x3C)));
+        }
+        if (best > 0.f)
+            bonus += 0.25f * best;
+    }
+    return std::min(bonus, 5.f);
+}
+
 // host: the guest engaged NPC #id (K_ENGAGE): a new game with its prompt list
 static void host_engage(uint8_t from, uint16_t id, int pack_limit)
 {
@@ -1224,6 +1317,11 @@ static void host_engage(uint8_t from, uint16_t id, int pack_limit)
     bool can_social = creature_rivals::active() ? can_impress_in_rivals(from, c) : (social_mode(c) != 0);
     if (!recruit && (npc_impressed_for(from, id, c) || !can_social))
         return;
+    if (g_guest_befriend_fix) {
+        // Release any previous unfinished social game held for this guest on a different NPC
+        for (auto it = g_games.begin(); it != g_games.end();)
+            it = (it->first.first == from && it->first.second != id) ? g_games.erase(it) : std::next(it);
+    }
     double now = H->time_seconds();
     Game& g = g_games[{from, id}];
     if (!g.prompts.empty() && now - g.last < kEngageTime && g.idx < (int)g.prompts.size())
@@ -1233,10 +1331,18 @@ static void host_engage(uint8_t from, uint16_t id, int pack_limit)
     g.prompts = pick_prompts(c);
     g.last = now;
     g.next_at = now + kPromptGreet;
+    g.anchor = game::position(c);
+    g.has_anchor = true;
     for (auto& p : g.prompts)
         g.needed += p.points;
     if (g.prompts.empty())
         g_games.erase({from, id}); // no candidates: the old way (any social ability is a round)
+    else if (g_guest_befriend_fix) {
+        game::stop(c);
+        if (void* pup = C.puppet_of ? C.puppet_of(from) : nullptr)
+            game::set_orientation(c, facing_quat(g.anchor, game::position(pup), game::orientation(c)));
+        g_npc_holds++;
+    }
 }
 
 // host, every frame: the guests' games with prompts go on (next prompt, a prompt that waited too long, the end)
@@ -1254,8 +1360,25 @@ static void host_prompt_tick(double now)
         bool done_already = g.recruit ? (game::pack_member(c) || !is_recruit_candidate(c, from))
                                       : npc_impressed_for(from, id, c);
         if (!c || game::is_dead(c) || done_already || now - g.last > kEngageTime) {
+            if (g_guest_befriend_fix && !done_already) {
+                send_result(id, from, false, 0, 0);
+                g_expired_told++;
+            }
             it = g_games.erase(it);
             continue;
+        }
+        if (g_guest_befriend_fix && g.has_anchor) {
+            // BUG-1561: hold the engaged NPC still and facing the guest's puppet so its idle/wander BT
+            // cannot walk it out of kActRange (12m/16m) during the guest's social game.
+            net::Vec3 cur = game::position(c);
+            game::stop(c);
+            if (net::dist(cur, g.anchor) > 1.5f) {
+                game::set_position(c, g.anchor);
+                cur = g.anchor;
+                g_npc_holds++;
+            }
+            if (void* pup = C.puppet_of ? C.puppet_of(from) : nullptr)
+                game::set_orientation(c, facing_quat(cur, game::position(pup), game::orientation(c)));
         }
         bool open = g.idx >= 0 && !g.answered;
         if (open && now - g.prompt_at > kPromptWait) { // not answered in time: the prompt is lost
@@ -1281,7 +1404,7 @@ static void host_prompt_tick(double now)
     }
 }
 
-static void host_act(uint8_t from, uint16_t id, uint32_t type)
+static void host_act(uint8_t from, uint16_t id, uint32_t type, uint32_t guest_key = 0xFFFFFFFFu, float guest_pts = 0.f)
 {
     g_acts_in++;
     void* c = npc::host_npc(id);
@@ -1311,7 +1434,16 @@ static void host_act(uint8_t from, uint16_t id, uint32_t type)
         uint8_t* a = pi >= 0 ? (uint8_t*)ability(pup, pi) : nullptr;
         uint32_t key = a ? field<uint32_t>(a, 0x10) : (type == p.type ? p.key : 0xFFFFFFFFu);
         float pts = a ? std::max(1.f, field<float>(a, 0x3C)) : 1.f;
+        if (g_guest_befriend_fix && guest_key <= 4u && std::isfinite(guest_pts) && guest_pts >= 1.f) {
+            // BUG-1561: trust sanitized guest ability kind/level (1..5) so own-species guests with fallback
+            // puppets on host do not lose their social level, plus host-verified pack member bonus.
+            key = guest_key;
+            pts = std::clamp(guest_pts, 1.f, 5.f);
+            g_guest_pts_used++;
+        }
         bool match = key == p.key;
+        if (match && g_guest_befriend_fix)
+            pts += guest_pack_bonus(from, key);
         g.score += match ? pts : 0.1f * pts; // 0xD9B070: another ability gives 0.1 (0x1582F1C) of its points
         g.answered = true;
         g.next_at = now + kPromptNext;
@@ -1411,6 +1543,31 @@ void tick(double now)
             return;
         last = now;
         auto t = read_table();
+        if (g_guest_befriend_fix && !creature_rivals::active()) {
+            // BUG-1561: always include host's own species as allied (relation 6) so own-species guests
+            // (creature.mode own) see host's nest mates as allied/recruitable even after host evolves.
+            game::Key hk = game::species_key(game::avatar());
+            if (hk.instance) {
+                uint32_t raw[3] = {hk.instance, hk.type, hk.group};
+                bool found = false;
+                for (auto& r : t)
+                    if (!memcmp(r.key, raw, sizeof raw)) {
+                        if (r.relation != 6) {
+                            r.relation = 6;
+                            g_host_sp_added++;
+                        }
+                        found = true;
+                        break;
+                    }
+                if (!found) {
+                    t.push_back({{raw[0], raw[1], raw[2]}, 6, 0, 0, 0});
+                    std::sort(t.begin(), t.end(), [](const SpeciesRec& a, const SpeciesRec& b) {
+                        return memcmp(a.key, b.key, sizeof a.key) < 0;
+                    });
+                    g_host_sp_added++;
+                }
+            }
+        }
         for (auto it = g_goal_paid.begin(); it != g_goal_paid.end();) { // an older save loaded again
             bool still = false;
             for (auto& r : t)
@@ -1613,8 +1770,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     uint16_t id = r.u16();
     if (kind == K_ACT && is_host()) {
         uint32_t ability_type = r.u32();
+        uint32_t guest_key = r.left() >= 8 ? r.u32() : 0xFFFFFFFFu;
+        float guest_pts = r.left() >= 4 ? r.f32() : 0.f;
         if (r.ok())
-            host_act(from, id, ability_type);
+            host_act(from, id, ability_type, guest_key, guest_pts);
         return;
     }
     if (kind == K_SOLO && is_host() && from != 0) { // BUG-1527
@@ -1732,6 +1891,7 @@ void on_session_end()
     if (g_meter_end_fix && g_meter_npc >= 0)
         meter_task(3, g_meter_npc);
     g_engaged = -1;
+    g_engage_sent_at = -100;
     g_meter_npc = -1;
     g_solo.clear(); // BUG-1527
     g_solo_sent_at = -1;
@@ -1754,20 +1914,21 @@ std::string status()
         snprintf(b, sizeof b,
                  "social(host): acts_in=%u impressed=%u recruited=%u refused=%u games=%u species_tx=%u goal_dna_paid=%u "
                  "goal_dna_dropped=%u goal_owed=%u goal_owed_paid=%u prompts_sent=%u answers=%u answers_wrong=%u "
-                 "answers_early=%u prompt_fails=%u games_forgotten=%u rel_mat=%u\n",
+                 "answers_early=%u prompt_fails=%u games_forgotten=%u rel_mat=%u befriend_fix=%d npc_holds=%u guest_pts=%u host_sp=%u expired_told=%u\n",
                  g_acts_in, g_impressed, g_recruited, g_refused, (unsigned)g_games.size(), g_table_tx, g_goal_dna_paid,
                  g_goal_dna_dropped, (unsigned)g_goal_owed.size(), g_goal_owed_paid, g_prompts_sent, g_answers,
-                 g_answers_wrong, g_answers_early, g_prompt_fails, g_games_forgotten, g_rel_materialized);
+                 g_answers_wrong, g_answers_early, g_prompt_fails, g_games_forgotten, g_rel_materialized,
+                 (int)g_guest_befriend_fix, g_npc_holds, g_guest_pts_used, g_host_sp_added, g_expired_told);
     else
         snprintf(b, sizeof b,
-                 "social(guest): engaged=%d engages=%u acts_sent=%u results_in=%u species_rx=%u species_fixed=%u "
+                 "social(guest): engaged=%d engages=%u reengages=%u acts_sent=%u results_in=%u species_rx=%u species_fixed=%u "
                  "events_dropped=%u cards_refreshed=%u goal_dna_sent=%u social_hits_dropped=%u bar_acts=%u bar_passed=%u "
                  "prompts_in=%u prompt_npc=%d prompt_anim=%08X prompt_age=%.1f table_forgot=%u prompt_type=%X prompt_kind=%u "
-                 "kind_acts=%u,%u,%u,%u,%u\n",
-                 g_engaged, g_engages, g_acts_sent, g_results_in, g_table_rx, g_table_fixed, g_events_dropped,
+                 "kind_acts=%u,%u,%u,%u,%u befriend_fix=%d\n",
+                 g_engaged, g_engages, g_reengages, g_acts_sent, g_results_in, g_table_rx, g_table_fixed, g_events_dropped,
                  g_cards_refreshed, g_goal_dna_dropped, g_social_hits_dropped, g_bar_acts, g_bar_passed, g_prompts_in,
                  g_prompt_npc, g_prompt_anim, H->time_seconds() - g_prompt_at, g_table_forgot, g_prompt_type, g_prompt_kind,
-                 g_kind_acts[0], g_kind_acts[1], g_kind_acts[2], g_kind_acts[3], g_kind_acts[4]);
+                 g_kind_acts[0], g_kind_acts[1], g_kind_acts[2], g_kind_acts[3], g_kind_acts[4], (int)g_guest_befriend_fix);
     return b;
 }
 
@@ -2073,7 +2234,8 @@ bool debug_answer(uint16_t id, uint32_t type)
     if (idx < 0)
         return false;
     play_ability(av, idx);
-    send_act(id, type);
+    void* a = ability(av, idx);
+    send_act(id, type, a ? field<uint32_t>(a, 0x10) : 0u, a ? std::max(1.f, field<float>(a, 0x3C)) : 1.f);
     g_engaged_at = g_last_act = H->time_seconds();
     return true;
 }

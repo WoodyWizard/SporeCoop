@@ -637,6 +637,10 @@ void* target_village(void* o)
     return (!t || t == player_tribe()) ? nullptr : t;
 }
 
+// BUG-1561: defined in tribe.cpp (keeps tribe_internal.h untouched)
+extern bool g_guest_social_fix;
+bool host_social_play(uint8_t from, uint32_t slot, const std::vector<uint16_t>& ids);
+
 void host_command(uint8_t from, net::Reader& r)
 {
     uint8_t kind = r.u8(), n = r.u8();
@@ -667,6 +671,11 @@ void host_command(uint8_t from, net::Reader& r)
         if (action >= 0 && action <= 0xFF && net::is_player(*C.sess, (uint8_t)action))
             give_on_host(from, (uint8_t)action, ids);
         else
+            g_cmds_rejected++;
+        return;
+    }
+    if (kind == tribe_logic::kCmdSocialPlay) { // BUG-1561: guest plays instrument slot 3/4/5 during Tribal social performance
+        if (!host_social_play(from, (uint32_t)action, ids))
             g_cmds_rejected++;
         return;
     }
@@ -737,10 +746,10 @@ void host_command(uint8_t from, net::Reader& r)
         g_cmds_done++;
         ran++;
     }
-    // BUG-1068: the village's goal mission, as the host's own raid or gift click makes it.
+    // BUG-1068 / BUG-1561: the village's goal mission, as the host's own raid, gift, or social performance click makes it.
     // BUG-1554: in Tribe Rivals, guest NPC raids/gifts belong to the guest, never the host's goal bar.
-    if (ran && g_guest_mission_fix && !rivals_on && kind == CMD_ACTION && (action == 15 || action == 9) &&
-        from != C.sess->my_id())
+    if (ran && g_guest_mission_fix && !rivals_on && kind == CMD_ACTION &&
+        tribe_logic::guest_mission_action(action, g_guest_social_fix) && from != C.sess->my_id())
         if (void* v = target_village(target); v && wsync::goal_target(v)) {
             g_guest_missions++;
             g_last_cmd += " (the village's goal mission: BUG-1068)";

@@ -31,6 +31,7 @@
 #include "modes.h"
 #include "npc.h"
 #include "savestrip.h"
+#include "social.h"
 #include "space_ext.h"
 #include "stage_epoch.h"
 #include "world.h"
@@ -1584,6 +1585,8 @@ void for_each_tool(bool all, ToolFn fn, void* user)
     }
 }
 
+static void queue_bar_rebuild(); // BUG-1561: rebuild Tribe HUD ability bar when tool racks arrive
+
 void* make_tool_in(void* t, int type, const net::Vec3& pos)
 {
     if (!t || type < 1 || type > 10 || !a_ToolModelReset || !a_SetToolPurchased)
@@ -1602,6 +1605,8 @@ void* make_tool_in(void* t, int type, const net::Vec3& pos)
         vcall<void>(sp, 0x3C / 4, (const float*)q);
     }
     thiscall<void>(a_SetToolPurchased, t, type);
+    if (t == player_tribe() && type >= 1 && type <= 6)
+        queue_bar_rebuild();
     return tool;
 }
 
@@ -3843,11 +3848,37 @@ COOP_FIX("tribe.friendly_fire", "BUG-0899", g_ff_fix,
 static uint32_t g_ff_hits, g_ff_blocked;
 bool ff_on() { return g_ff_fix && settings::on(settings::kFriendlyFire); }
 
+// BUG-1561: Tribal guest social befriending (ChooseInputActionID 0x2B -> 0x27, AbilityBar rebuild on tool racks,
+// SocialSession state + native [TribeGameUI+0x50] meter sync, guest instrument play via AbilityBar_Status/Use).
+bool g_guest_social_fix = true;
+COOP_FIX("tribe.guest_social", "BUG-1561", g_guest_social_fix,
+         "tribe: guests can start, see, and play Tribal social performances to befriend NPC villages (including without the host's chieftain)");
+static uint32_t g_guest_social_choose_over = 0;
+
 static int SK_CDECL h_ChooseAction(void* obj, const void* pos)
 {
     int r = o_ChooseAction(obj, pos);
     if (int rv = tribe_rivals::override_choose_action(obj, r); rv != 0) // WP-R4 (BUG-1548)
         return rv > 0 ? rv : 0;
+    if (r == 0x2B && active() && !tribe_rivals::active()) { // BUG-1561
+        void* pt = player_tribe();
+        if (pt) {
+            uint8_t my = C.sess->my_id();
+            void* leader = skg::readable((uint8_t*)pt + 0x11C, 4) ? F<void*>(pt, 0x11C) : nullptr;
+            bool owns_leader = leader && owner_of(leader) == my;
+            bool own_sel = false;
+            for (void* m : members(pt))
+                if (F<uint8_t>(m, kSelectedOff) && owner_of(m) == my && !game::is_dead(m)) {
+                    own_sel = true;
+                    break;
+                }
+            int nr = tribe_logic::choose_social_override(g_guest_social_fix, true, false, r, own_sel, owns_leader, is_guest());
+            if (nr != r) {
+                g_guest_social_choose_over++;
+                return nr;
+            }
+        }
+    }
     if (r != 0 || !obj || !active() || !ff_on() || IsBadReadPtr(obj, 4))
         return r;
     void* gd = vcall<void*>(obj, 0xC / 4, (uint32_t)0x17F243Bu);
@@ -4105,6 +4136,514 @@ static void duet_tick(double now)
             C.notice("duet: friendship grows faster");
         }
     }
+}
+
+// ---------------- BUG-1561: Tribal guest social befriending ----------------
+// In Together mode, guests previously could not befriend NPC villages:
+// 1. ChooseInputActionID (0xCCF130) returned 0x2B ("Select your Chieftain") whenever playerTribe->mpLeader was not
+//    selected (guests cannot select the host's mpLeader).
+// 2. AbilityBar_Rebuild (0xD49400) was never called on guests when the host bought/synced instrument racks, leaving
+//    row 0 empty (-1) so keys 1/2/3 and HUD instrument buttons did nothing.
+// 3. AbilityBar_Status (0xD49220 -> 0xD1FB30) and AbilityBar_Use (0xD49560 -> 0xD1FE00) inspected local mirrors' AI
+//    (node 0xB46E8803 + SocialSession), which never runs on guests (h_BTTick skips mirrors).
+// 4. The native Tribal social progress meter ([TribeGameUI+0x50]) was never synced or shown on guests.
+static uintptr_t a_TribeAbilities, a_CreatureAbilityIndex, a_BTPostStimulus, a_BarPtr, a_BarRebuild, a_BarAbility,
+    a_BarStatus, a_SocialMeterVis, a_PerfSucceeded, a_TribeUIGet, a_RelMgrGet, a_RelCalc, a_RelLevel;
+using BarStatus_t = int(SK_CDECL*)(int);
+static BarStatus_t o_BarStatus;
+
+static bool g_bar_rebuild_queued = false;
+static uint32_t g_bar_rebuilds = 0;
+static uint32_t g_guest_social_plays_sent = 0, g_guest_social_plays_host = 0, g_guest_social_tx = 0,
+                g_guest_social_rx = 0;
+
+static void bar_rebuild_task(void*)
+{
+    g_bar_rebuild_queued = false;
+    if (!g_guest_social_fix || !a_BarRebuild || !a_BarPtr || game::mode_id() != modes::kTribe)
+        return;
+    uint8_t* bar = *(uint8_t**)a_BarPtr;
+    if (!bar || !skg::readable(bar, 0xD8))
+        return;
+    skg::cdecl_call<void>(a_BarRebuild);
+    g_bar_rebuilds++;
+}
+
+static void queue_bar_rebuild()
+{
+    if (!g_guest_social_fix || g_bar_rebuild_queued || !a_BarRebuild || !H || game::mode_id() != modes::kTribe)
+        return;
+    g_bar_rebuild_queued = true;
+    H->run_outside_frame(bar_rebuild_task, nullptr);
+}
+
+static int tribe_instrument_slot(int idx)
+{
+    if (game::mode_id() != modes::kTribe || !a_BarAbility || !a_TribeAbilities || idx < 0)
+        return -1;
+    void* ab = skg::cdecl_call<void*>(a_BarAbility, idx);
+    if (!ab)
+        return -1;
+    void** tbl = (void**)a_TribeAbilities;
+    if (!skg::readable(tbl, 6 * sizeof(void*)))
+        return -1;
+    for (int s = 3; s <= 5; s++)
+        if (tbl[s] == ab)
+            return s;
+    return -1;
+}
+
+static bool member_instrument_ready(void* c, uint32_t slot, int* out_ab_idx = nullptr)
+{
+    if (!c || !a_TribeAbilities || !a_CreatureAbilityIndex || slot < 3 || slot > 5)
+        return false;
+    void** tbl = (void**)a_TribeAbilities;
+    if (!skg::readable(tbl, 6 * sizeof(void*)) || !tbl[slot])
+        return false;
+    int ab_idx = skg::cdecl_call<int>(a_CreatureAbilityIndex, c, tbl[slot]);
+    if (ab_idx < 0 || ab_idx >= 64)
+        return false;
+    uint8_t* cd = F<uint8_t*>(c, 0xC28);
+    if (!cd || !skg::readable(cd + ab_idx * 0x10, 8))
+        return false;
+    if (out_ab_idx)
+        *out_ab_idx = ab_idx;
+    return *(float*)(cd + ab_idx * 0x10 + 4) >= 1.0f;
+}
+
+// Host: execute a guest's instrument play (slot 3/4/5 -> tools 4/5/6) on their performing members in BT 0xB46E8803
+bool host_social_play(uint8_t from, uint32_t slot, const std::vector<uint16_t>& ids)
+{
+    if (!g_guest_social_fix || from == 0 || !is_host() || tribe_rivals::active() || game::mode_id() != modes::kTribe)
+        return false;
+    int want_tool = tribe_logic::instrument_tool_for_slot(slot);
+    if (!want_tool || !a_SessionGet || !a_BTPostStimulus || !a_TribeAbilities || !a_CreatureAbilityIndex)
+        return false;
+    void* pt = player_tribe();
+    if (!pt)
+        return false;
+    std::vector<void*> cands;
+    {
+        game::LiveScope live;
+        for (uint16_t id : ids) {
+            HEntry* hm = g_host.members.find(id);
+            void* c = hm ? hm->ref.p : nullptr;
+            if (c && hm->data.owner == from && game::alive(game::LiveRef{c, hm->ref.serial, kMemberNoun}) &&
+                !game::is_dead(c) && F<void*>(c, kOwnerTribeOff) == pt)
+                cands.push_back(c);
+        }
+    }
+    if (cands.empty()) {
+        for (void* c : members(pt))
+            if (owner_of(c) == from && !game::is_dead(c))
+                cands.push_back(c);
+    }
+    int fired = 0;
+    for (void* c : cands) {
+        uint8_t* ai = F<uint8_t*>(c, 0xB4C);
+        if (!ai || !skg::readable(ai, 0x604) || F<uint32_t>(ai, 0x1D8) != 0xB46E8803u)
+            continue;
+        uint8_t* blk = F<uint8_t*>(ai, 0x600);
+        if (!blk || !skg::readable(blk, 0x1AC))
+            continue;
+        uint8_t* ss = skg::cdecl_call<uint8_t*>(a_SessionGet, F<int>(blk, 0x1A8));
+        if (!ss || !skg::readable(ss, 0xF0) || F<uint8_t>(ss, 0x51) == 0)
+            continue;
+        if (F<int>(c, kHeldToolOff) != want_tool)
+            continue;
+        int ab_idx = -1;
+        if (!member_instrument_ready(c, slot, &ab_idx))
+            continue;
+        void* stim = thiscall<void*>(a_BTPostStimulus, ai + 8, 0x10000000u, 0u, 10.0f, (void*)nullptr);
+        if (stim && skg::readable((uint8_t*)stim + 0xC, 4))
+            F<int>(stim, 0xC) = ab_idx;
+        fired++;
+        g_guest_social_plays_host++;
+    }
+    return fired > 0;
+}
+
+// Host -> Guest Tribal social session state snapshot (MSG_TRIBE_ANIM sub-kind kAnimTribeSocial = 22)
+struct GuestTribePerf {
+    uint16_t id = 0;
+    uint8_t owner = 0xFE;
+    uint8_t tool = 0;
+    uint8_t ready = 0;
+};
+struct GuestTribeSocial {
+    bool active = false;
+    uint8_t state = 0;
+    uint8_t can_play = 0;
+    uint8_t rel_level = 2;
+    int8_t req_inst = -1;
+    uint8_t outcome = 0; // 0 running, 1 won, 2 failed
+    float progress = 0.f;
+    double rx_at = -100.0;
+    std::vector<GuestTribePerf> perfs;
+};
+static GuestTribeSocial g_gsoc;
+static bool g_gsoc_ui_open = false;
+static uint8_t g_gsoc_ui_outcome = 0;
+static double g_gsoc_ui_end_at = -1.0;
+static bool g_gsoc_ui_task_queued = false;
+static double g_hsoc_sent_at = -100.0;
+static bool g_hsoc_was_active = false;
+static uint8_t g_hsoc_last_can = 0, g_hsoc_last_out = 0;
+
+static void* tribe_social_ui()
+{
+    if (!a_TribeUIGet || game::mode_id() != modes::kTribe)
+        return nullptr;
+    void* tui = skg::cdecl_call<void*>(a_TribeUIGet);
+    if (!tui || !skg::readable(tui, 4))
+        return nullptr;
+    void* game_ui = vcall<void*>(tui, 0x6C / 4);
+    if (!game_ui || !skg::readable((uint8_t*)game_ui + 0x50, 4))
+        return nullptr;
+    void* ui = F<void*>(game_ui, 0x50);
+    return ui && skg::readable(ui, 0xA8) ? ui : nullptr;
+}
+
+static int tribe_social_ui_vis(void* ui)
+{
+    if (!ui || !skg::readable((uint8_t*)ui + 0xC, 4))
+        return -1;
+    uint8_t* lay = F<uint8_t*>(ui, 0xC);
+    if (!lay || !skg::readable(lay + 0x14, 4))
+        return -1;
+    uint8_t* w = F<uint8_t*>(lay, 0x14);
+    return w && skg::readable(w + 0x8C, 1) ? (int)w[0x8C] : -1;
+}
+
+static void tribe_social_ui_set_visible(void* ui, bool show)
+{
+    if (!ui || !a_SocialMeterVis || !skg::readable((uint8_t*)ui + 0xC, 4))
+        return;
+    uint8_t* lay = F<uint8_t*>(ui, 0xC);
+    if (!lay)
+        return;
+    // SocialMeter_SetVisible (0xE319D0) is: ADD ECX, 0xC; JMP UTFWin::UILayout::SetVisible (0x810630)
+    thiscall<void>(a_SocialMeterVis, lay - 0xC, show ? 1 : 0);
+}
+
+static void tribe_social_ui_reset(void* ui, uint8_t rel_level)
+{
+    if (!ui || !skg::readable(ui, 0xA8))
+        return;
+    // Matches 0xE31510 (reset bar & icons) + 0xE31170 (relation faces)
+    if (void* w = F<void*>(ui, 0x84); w && skg::readable(w, 4))
+        vcall<void>(w, 0x7C / 4, 1, 1);
+    for (uintptr_t off : {0x88u, 0x8Cu, 0x90u, 0x94u, 0x98u, 0xA4u})
+        if (void* w = F<void*>(ui, off); w && skg::readable(w, 4))
+            vcall<void>(w, 0x7C / 4, 1, 0);
+    F<float>(ui, 0x68) = 0.f;
+    F<uint8_t>(ui, 0x7C) = 0;
+    int left_face = rel_level == 3 ? 3 : 2;
+    int right_face = left_face + 1;
+    if (void* w = F<void*>(ui, 0x9C); w && skg::readable(w, 4))
+        vcall<void>(w, 0x14 / 4, left_face);
+    if (void* w = F<void*>(ui, 0xA0); w && skg::readable(w, 4))
+        vcall<void>(w, 0x14 / 4, right_face);
+}
+
+static void tribe_social_ui_apply_task(void*)
+{
+    g_gsoc_ui_task_queued = false;
+    void* ui = tribe_social_ui();
+    if (!ui) {
+        if (!g_gsoc.active)
+            g_gsoc_ui_open = false;
+        return;
+    }
+    double now = H ? H->time_seconds() : 0.0;
+    bool want_open = g_guest_social_fix && is_guest() && active() && !tribe_rivals::active() &&
+                     (g_gsoc.active || (g_gsoc_ui_end_at > 0.0 && now < g_gsoc_ui_end_at));
+    if (want_open) {
+        if (!g_gsoc_ui_open) {
+            tribe_social_ui_reset(ui, g_gsoc.rel_level);
+            tribe_social_ui_set_visible(ui, true);
+            g_gsoc_ui_open = true;
+            g_gsoc_ui_outcome = 0;
+        }
+        F<float>(ui, 0x68) = std::clamp(g_gsoc.progress, 0.f, 1.f);
+        if (g_gsoc.outcome == 1 && g_gsoc_ui_outcome != 1) {
+            F<float>(ui, 0x68) = 1.f;
+            if (void* w = F<void*>(ui, 0xA4); w && skg::readable(w, 4))
+                vcall<void>(w, 0x7C / 4, 1, 1); // win icon (0xE31150)
+            g_gsoc_ui_outcome = 1;
+            g_gsoc_ui_end_at = now + 1.5;
+        } else if (g_gsoc.outcome == 2 && g_gsoc_ui_outcome != 2) {
+            F<uint8_t>(ui, 0x7C) = 1; // fail drain (0xE31610)
+            g_gsoc_ui_outcome = 2;
+            g_gsoc_ui_end_at = now + 1.5;
+        }
+    } else if (g_gsoc_ui_open) {
+        tribe_social_ui_set_visible(ui, false);
+        g_gsoc_ui_open = false;
+        g_gsoc_ui_outcome = 0;
+        g_gsoc_ui_end_at = -1.0;
+    }
+}
+
+static void queue_tribe_social_ui()
+{
+    if (g_gsoc_ui_task_queued || !H)
+        return;
+    g_gsoc_ui_task_queued = true;
+    H->run_outside_frame(tribe_social_ui_apply_task, nullptr);
+}
+
+static void tribe_social_clear(bool hide_ui)
+{
+    g_gsoc = GuestTribeSocial{};
+    g_gsoc_ui_end_at = -1.0;
+    g_gsoc_ui_outcome = 0;
+    g_hsoc_was_active = false;
+    g_hsoc_last_can = 0;
+    g_hsoc_last_out = 0;
+    if (hide_ui && g_gsoc_ui_open)
+        queue_tribe_social_ui();
+    else if (!hide_ui)
+        g_gsoc_ui_open = false;
+}
+LIFECYCLE_STATE("tribe.guest_social", lifecycle::kSession | lifecycle::kWorld, &g_guest_social_fix,
+                [] { tribe_social_clear(true); }, []() -> size_t { return g_gsoc.active ? 1 : 0; });
+
+static void tribe_social_host_tick(double now)
+{
+    if (!g_guest_social_fix || !is_host() || !C.sess || !C.sess->connected() || tribe_rivals::active() ||
+        !a_SessionGet || game::mode_id() != modes::kTribe)
+        return;
+    void* pt = player_tribe();
+    if (!pt)
+        return;
+    uint8_t* ss = nullptr;
+    void* target_tribe = nullptr;
+    std::vector<GuestTribePerf> perfs;
+    for (void* c : members(pt)) {
+        uint8_t o = owner_of(c);
+        uint8_t* ai = o < 0xFE ? F<uint8_t*>(c, 0xB4C) : nullptr;
+        if (!ai || !skg::readable(ai, 0x604) || F<uint32_t>(ai, 0x1D8) != 0xB46E8803u)
+            continue;
+        uint8_t* blk = F<uint8_t*>(ai, 0x600);
+        if (!blk || !skg::readable(blk, 0x1AC))
+            continue;
+        uint8_t* s = skg::cdecl_call<uint8_t*>(a_SessionGet, F<int>(blk, 0x1A8));
+        if (!s || !skg::readable(s, 0x1E4))
+            continue;
+        if (!ss) {
+            ss = s;
+            target_tribe = F<void*>(s, 0xC);
+        } else if (s != ss)
+            continue;
+        HEntry* hm = hm_of(c);
+        if (!hm || perfs.size() >= 16)
+            continue;
+        int tool = F<int>(c, kHeldToolOff);
+        uint32_t slot = tool == 4 ? 3u : tool == 5 ? 4u : tool == 6 ? 5u : 0u;
+        uint8_t ready = slot ? (member_instrument_ready(c, slot) ? 1u : 0u) : 0u;
+        perfs.push_back({hm->id, o, (uint8_t)std::clamp(tool, 0, 255), ready});
+    }
+    bool active_now = ss != nullptr;
+    uint8_t state = active_now ? (uint8_t)std::clamp(F<int>(ss, 4), 0, 255) : 0;
+    uint8_t can_play = active_now ? F<uint8_t>(ss, 0x51) : 0;
+    int8_t req_inst = active_now ? (int8_t)std::clamp(F<int>(ss, 0x1DC), -1, 10) : -1;
+    void* ui = active_now ? F<void*>(ss, 0xE8) : nullptr;
+    float progress = (ui && skg::readable(ui, 0x80)) ? F<float>(ui, 0x68) : 0.f;
+    uint8_t outcome = 0;
+    if (active_now) {
+        // Note: SocialSession state 4 is the pre-performance intro before state 5 (playing), NOT win.
+        bool won = (progress >= 1.0f) || (ui && a_PerfSucceeded && thiscall<bool>(a_PerfSucceeded, ui));
+        bool failed = (state == 6) || (ui && skg::readable(ui, 0x80) && F<uint8_t>(ui, 0x7C) != 0);
+        outcome = won ? 1 : failed ? 2 : 0;
+    }
+    uint8_t rel_level = 2;
+    if (active_now && target_tribe && a_RelMgrGet && a_RelCalc && a_RelLevel && skg::readable((uint8_t*)pt + 0x30, 4) &&
+        skg::readable((uint8_t*)target_tribe + 0x30, 4)) {
+        if (void* rm = skg::cdecl_call<void*>(a_RelMgrGet)) {
+            uint32_t pa = F<uint32_t>(pt, 0x30), pb = F<uint32_t>(target_tribe, 0x30);
+            float rv = thiscall<float>(a_RelCalc, rm, pb, pa, 0);
+            int lv = thiscall<int>(a_RelLevel, rm, rv);
+            if (lv == 3)
+                rel_level = 3;
+        }
+    }
+    bool edge = (active_now != g_hsoc_was_active) || (can_play != g_hsoc_last_can) || (outcome != g_hsoc_last_out);
+    if (!active_now && !g_hsoc_was_active)
+        return;
+    if (!edge && now - g_hsoc_sent_at < 0.1)
+        return;
+    g_hsoc_was_active = active_now;
+    g_hsoc_last_can = can_play;
+    g_hsoc_last_out = outcome;
+    g_hsoc_sent_at = now;
+    net::Writer w;
+    w.u8(tribe_logic::kAnimTribeSocial);
+    w.u8(active_now ? 1 : 0);
+    w.u8(state);
+    w.u8(can_play);
+    w.u8(rel_level);
+    w.u8((uint8_t)req_inst);
+    w.u8(outcome);
+    w.f32(progress);
+    w.u8((uint8_t)perfs.size());
+    for (auto& p : perfs) {
+        w.u16(p.id);
+        w.u8(p.owner);
+        w.u8(p.tool);
+        w.u8(p.ready);
+    }
+    for (auto& pl : C.sess->players())
+        if (pl.id != 0)
+            C.sess->send_reliable_to(pl.id, net::MSG_TRIBE_ANIM, w);
+    g_guest_social_tx++;
+}
+
+static void on_tribe_social_msg(net::Reader& r)
+{
+    uint8_t act = r.u8(), st = r.u8(), can = r.u8(), rel = r.u8(), req = r.u8(), out = r.u8();
+    float prog = r.f32();
+    uint8_t n = r.u8();
+    std::vector<GuestTribePerf> perfs;
+    for (int i = 0; i < n && i < 16 && r.ok(); i++) {
+        GuestTribePerf p;
+        p.id = r.u16();
+        p.owner = r.u8();
+        p.tool = r.u8();
+        p.ready = r.u8();
+        perfs.push_back(p);
+    }
+    if (!r.ok() || !g_guest_social_fix || tribe_rivals::active() || game::mode_id() != modes::kTribe)
+        return;
+    g_guest_social_rx++;
+    g_gsoc.active = act != 0;
+    g_gsoc.state = st;
+    g_gsoc.can_play = can;
+    g_gsoc.rel_level = rel;
+    g_gsoc.req_inst = (int8_t)req;
+    g_gsoc.outcome = out;
+    g_gsoc.progress = std::isfinite(prog) ? prog : 0.f;
+    g_gsoc.rx_at = H->time_seconds();
+    g_gsoc.perfs = std::move(perfs);
+    queue_tribe_social_ui();
+}
+
+static void tribe_social_guest_tick(double now)
+{
+    if (!g_guest_social_fix || !is_guest() || !active() || tribe_rivals::active() || game::mode_id() != modes::kTribe)
+        return;
+    if (g_gsoc.active && now - g_gsoc.rx_at > 2.5) {
+        g_gsoc.active = false;
+        queue_tribe_social_ui();
+    }
+    if (g_gsoc_ui_open) {
+        if (!g_gsoc.active && (g_gsoc_ui_end_at <= 0.0 || now >= g_gsoc_ui_end_at))
+            queue_tribe_social_ui();
+        else if (void* ui = tribe_social_ui())
+            F<float>(ui, 0x68) = std::clamp(g_gsoc.progress, 0.f, 1.f);
+    }
+    // Ensure AbilityBar row 0 has instrument slots populated whenever player tribe owns instrument racks
+    static double s_bar_check = 0;
+    if (now - s_bar_check >= 0.5 && a_BarPtr && a_BarRebuild) {
+        s_bar_check = now;
+        uint8_t* bar = *(uint8_t**)a_BarPtr;
+        void* pt = player_tribe();
+        if (bar && pt && skg::readable(bar, 0xD8)) {
+            bool has_inst_rack = false;
+            for (void* tool : tribe_tools(pt))
+                if (int tt = tool_type(tool); tt >= 4 && tt <= 6) {
+                    has_inst_rack = true;
+                    break;
+                }
+            if (has_inst_rack && *(int*)(bar + 0) < 0 && *(int*)(bar + 8) < 0 && *(int*)(bar + 16) < 0)
+                queue_bar_rebuild();
+        }
+    }
+}
+
+static void guest_matching_performers(int want_tool, std::vector<uint16_t>& out_ids, bool& has_match, bool& any_ready)
+{
+    out_ids.clear();
+    has_match = false;
+    any_ready = false;
+    if (!C.sess)
+        return;
+    uint8_t my = C.sess->my_id();
+    // Prefer selected own performers; fall back to any own performer in the session
+    bool any_sel_own = false;
+    for (auto& p : g_gsoc.perfs) {
+        if (p.owner != my)
+            continue;
+        void* m = member_mirror(p.id);
+        if (m && F<uint8_t>(m, kSelectedOff))
+            any_sel_own = true;
+    }
+    for (auto& p : g_gsoc.perfs) {
+        if (p.owner != my || (int)p.tool != want_tool)
+            continue;
+        void* m = member_mirror(p.id);
+        if (any_sel_own && (!m || !F<uint8_t>(m, kSelectedOff)))
+            continue;
+        has_match = true;
+        if (p.ready) {
+            any_ready = true;
+            out_ids.push_back(p.id);
+        }
+    }
+    if (out_ids.empty() && has_match && any_sel_own) {
+        // Fallback: if selected performer didn't match this instrument, check all of guest's performers
+        for (auto& p : g_gsoc.perfs)
+            if (p.owner == my && (int)p.tool == want_tool && p.ready) {
+                any_ready = true;
+                out_ids.push_back(p.id);
+            }
+    }
+}
+
+static int SK_CDECL h_BarStatus(int idx)
+{
+    if (g_guest_social_fix && is_guest() && active() && !tribe_rivals::active() && g_gsoc.active) {
+        int slot = tribe_instrument_slot(idx);
+        if (slot >= 3 && slot <= 5) {
+            std::vector<uint16_t> ids;
+            bool has_match = false, any_ready = false;
+            guest_matching_performers(tribe_logic::instrument_tool_for_slot((uint32_t)slot), ids, has_match, any_ready);
+            return (int)tribe_logic::tribe_social_ability_status(true, true, g_gsoc.can_play != 0, has_match, any_ready);
+        }
+    }
+    return o_BarStatus(idx);
+}
+
+static bool on_tribe_bar_use(int idx)
+{
+    if (!g_guest_social_fix || !is_guest() || !active() || tribe_rivals::active() || !g_gsoc.active)
+        return false;
+    int slot = tribe_instrument_slot(idx);
+    if (slot < 3 || slot > 5)
+        return false;
+    std::vector<uint16_t> ids;
+    bool has_match = false, any_ready = false;
+    guest_matching_performers(tribe_logic::instrument_tool_for_slot((uint32_t)slot), ids, has_match, any_ready);
+    uint32_t st = tribe_logic::tribe_social_ability_status(true, true, g_gsoc.can_play != 0, has_match, any_ready);
+    if (st == 0 && !ids.empty()) {
+        send_cmd(tribe_logic::kCmdSocialPlay, ids, slot, {}, {});
+        g_guest_social_plays_sent++;
+    }
+    return true;
+}
+
+static std::string guest_social_status()
+{
+    char b[320];
+    void* ui = tribe_social_ui();
+    snprintf(b, sizeof b,
+             "tribe guest social: fix=%d active=%d state=%u can_play=%u req_inst=%d outcome=%u progress=%.3f "
+             "ui_vis=%d perfs=%zu choose_over=%u plays_sent=%u plays_host=%u tx=%u rx=%u bar_rebuilds=%u (BUG-1561)\n",
+             (int)g_guest_social_fix, (int)g_gsoc.active, (unsigned)g_gsoc.state, (unsigned)g_gsoc.can_play,
+             (int)g_gsoc.req_inst, (unsigned)g_gsoc.outcome, g_gsoc.progress, tribe_social_ui_vis(ui),
+             g_gsoc.perfs.size(), g_guest_social_choose_over, g_guest_social_plays_sent, g_guest_social_plays_host,
+             g_guest_social_tx, g_guest_social_rx, g_bar_rebuilds);
+    return b;
 }
 
 // a herd of ours for epics: the epic archetype, no nest, not the avatar's, target size 0 (the
@@ -4813,14 +5352,17 @@ static void village_caption_tick(double now)
 static void coop_tick(double now)
 {
     chiefs_tick();
-    if (!is_host())
+    if (!is_host()) {
         village_caption_tick(now); // BUG-0983
+        tribe_social_guest_tick(now); // BUG-1561
+    }
     if (is_host()) {
         village_caption_tick(now);
         grab_spot_tick(now);
         spread_chiefs(now);
         place_chiefs(now);
         duet_tick(now);
+        tribe_social_host_tick(now); // BUG-1561
         epic_tick(now);
     }
 }
@@ -4833,6 +5375,19 @@ static void coop_init()
     a_AddFood = H->sym("SporeCoop::cTribe_AddFood");
     a_FoodFx = H->sym("Simulator::cTribe::UpdateFoodVisuals");
     a_SessionGet = H->sym("SporeCoop::SocialSession_Get");
+    a_TribeAbilities = H->sym("SporeCoop::TribeAbilities");
+    a_CreatureAbilityIndex = H->sym("SporeCoop::Creature_AbilityIndex");
+    a_BTPostStimulus = H->sym("SporeCoop::BT_PostStimulus");
+    a_BarPtr = H->sym("SporeCoop::AbilityBar_ptr");
+    a_BarRebuild = H->sym("SporeCoop::AbilityBar_Rebuild");
+    a_BarAbility = H->sym("SporeCoop::AbilityBar_Ability");
+    a_BarStatus = H->sym("SporeCoop::AbilityBar_Status");
+    a_SocialMeterVis = H->sym("SporeCoop::SocialMeter_SetVisible");
+    a_PerfSucceeded = H->sym("SporeCoop::TribePerformance_Succeeded");
+    a_TribeUIGet = H->sym("SporeCoop::cTribeUI_Get");
+    a_RelMgrGet = H->sym("Simulator::cRelationshipManager::Get");
+    a_RelCalc = H->sym("Simulator::cRelationshipManager::CalculateRelationship");
+    a_RelLevel = H->sym("Simulator::cRelationshipManager::GetRelationshipLevel");
     a_CreateHerd = H->sym("Simulator::cGameNounManager::CreateHerd");
     a_HerdEnable = H->sym("Simulator::cHerd::SetEnabled");
     a_CreatureCreate = H->sym("Simulator::cCreatureAnimal::Create");
@@ -4849,8 +5404,12 @@ static void coop_init()
         H->hook_create(M, (void*)a_HealTick, (void*)h_HealTick, (void**)&o_HealTick);
     if (a_SpecRelGet)
         H->hook_create(M, (void*)a_SpecRelGet, (void*)h_SpecRelGet, (void**)&o_SpecRelGet);
-    H->log(M, SK_INFO, "tribe co-op: citizen damage %s, heal %s, duet %s, epic %s", a_CitizenTD ? "on" : "off",
+    if (a_BarStatus) // BUG-1561
+        H->hook_create(M, (void*)a_BarStatus, (void*)h_BarStatus, (void**)&o_BarStatus);
+    social::set_tribe_bar_use(on_tribe_bar_use); // BUG-1561
+    H->log(M, SK_INFO, "tribe co-op: citizen damage %s, heal %s, duet %s, guest_social %s, epic %s", a_CitizenTD ? "on" : "off",
            a_HealTick && a_PatientOf ? "on" : "off", a_SessionGet ? "on" : "off",
+           a_BarStatus && a_TribeAbilities && a_CreatureAbilityIndex ? "on" : "off",
            a_CreateHerd && a_HerdEnable && a_CreatureCreate ? "on" : "off");
 }
 
@@ -5042,6 +5601,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         H->log(M, SK_INFO, "tribe: a command of player %u held: this game is not in Tribe (mode %08X)", from, game::mode_id());
     } else if (type == net::MSG_TRIBE_ANIM && is_guest()) { // C7 (BUG-1160): the host's members' animations and waits
         uint8_t kind = r.u8();
+        if (r.ok() && kind == tribe_logic::kAnimTribeSocial) { // BUG-1561: Tribal social session state sync
+            on_tribe_social_msg(r);
+            return;
+        }
         if (!r.ok() || !wire::tribe_anim::is_tribe_kind(kind)) {
             g_anim_rx_bad++;
             return;
@@ -5111,6 +5674,7 @@ void before_save()
 void on_session_end()
 {
     ff_clear_orders(); // BUG-0899
+    tribe_social_clear(true); // BUG-1561
     took_clear(); // BUG-1522
     g_test_gone.clear();
     g_away_pending.clear(); // BUG-1492
@@ -5388,7 +5952,9 @@ std::string status()
     out += b;
     snprintf(b, sizeof b, "tribe hand bone: fix=%d waits=%u repairs=%u fx_skips=%u (BUG-1335)\n", (int)game::fx_bone_fix(),
              g_hand_waits, g_hand_repairs, game::fx_bone_skips());
-    return out + b;
+    out += b;
+    out += guest_social_status(); // BUG-1561
+    return out;
 }
 
 bool near_member(const net::Vec3& p, float radius)
