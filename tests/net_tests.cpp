@@ -36,6 +36,7 @@
 #include "net/kick.h"
 #include "net/utf8.h"
 #include "recent_servers.h"
+#include "world_resume.h"
 
 using namespace net;
 
@@ -5433,6 +5434,247 @@ static void test_recent_servers()
     CHECK(ini["server0"] == "127.0.0.1:47816" && ini["server1"].empty() && ini["server7"].empty());
 }
 
+// WP-C (BUG-0869): Cell warm reconnect receipt ledger, guest state machine, MSG_WORLD_DONE tail,
+// CAP_RESUME_WORLD HELLO round-trip, and backward compatibility with older peers.
+static void test_cell_warm_reconnect()
+{
+    printf("Cell warm reconnect ledger, guest state, WorldDone, CAP_RESUME_WORLD (BUG-0869)\n");
+    using namespace world_resume;
+    using WR = world_resume::RejectReason;
+    { // 1. receipt generator: non-zero and distinct across serials / counters
+        uint64_t r1 = make_receipt(1000, 1, 42);
+        uint64_t r2 = make_receipt(1000, 2, 42);
+        uint64_t r3 = make_receipt(1001, 1, 42);
+        CHECK(r1 != 0 && r2 != 0 && r3 != 0 && r1 != r2 && r1 != r3 && r2 != r3);
+    }
+    { // 2. host ledger: 32-entry ring buffer cap, matching receipt accepted, mismatches rejected
+        HostLedger ledger;
+        CHECK(ledger.size() == 0);
+        for (uint64_t i = 1; i <= kMaxReceipts + 5; i++) {
+            HostEntry e;
+            e.receipt = 0xA000000000000000ull + i;
+            e.slot_key = "c:\\games\\game0\\karke.spo";
+            e.world_id = 0x12345678u;
+            e.stage_epoch = 3;
+            e.slot_mtime = 133000000000000000ull + i;
+            e.save_gen = i;
+            e.food_total = (int32_t)(10 * i);
+            e.transfer_world_id = 0xDEADBEEFu;
+            ledger.record(e);
+        }
+        CHECK(ledger.size() == kMaxReceipts);
+        // First 5 entries were evicted; entry 6 through 37 remain
+        CHECK(ledger.find(0xA000000000000001ull) == nullptr);
+        CHECK(ledger.find(0xA000000000000005ull) == nullptr);
+        CHECK(ledger.find(0xA000000000000006ull) != nullptr);
+        const uint64_t latest = 0xA000000000000000ull + (kMaxReceipts + 5);
+        const HostEntry* found = ledger.find(latest);
+        CHECK(found != nullptr && found->food_total == 370);
+
+        HostQuery q;
+        q.enabled = true;
+        q.mode = kCellMode;
+        q.slot_key = "c:\\games\\game0\\karke.spo";
+        q.world_id = 0x12345678u;
+        q.stage_epoch = 3;
+        q.slot_mtime = 133000000000000000ull + (kMaxReceipts + 5);
+        q.save_gen = kMaxReceipts + 5;
+        q.save_in_flight = false;
+
+        auto ok = ledger.validate(latest, q);
+        CHECK(ok.ok && ok.reason == WR::None && ok.entry == found);
+
+        // Switch OFF -> Disabled
+        {
+            HostQuery q2 = q;
+            q2.enabled = false;
+            auto r = ledger.validate(latest, q2);
+            CHECK(!r.ok && r.reason == WR::Disabled);
+        }
+        // Not in Cell -> NotInCell
+        {
+            HostQuery q2 = q;
+            q2.mode = 0x1654C01u; // Creature
+            auto r = ledger.validate(latest, q2);
+            CHECK(!r.ok && r.reason == WR::NotInCell);
+        }
+        // Empty / evicted receipt -> EmptyReceipt / UnknownReceipt
+        {
+            auto r0 = ledger.validate(0, q);
+            auto r1 = ledger.validate(0xA000000000000001ull, q);
+            CHECK(!r0.ok && r0.reason == WR::EmptyReceipt);
+            CHECK(!r1.ok && r1.reason == WR::UnknownReceipt);
+        }
+        // Wrong world_id -> WorldMismatch
+        {
+            HostQuery q2 = q;
+            q2.world_id = 0x87654321u;
+            auto r = ledger.validate(latest, q2);
+            CHECK(!r.ok && r.reason == WR::WorldMismatch);
+        }
+        // Wrong stage_epoch -> EpochMismatch
+        {
+            HostQuery q2 = q;
+            q2.stage_epoch = 4;
+            auto r = ledger.validate(latest, q2);
+            CHECK(!r.ok && r.reason == WR::EpochMismatch);
+        }
+        // Wrong slot_key -> SlotMismatch
+        {
+            HostQuery q2 = q;
+            q2.slot_key = "c:\\games\\game1\\karke.spo";
+            auto r = ledger.validate(latest, q2);
+            CHECK(!r.ok && r.reason == WR::SlotMismatch);
+        }
+        // Host save happened (save_gen bumped) -> SaveOccurred
+        {
+            HostQuery q2 = q;
+            q2.save_gen = q.save_gen + 1;
+            auto r = ledger.validate(latest, q2);
+            CHECK(!r.ok && r.reason == WR::SaveOccurred);
+        }
+        // Slot mtime changed -> SlotModified
+        {
+            HostQuery q2 = q;
+            q2.slot_mtime = q.slot_mtime + 100;
+            auto r = ledger.validate(latest, q2);
+            CHECK(!r.ok && r.reason == WR::SlotModified);
+        }
+        // Host save in flight -> SaveInFlight
+        {
+            HostQuery q2 = q;
+            q2.save_in_flight = true;
+            auto r = ledger.validate(latest, q2);
+            CHECK(!r.ok && r.reason == WR::SaveInFlight);
+        }
+    }
+    { // 3. GuestState lifecycle: PendingLoad -> Active -> survives disconnect -> clears on leave/host-switch
+        GuestState gs;
+        CHECK(gs.phase() == GuestState::Phase::Empty && gs.active_receipt() == 0);
+        gs.arm_pending(0xCAFEBABE12345678ull, "127.0.0.1:47810", "127.0.0.1:47810",
+                       "c:\\games\\game1\\karke.spo", 0x11223344u, 1, 1000);
+        CHECK(gs.phase() == GuestState::Phase::PendingLoad && gs.active_receipt() == 0);
+        // Still in old epoch 1 or load still queued -> stays PendingLoad
+        CHECK(!gs.tick(kCellMode, 1, 0x11223344u, "c:\\games\\game1\\karke.spo", true, 1500));
+        CHECK(!gs.tick(kCellMode, 1, 0x11223344u, "c:\\games\\game1\\karke.spo", false, 2000));
+        // Menu -> Load -> Cell epoch 2 -> transitions to Active
+        CHECK(!gs.tick(kMenuMode, 1, 0, "", false, 3000));
+        CHECK(!gs.tick(kLoadMode, 1, 0, "", false, 4000));
+        CHECK(gs.tick(kCellMode, 2, 0x11223344u, "c:\\games\\game1\\karke.spo", false, 5000));
+        CHECK(gs.phase() == GuestState::Phase::Active && gs.active_receipt() == 0xCAFEBABE12345678ull);
+        // Survives disconnect while in Cell
+        gs.on_session_end(false);
+        CHECK(gs.phase() == GuestState::Phase::Active);
+        // Switch OFF returns 0 without losing receipt
+        CHECK(gs.receipt_for_join(false, "127.0.0.1:47810", "127.0.0.1:47810", kCellMode, 2, 0x11223344u) == 0);
+        // Switch ON returns receipt for same host
+        CHECK(gs.receipt_for_join(true, "127.0.0.1:47810", "127.0.0.1:47810", kCellMode, 2, 0x11223344u) ==
+              0xCAFEBABE12345678ull);
+        CHECK(gs.accept_ack(0xCAFEBABE12345678ull));
+        CHECK(!gs.accept_ack(0x1111111111111111ull));
+        // Editor visit inside Cell preserves Active
+        const char* why = nullptr;
+        CHECK(!gs.tick(kEditorMode, 2, 0, "", false, 6000, &why) && why == nullptr);
+        CHECK(gs.phase() == GuestState::Phase::Active);
+        // Leaving Cell to menu clears receipt
+        CHECK(!gs.tick(kMenuMode, 2, 0, "", false, 7000, &why) && why != nullptr);
+        CHECK(gs.phase() == GuestState::Phase::Empty && gs.active_receipt() == 0);
+        // Switching host clears receipt
+        gs.arm_pending(0x9988776655443322ull, "127.0.0.1:47810", "host-a",
+                       "c:\\games\\game1\\karke.spo", 0x11223344u, 2, 8000);
+        CHECK(gs.tick(kCellMode, 3, 0x11223344u, "c:\\games\\game1\\karke.spo", false, 9000));
+        CHECK(gs.receipt_for_join(true, "127.0.0.1:47812", "host-b", kCellMode, 3, 0x11223344u) == 0);
+        CHECK(gs.phase() == GuestState::Phase::Empty);
+    }
+    { // 4. WorldDone wire round-trip + backward compat with 4-byte legacy MSG_WORLD_DONE
+        WorldDone d;
+        d.world_id = 0x55667788u;
+        d.has_receipt = true;
+        d.resume_receipt = 0x0123456789ABCDEFull;
+        d.flags = kFlagResumed;
+        Writer w;
+        d.write(w);
+        CHECK(w.size() == 4 + 8 + 1);
+        Reader r(w.data.data(), w.size());
+        WorldDone got;
+        CHECK(got.read(r) && got.world_id == d.world_id && got.has_receipt &&
+              got.resume_receipt == d.resume_receipt && got.resumed() && r.left() == 0);
+        // Legacy 4-byte MSG_WORLD_DONE decodes cleanly with no receipt
+        Writer oldw;
+        oldw.u32(0x11223344u);
+        Reader oldr(oldw.data.data(), oldw.size());
+        WorldDone oldg;
+        CHECK(oldg.read(oldr) && oldg.world_id == 0x11223344u && !oldg.has_receipt && !oldg.resumed());
+    }
+    { // 5. CAP_RESUME_WORLD HELLO wire round-trip, Welcome stripping, and 0.7.14 backward compat
+        Hello h;
+        h.build = 0xABCD1234u;
+        h.name = "Bob";
+        h.version = "coop 0.8.0, SporeKit 0.8.0, GOG 2024 dc04aee5";
+        h.has_token = true;
+        h.token = 0x1122334455667788ull;
+        h.families = compat::my_families();
+        h.has_resume_receipt = true;
+        h.resume_receipt = 0xFEDCBA9876543210ull;
+        Writer w;
+        h.write(w);
+        Reader r(w.data.data(), w.size());
+        Hello g;
+        CHECK(g.read(r) && g.has_token && g.token == h.token && g.has_families && g.families == h.families &&
+              (g.caps & CAP_RESUME_WORLD) && g.has_resume_receipt && g.resume_receipt == h.resume_receipt &&
+              r.left() == 0);
+        // 0.7.14 reader still reads HELLO carrying CAP_RESUME_WORLD (ignores unknown bit & trailing bytes)
+        Reader r14(w.data.data(), w.size());
+        Hello0714 old14;
+        CHECK(old14.read(r14) && old14.name == "Bob" && old14.has_token && old14.token == h.token &&
+              old14.version == h.version);
+        // Truncated resume receipt leaves HELLO readable with has_resume_receipt == false
+        Writer trunc = w;
+        trunc.data.resize(trunc.data.size() - 3);
+        Reader rt(trunc.data.data(), trunc.size());
+        Hello gt;
+        CHECK(gt.read(rt) && gt.has_families && !gt.has_resume_receipt && gt.resume_receipt == 0);
+        // WELCOME never carries CAP_RESUME_WORLD
+        Welcome wl;
+        wl.your_id = 1;
+        wl.world = 0x12345678u;
+        wl.caps = kMyCaps | CAP_RESUME_WORLD;
+        wl.host_version = "coop 0.8.0";
+        wl.families = compat::my_families();
+        Writer ww;
+        wl.write(ww);
+        Reader rw(ww.data.data(), ww.size());
+        Welcome wg;
+        CHECK(wg.read(rw) && (wg.caps & CAP_RESUME_WORLD) == 0 && wg.has_families);
+    }
+    { // 6. Live Session handshake: host reads peer_resume_receipt in cb.player_join; old guest has none
+        Session h, g1, g2;
+        std::string err;
+        uint64_t seen_receipt = 0;
+        bool seen_has = false;
+        h.cb.player_join = [&](const PlayerInfo& pi) {
+            seen_has = h.peer_resume_receipt(pi.id, seen_receipt);
+        };
+        CHECK(h.host(0, "Alice", err));
+        g1.resume_receipt = 0xDEADBEEFCAFEBABEull;
+        CHECK(g1.join("127.0.0.1:" + std::to_string(h.port()), "Bob", err));
+        tick({&h, &g1}, 500);
+        CHECK(g1.connected() && seen_has && seen_receipt == 0xDEADBEEFCAFEBABEull);
+
+        // Older guest (no caps) still joins cleanly with no resume receipt
+        seen_has = true;
+        seen_receipt = 1;
+        g2.send_caps = false;
+        g2.resume_receipt = 0x1234ull;
+        CHECK(g2.join("127.0.0.1:" + std::to_string(h.port()), "OldBob", err));
+        tick({&h, &g1, &g2}, 500);
+        CHECK(g2.connected() && !seen_has && seen_receipt == 0);
+        g1.leave();
+        g2.leave();
+        h.leave();
+    }
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::string(argv[1]) == "--fakepeer-host")
@@ -5612,6 +5854,7 @@ int main(int argc, char** argv)
         {"test_session_password", test_session_password},
         {"test_recent_servers", test_recent_servers},
         {"test_bulk_bottleneck", test_bulk_bottleneck},
+        {"test_cell_warm_reconnect", test_cell_warm_reconnect},
     };
     for (size_t i = 0; i < sizeof tests / sizeof tests[0]; i++) {
         if (!run_this(tests[i].first, i))

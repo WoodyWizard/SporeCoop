@@ -1734,3 +1734,6 @@ add('password_recent', P + 'coop_password_recent.py', minutes=5, fixture='creatu
 add('password_recent_off', 'SPORE_FIX_OFF=session.password,ui.recent_servers ' + P + 'coop_password_recent.py', ('twin',), minutes=5, fixture='creature')  # BUG-0867 twin: password enforcement and recent servers disabled: must FAIL
 add('ui_tooltips', P + 'coop_ui_tooltips.py', minutes=4, fixture='creature')  # BUG-0874: real mouse move over Host button shows no tooltip before 0.8 s, shows Spore-style EN and RU tooltip after 1.0 s, hides on move away (SPORE_FIX_OFF=ui.tooltips fails: ui_tooltips_off)
 add('ui_tooltips_off', 'SPORE_FIX_OFF=ui.tooltips ' + P + 'coop_ui_tooltips.py', ('twin',), minutes=4, fixture='creature')  # BUG-0874 twin: hover tooltips disabled: must FAIL
+# 0.8.0 WP-C: BUG-0869 Cell warm reconnect
+add('cell_warm_reconnect', P + 'coop_cell_warm_reconnect.py', minutes=5, fixture='cell')  # BUG-0869: Cell warm reconnect reuses unchanged Cell tide pool without MSG_WORLD_OFFER and falls back to full transfer after host save (SPORE_FIX_OFF=cell.warm_reconnect fails: cell_warm_reconnect_off)
+add('cell_warm_reconnect_off', 'SPORE_FIX_OFF=cell.warm_reconnect ' + P + 'coop_cell_warm_reconnect.py', ('twin',), minutes=5, fixture='cell')  # BUG-0869 twin: warm reconnect disabled, reconnect always sends MSG_WORLD_OFFER and reloads guest: must FAIL

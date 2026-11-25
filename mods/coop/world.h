@@ -72,7 +72,17 @@ bool last_coop_world(std::string& slot_name, std::string& host, std::string& pla
 // loads it from the galaxy menu (the player's own load, as coop.load); `said` for the window / the console
 bool continue_coop(std::string& said);
 // guest: handle MSG_WORLD_* messages
-void on_message(uint8_t type, net::Reader& r, const std::string& host_name);
+void on_message(uint8_t type, net::Reader& r, const std::string& host_name, const std::string& host_addr = "");
+// BUG-0869 (0.8.0 WP-C): Cell warm reconnect receipt helpers.
+// host: bump save generation on any game save so older receipts are invalidated
+void on_host_save();
+// host: hosting started (clears any guest-side receipt)
+void on_host_start();
+// host: validate a joining guest's resume receipt; if accepted, sends lightweight MSG_WORLD_DONE (kFlagResumed)
+// without MSG_WORLD_OFFER and returns true; else logs, bumps warm_fallbacks, and returns false
+bool try_warm_resume(net::Session& s, uint8_t peer, uint64_t receipt, const std::string& peer_name);
+// guest: receipt to attach to HELLO when joining `addr` (0 if none, wrong host, left Cell, or switch off)
+uint64_t resume_receipt_for_join(const std::string& addr);
 std::string status();
 // host: called with the files of a share before its offer goes out (creations: the species of the
 // host's own creations first)

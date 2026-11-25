@@ -35,6 +35,8 @@ struct Peer {
     std::vector<FamilyRev> families; // ... and these are its revisions
     bool has_token = false; // host: its HELLO carried a rejoin token (BUG-0235)
     uint64_t token = 0;
+    bool has_resume_receipt = false; // host: its HELLO carried CAP_RESUME_WORLD + receipt (BUG-0869)
+    uint64_t resume_receipt = 0;
     std::string hello_name; // host: the name of its HELLO, cleaned, before " 2" / "guest<id>" (BUG-1001)
     // BUG-1108, host: what this guest's messages made the host queue for the players (a token bucket in bytes: refilled
     // at Session::relay_rate up to relay_burst), the time of its last refill, and a drop asked for (coop.kick, a limit)
@@ -86,6 +88,8 @@ public:
     // sends the same token (coop.dll keeps it in a file until a clean leave); the host replaces a
     // silent entry only on an equal token (net::g_fix.rejoin_token), never by the name alone
     uint64_t rejoin_token = 0;
+    // BUG-0869: guest: the Cell warm reconnect receipt to carry in HELLO (CAP_RESUME_WORLD); 0 = none
+    uint64_t resume_receipt = 0;
     bool send_caps = true; // not a lab switch: test seam, false = HELLO / WELCOME without the extension (0.7.2 shape)
     bool send_families = true; // not a lab switch: test seam, false = HELLO / WELCOME without CAP_FAMILIES (0.7.14 shape)
     // not lab switches: test seams (BUG-1281), the HELLO payload sent instead of ours / the WELCOME payload for a guest
@@ -179,6 +183,9 @@ public:
     // C7 (BUG-1160), host: the message family revisions an accepted guest's HELLO listed (`has` false: it listed none,
     // a version before 0.7.15); false when there is no such guest
     bool peer_families(uint8_t id, bool& has, std::vector<FamilyRev>& out) const;
+    // BUG-0869, host: the Cell warm reconnect receipt an accepted guest sent in its HELLO (CAP_RESUME_WORLD);
+    // false when no such guest or its HELLO carried no non-zero receipt
+    bool peer_resume_receipt(uint8_t id, uint64_t& receipt) const;
     // BUG-1282 / BUG-1283, guest: the message family revisions the host's WELCOME listed (`has` false: none, a version
     // before 0.7.15); false before the WELCOME and on the host (peer_families above answers only on the host)
     bool host_families(bool& has, std::vector<FamilyRev>& out) const;

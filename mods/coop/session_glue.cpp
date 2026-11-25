@@ -956,16 +956,26 @@ void setup_callbacks()
             r.cine_wait_since = 0;
             feed(p.name + " waits for your world: load or start a game");
         } else if (g_sess.role() == net::Role::Host && g_share_world && !own_worlds) {
-            std::string err;
-            bool save = g_save_on_share && g_adapter; // only while playing, not from menus
-            r.world_sent = ((uint64_t)g_mode << 32) | modes::current_world();
-            r.joined_phase = false;
-            r.share_at_join = true;
-            if (!world::share_with(p.id, err, save, r.join_serial)) {
-                feed("cannot share the world: " + err);
-                share_failed(p.id, r.join_serial, false);
-            } else
-                feed("sending the world to " + p.name);
+            uint64_t receipt = 0;
+            if (g_sess.peer_resume_receipt(p.id, receipt) && world::try_warm_resume(g_sess, p.id, receipt, p.name)) {
+                r.world_sent = ((uint64_t)g_mode << 32) | modes::current_world();
+                r.joined_phase = true;
+                r.share_at_join = false;
+                r.needs_world = false;
+                cellsync::on_warm_resume_host(p.id);
+                feed(p.name + " reconnected to your Cell world (no reload)");
+            } else {
+                std::string err;
+                bool save = g_save_on_share && g_adapter; // only while playing, not from menus
+                r.world_sent = ((uint64_t)g_mode << 32) | modes::current_world();
+                r.joined_phase = false;
+                r.share_at_join = true;
+                if (!world::share_with(p.id, err, save, r.join_serial)) {
+                    feed("cannot share the world: " + err);
+                    share_failed(p.id, r.join_serial, false);
+                } else
+                    feed("sending the world to " + p.name);
+            }
         }
     };
     g_sess.cb.custom = [](uint8_t type, uint8_t from, net::Reader& r) {
@@ -1379,7 +1389,7 @@ void setup_callbacks()
             return;
         case net::Route::World: // the host's save (a guest's game only)
             if (from == 0)
-                world::on_message(type, r, g_sess.name_of(0));
+                world::on_message(type, r, g_sess.name_of(0), g_sess.host_address());
             return;
         }
     };
@@ -1466,6 +1476,7 @@ bool do_host(uint16_t port, std::string& err)
 {
     end_open_session();
     reset_lobby();
+    world::on_host_start(); // BUG-0869: clear any guest-side warm reconnect receipt
     if (!g_sess.host(port, g_name, err))
         return false;
     support::on_session_start();
@@ -1482,6 +1493,7 @@ bool do_join(const std::string& addr, std::string& err)
     reset_lobby();
     g_joining_addr = recent::clean_address(addr);
     g_sess.rejoin_token = rejoin::token_for_join(H->instance_id(), addr, g_name); // BUG-0235, BUG-1001
+    g_sess.resume_receipt = world::resume_receipt_for_join(addr);                 // BUG-0869
     if (!g_sess.join(addr, g_name, err))
         return false;
     { // the chat log goes into problem reports: no public address there
