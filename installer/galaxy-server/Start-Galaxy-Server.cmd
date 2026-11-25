@@ -12,13 +12,17 @@ set "GALAXY_PORT=47900"
 title Lineages Galaxy Server - %GALAXY_NAME% - close this window to stop it
 
 rem The update check before the server runs (BUG-9378). "updated" is this file's own restart after an update.
+rem Decision 8Z: the server follows the game on this PC. The check answers 11 when a newer build is out and the game
+rem here already has it (update, no question), 10 when the game here is still on the old build (ask; no answer
+rem means no, so everybody can go on playing), 0 when there is nothing to do.
 if /i "%~1"=="updated" goto run
 if /i "%GALAXY_UPDATE%"=="off" goto run
 if not exist "%~dp0galaxy_update.exe" goto run
 "%~dp0galaxy_update.exe" --check
+if errorlevel 11 goto update
 if not errorlevel 10 goto run
 if /i "%GALAXY_UPDATE%"=="auto" goto update
-choice /C YN /T 30 /D Y /M "Update the galaxy server now (Y by itself in 30 seconds)"
+choice /C YN /T 10 /D N /M "Update the galaxy server now (N by itself in 10 seconds)"
 if errorlevel 2 goto run
 :update
 rem One line on purpose: the update replaces this file, so nothing after the update is read from the old one.

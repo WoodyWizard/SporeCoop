@@ -24,16 +24,19 @@ How players join
 
 Updating
 --------
-* Every time it starts, the server first looks for a newer Lineages build. When there is
-  one it asks "Update the galaxy server now": press Y, or wait 30 seconds and it updates
-  by itself; N starts the server as it is. The update is taken from the Lineages release
-  page and checked before anything is replaced. Your settings and planets are not touched.
-* Players who updated their game can only join once the server is updated too, and the
-  other way round. So restart the server after a Lineages update came out.
-* GALAXY_UPDATE in galaxy-settings.cmd changes this: auto (update without asking, for a
-  server nobody watches) or off (never look).
-* The server only updates itself. Your own game on this PC updates as always (the Co-op
-  window, Check for Updates). Running a new SporeCoopSetup updates both.
+* The server and every player's game must be the same Lineages build. So the server
+  follows the game on this PC. Every time it starts it first looks for a newer build:
+  - Your game on this PC already has the new build: the server updates by itself and
+    starts. (Update your game the usual way: the Co-op window, Check for Updates.)
+  - Your game is still on the old build: the server asks "Update the galaxy server now".
+    Press Y to update, or N (or wait 10 seconds) to start it as it is, so you and your
+    players can go on playing. Update the game and the server when everybody is ready.
+* The update is taken from the Lineages release page and checked before anything is
+  replaced. Your settings and planets are not touched.
+* GALAXY_UPDATE in galaxy-settings.cmd changes this: auto (always update without asking,
+  for a server nobody watches) or off (never look).
+* The server only updates itself, never your game. Running a new SporeCoopSetup with
+  "Also install the galaxy server" updates both at once.
 
 Your settings: galaxy-settings.cmd
 ----------------------------------

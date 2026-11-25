@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Online worlds (alpha): the galaxy server's update follows the game on its PC. When that game already has the new
+  build, the server updates by itself before it starts. When it has not, the server asks, and no answer within 10
+  seconds means no, so the host and the players can go on playing on the build they have (decision 8Z, BUG-9379).
+
 ## [0.7.14.1-lineages71-dev] - 2026-11-24
 
 The game plays as 70-dev does; the new part is in the installer. Everyone in a session needs the same build.

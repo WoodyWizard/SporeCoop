@@ -2176,3 +2176,33 @@ update still does not touch it, and the server does not update the game.
   out". Not run: the download of a server pack from GitHub itself (no release newer than the first one with a server
   exists yet) and a planet on the installed server.
 
+## The server's update follows the game on its PC (8Z, BUG-9379, 2026-11-24, feat/lineages-alpha)
+<a id="server-update-follows-game"></a>
+
+Decision 8Z, the owner 2026-11-24: "Let's check if the local install is updated, if it is, automatically update. If
+it isn't, then ask and after the timer, default to no so the player can play without interruption." Built, not
+released yet. docs/tickets/BUG-9379-*.
+
+CORRECTION (2026-11-24, feat/lineages-alpha) to #server-update-check: "Y (or no answer) downloads and installs" is
+71-dev's behaviour only. From the next release the rule is the one below.
+
+| A newer Lineages build is out and ... | The start file |
+|---|---|
+| the game in this game folder already has it | updates the server, no question (the host's own game could not join otherwise) |
+| the game here is still on the older build | asks "Update the galaxy server now (N by itself in 10 seconds)"; no answer: the server starts as it is |
+| GALAXY_UPDATE=auto | updates, no question |
+| GALAXY_UPDATE=off | does not look |
+
+* Why: one build for the server and every game. Updating the server alone locks out the host and the friends who
+  have not updated; leaving it old locks out a host who has. The game on the server's PC is the best sign of which
+  build the group plays.
+* How: `galaxy_update.exe --check` answers 11 (a newer release, the game here has it), 10 (a newer release, the game
+  here does not, or no game folder) or 0; the game's version is SporebinEP1\mods\sporecoop.version.
+* The wait is 10 seconds: the question comes at every start while the host's game is old.
+* ✔ (runtime) `choice /T` counts down on a console only. With the input from NUL it takes the default at once; on a
+  pipe that stays open it waits for the pipe. A test of the timer needs a console of its own.
+* Open: a galaxy whose host never plays on the server's PC (a dedicated machine) has no game to follow there, or an
+  old one: it is asked at every start and answers no by itself, so it stays on its build. GALAXY_UPDATE=auto is for
+  that machine; the read-me says so.
+* A 71-dev server behaves as 71-dev (ask, yes after 30 seconds) until its first update.
+

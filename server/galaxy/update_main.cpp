@@ -4,7 +4,13 @@
 // the pack's own hashes, the allowed paths) and the same file swap. Start-Galaxy-Server.cmd runs it before the server.
 //
 //   galaxy_update.exe --check    exit 0: up to date, or the check could not be made (it says which); 10: a newer release
+//                                and the game on this PC is not on it yet; 11: a newer release the game here already has
 //   galaxy_update.exe --apply    downloads the newest release's server pack, checks it, installs it; exit 0 done, 1 not
+//
+// Decision 8Z (owner 2026-11-24: "check if the local install is updated, if it is, automatically update. If it isn't,
+// then ask and after the timer, default to no so the player can play without interruption"): the server follows the
+// game in its own game folder. 11: the start file updates without a question (the host's game could not join its own
+// server otherwise). 10: the start file asks, and no answer means no (the host and friends on the old build play on).
 //
 // The server lives in <game>\SporebinEP1\mods\galaxy-server (the setup puts it there, decision 8Y C): the game folder
 // is three folders up, and the pack is applied to it as the setup does. A server pack writes only into the server's
@@ -134,9 +140,18 @@ int main(int argc, char** argv)
         return 0;
     }
     if (mode == "--check") {
-        printf("Update check: Lineages %s is out (this server: %s).\n"
-               "Players who update their game can only join once the server is updated too.\n",
-               rel.version.c_str(), mine.empty() ? "unknown" : mine.c_str());
+        // 8Z: the game of this game folder (SporebinEP1\mods\sporecoop.version; "" outside a game folder)
+        const std::string game = root.empty() ? std::string() : upd::installed_version(root);
+        if (!game.empty() && upd::compare_versions(game, rel.version) >= 0) {
+            printf("Update check: Lineages %s is out and the game on this PC already has it (this server: %s).\n"
+                   "The server is updated now, so your game and the server match.\n",
+                   rel.version.c_str(), mine.empty() ? "unknown" : mine.c_str());
+            return 11;
+        }
+        printf("Update check: Lineages %s is out (this server: %s, the game on this PC: %s).\n"
+               "The server and every player's game must be the same build. Update the server when you and your\n"
+               "players update the game; until then everybody can go on playing as they are.\n",
+               rel.version.c_str(), mine.empty() ? "unknown" : mine.c_str(), game.empty() ? "not found" : game.c_str());
         return 10;
     }
     if (root.empty()) {
