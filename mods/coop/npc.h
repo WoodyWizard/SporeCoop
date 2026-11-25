@@ -146,6 +146,7 @@ void release_player_pack(uint8_t player);
 int pack_count_of(uint8_t player);
 uint8_t pack_owner_of(uint16_t id);
 std::vector<std::pair<uint16_t, uint8_t>> pack_owners_snapshot();
+std::vector<uint32_t> pack_species_of(uint8_t player);
 bool take_pack_dirty();
 void set_guest_pack_owners(const std::vector<std::pair<uint16_t, uint8_t>>& entries);
 int local_posse_count();

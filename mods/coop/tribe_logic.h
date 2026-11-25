@@ -555,4 +555,160 @@ inline bool guest_mission_action(int action, bool social_fix)
     return action == 15 || action == 9 || (social_fix && action == 26);
 }
 
+// ---------------- Tribe guest consequence abilities (BUG-1564) ----------------
+
+constexpr uint8_t kCmdConsequenceAbility = 6; // MSG_TRIBE_CMD sub-kind: guest activates Tribe consequence ability (types 52..57)
+
+// Native Tribe consequence ability types (cCreatureAbility +0x08, table 0x0169DE4C slots 0..5, verified GOG 2024):
+//   52 (0x34) Traps            <- Cell Carnivore  (0xCFB01B93)
+//   53 (0x35) Refreshing Storm <- Cell Herbivore  (0xA8EC6F99)
+//   54 (0x36) Flying Fish      <- Cell Omnivore   (0x5ECE4770)
+//   55 (0x37) Fire Bombs       <- Creature Aggressive (0x17E5EF84)
+//   56 (0x38) Fireworks        <- Creature Social     (0xFD159D91)
+//   57 (0x39) Beastmaster      <- Creature Adaptable  (0xB9DE15F2)
+constexpr int kConsAbilityMin = 52;
+constexpr int kConsAbilityMax = 57;
+constexpr int kConsAbilitySlots = 6;
+constexpr int kConsAbilityTraps = 52;
+constexpr int kConsAbilityStorm = 53;
+constexpr int kConsAbilityFlyingFish = 54;
+constexpr int kConsAbilityFireBombs = 55;
+constexpr int kConsAbilityFireworks = 56;
+constexpr int kConsAbilityBeastmaster = 57;
+
+constexpr uint32_t kCardCellCarnivore = 0xCFB01B93u;
+constexpr uint32_t kCardCellHerbivore = 0xA8EC6F99u;
+constexpr uint32_t kCardCellOmnivore = 0x5ECE4770u;
+constexpr uint32_t kCardCreatureAggressive = 0x17E5EF84u;
+constexpr uint32_t kCardCreatureSocial = 0xFD159D91u;
+constexpr uint32_t kCardCreatureMixed = 0xB9DE15F2u;
+
+inline bool is_consequence_ability_type(int ab_type)
+{
+    return ab_type >= kConsAbilityMin && ab_type <= kConsAbilityMax;
+}
+
+inline int consequence_ability_slot(int ab_type)
+{
+    return is_consequence_ability_type(ab_type) ? (ab_type - kConsAbilityMin) : -1;
+}
+
+inline const char* consequence_ability_name(int ab_type)
+{
+    switch (ab_type) {
+    case kConsAbilityTraps: return "Traps";
+    case kConsAbilityStorm: return "Refreshing Storm";
+    case kConsAbilityFlyingFish: return "Flying Fish";
+    case kConsAbilityFireBombs: return "Fire Bombs";
+    case kConsAbilityFireworks: return "Fireworks";
+    case kConsAbilityBeastmaster: return "Beastmaster";
+    default: return "Unknown";
+    }
+}
+
+// Returns the consequence card ID required for Tribe ability type `ab_type` (52..57),
+// and writes the stage index (0 = Cell, 1 = Creature, -1 = invalid) to `out_stage`.
+inline uint32_t required_card_for_ability(int ab_type, int& out_stage)
+{
+    switch (ab_type) {
+    case kConsAbilityTraps:
+        out_stage = 0;
+        return kCardCellCarnivore;
+    case kConsAbilityStorm:
+        out_stage = 0;
+        return kCardCellHerbivore;
+    case kConsAbilityFlyingFish:
+        out_stage = 0;
+        return kCardCellOmnivore;
+    case kConsAbilityFireBombs:
+        out_stage = 1;
+        return kCardCreatureAggressive;
+    case kConsAbilityFireworks:
+        out_stage = 1;
+        return kCardCreatureSocial;
+    case kConsAbilityBeastmaster:
+        out_stage = 1;
+        return kCardCreatureMixed;
+    default:
+        out_stage = -1;
+        return 0;
+    }
+}
+
+// Inverse lookup: returns Tribe consequence ability type (52..57) unlocked by Cell or Creature card, or 0.
+inline int ability_for_consequence_card(uint32_t card)
+{
+    switch (card) {
+    case kCardCellCarnivore: return kConsAbilityTraps;
+    case kCardCellHerbivore: return kConsAbilityStorm;
+    case kCardCellOmnivore: return kConsAbilityFlyingFish;
+    case kCardCreatureAggressive: return kConsAbilityFireBombs;
+    case kCardCreatureSocial: return kConsAbilityFireworks;
+    case kCardCreatureMixed: return kConsAbilityBeastmaster;
+    default: return 0;
+    }
+}
+
+enum class ConsAbilityResult : uint8_t {
+    Allow = 0,
+    Disabled = 1,
+    InvalidType = 2,
+    CardMismatch = 3,
+    OnCooldown = 4,
+    NoTribe = 5,
+    NoChieftain = 6,
+};
+
+inline ConsAbilityResult validate_consequence_ability(bool fix_on, int ab_type, uint32_t cell_card,
+                                                      uint32_t creature_card, bool has_tribe, bool has_chieftain,
+                                                      bool on_cooldown)
+{
+    if (!fix_on)
+        return ConsAbilityResult::Disabled;
+    int stage = -1;
+    uint32_t req = required_card_for_ability(ab_type, stage);
+    if (!req || stage < 0)
+        return ConsAbilityResult::InvalidType;
+    uint32_t have = (stage == 0) ? cell_card : creature_card;
+    if (have != req)
+        return ConsAbilityResult::CardMismatch;
+    if (!has_tribe)
+        return ConsAbilityResult::NoTribe;
+    if (!has_chieftain)
+        return ConsAbilityResult::NoChieftain;
+    if (on_cooldown)
+        return ConsAbilityResult::OnCooldown;
+    return ConsAbilityResult::Allow;
+}
+
+// Per-player short cooldown guard on host (bridges the gap between DoAction(22) and the BT setting native cooldown).
+struct ConsCooldowns {
+    static constexpr size_t kPlayers = 8;
+    static constexpr double kMinGuardSec = 1.5;
+    double ready_at[kPlayers][kConsAbilitySlots] = {};
+
+    void clear()
+    {
+        for (size_t p = 0; p < kPlayers; p++)
+            for (int s = 0; s < kConsAbilitySlots; s++)
+                ready_at[p][s] = 0.0;
+    }
+
+    bool on_cooldown(uint8_t player, int ab_type, double now) const
+    {
+        int s = consequence_ability_slot(ab_type);
+        if (player >= kPlayers || s < 0)
+            return true;
+        return now < ready_at[player][s];
+    }
+
+    void mark_used(uint8_t player, int ab_type, double now, double cooldown_sec = kMinGuardSec)
+    {
+        int s = consequence_ability_slot(ab_type);
+        if (player >= kPlayers || s < 0)
+            return;
+        ready_at[player][s] = now + std::max(0.0, cooldown_sec);
+    }
+};
+
 } // namespace tribe_logic

@@ -5177,3 +5177,35 @@ Verified via Ghidra (`dc04aee5`, GOG 2024) and Wine lab runtime (`20261125-16440
   `layout - 0xC`), `+0x68` float progress `0..1`, `+0x7C` fail drain byte, `+0x84..0x98` bar widgets, `+0x9C/+0xA0`
   relation face icons, `+0xA4` win icon. Note: `0x00DA1F20` spawns the NPC audience thought-bubble prompt effects
   (`0xC3933F3F`, `0x4EA19703`, `0x9DE794A4`) via `CreateEffectForPool2Renamed`, which `mirror_fx.cpp` already relays.
+
+## Tribe Consequence Abilities & Pack Pet Domestication (BUG-1564, 2026-11-25)
+
+Verified via `objdump` disassembly (`dc04aee5`, GOG 2024) and `PatchData.package` `.prop` inspection:
+
+* ✔ **Consequence ability table** (`0x0169DE4C`, 6 `cCreatureAbility*` pointers loaded by `0x00D1F32E` from group
+  `0xC85C1F8B`, category `ability+0x0C == 4`):
+  - Slot 0 (`0x6282938F`): `SuperPower_Carnivore` (**Traps**), `ability+0x08 == 52` (`0x34`), unlocked by Cell Carnivore `0xCFB01B93` (prop `0xE5F355B3`, bit 52).
+  - Slot 1 (`0xE10F1680`): `SuperPower_Herbivore` (**Refreshing Storm**), `ability+0x08 == 53` (`0x35`), unlocked by Cell Herbivore `0xA8EC6F99` (prop `0xEE0C1239`, bit 53).
+  - Slot 2 (`0x042592A5`): `SuperPower_Omnivore` (**Flying Fish**), `ability+0x08 == 54` (`0x36`), unlocked by Cell Omnivore `0x5ECE4770` (prop `0x5961D110`, bit 54).
+  - Slot 3 (`0x5A93B784`): `SuperPower_Aggressive` (**Fire Bombs**), `ability+0x08 == 55` (`0x37`), unlocked by Creature Aggressive `0x17E5EF84` (prop `0xB6295724`, bit 55).
+  - Slot 4 (`0xE5AA4C4D`): `SuperPower_Social` (**Fireworks**), `ability+0x08 == 56` (`0x38`), unlocked by Creature Social `0xFD159D91` (prop `0xC7981631`, bit 56).
+  - Slot 5 (`0xDF4F5863`): `SuperPower_Versatile` (**Beastmaster**), `ability+0x08 == 57` (`0x39`), unlocked by Creature Adaptable `0xB9DE15F2` (prop `0x27CB4512`, bit 57).
+* ✔ `cCreatureCitizen::AbilityCount` (`0x00C24DB0`, `vt[0xB0]`) and `cCreatureCitizen::GetAbility` (`0x00C24E40`,
+  `vt[0xB4]`): every chieftain (`cCreatureCitizen::IsChieftain` `0x00C23430` == true, i.e., `tribe+0x11C == this`)
+  exposes all 6 slots of `0x0169DE4C` (`[0x0169DE30 + 0x1C + slot*4]`) at indices `species_count + 1 .. species_count + 6`,
+  with per-citizen cooldown progress at `*(float*)(*(uint8_t**)(citizen + 0xC28) + ab_idx * 0x10 + 4)` (ready when `>= 1.0f`).
+* ✔ `0x00D1F400` (`CheckConsequenceAbilityUnlocked`): in Tribe mode (`0x1654C02`), queries `0x00555E80` on
+  `cPlayer+0x10FC` (Cell card) and `cPlayer+0x1100` (Creature card) against group `0xF865C777` property `0x54D95163`,
+  builds the 64-bit unlock mask for bits `52..57`, caches it in `cPlayer` properties `0x5FF7BAF`/`0x5FF7BB6`, and tests
+  `(mask & (1ULL << ability->type)) != 0`.
+* ✔ `SporeCoop::Ability_Use` (`0x00D1E930`, `cdecl void(cCreatureBase* creature, int ability_index)`): for ability types
+  `52..57` (`0x34..0x39`), jumps to `0x00D1EF98`, casts `creature` to `cCreatureCitizen*`, wraps `ability_index` in an
+  `App::Property` (`0x00671B70`), and invokes `cCreatureCitizen::DoAction(chieftain, 22 /*0x16*/, nullptr, &prop)`
+  (`0x00C27710`). This works directly on any `cTribe`'s chieftain on the host without touching `GetPlayerTribe()`.
+* ✔ `DomesticateAnimal` (`0x00DB5E10`, `cdecl bool(cCreatureAnimal* animal, cTribe* tribe)`): requires `animal->GetHerd()`
+  (`0x00C046F0`) to be non-null (erases `animal` from `old_herd+0x40` at `0xDB5EF2` without a null check), calls
+  `cTribe_SetupDomesticatedHerd(tribe)` (`0x00C90080`, requires `tribe+0x2D4 != 0`) if `tribe+0x19CC` is null, enforces
+  at most 1 pet per species and max 3 pets (`[0x1581270]`), moves `animal` into `tribe+0x19CC`, marks `animal+0xB65 = 1`,
+  and assigns `animal+0x30 = tribe+0x30`. In Tribe Rivals, spawning a Creature pack species via `cCreatureAnimal::Create`
+  in an existing wild herd (or quiet temporary donor herd) and calling `DomesticateAnimal(animal, guest_tribe)` creates
+  genuine village pets without triggering host achievements (guarded by `tribe->IsPlayerOwned()` at `0xDB5FB0`).

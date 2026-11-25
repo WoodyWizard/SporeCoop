@@ -28,6 +28,8 @@
 #include "driver.h"
 #include "effects.h"
 #include "game.h"
+#include "history.h"
+#include "history_logic.h"
 #include "modes.h"
 #include "npc.h"
 #include "savestrip.h"
@@ -4149,8 +4151,157 @@ static void duet_tick(double now)
 // 4. The native Tribal social progress meter ([TribeGameUI+0x50]) was never synced or shown on guests.
 static uintptr_t a_TribeAbilities, a_CreatureAbilityIndex, a_BTPostStimulus, a_BarPtr, a_BarRebuild, a_BarAbility,
     a_BarStatus, a_SocialMeterVis, a_PerfSucceeded, a_TribeUIGet, a_RelMgrGet, a_RelCalc, a_RelLevel;
+static uintptr_t a_AbilityUse; // BUG-1564
 using BarStatus_t = int(SK_CDECL*)(int);
 static BarStatus_t o_BarStatus;
+
+// ---------------- BUG-1564: Guest Tribe consequence abilities ----------------
+static bool g_guest_cons_fix = true;
+COOP_FIX("tribe.guest_consequence", "BUG-1564", g_guest_cons_fix,
+         "tribe: route guest Tribe consequence abilities (Traps, Refreshing Storm, Flying Fish, Fire Bombs, Fireworks, Beastmaster) to host validated against own cards and tribe");
+static uint32_t g_cons_ab_tx = 0, g_cons_ab_rx = 0, g_cons_ab_ran = 0, g_cons_ab_denied = 0;
+static tribe_logic::ConsCooldowns g_cons_cd;       // host per-player guard cooldown
+static tribe_logic::ConsCooldowns g_guest_cons_cd; // guest local HUD feedback cooldown
+
+static uint32_t local_cplayer_card(int stage)
+{
+    if (stage < 0 || stage >= history::kStages)
+        return 0;
+    void* nm = game::noun_manager();
+    if (!nm || !skg::readable((uint8_t*)nm + 0x74, 4))
+        return 0;
+    void* p = F<void*>(nm, 0x74);
+    if (!p || !skg::readable((uint8_t*)p + history::kCardsOff + 4 * stage, 4))
+        return 0;
+    uint32_t v = F<uint32_t>(p, history::kCardsOff + 4 * stage);
+    return history::valid_card(stage, v) ? v : 0;
+}
+
+static int tribe_consequence_ability_type(int bar_idx)
+{
+    if (game::mode_id() != modes::kTribe || !a_BarAbility || bar_idx < 0)
+        return 0;
+    void* ab = skg::cdecl_call<void*>(a_BarAbility, bar_idx);
+    if (!ab || !skg::readable(ab, 0x10))
+        return 0;
+    if (F<int>(ab, 0x0C) != 4)
+        return 0;
+    int t = F<int>(ab, 0x08);
+    return tribe_logic::is_consequence_ability_type(t) ? t : 0;
+}
+
+static int chieftain_ability_index_for_type(void* chief, int ab_type)
+{
+    if (!chief || !tribe_logic::is_consequence_ability_type(ab_type) || !skg::readable(chief, 4))
+        return -1;
+    int n = vcall<int>(chief, 0xB0 / 4);
+    if (n <= 0 || n > 64)
+        return -1;
+    for (int i = 0; i < n; i++) {
+        void* ab = vcall<void*>(chief, 0xB4 / 4, i);
+        if (ab && skg::readable(ab, 0x10) && F<int>(ab, 0x08) == ab_type)
+            return i;
+    }
+    return -1;
+}
+
+static bool chieftain_ability_on_native_cd(void* chief, int ab_idx)
+{
+    if (!chief || ab_idx < 0 || ab_idx >= 64 || !skg::readable((uint8_t*)chief + 0xC28, 4))
+        return false;
+    uint8_t* cd = F<uint8_t*>(chief, 0xC28);
+    if (!cd || !skg::readable(cd + ab_idx * 0x10, 8))
+        return false;
+    float pct = *(float*)(cd + ab_idx * 0x10 + 4);
+    return std::isfinite(pct) && pct < 0.999f;
+}
+
+bool guest_request_consequence_ability(int ab_type)
+{
+    if (!g_guest_cons_fix || !is_guest() || !active() || !tribe_logic::is_consequence_ability_type(ab_type))
+        return false;
+    void* pt = player_tribe();
+    net::Vec3 pos = pt ? tribe_pos(pt) : net::Vec3{};
+    net::Writer w;
+    w.u8(tribe_logic::kCmdConsequenceAbility);
+    w.u8(0); // no member ids needed: host resolves sender's own tribe chieftain
+    w.u32((uint32_t)ab_type);
+    write_target(w, {});
+    w.f32(pos.x);
+    w.f32(pos.y);
+    w.f32(pos.z);
+    C.sess->send_reliable_to(0, net::MSG_TRIBE_CMD, w);
+    g_cmds_sent++;
+    g_cons_ab_tx++;
+    if (H)
+        g_guest_cons_cd.mark_used(C.sess ? C.sess->my_id() : 1, ab_type, H->time_seconds(), 2.0);
+    return true;
+}
+
+bool host_consequence_ability(uint8_t from, int ab_type, const net::Vec3& /*pos*/)
+{
+    g_cons_ab_rx++;
+    if (!g_guest_cons_fix || !is_host() || from == 0 || game::mode_id() != modes::kTribe) {
+        g_cons_ab_denied++;
+        return false;
+    }
+    uint32_t cell_card = history::player_card(from, history::kCell);
+    uint32_t creat_card = history::player_card(from, history::kCreature);
+    if (cell_card == 0 && creat_card == 0) {
+        // Fallback when own-history is disabled (e.g., host creature mode): share host's cards.
+        cell_card = history::player_card(0, history::kCell);
+        creat_card = history::player_card(0, history::kCreature);
+    }
+    const bool rivals_on = tribe_rivals::active();
+    void* target_tribe = rivals_on ? tribe_rivals::tribe_of_player(from) : player_tribe();
+    void* chief = nullptr;
+    if (target_tribe && skg::readable(target_tribe, 0x120)) {
+        chief = F<void*>(target_tribe, 0x11C);
+        if (!chief || !game::listed(chief, kMemberNoun) || game::is_dead(chief)) {
+            chief = nullptr;
+            for (void* c : members(target_tribe)) {
+                if (c && game::listed(c, kMemberNoun) && !game::is_dead(c) && F<int>(c, kAgeOff) == 1) {
+                    if (a_SetChieftain) {
+                        thiscall<void>(a_SetChieftain, target_tribe, c);
+                        chief = F<void*>(target_tribe, 0x11C);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    int ab_idx = chieftain_ability_index_for_type(chief, ab_type);
+    double now = H ? H->time_seconds() : 0.0;
+    bool on_cd = g_cons_cd.on_cooldown(from, ab_type, now) ||
+                 (ab_idx >= 0 && chieftain_ability_on_native_cd(chief, ab_idx));
+    auto res = tribe_logic::validate_consequence_ability(g_guest_cons_fix, ab_type, cell_card, creat_card,
+                                                         target_tribe != nullptr, chief != nullptr && ab_idx >= 0,
+                                                         on_cd);
+    if (res != tribe_logic::ConsAbilityResult::Allow || !a_AbilityUse) {
+        g_cons_ab_denied++;
+        H->log(M, SK_INFO,
+               "tribe: denied guest %u consequence ability %d (%s): reason=%u cards=(%08X,%08X) tribe=%p chief=%p idx=%d (BUG-1564)",
+               (unsigned)from, ab_type, tribe_logic::consequence_ability_name(ab_type), (unsigned)res, cell_card,
+               creat_card, target_tribe, chief, ab_idx);
+        return false;
+    }
+    skg::cdecl_call<void>(a_AbilityUse, chief, ab_idx);
+    g_cons_cd.mark_used(from, ab_type, now);
+    g_cons_ab_ran++;
+    H->log(M, SK_INFO,
+           "tribe: ran guest %u consequence ability %d (%s) on tribe %p chief %p ab_idx=%d (BUG-1564)",
+           (unsigned)from, ab_type, tribe_logic::consequence_ability_name(ab_type), target_tribe, chief, ab_idx);
+    return true;
+}
+
+static std::string guest_consequence_status()
+{
+    char b[220];
+    snprintf(b, sizeof b,
+             "tribe consequence: fix=%d cons_ab_tx=%u cons_ab_rx=%u cons_ab_ran=%u cons_ab_denied=%u (BUG-1564)\n",
+             (int)g_guest_cons_fix, g_cons_ab_tx, g_cons_ab_rx, g_cons_ab_ran, g_cons_ab_denied);
+    return b;
+}
 
 static bool g_bar_rebuild_queued = false;
 static uint32_t g_bar_rebuilds = 0;
@@ -4602,6 +4753,27 @@ static void guest_matching_performers(int want_tool, std::vector<uint16_t>& out_
 
 static int SK_CDECL h_BarStatus(int idx)
 {
+    if (g_guest_cons_fix && is_guest() && active()) {
+        int cons_type = tribe_consequence_ability_type(idx);
+        if (cons_type) {
+            uint32_t cell_c = local_cplayer_card(history::kCell);
+            uint32_t creat_c = local_cplayer_card(history::kCreature);
+            void* pt = player_tribe();
+            void* ch = pt && skg::readable(pt, 0x120) ? F<void*>(pt, 0x11C) : nullptr;
+            bool has_ch = ch && game::listed(ch, kMemberNoun) && !game::is_dead(ch);
+            double now = H ? H->time_seconds() : 0.0;
+            bool on_cd = g_guest_cons_cd.on_cooldown(C.sess ? C.sess->my_id() : 1, cons_type, now);
+            auto res = tribe_logic::validate_consequence_ability(true, cons_type, cell_c, creat_c, pt != nullptr,
+                                                                 has_ch, on_cd);
+            if (res == tribe_logic::ConsAbilityResult::Allow)
+                return 0;
+            if (res == tribe_logic::ConsAbilityResult::CardMismatch)
+                return 0xA;
+            if (res == tribe_logic::ConsAbilityResult::OnCooldown)
+                return 0xF;
+            return 0xB;
+        }
+    }
     if (g_guest_social_fix && is_guest() && active() && !tribe_rivals::active() && g_gsoc.active) {
         int slot = tribe_instrument_slot(idx);
         if (slot >= 3 && slot <= 5) {
@@ -4616,6 +4788,13 @@ static int SK_CDECL h_BarStatus(int idx)
 
 static bool on_tribe_bar_use(int idx)
 {
+    if (g_guest_cons_fix && is_guest() && active()) {
+        int cons_type = tribe_consequence_ability_type(idx);
+        if (cons_type) {
+            (void)guest_request_consequence_ability(cons_type);
+            return true;
+        }
+    }
     if (!g_guest_social_fix || !is_guest() || !active() || tribe_rivals::active() || !g_gsoc.active)
         return false;
     int slot = tribe_instrument_slot(idx);
@@ -5382,6 +5561,7 @@ static void coop_init()
     a_BarRebuild = H->sym("SporeCoop::AbilityBar_Rebuild");
     a_BarAbility = H->sym("SporeCoop::AbilityBar_Ability");
     a_BarStatus = H->sym("SporeCoop::AbilityBar_Status");
+    a_AbilityUse = H->sym("SporeCoop::Ability_Use");
     a_SocialMeterVis = H->sym("SporeCoop::SocialMeter_SetVisible");
     a_PerfSucceeded = H->sym("SporeCoop::TribePerformance_Succeeded");
     a_TribeUIGet = H->sym("SporeCoop::cTribeUI_Get");
@@ -5675,6 +5855,8 @@ void on_session_end()
 {
     ff_clear_orders(); // BUG-0899
     tribe_social_clear(true); // BUG-1561
+    g_cons_cd.clear();        // BUG-1564
+    g_guest_cons_cd.clear();  // BUG-1564
     took_clear(); // BUG-1522
     g_test_gone.clear();
     g_away_pending.clear(); // BUG-1492
@@ -5711,6 +5893,8 @@ LIFECYCLE_HOOK("tribe.session", lifecycle::kSessionEnd, -50, [](const lifecycle:
 // on_session_end, whose restoring clear would touch the old world if the order ever changed)
 void on_world_change()
 {
+    g_cons_cd.clear();        // BUG-1564
+    g_guest_cons_cd.clear();  // BUG-1564
     took_clear(); // BUG-1522: the taken members' tribes are freed with the world
     g_test_gone.clear();
     g_away_pending.clear(); // BUG-1492 (a conquest of the old world)
@@ -5954,6 +6138,7 @@ std::string status()
              g_hand_waits, g_hand_repairs, game::fx_bone_skips());
     out += b;
     out += guest_social_status(); // BUG-1561
+    out += guest_consequence_status(); // BUG-1564
     return out;
 }
 

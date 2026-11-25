@@ -4,6 +4,7 @@
 #include <cstring>
 #include <vector>
 
+#include "tribe_logic.h"
 #include "tribe_rivals_logic.h"
 
 using namespace tribe_rivals;
@@ -380,6 +381,96 @@ static void test_npc_ui_list()
     CHECK(!out[4].allied && !out[4].hostile && out[4].can_turn && !out[4].can_protect && !out[4].can_smooth);
 }
 
+static void test_consequence_abilities_and_cooldowns()
+{
+    printf("tribe: guest consequence ability card validation & cooldowns (BUG-1564)\n");
+    using namespace tribe_logic;
+    // All 6 native Tribe consequence abilities map bijectively to Cell/Creature consequence cards
+    int st = -1;
+    CHECK(required_card_for_ability(kConsAbilityTraps, st) == kCardCellCarnivore && st == 0);
+    CHECK(required_card_for_ability(kConsAbilityStorm, st) == kCardCellHerbivore && st == 0);
+    CHECK(required_card_for_ability(kConsAbilityFlyingFish, st) == kCardCellOmnivore && st == 0);
+    CHECK(required_card_for_ability(kConsAbilityFireBombs, st) == kCardCreatureAggressive && st == 1);
+    CHECK(required_card_for_ability(kConsAbilityFireworks, st) == kCardCreatureSocial && st == 1);
+    CHECK(required_card_for_ability(kConsAbilityBeastmaster, st) == kCardCreatureMixed && st == 1);
+    CHECK(required_card_for_ability(51, st) == 0 && st == -1);
+    CHECK(required_card_for_ability(58, st) == 0 && st == -1);
+    CHECK(ability_for_consequence_card(kCardCellCarnivore) == kConsAbilityTraps);
+    CHECK(ability_for_consequence_card(kCardCreatureSocial) == kConsAbilityFireworks);
+    CHECK(ability_for_consequence_card(0) == 0);
+
+    // Validation matrix: Carnivore + Social guest
+    CHECK(validate_consequence_ability(true, kConsAbilityTraps, kCardCellCarnivore, kCardCreatureSocial, true, true,
+                                       false) == ConsAbilityResult::Allow);
+    CHECK(validate_consequence_ability(true, kConsAbilityFireworks, kCardCellCarnivore, kCardCreatureSocial, true, true,
+                                       false) == ConsAbilityResult::Allow);
+    // Mismatched Cell / Creature cards denied
+    CHECK(validate_consequence_ability(true, kConsAbilityStorm, kCardCellCarnivore, kCardCreatureSocial, true, true,
+                                       false) == ConsAbilityResult::CardMismatch);
+    CHECK(validate_consequence_ability(true, kConsAbilityFireBombs, kCardCellCarnivore, kCardCreatureSocial, true, true,
+                                       false) == ConsAbilityResult::CardMismatch);
+    // Disabled, invalid type, missing tribe/chieftain, and cooldown rejected cleanly
+    CHECK(validate_consequence_ability(false, kConsAbilityTraps, kCardCellCarnivore, kCardCreatureSocial, true, true,
+                                       false) == ConsAbilityResult::Disabled);
+    CHECK(validate_consequence_ability(true, 99, kCardCellCarnivore, kCardCreatureSocial, true, true, false) ==
+          ConsAbilityResult::InvalidType);
+    CHECK(validate_consequence_ability(true, kConsAbilityTraps, kCardCellCarnivore, kCardCreatureSocial, false, true,
+                                       false) == ConsAbilityResult::NoTribe);
+    CHECK(validate_consequence_ability(true, kConsAbilityTraps, kCardCellCarnivore, kCardCreatureSocial, true, false,
+                                       false) == ConsAbilityResult::NoChieftain);
+    CHECK(validate_consequence_ability(true, kConsAbilityTraps, kCardCellCarnivore, kCardCreatureSocial, true, true,
+                                       true) == ConsAbilityResult::OnCooldown);
+
+    // Per-player per-slot cooldown guard
+    ConsCooldowns cd;
+    CHECK(!cd.on_cooldown(1, kConsAbilityTraps, 10.0));
+    cd.mark_used(1, kConsAbilityTraps, 10.0, 2.0);
+    CHECK(cd.on_cooldown(1, kConsAbilityTraps, 11.5));
+    CHECK(!cd.on_cooldown(1, kConsAbilityFireworks, 11.5)); // other ability independent
+    CHECK(!cd.on_cooldown(2, kConsAbilityTraps, 11.5));     // other player independent
+    CHECK(!cd.on_cooldown(1, kConsAbilityTraps, 12.1));     // expired
+    cd.clear();
+    CHECK(!cd.on_cooldown(1, kConsAbilityTraps, 10.0));
+}
+
+static void test_pack_pet_handoff()
+{
+    printf("tribe_rivals: Creature -> Tribe pack pet normalization & idempotency (BUG-1564)\n");
+    // Normalization drops 0, deduplicates preserving order, clamps to 3
+    auto norm = normalize_pack_pet_species({0, 0xAAA, 0xBBB, 0xAAA, 0xCCC, 0xDDD, 0xEEE});
+    CHECK(norm.size() == 3 && norm[0] == 0xAAA && norm[1] == 0xBBB && norm[2] == 0xCCC);
+
+    PackPetPlan plan;
+    record_pack_pets(plan, 1, {0x111, 0x222, 0x111, 0x333, 0x444});
+    CHECK(plan.species[1].size() == 3 && plan.species[1][0] == 0x111 && plan.species[1][1] == 0x222 &&
+          plan.species[1][2] == 0x333);
+
+    // Fix off or rivals inactive or tribe not ready: does not spawn and does not consume spawned flag
+    CHECK(take_pack_pets_to_spawn(plan, false, true, 1, true, {}).empty());
+    CHECK(!plan.spawned[1]);
+    CHECK(take_pack_pets_to_spawn(plan, true, false, 1, true, {}).empty());
+    CHECK(!plan.spawned[1]);
+    CHECK(take_pack_pets_to_spawn(plan, true, true, 1, false, {}).empty());
+    CHECK(!plan.spawned[1]);
+
+    // Existing pet 0x222 already in village pen -> spawn only missing 0x111 and 0x333 (total <= 3)
+    auto spawn1 = take_pack_pets_to_spawn(plan, true, true, 1, true, {0x222});
+    CHECK(spawn1.size() == 2 && spawn1[0] == 0x111 && spawn1[1] == 0x333);
+    CHECK(plan.spawned[1]);
+
+    // Idempotent: second call never duplicates
+    CHECK(take_pack_pets_to_spawn(plan, true, true, 1, true, {0x222}).empty());
+
+    // World change resets spawned flag, but existing 3 pets on reload still prevents duplicates
+    plan.reset_spawned();
+    CHECK(take_pack_pets_to_spawn(plan, true, true, 1, true, {0x111, 0x222, 0x333}).empty());
+    CHECK(plan.spawned[1]);
+
+    // Session end clears all
+    plan.clear_all();
+    CHECK(plan.species[1].empty() && !plan.spawned[1]);
+}
+
 int main()
 {
     test_pick_rival_tribe();
@@ -393,6 +484,8 @@ int main()
     test_wsync_isolation_policy();
     test_pvp_diplomacy_and_creature_payout();
     test_npc_ui_list();
+    test_consequence_abilities_and_cooldowns();
+    test_pack_pet_handoff();
     if (g_fail) {
         printf("tribe_rivals_tests: %d FAILED\n", g_fail);
         return 1;

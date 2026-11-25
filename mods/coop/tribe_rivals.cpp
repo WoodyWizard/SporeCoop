@@ -17,6 +17,7 @@
 #include "history.h"
 #include "lifecycle.h"
 #include "modes.h"
+#include "npc.h"
 #include "rivals.h"
 #include "savestrip.h"
 #include "species_line.h"
@@ -24,12 +25,17 @@
 #include "store.h"
 #include "tribe.h"
 #include "tribe_internal.h"
+#include "tribe_logic.h"
 #include "tribe_rivals_logic.h"
 #include "wire/rivals_faction.h"
 #include "world.h"
 
 using skg::thiscall;
 using skg::vcall;
+
+namespace tribe {
+bool guest_request_consequence_ability(int ab_type); // BUG-1564: defined in tribe.cpp
+}
 
 namespace tribe_rivals {
 
@@ -41,6 +47,10 @@ static bool g_rivals_tribe_fix = true;
 COOP_FIX("rivals.tribe", "BUG-1548", g_rivals_tribe_fix,
          "tribe: Tribe Rivals mode (NPC tribe takeover, guest perspective swap, per-player NPC relations & influence, "
          "war PvP with inviolable main village, alliance gifts, >50% stage end & Tribe draft)");
+
+static bool g_pack_pets_fix = true;
+COOP_FIX("rivals.tribe_pack_pets", "BUG-1564", g_pack_pets_fix,
+         "tribe: carry over each player's Creature-stage pack species as domesticated village pets in Tribe Rivals");
 
 // ---- Game addresses (verified GOG 2024 dc04aee5, docs/re/tribe.md#tribe-rivals-re) ----
 static uintptr_t a_SetPlayerTribe = 0;
@@ -68,6 +78,10 @@ static uintptr_t a_RelLevel = 0;
 static uintptr_t a_SetSpecies = 0;
 static uintptr_t a_SetSpeciesProfile = 0;
 static uintptr_t a_SetChieftain = 0;
+static uintptr_t a_CreateHerd = 0;
+static uintptr_t a_HerdEnable = 0;
+static uintptr_t a_CreatureCreate = 0;
+static uintptr_t a_GetDomHerd = 0;
 
 constexpr uint32_t kTribeNoun = 0x18C6D19u;
 constexpr uint32_t kCitizenNoun = 0x18EB4B7u;
@@ -289,8 +303,13 @@ static uint32_t g_inf_earned = 0;
 static uint32_t g_draft_unlocked = 0;
 static uint32_t g_draft_payouts_applied = 0;
 static uint32_t g_species_swaps = 0;
+static uint32_t g_pack_pets_spawned = 0; // BUG-1564
 static uint32_t g_last_npc_count = 0;
 static int g_last_win_needed = 1;
+
+// BUG-1564: Creature -> Tribe pack pet handoff state (species preserved across Creature -> Tribe world change)
+static PackPetPlan g_pack_pets;
+static double g_last_pack_snap = 0.0;
 
 static bool tribe_alive(void* t, uint32_t serial)
 {
@@ -1258,6 +1277,181 @@ static void sync_pvp_native_relations()
     }
 }
 
+// ---- BUG-1564: Creature -> Tribe pack pet handoff ----
+static std::vector<uint32_t> tribe_dom_pet_species(void* t)
+{
+    std::vector<uint32_t> out;
+    if (!t || !skg::readable(t, 0x19D0))
+        return out;
+    void* dh = a_GetDomHerd ? thiscall<void*>(a_GetDomHerd, t) : F<void*>(t, 0x19CC);
+    if (!dh || !skg::readable(dh, 0x48))
+        return out;
+    void** b = F<void**>(dh, 0x40);
+    void** e = F<void**>(dh, 0x44);
+    if (!b || e <= b || e - b > 32 || IsBadReadPtr(b, (size_t)((uint8_t*)e - (uint8_t*)b)))
+        return out;
+    for (void** p = b; p < e; ++p) {
+        void* a = *p;
+        if (!a || !game::listed(a, 0x18EB45Eu) || game::is_dead(a))
+            continue;
+        uint32_t sp = game::species_instance(a);
+        if (sp != 0)
+            out.push_back(sp);
+    }
+    return out;
+}
+
+static void* find_species_profile_for_pet(uint32_t sp_inst)
+{
+    if (!sp_inst)
+        return nullptr;
+    void* prof = game::species_by_key({sp_inst, 0x2B978C46u, 0x40626200u});
+    if (prof && skg::readable(prof, kProfGenOff + 4))
+        return prof;
+    struct Q {
+        uint32_t want;
+        void* found = nullptr;
+    } q{sp_inst, nullptr};
+    game::for_each_object(
+        [](void* a, uint32_t noun, void* u) {
+            auto* q = (Q*)u;
+            if (noun != 0x18EB45Eu || !game::listed(a, 0x18EB45Eu))
+                return true;
+            if (game::species_instance(a) == q->want) {
+                void* sp = game::species_profile(a);
+                if (sp && skg::readable(sp, kProfGenOff + 4)) {
+                    q->found = sp;
+                    return false;
+                }
+            }
+            return true;
+        },
+        &q);
+    return q.found;
+}
+
+static void* find_wild_herd_of_species(void* prof)
+{
+    if (!prof)
+        return nullptr;
+    struct Q {
+        void* prof;
+        void* found = nullptr;
+    } q{prof, nullptr};
+    game::for_each_object(
+        [](void* h, uint32_t noun, void* u) {
+            auto* q = (Q*)u;
+            if (noun != game::kHerdNoun || !game::listed(h, game::kHerdNoun) || !skg::readable(h, 0x160))
+                return true;
+            if (F<uint32_t>(h, 0x88) == tribe::kDomesticatedArchetype ||
+                F<int32_t>(h, 0x15C) == tribe::kDomesticatedPersonality ||
+                F<uint32_t>(h, 0x88) == tribe::kEpicArchetype)
+                return true;
+            if (game::herd_species(h) == q->prof) {
+                q->found = h;
+                return false;
+            }
+            return true;
+        },
+        &q);
+    return q.found;
+}
+
+static bool spawn_domesticated_pet_at(void* t, void* prof, int slot_idx)
+{
+    if (!t || !prof || !a_CreateHerd || !a_HerdEnable || !a_CreatureCreate || !skg::readable(t, 0x370))
+        return false;
+    if (!F<void*>(t, 0x2D4))
+        return false; // cTribe_SetupDomesticatedHerd requires tribe+0x2D4
+    net::Vec3 tp = tribe::tribe_pos(t);
+    float len = std::sqrt(tp.x * tp.x + tp.y * tp.y + tp.z * tp.z);
+    net::Vec3 up = len > 1.f ? net::Vec3{tp.x / len, tp.y / len, tp.z / len} : net::Vec3{0.f, 0.f, 1.f};
+    net::Vec3 t1 = std::fabs(up.z) < 0.9f ? net::Vec3{up.y, -up.x, 0.f} : net::Vec3{0.f, up.z, -up.y};
+    float l1 = std::sqrt(t1.x * t1.x + t1.y * t1.y + t1.z * t1.z);
+    if (l1 > 1e-4f) {
+        t1.x /= l1;
+        t1.y /= l1;
+        t1.z /= l1;
+    }
+    net::Vec3 t2{up.y * t1.z - up.z * t1.y, up.z * t1.x - up.x * t1.z, up.x * t1.y - up.y * t1.x};
+    float ang = (float)slot_idx * 2.0943951f; // 120 deg apart around village
+    float rad = 11.0f;
+    float ca = std::cos(ang), sa = std::sin(ang);
+    float pp[3] = {
+        tp.x + (t1.x * ca + t2.x * sa) * rad,
+        tp.y + (t1.y * ca + t2.y * sa) * rad,
+        tp.z + (t1.z * ca + t2.z * sa) * rad,
+    };
+    void* nmgr = game::noun_manager();
+    if (!nmgr)
+        return false;
+    bool temp_herd = false;
+    void* donor = find_wild_herd_of_species(prof);
+    if (!donor) {
+        donor = thiscall<void*>(a_CreateHerd, nmgr, pp, prof, 0, false, 0, false);
+        if (!donor)
+            return false;
+        temp_herd = true;
+        thiscall<void>(a_HerdEnable, donor, true);
+    }
+    void* c = skg::cdecl_call<void*>(a_CreatureCreate, pp, prof, 1, donor, false, false);
+    if (!c) {
+        if (temp_herd)
+            game::herd_quiet(donor);
+        return false;
+    }
+    bool dom = tribe::domesticate_animal(c, t);
+    if (temp_herd)
+        game::herd_quiet(donor);
+    if (!dom) {
+        game::destroy_creature(c);
+        return false;
+    }
+    return true;
+}
+
+static void host_spawn_pack_pets_for(uint8_t pid)
+{
+    if (!is_host() || !active() || !rivals::valid_player(pid) || world::cinematic_playing())
+        return;
+    void* t = tribe_of_player(pid);
+    if (!t || g_pack_pets.spawned[pid])
+        return;
+    if (g_pack_pets.species[pid].empty())
+        return; // keep unspawned until species exist or set_pack_pets is called
+    auto existing = tribe_dom_pet_species(t);
+    auto want = take_pack_pets_to_spawn(g_pack_pets, g_pack_pets_fix, true, pid, true, existing);
+    if (want.empty())
+        return;
+    int slot = (int)existing.size();
+    uint32_t made = 0;
+    for (uint32_t sp_inst : want) {
+        void* prof = find_species_profile_for_pet(sp_inst);
+        if (!prof) {
+            if (H && M)
+                H->log(M, SK_INFO, "tribe_rivals: pack pet species %08X for player %u not loaded; skipping (BUG-1564)",
+                       sp_inst, (unsigned)pid);
+            continue;
+        }
+        if (spawn_domesticated_pet_at(t, prof, slot++)) {
+            g_pack_pets_spawned++;
+            made++;
+        }
+    }
+    if (made && H && M)
+        H->log(M, SK_INFO, "tribe_rivals: spawned %u domesticated Creature pack pet(s) for player %u at tribe %p (BUG-1564)",
+               made, (unsigned)pid, t);
+}
+
+static void host_spawn_pack_pets()
+{
+    if (!g_pack_pets_fix || !is_host() || !active() || !S)
+        return;
+    for (const auto& pl : S->players())
+        if (rivals::valid_player(pl.id))
+            host_spawn_pack_pets_for(pl.id);
+}
+
 static void host_deliver_creature_payouts()
 {
     if (!is_host() || !active() || rivals::draft_state().active || world::cinematic_playing())
@@ -1603,11 +1797,31 @@ static void reset_runtime(bool restore_game)
     g_last_win_needed = 1;
 }
 
-LIFECYCLE_HOOK("tribe_rivals.session", lifecycle::kSessionEnd, -5, [](const lifecycle::Ctx&) { reset_runtime(true); }, false);
-LIFECYCLE_HOOK("tribe_rivals.world", lifecycle::kWorldChange, -5, [](const lifecycle::Ctx&) { reset_runtime(false); }, false);
+LIFECYCLE_HOOK("tribe_rivals.session", lifecycle::kSessionEnd, -5,
+               [](const lifecycle::Ctx&) {
+                   g_pack_pets.clear_all();
+                   reset_runtime(true);
+               },
+               false);
+LIFECYCLE_HOOK("tribe_rivals.world", lifecycle::kWorldChange, -5,
+               [](const lifecycle::Ctx&) {
+                   g_pack_pets.reset_spawned(); // preserve Creature pack species across Creature -> Tribe transition
+                   reset_runtime(false);
+               },
+               false);
 
 void tick(double now)
 {
+    // BUG-1564: capture each player's living Creature-stage pack species before transitioning to Tribe.
+    if (g_pack_pets_fix && is_host() && game::in_creature_stage() && S && now - g_last_pack_snap >= 0.5) {
+        g_last_pack_snap = now;
+        for (const auto& pl : S->players()) {
+            if (!rivals::valid_player(pl.id))
+                continue;
+            auto sps = npc::pack_species_of(pl.id);
+            record_pack_pets(g_pack_pets, pl.id, sps);
+        }
+    }
     bool act = active();
     if (!act) {
         if (g_was_active)
@@ -1619,6 +1833,7 @@ void tick(double now)
 
     if (is_host()) {
         host_ensure_assignments(now);
+        host_spawn_pack_pets();
         host_deliver_creature_payouts();
         host_eval_tick(now);
         if (now - g_last_food_tx >= 0.5) {
@@ -1670,6 +1885,10 @@ void init(const SkHost* host, SkMod* mod, net::Session* sess)
     a_SetSpecies = H->sym("Simulator::cCreatureAnimal::SetSpecies");
     a_SetSpeciesProfile = H->sym("SporeCoop::CreatureBase_SetSpeciesProfile");
     a_SetChieftain = H->sym("SporeCoop::cTribe_SetChieftain");
+    a_CreateHerd = H->sym("Simulator::cGameNounManager::CreateHerd");
+    a_HerdEnable = H->sym("Simulator::cHerd::SetEnabled");
+    a_CreatureCreate = H->sym("Simulator::cCreatureAnimal::Create");
+    a_GetDomHerd = H->sym("Simulator::cTribe::GetDomesticatedAnimalsHerd");
 
     if (a_PlannerUpdate)
         H->hook_create(M, (void*)a_PlannerUpdate, (void*)h_PlannerUpdate, (void**)&o_PlannerUpdate);
@@ -1707,11 +1926,12 @@ std::string status_summary()
     snprintf(b, sizeof b,
              "tribe_rivals: fix=%d active=%d swapped=%d orig_pt=%p my_tribe=%p my_pol=%08X my_food=%d "
              "planner_skipped=%u pvp_hits=%u pvp_blocked=%u hut_clamped=%u tool_pvp=%u conquer_blocked=%u "
-             "gifts=%u raids=%u inf_earned=%u draft_unlocked=%u draft_payouts=%u species_swaps=%u npcs=%u win_needed=%d\n",
+             "gifts=%u raids=%u inf_earned=%u draft_unlocked=%u draft_payouts=%u species_swaps=%u "
+             "pack_pets_spawned=%u npcs=%u win_needed=%d\n",
              (int)g_rivals_tribe_fix, (int)active(), (int)g_swapped, g_orig_pt, mt, tribe_pol(mt),
              mt ? tribe_food(mt) : 0, g_planner_skipped, g_pvp_hits, g_pvp_blocked, g_hut_clamped, g_tool_pvp_hits,
              g_conquer_blocked, g_gifts_done, g_raids_done, g_inf_earned, g_draft_unlocked, g_draft_payouts_applied,
-             g_species_swaps, g_last_npc_count, g_last_win_needed);
+             g_species_swaps, g_pack_pets_spawned, g_last_npc_count, g_last_win_needed);
     std::string out = b;
     if (is_host() && active()) {
         for (int p = 0; p < rivals::kMaxPlayers; p++) {
@@ -1976,7 +2196,84 @@ std::string debug_cmd(const std::vector<std::string>& a)
         return b;
     }
 
-    return "usage: coop.tribe rivals [status|gift food|tool <pid> <val>|raid <pid> [amt]|form_npc|setrel <pid> <pol> <0..5>|addfood <pid> <d>|unlock_tool <pid> <k>|swap_species <pid> [key]|hit_hut|hit_member|hit_tool|music_win|gift_win]\n";
+    if (a[1] == "set_pack_pets" && a.size() >= 4 && is_host()) {
+        uint8_t pid = (uint8_t)atoi(a[2].c_str());
+        if (!rivals::valid_player(pid))
+            return "error: bad pid\n";
+        std::vector<uint32_t> sps;
+        if (a[3] == "auto") {
+            struct Collect {
+                std::vector<uint32_t> out;
+                void* pt = nullptr;
+            } col{{}, tribe::player_tribe()};
+            game::for_each_object(
+                [](void* o, uint32_t noun, void* u) {
+                    auto* c = (Collect*)u;
+                    if (noun != 0x18EB45Eu || !game::listed(o, 0x18EB45Eu) || game::is_dead(o))
+                        return true;
+                    if (tribe::is_domesticated_animal(o, c->pt))
+                        return true;
+                    uint32_t sp = game::species_instance(o);
+                    if (sp && std::find(c->out.begin(), c->out.end(), sp) == c->out.end()) {
+                        c->out.push_back(sp);
+                        if (c->out.size() >= kMaxPackPets)
+                            return false;
+                    }
+                    return true;
+                },
+                &col);
+            sps = std::move(col.out);
+        } else {
+            for (size_t i = 3; i < a.size(); i++) {
+                uint32_t sp = (uint32_t)strtoul(a[i].c_str(), nullptr, 0);
+                if (sp)
+                    sps.push_back(sp);
+            }
+        }
+        record_pack_pets(g_pack_pets, pid, sps);
+        g_pack_pets.spawned[pid] = false;
+        host_spawn_pack_pets_for(pid);
+        void* t = tribe_of_player(pid);
+        auto dom = tribe_dom_pet_species(t);
+        char b[160];
+        snprintf(b, sizeof b, "ok: pid=%u recorded=%u dom_pets=%u pack_pets_spawned=%u\n", (unsigned)pid,
+                 (unsigned)g_pack_pets.species[pid].size(), (unsigned)dom.size(), g_pack_pets_spawned);
+        return b;
+    }
+
+    if (a[1] == "pets") {
+        uint8_t pid = a.size() >= 3 ? (uint8_t)atoi(a[2].c_str()) : my_id();
+        void* t = tribe_of_player(pid);
+        auto dom = tribe_dom_pet_species(t);
+        char b[160];
+        snprintf(b, sizeof b, "pets pid=%u tribe=%p dom_count=%u pack_pets_spawned=%u recorded=%u spawned_flag=%d:",
+                 (unsigned)pid, t, (unsigned)dom.size(), g_pack_pets_spawned,
+                 rivals::valid_player(pid) ? (unsigned)g_pack_pets.species[pid].size() : 0u,
+                 rivals::valid_player(pid) ? (int)g_pack_pets.spawned[pid] : 0);
+        std::string out = b;
+        for (uint32_t sp : dom) {
+            char sb[16];
+            snprintf(sb, sizeof sb, " %08X", sp);
+            out += sb;
+        }
+        out += "\n";
+        return out;
+    }
+
+    if (a[1] == "use_ability" && a.size() >= 3) {
+        int ab_type = atoi(a[2].c_str());
+        if (!tribe_logic::is_consequence_ability_type(ab_type))
+            return "error: ability type must be 52..57\n";
+        if (!is_guest())
+            return "error: guest only\n";
+        bool sent = tribe::guest_request_consequence_ability(ab_type);
+        char b[96];
+        snprintf(b, sizeof b, "%s: ability=%d (%s)\n", sent ? "ok" : "disabled", ab_type,
+                 tribe_logic::consequence_ability_name(ab_type));
+        return b;
+    }
+
+    return "usage: coop.tribe rivals [status|gift food|tool <pid> <val>|raid <pid> [amt]|form_npc|setrel <pid> <pol> <0..5>|addfood <pid> <d>|unlock_tool <pid> <k>|swap_species <pid> [key]|hit_hut|hit_member|hit_tool|music_win|gift_win|set_pack_pets <pid> <spec...|auto>|pets [pid]|use_ability <52..57>]\n";
 }
 
 } // namespace tribe_rivals

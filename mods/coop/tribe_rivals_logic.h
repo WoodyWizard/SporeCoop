@@ -789,4 +789,81 @@ inline bool read_food_sync(net::Reader& r, FoodSyncMsg& out)
     return true;
 }
 
+// ---------------- BUG-1564: Creature -> Tribe pack pet handoff ----------------
+constexpr size_t kMaxPackPets = 3;
+
+// Deduplicates species instance IDs (DomesticateAnimal enforces max 1 pet per species per tribe),
+// drops zero IDs, preserves order, and clamps to max_pets (3).
+inline std::vector<uint32_t> normalize_pack_pet_species(const std::vector<uint32_t>& raw,
+                                                        size_t max_pets = kMaxPackPets)
+{
+    std::vector<uint32_t> out;
+    out.reserve(std::min(raw.size(), max_pets));
+    for (uint32_t sp : raw) {
+        if (sp == 0)
+            continue;
+        if (std::find(out.begin(), out.end(), sp) != out.end())
+            continue;
+        out.push_back(sp);
+        if (out.size() >= max_pets)
+            break;
+    }
+    return out;
+}
+
+struct PackPetPlan {
+    std::vector<uint32_t> species[rivals::kMaxPlayers];
+    bool spawned[rivals::kMaxPlayers] = {};
+
+    void clear_all()
+    {
+        for (int p = 0; p < rivals::kMaxPlayers; p++) {
+            species[p].clear();
+            spawned[p] = false;
+        }
+    }
+
+    void reset_spawned()
+    {
+        for (int p = 0; p < rivals::kMaxPlayers; p++)
+            spawned[p] = false;
+    }
+};
+
+inline void record_pack_pets(PackPetPlan& plan, uint8_t pid, const std::vector<uint32_t>& raw)
+{
+    if (!rivals::valid_player(pid))
+        return;
+    plan.species[pid] = normalize_pack_pet_species(raw, kMaxPackPets);
+}
+
+// Returns the species instance IDs to spawn as domesticated pets for player `pid` in Tribe Rivals.
+// Idempotent: marks `plan.spawned[pid] = true` once evaluated on a ready tribe and skips any species
+// already domesticated at that tribe, clamping total pets to kMaxPackPets (3).
+inline std::vector<uint32_t> take_pack_pets_to_spawn(PackPetPlan& plan, bool fix_on, bool rivals_active, uint8_t pid,
+                                                     bool tribe_ready,
+                                                     const std::vector<uint32_t>& existing_pet_species)
+{
+    std::vector<uint32_t> out;
+    if (!fix_on || !rivals_active || !rivals::valid_player(pid) || !tribe_ready || plan.spawned[pid])
+        return out;
+    plan.spawned[pid] = true;
+    size_t have = existing_pet_species.size();
+    if (have >= kMaxPackPets)
+        return out;
+    size_t room = kMaxPackPets - have;
+    for (uint32_t sp : plan.species[pid]) {
+        if (sp == 0)
+            continue;
+        if (std::find(existing_pet_species.begin(), existing_pet_species.end(), sp) != existing_pet_species.end())
+            continue;
+        if (std::find(out.begin(), out.end(), sp) != out.end())
+            continue;
+        out.push_back(sp);
+        if (out.size() >= room)
+            break;
+    }
+    return out;
+}
+
 } // namespace tribe_rivals
