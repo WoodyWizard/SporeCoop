@@ -119,18 +119,33 @@ def main():
         host.call('coop.rivals influence add 1 100')
         wait_for(lambda: 'bal=[100,100,' in rivals_out(guest), 8.0)
 
-        guest.call('coop.rivals influence protect 0x1234')
+        # Ensure >= 2 remaining NPC tribes exist on host for Protect + TurnAgainst (fixture starts with 1 NPC tribe, taken over for guest)
+        npc_re = r'npc pol=([0-9A-Fa-f]+) pos=\([^)]+\) rels=\[p0=(\w+),p1=(\w+)\]'
+        for _ in range(4):
+            tr_stat = host.call('coop.tribe rivals').get('out') or ''
+            if len(re.findall(npc_re, tr_stat)) >= 2:
+                break
+            host.call('coop.tribe rivals form_npc')
+            time.sleep(1.2)
+        tr_stat = host.call('coop.tribe rivals').get('out') or ''
+        npc_rows = re.findall(npc_re, tr_stat)
+        npc_a = ('0x' + npc_rows[0][0]) if len(npc_rows) >= 1 else '0x1234'
+        npc_b = next(('0x' + pol for pol, _p0, p1 in npc_rows if ('0x' + pol) != npc_a and p1 != 'Hostile'),
+                     ('0x' + npc_rows[1][0]) if len(npc_rows) >= 2 else '0x5678')
+
+        guest.call(f'coop.rivals influence protect {npc_a}')
         prot_synced = wait_for(lambda: 'prots=1' in rivals_out(host) and 'bal=[100,80,' in rivals_out(guest), 8.0)
         ck(bool(prot_synced), 'guest Protect deducted 20 influence and synced prots=1')
 
-        turn_blocked = host.call('coop.rivals influence turn 0x1234 1').get('out') or ''
+        turn_blocked = host.call(f'coop.rivals influence turn {npc_a} 1').get('out') or ''
         ck('error:' in turn_blocked and 'protected' in turn_blocked and 'bal=[100,80,' in rivals_out(host),
            f'TurnAgainst blocked by active Protect ({turn_blocked.strip()})')
 
-        turn_ok = host.call('coop.rivals influence turn 0x5678 1').get('out') or ''
+        turn_ok = host.call(f'coop.rivals influence turn {npc_b} 1').get('out') or ''
         ck('ok' in turn_ok and 'bal=[70,80,' in rivals_out(host),
            f'TurnAgainst succeeded on unprotected NPC ({turn_ok.strip()})')
 
+        host.call('coop.tribe rivals addfood 0 100')
         buy_ok = host.call('coop.rivals influence buy').get('out') or ''
         ck('ok' in buy_ok and 'bal=[95,80,' in rivals_out(host) and 'buys=[1,0,' in rivals_out(host),
            f'Influence buy added +25 and incremented buys ({buy_ok.strip()})')
