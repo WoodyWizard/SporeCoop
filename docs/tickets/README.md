@@ -1562,3 +1562,6 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-1556](BUG-1556-adv-editor-session-reset-lease-snapback-undo.md) | fixed | bug | Adventure | 2026-11-25 | 0.8.0.1 | Shared Adventure Editor: broadcast Save/Play-test session reset, release leases on drag end, snap-back on reject, and non-destructive Ctrl+Z |
 | [BUG-1557](BUG-1557-rivals-per-player-evolutionary-path-and-philosophy.md) | fixed | feature | All | 2026-11-25 | 0.8.0.2 | Rivals per-player evolutionary path, Tribe/Civ consequence cards and Space philosophy |
 | [BUG-1558](BUG-1558-rivals-together-default-settings-presets-and-live-ff.md) | fixed | feature | All | 2026-11-25 | 0.8.0.2 | Default Settings presets for Rivals vs Together mode and live Friendly Fire toggle |
+| [BUG-1559](BUG-1559-space-tutorial-skip-leaves-guest-without-drive.md) | open | bug | Space | 2026-11-25 |  | Space: skipping the Space tutorial on host leaves guest without interstellar drive and tutorial unlock |
+| [BUG-1560](BUG-1560-creature-pack-editor-infinite-posse.md) | open | bug | Creature | 2026-11-25 |  | Creature: guest pack recruit followed by Creature Editor leaks companion to host and breaks host pack size limit |
+| [BUG-1561](BUG-1561-creature-tribe-guest-befriending.md) | open | bug | Creature | 2026-11-25 |  | Creature & Tribe: guest befriending creatures and tribes fails in co-op |
