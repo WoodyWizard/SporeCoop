@@ -1,3 +1,4 @@
+#include "civ_rivals.h"
 #include "civ_wallet.h"
 #include "lifecycle.h"
 #include "shared.h"
@@ -275,7 +276,8 @@ static uint32_t g_mode; // the game mode of the last tick: status / debug_add us
 // sends its own changes (civ.wallet_row); the host keeps sharing its money with a guest without a wallet (an older peer)
 static bool own_budget(const Res& r)
 {
-    return (r.mode == modes::kSpace && spaceext::rivals()) || (r.mode == modes::kCiv && civ_wallet::guest_own_money()) ||
+    return (r.mode == modes::kSpace && spaceext::rivals()) ||
+           (r.mode == modes::kCiv && (civ_wallet::guest_own_money() || civ_rivals::active())) ||
            (r.mode == modes::kTribe && tribe_rivals::active());
 }
 

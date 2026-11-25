@@ -2913,3 +2913,63 @@ temporary logging: lab 20261123-101722, 20261123-101916, 20261123-102328, 202611
   again, so the price was lost (BUG-1532). Since BUG-1532 a guest's sell refund of a building its planner added and has
   not sent is let through (the shared money's next guest delta brings it to the host); a sold building of the city
   (one the host has) stays blocked.
+
+## Civilization Rivals: R1/R2/R3/R4/R7 verification (2026-11-25, w08/rivals-civ)
+<a id="civ-rivals-re"></a>
+
+BUG-1549 (WP-R5 of 0.8.0, `docs/11-rivals.md` 11.3.4, 11.4-11.9). Verified by `llvm-objdump` disassembly on GOG 2024
+`SporeApp.exe` (`dc04aee5`); symbols added to `data/symbols/overrides_dc04aee5.sym`.
+
+* **R1 Perspective swap (guest treats taken-over `cCivilization` as player nation):**
+  * ✔ `Simulator::cGameNounManager::GetPlayerCivilization` (`0x00B25F90`, `thiscall(nm)` plain ret): calls `GetPlayerEmpire`
+    (`0x010211B0`) -> reads `[empire+0x84]` -> calls `GetCivilizationByPoliticalID` (`0x00B25F20`). Hooking `0xB25F90` on a
+    guest in Civ Rivals to return `GetCivilizationByPoliticalID(nm, my_pol)` redirects HUD wealth, progress bar, planner
+    budget, and superweapon panel to the guest's assigned nation.
+  * ✔ `SporeCoop::GameNounManager_GetPlayerPoliticalID` (`0x00B1F910`, `thiscall(nm)` plain ret): in Civ/Space calls
+    `0x01020F40` (`[0x16DDA8C]+0x18`). Hooking it on a guest to return `my_pol` makes `Vehicle_IsPlayerOwned` (`0x00C9E820`,
+    which calls `0xB1F910` at `0xC9E83B`) and right-click/pie order handlers treat the guest's vehicles and political ID as
+    owned.
+  * ✔ `SporeCoop::City_IsPlayerOwned` (`0x00BD8300`, spatial vt `0x58`, `mov al,[ecx+0x21C]; ret`) and
+    `SporeCoop::City_SetIsPlayerOwned` (`0x00BD8310`, `thiscall(city, bool) ret 4`, writes `[ecx+0x33C] = arg`). Updating
+    `city+0x33C` and hooking `0xBD8300` flips city ownership UI to the guest's own cities.
+  * ✔ `SporeCoop::TerrainCursor_Get` (`0x00B30EB0`, cdecl returning `[0x167E898]`) and `SporeCoop::TerrainCursor_SetObjects`
+    (`0x00B2FC70`, `thiscall(cursor, vec*) ret 4`, writes `[ecx+0x164]`). Setting cursor `+0x164` to `my_civ + 0xD4`
+    (`mSelectableObjectVector`) enables native click/box selection of the guest's vehicles.
+* **R2 Taking over an NPC `cCivilization` on the host:**
+  * ✔ `SporeCoop::Civilization_AI` (`0x00BFBD30`, `thiscall(civ)` plain ret, called per civilization at `0xAE62E6`): runs
+    `0xBF11B0`, `SporeCoop::Civ_IncomeTick` (`0x00BF7310`, increments `+0x4B4`, every 6 ticks calls `AddMoney(civ, 0xBF70E0*0.1, 1)`),
+    and `0xBF8580`, then compares `civ` with `GetPlayerCivilization` (`0xB25F90`, ret addr `0xBFBD6D`) and enters the NPC AI
+    branch at `0xBFBE66` (diplomacy, `CivAI_WealthToBudgets` `0xBF7370`, city growth `0xBE5890`, vehicle production). Hooking
+    `0xBFBD30` for guest-assigned nations on the host skips the NPC AI branch while still running `Civ_IncomeTick` (`0xBF7310`)
+    so the guest nation earns its own passive income into `mWealth` (`+0x98`) without draining into `+0x4AC`/`+0x4B0`.
+  * ✔ On takeover, existing NPC budgets (`+0x4AC` + `+0x4B0`) are folded into `+0x98` (with a 3000 minimum baseline), `+0x4AC`
+    and `+0x4B0` are zeroed, `+0x89` (`mIsPlayerOwned`) is kept `0` on the host, and `SporeCoop::Civ_SetSpeciesKey`
+    (`0x00BEBF20`) applies the guest's species key when available. Verified invariant (disasm + runtime):
+    `cRelationshipManager::CalculateRelationshipAbsolute` (`0x00D05A60`, branch at `0x00D05AF4`: `cmpb $0, 0x89(%esi)`)
+    swaps `(polA, polB)` and recurses into `CalculateRelationship` (`0x00D00950`) whenever `civA+0x89 != 0`. Having two
+    civilizations with `+0x89 == 1` in the same process causes infinite recursion (`0xC00000FD` stack overflow at
+    `0x00D05A76`). Therefore only ONE civilization per game instance has `+0x89 == 1` (the host's civ on the host; only the
+    guest's own civ on the guest after perspective swap).
+* **R3 Stage end (>50% NPC cities) and forced Civ -> Space readiness:**
+  * ✔ `SporeCoop::GameCiv_Get` (`0x00CF7620`), `SporeCoop::GameCiv_IsPlanetOwned` (`0x00CF7730`, checks `playerCiv+0x298 >= 4`),
+    and `SporeCoop::GameCiv_ShowPlanetWon` (`0x00CF8F60`, calls `0xE042A0(hud+0x64, 1)` to show the Civ -> Space advance UI).
+    At catch-up end, the host calls `GameCiv_ShowPlanetWon` when a guest won or the host has not met the native 10-city check.
+  * ✔ Spaceship Editor launch in `cCityInputStrategy::HandleMessage` (`0xCF59FD` on msg `0x0445F729`): sets `GameCiv+0x28 = 1`
+    and submits EditorRequest `0x96B24187` (tag `0x116D51D`); its result invokes `0xCF4620` to enter Space.
+* **R4 Per-player NPC nation relations and Civ influence:**
+  * ✔ `cRelationshipManager` (`0xB3D3C0`), `CalculateRelationship` (`0xD00950`), `CalculateRelationshipAbsolute`, and
+    `ApplyRelationship` (`0xD06280`) are keyed by `(polA, polB)`. Because each player controls a distinct `cCivilization`
+    political ID in Civ Rivals, `(npcPol, hostPol)` and `(npcPol, guestPol)` are natively distinct entries; the host tracks an
+    authoritative per-player table, syncs each guest via `MSG_RIVALS_FACTION` (`SK_NPC_RELS`), and writes the guest's view into
+    the guest's `cRelationshipManager` (pausing `wsync`'s `civ_rel` row while Civ Rivals is active).
+  * ✔ `SporeCoop::City_TradeDelivery` (`0x00BE19B0`, `thiscall(city, traderPol, cargo, veh) ret 0xC`, `returns: float (ST0)`):
+    hooked on the host to award Civ influence on completed trade deliveries.
+* **R7 Capital inviolability and superweapon blocking:**
+  * ✔ Blocking `cCity::Capture` (`0xBE9430`, clearing pending `+0x2E0..+0x2E6` flags), `cCity::AddCaptureDamage` (`0xBE9C70`),
+    `cCity::ConvertCitizens` (`0xBEB1E0`), and `cCity_Buy` (`0xBE99A0`) prevents capture, conversion, or buyout of any player's
+    capital while allowing capture of ordinary rival cities at war.
+  * ✔ `SporeCoop::City_CanTargetSuperweapon` (`0x00BDA440`, `cdecl bool(int swType, const Vector3* target)`) checks types
+    4/7/11 against nearest city radius and `!city->IsPlayerOwned()`; `SporeCoop::City_LaunchGlobalSuperweapon` (`0x00BE4300`,
+    called from `cCity::LaunchSuperweapon` `0xBE5D30` at `0xBE5EAE`) strikes all cities with `pol != launcher->pol` for global
+    types 2/5/8. Hooking `FireSuperweapon` (`0xBF8BB0`), `City_CanTargetSuperweapon` (`0xBDA440`), and
+    `City_LaunchGlobalSuperweapon` (`0xBE4300`) blocks both targeted and global superweapons against any rival player's capital.

@@ -2,9 +2,11 @@
 // the snapshot it sends (host_tick), the buildings' hit points, the guests' commands (host_command); moved out of
 // civ.cpp (C8 of 0.7.15, BUG-1164).
 #include "civ_internal.h"
+#include "civ_rivals.h"
 #include "civ_wallet.h"
 #include "net/compat.h"
 #include "own_world.h"
+#include "rivals.h"
 
 namespace civ {
 
@@ -234,6 +236,11 @@ std::string claims_forget(void* city)
 
 static void host_assign_cities(const std::vector<uint8_t>& players)
 {
+    if (civ_rivals::active()) {
+        civ_rivals::host_sync_owners();
+        g_split_for = players;
+        return;
+    }
     void* pc = player_civ();
     if (!pc || players.empty())
         return;
@@ -377,9 +384,12 @@ static void trade_tick(double now)
     int pairs = 0, gain = 0;
     auto economic = [](uint8_t p) { return role(p) == 2; };
     std::vector<std::array<int, 3>> paid; // BUG-1468: (owner a, owner b, gain) of every pair
+    bool riv = civ_rivals::active();
     for (size_t i = 0; i < owned.size(); i++)
         for (size_t j = i + 1; j < owned.size() && pairs < 8; j++)
             if (owned[i].second != owned[j].second) {
+                if (riv && !rivals::allied(owned[i].second, owned[j].second))
+                    continue; // Rivals: only allied players earn cross-player trade payouts
                 pairs++;
                 // an economic governor at either end doubles the pair (both: triple)
                 int g = kTradePerPair * (1 + economic(owned[i].second) + economic(owned[j].second));
@@ -389,6 +399,13 @@ static void trade_tick(double now)
     g_trade_pairs = pairs;
     if (!pairs)
         return;
+    if (riv) {
+        for (auto& [a, b, g] : paid)
+            civ_rivals::on_allied_trade((uint8_t)a, (uint8_t)b, g);
+        g_trade_total += gain;
+        g_trade_payouts++;
+        return;
+    }
     std::string err;
     if (!shared::debug_add("money", gain, err))
         return;
@@ -911,6 +928,16 @@ void host_tick(double now)
             g_n.orphans_given++;
         });
     for (void* v : vehicles) {
+        if (civ_rivals::active()) {
+            int rpid = civ_rivals::player_of_pol(pol_of(v));
+            uint8_t owner = rpid >= 0 ? (uint8_t)rpid : civlogic::kNpc;
+            if (HvRef ex = hv_find(v)) {
+                ex.h->owner = owner;
+            } else {
+                hv_add(v, owner);
+            }
+            continue;
+        }
         if (hv_find(v))
             continue;
         bool mine = pol_of(v) == ppol;
@@ -1055,7 +1082,8 @@ void host_tick(double now)
 static const char* g_buy_fail = "";
 void* host_buy(void* city, int loco)
 {
-    void* civ = player_civ();
+    bool riv = civ_rivals::active();
+    void* civ = (riv && city) ? F<void*>(city, kCityCiv) : player_civ();
     g_buy_fail = "no such city";
     if (!civ || !city)
         return nullptr;
@@ -1064,8 +1092,8 @@ void* host_buy(void* city, int loco)
     if (thiscall<int>(a_SlotsLeft, civ, purpose) <= 0)
         return nullptr;
     float cost = thiscall<float>(a_VehicleCost, civ, purpose, loco);
-    civ_wallet::PayAs pay(g_pending_owner); // BUG-1468: a guest's purchase is paid from its own money (civ.own_money)
-    g_buy_fail = pay.paying() ? "not enough money of your own" : "not enough money";
+    civ_wallet::PayAs pay(riv ? -1 : g_pending_owner); // BUG-1468: Together own-money; Rivals uses the player's own cCivilization
+    g_buy_fail = (riv || pay.paying()) ? "not enough money of your own" : "not enough money";
     if (!civlogic::can_pay(thiscall<float>(a_GetMoney, civ), cost))
         return nullptr;
     g_buy_fail = "the city cannot build it";
@@ -1077,6 +1105,8 @@ void* host_buy(void* city, int loco)
         return nullptr;
     thiscall<int>(a_PushEvent, v, 10);
     thiscall<void>(a_SpendMoney, civ, cost);
+    if (riv)
+        civ_rivals::host_mark_assign_dirty();
     return v;
 }
 
@@ -1106,7 +1136,7 @@ void* build_in_city(void* city, uint32_t noun, const net::Vec3& pos, bool pay)
         return nullptr;
     thiscall<void>(a_SetBuildingModel, city, b, type);
     if (pay && g_fix_build_money) { // BUG-0613
-        void* civ = player_civ();
+        void* civ = civ_rivals::active() ? F<void*>(city, kCityCiv) : player_civ();
         if (civ && !civlogic::can_pay(thiscall<float>(a_GetMoney, civ), vcall<float>(b, 0x5C / 4))) {
             g_build_fail = "not enough money";
             if (a_DestroyInstance)
@@ -1127,9 +1157,13 @@ void* build_in_city(void* city, uint32_t noun, const net::Vec3& pos, bool pay)
         return nullptr;
     }
     thiscall<int>(a_AddBuilding, city, b, 0);
-    if (pay)
-        if (void* civ = player_civ())
+    if (pay) {
+        if (void* civ = civ_rivals::active() ? F<void*>(city, kCityCiv) : player_civ()) {
             thiscall<void>(a_SpendMoney, civ, vcall<float>(b, 0x5C / 4));
+            if (civ_rivals::active())
+                civ_rivals::host_mark_assign_dirty();
+        }
+    }
     return b;
 }
 
@@ -1374,7 +1408,10 @@ void host_command(uint8_t from, net::Reader& r)
                    (unsigned)id, t.noun, t.pos.x, t.pos.y, t.pos.z,
                    std::sqrt((tp.x - t.pos.x) * (tp.x - t.pos.x) + (tp.y - t.pos.y) * (tp.y - t.pos.y) +
                              (tp.z - t.pos.z) * (tp.z - t.pos.z)));
-        if (!ff_try_order(id, v, from, target, type)) {
+        if (civ_rivals::active() && (type == 1 || type == 2 || type == 3) &&
+            civ_rivals::block_attack_order(from, target))
+            return reject();
+        if (civ_rivals::active() || !ff_try_order(id, v, from, target, type)) {
             o_SetOrder(v, target, type, flag);
             thiscall<void>(a_OrderStamp, v, 0);
         }
@@ -1434,9 +1471,14 @@ void host_command(uint8_t from, net::Reader& r)
         void* b = build_in_city(city, noun, p, false); // the guest paid in its planner (shared money)
         g_build_from = -1;
         if (!b) {
-            refund_build(from, paid, g_build_fail);
+            if (civ_rivals::active())
+                civ_rivals::host_mark_assign_dirty(); // resync guest's uncharged wealth
+            else
+                refund_build(from, paid, g_build_fail);
             return reject();
         }
+        if (civ_rivals::active() && paid > 0.0f)
+            civ_rivals::host_charge_player(from, paid);
     } else if (kind == kCmdSpecialty) { // BUG-0982: a guest's answer to the specialty question of its city
         host_specialty_answer(from, r);
         return;
@@ -1445,16 +1487,17 @@ void host_command(uint8_t from, net::Reader& r)
         float price = kind == 6 ? r.f32() : 0.f;
         int type = kind == 7 ? r.u8() : 2;
         void* city = host_city(ci); // (BUG-1053)
-        void* pc = player_civ();
+        bool riv = civ_rivals::active();
+        void* pc = riv ? civ_rivals::civ_of_player(from) : player_civ();
         bool on = kind == 6 ? g_fix_buy_city && o_CityBuy : g_fix_away_capture;
         if (!r.ok() || !on || !city || !pc || pol_of(city) == pol_of(pc) || !std::isfinite(price) || price < 0 ||
-            type < 0 || type > 2) {
-            snprintf(why, sizeof why, " (city %u: %s)", (unsigned)ci, !city ? "not in the host's game" : "already the players'");
+            type < 0 || type > 2 || (riv && civ_rivals::block_capture(city, pol_of(pc)))) {
+            snprintf(why, sizeof why, " (city %u: %s)", (unsigned)ci, !city ? "not in the host's game" : "refused");
             return reject();
         }
         bool refused;
         {
-            civ_wallet::PayAs pay(kind == 6 ? from : -1); // BUG-1468: a guest's city purchase is paid from its own money
+            civ_wallet::PayAs pay((kind == 6 && !riv) ? from : -1); // BUG-1468: Together own-money; Rivals uses pc directly
             float money = thiscall<float>(a_GetMoney, pc);
             g_capture_for = from;
             if (kind == 6)

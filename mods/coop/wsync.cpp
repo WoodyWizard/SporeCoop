@@ -13,6 +13,7 @@
 
 #include "cellsync.h"
 #include "civ.h"
+#include "civ_rivals.h"
 #include "designs.h"
 #include "fixes.h"
 #include "history.h"
@@ -714,6 +715,8 @@ static bool r_civ_rel(Table& out)
 }
 static int s_civ_rel(const Table& want, bool apply)
 {
+    if (civ_rivals::active())
+        return 0; // BUG-1549 R4: per-player NPC relations are synced via SK_NPC_RELS in Civ Rivals
     void* pc = player_civ();
     void* mgr = rel_mgr();
     uintptr_t ap = S("Simulator::cRelationshipManager::ApplyRelationship");

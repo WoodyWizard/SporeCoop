@@ -1,6 +1,7 @@
 // The host's shots copied on the guests (BUG-0477 and its class), the old Tribe-stage villages raided in Civ
 // (BUG-0539) and the damage of a mirror's weapon dropped; moved out of civ.cpp (C8 of 0.7.15, BUG-1164).
 #include "civ_internal.h"
+#include "civ_rivals.h"
 #include "party_difficulty.h"
 
 namespace civ {
@@ -740,18 +741,36 @@ int SK_THISCALL h_VTakeDamage(void* s, float d, uint32_t pol, int t, const void*
         uint8_t ap = player_of_combatant(a);
         bool is_ff_hit = false;
         if (v) {
-            auto gate = civlogic::ff_damage_gate(ff_on(), ap, v.h->owner, (uint8_t)net::kMaxPlayers);
-            if (gate == civlogic::FfGate::Block) {
-                g_n.ff_blocked++;
-                return 0;
-            }
-            if (gate == civlogic::FfGate::Allow) {
-                pol = 0xFFFFFFFFu;
-                g_n.ff_hits++;
-                is_ff_hit = true;
-                if (role(ap) == 1) {
-                    d *= 1.25f;
-                    g_n.military_hits++;
+            if (civ_rivals::active()) {
+                uint8_t att_p = ap;
+                if (att_p >= net::kMaxPlayers) {
+                    int pp = civ_rivals::player_of_pol(pol);
+                    if (pp >= 0)
+                        att_p = (uint8_t)pp;
+                }
+                auto rg = civ_rivals::damage_gate(att_p, v.h->owner, false, t);
+                if (rg == civ_rivals_logic::CombatGate::Block) {
+                    g_n.ff_blocked++;
+                    return 0;
+                }
+                if (rg == civ_rivals_logic::CombatGate::Allow) {
+                    g_n.ff_hits++;
+                    is_ff_hit = true;
+                }
+            } else {
+                auto gate = civlogic::ff_damage_gate(ff_on(), ap, v.h->owner, (uint8_t)net::kMaxPlayers);
+                if (gate == civlogic::FfGate::Block) {
+                    g_n.ff_blocked++;
+                    return 0;
+                }
+                if (gate == civlogic::FfGate::Allow) {
+                    pol = 0xFFFFFFFFu;
+                    g_n.ff_hits++;
+                    is_ff_hit = true;
+                    if (role(ap) == 1) {
+                        d *= 1.25f;
+                        g_n.military_hits++;
+                    }
                 }
             }
         }

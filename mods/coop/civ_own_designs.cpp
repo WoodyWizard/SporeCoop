@@ -12,6 +12,7 @@
 // a record of ours gets the culture set's key for its design id, species::is_line_key); the session's end puts it back.
 // `coop.fix civ.own_designs off`: every object the culture's design (0.7.15).
 #include "civ_internal.h"
+#include "civ_rivals.h"
 #include "designs.h"
 #include "savestrip.h"
 #include "species_line.h"
@@ -75,6 +76,8 @@ static uint32_t vehicle_did(void* v) { return (uint32_t)skg::cdecl_call<int>(a_D
 // the player civilization's vehicles (its list +0xB0, as civ::redesign_vehicles) that the game lists alive
 static std::vector<void*> player_vehicles()
 {
+    if (civ_rivals::active())
+        return civ_rivals::all_player_vehicles();
     std::vector<void*> out;
     void* pc = nm() ? player_civ() : nullptr;
     if (!pc)
