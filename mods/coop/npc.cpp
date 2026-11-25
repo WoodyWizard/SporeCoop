@@ -363,6 +363,7 @@ struct Proxy {
     // (its creature is the registry entry's ref: pointer, the serial when the proxy made it (BUG-0842), noun; C1)
     game::Key key{};
     uint8_t flags = 0;
+    uint8_t family_owner = 255; // BUG-1553: Creature Rivals family owner (0..3 or 255 = wild)
     float health = 0, max_health = 0;
     bool killed = false;
     bool host_pack = false; // BUG-0556: the host's NPC is in the host's pack (NF_PACK of its latest state)
@@ -1317,8 +1318,11 @@ static void send_spawn(uint8_t guest, uint16_t id, void* c)
     sp.key[2] = k.group;
     sp.scale = game::scale(c);
     void* av = game::avatar();
-    sp.flags = (game::is_dead(c) ? net::NF_DEAD : 0) |
-               (av && game::herd_of(c) && game::herd_of(c) == game::herd_of(av) ? net::NF_FAMILY : 0) |
+    uint8_t fam_owner = creature_rivals::active() ? creature_rivals::creature_family_owner(c) : 255;
+    bool is_fam = creature_rivals::active()
+                      ? (fam_owner == guest)
+                      : (av && game::herd_of(c) && game::herd_of(c) == game::herd_of(av));
+    sp.flags = (game::is_dead(c) ? net::NF_DEAD : 0) | (is_fam ? net::NF_FAMILY : 0) |
                (game::alpha(c) ? net::NF_ALPHA : 0); // BUG-1283
     sp.pos = game::position(c);
     sp.rot = game::orientation(c);
@@ -1327,6 +1331,7 @@ static void send_spawn(uint8_t guest, uint16_t id, void* c)
     net::Writer w;
     sp.write(w);
     w.u32(tuning_key(c)); // BUG-0462 trailer: older SporeCoop ignores it
+    w.u8(fam_owner);      // BUG-1553 trailer: Creature Rivals family owner (0..3 or 255); older SporeCoop ignores it
     C.sess->send_reliable_to(guest, net::MSG_NPC_SPAWN, w);
 }
 
@@ -1950,10 +1955,21 @@ static void* partner_puppet_at(const void* sub)
     return nullptr;
 }
 
+static uint8_t partner_puppet_peer(const void* pup)
+{
+    if (!pup || !C.sess || !C.puppet_of)
+        return 255;
+    for (const auto& p : C.sess->players())
+        if (p.id != 0 && C.puppet_of(p.id) == pup)
+            return p.id;
+    return 255;
+}
+
 static void pack_spares_partners(const std::vector<void*>& creatures)
 {
     if (!game::in_creature_stage() || game::puppets().empty())
         return;
+    const bool crivals = creature_rivals::active();
     // the pack (cGameNounManager +0x5C..+0x60, it may not be in the update list) and the creatures updated
     std::vector<void*> party;
     if (void* nm = game::noun_manager())
@@ -1967,14 +1983,28 @@ static void pack_spares_partners(const std::vector<void*>& creatures)
         if (game::is_puppet(c) || c == game::avatar() || !skg::readable(c, kTargetOff + 4) || !creature_hp::host_party(c) ||
             game::is_dead(c))
             continue;
-        if (void* pup = partner_puppet_at(skg::field<void*>(c, kTargetOff))) {
+        uint8_t c_owner = 0;
+        if (crivals && game::pack_member(c)) {
+            int hid = host_id(c);
+            uint8_t po = hid >= 0 ? g_pack_owners.owner_of((uint16_t)hid) : social_logic::kNoOwner;
+            if (po >= 1 && po < rivals::kMaxPlayers)
+                c_owner = po;
+        }
+        auto at_war_with = [&](void* pup) -> bool {
+            if (!crivals)
+                return false;
+            uint8_t peer_id = partner_puppet_peer(pup);
+            return peer_id != 255 && rivals::at_war(c_owner, peer_id);
+        };
+        if (void* pup = partner_puppet_at(skg::field<void*>(c, kTargetOff)); pup && !at_war_with(pup)) {
             skg::vcall<void>(c, 0x84 / 4, (void*)nullptr, 1, 0);
             if (++g_pack_targets_cleared <= 8 || g_pack_targets_cleared % 100 == 0)
                 H->log(M, SK_INFO, "npc: the host's pack member %p had the partner's puppet %p as its target: cleared (BUG-0512, %u)",
                        c, pup, g_pack_targets_cleared);
         }
         for (void* pup : game::puppets())
-            g_pack_stimuli_cleared += gamefixes::clear_stimuli_from(c, pup);
+            if (!at_war_with(pup))
+                g_pack_stimuli_cleared += gamefixes::clear_stimuli_from(c, pup);
     }
 }
 
@@ -2442,12 +2472,26 @@ static bool herd_is(void* h, void* species)
            game::herd_species(h) == species;
 }
 
-static void* proxy_herd(const game::Key& k, uint8_t flags, const net::Vec3& pos, void* species)
+static void* proxy_herd(const game::Key& k, uint8_t flags, const net::Vec3& pos, void* species,
+                        uint8_t fam_owner = 255)
 {
     void* species_nest = species;
-    if (flags & net::NF_FAMILY)
-        if (void* h = game::avatar_herd())
-            return h;
+    const bool crivals = creature_rivals::active();
+    void* av_herd = game::avatar_herd();
+    if (crivals) {
+        uint8_t me = C.sess ? C.sess->my_id() : 0;
+        if ((flags & net::NF_FAMILY) || (fam_owner < rivals::kMaxPlayers && fam_owner == me)) {
+            if (av_herd)
+                return av_herd;
+        } else if (fam_owner < rivals::kMaxPlayers) {
+            // Rival player's family (host 0 or another guest 1..3): keep strictly distinct from guest's swapped avatar_herd
+            if (void* rh = creature_rivals::player_herd(fam_owner))
+                return rh;
+        }
+    } else if (flags & net::NF_FAMILY) {
+        if (av_herd)
+            return av_herd;
+    }
     // the nest of the species in this world (from the save): by the host's key. A creation of the
     // host's own has a key of its own here (creations::local_species), its nests the host's key
     creations::Key hkey = creations::host_species({k.instance, k.type, k.group});
@@ -2457,23 +2501,26 @@ static void* proxy_herd(const game::Key& k, uint8_t flags, const net::Vec3& pos,
     uint64_t hk = herd_key({hkey.instance, hkey.type, hkey.group});
     auto lh = g_local_herds.find(hk);
     if (lh != g_local_herds.end()) {
-        if (g_herd_identity_fix ? herd_is(lh->second, species_nest) : game::object_alive(lh->second)) {
+        if ((!crivals || lh->second != av_herd) &&
+            (g_herd_identity_fix ? herd_is(lh->second, species_nest) : game::object_alive(lh->second))) {
             g_proxies_in_nest++;
             return lh->second;
         }
-        g_local_herds.erase(lh);
+        if (!crivals || lh->second != av_herd)
+            g_local_herds.erase(lh);
     }
     // not seen on a local NPC yet (proxies made before the game's NPCs ran an update): the nest
     // herd of the species among the game objects
     struct Find {
         void* species;
+        void* skip_herd;
         void* found;
-    } f{species_nest, nullptr};
+    } f{species_nest, crivals ? av_herd : nullptr, nullptr};
     game::for_each_object(
         [](void* o, uint32_t noun, void* u) {
             auto* f = (Find*)u;
-            if (noun != game::kHerdNoun || !game::object_alive(o) || game::herd_species(o) != f->species ||
-                !game::herd_nest(o))
+            if (noun != game::kHerdNoun || o == f->skip_herd || !game::object_alive(o) ||
+                game::herd_species(o) != f->species || !game::herd_nest(o))
                 return true;
             f->found = o;
             return false;
@@ -2487,9 +2534,10 @@ static void* proxy_herd(const game::Key& k, uint8_t flags, const net::Vec3& pos,
     }
     auto it = g_herds.find(hk);
     if (it != g_herds.end()) {
-        if (!g_herd_identity_fix || herd_is(it->second, species))
+        if ((!crivals || it->second != av_herd) && (!g_herd_identity_fix || herd_is(it->second, species)))
             return it->second;
-        g_herds.erase(it);
+        if (!crivals || it->second != av_herd)
+            g_herds.erase(it);
     }
     void* h = game::create_herd(pos, species);
     if (h) {
@@ -2546,6 +2594,7 @@ static void destroy_proxy_object(const mirror::Ref& r)
 }
 static void destroy_proxy(uint16_t id)
 {
+    creature_rivals::forget_proxy_family_owner(id);
     auto it = px_find(id);
     if (it == nullptr)
         return;
@@ -2763,7 +2812,7 @@ static void guest_tick(double now)
                         }
                     }
             }
-            void* herd = species ? proxy_herd(px.key, px.flags, s.pos, species) : nullptr;
+            void* herd = species ? proxy_herd(px.key, px.flags, s.pos, species, px.family_owner) : nullptr;
             int fail = !species ? 1 : !herd ? 2 : 0;
             void* made = nullptr;
             if (!fail) {
@@ -3057,7 +3106,7 @@ static void guest_tick(double now)
                 g_meat_eaten[id] += px.meat_seen - m;
             px.meat_seen = m;
         }
-        if (!px.killed) // the host's NPC was impressed (by anybody): the proxy shows it too
+        if (!px.killed && !creature_rivals::active()) // in Creature Rivals, impressed state is isolated per player (BUG-1553)
             game::set_impressed(pe.ref.p, (s.flags & net::NF_IMPRESSED) != 0);
         // BUG-1283 (fork BUG-9115): the nest's alpha is the host's (+0xB58 bit 0x1): a proxy kept the bit of this game's
         // own herd (4 of 15 proxies differed in the fork's run), so the guest's card read the plain name and its social
@@ -3501,6 +3550,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         px.health = sp.health;
         px.max_health = sp.max_health;
         px.tuning = r.left() >= 4 ? r.u32() : 0; // BUG-0462 trailer
+        px.family_owner = r.left() >= 1 ? r.u8() : 255; // BUG-1553 trailer
+        creature_rivals::note_proxy_family_owner(sp.net_id, px.family_owner);
         net::PlayerState s;
         // the spawn carries no host time: older than any state. The guest's own clock here made
         // every state older than this snapshot whenever the guest's clock was ahead of the host's

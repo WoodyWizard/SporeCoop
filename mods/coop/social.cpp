@@ -935,8 +935,13 @@ static size_t games_of(uint8_t id)
         n += k.first == id;
     return n;
 }
+// BUG-1553: per-player impressed tracking in Creature Rivals so one player impressing a wild creature
+// does not block rivals from impressing that same creature.
+static creature_rivals_logic::PerPlayerImpressed g_rivals_impressed;
+
 PLAYER_STATE("social.games", [](uint8_t id) {
     g_guest_pack_cap.erase(id);
+    g_rivals_impressed.forget_player(id);
     if (!g_forget_leaver)
         return;
     for (auto it = g_games.begin(); it != g_games.end();)
@@ -1032,15 +1037,46 @@ static bool same_species_key(void* a, void* b)
     return ka.instance != 0 && ka.instance == kb.instance && ka.type == kb.type && ka.group == kb.group;
 }
 
+static bool npc_impressed_for(uint8_t player, uint16_t id, void* c)
+{
+    if (!c)
+        return true;
+    if (creature_rivals::active() && player != 0)
+        return g_rivals_impressed.has(player, id, game::object_serial(c));
+    return game::impressed(c);
+}
+
+static bool can_impress_in_rivals(uint8_t player, void* c)
+{
+    if (!c || game::is_dead(c))
+        return false;
+    if (creature_rivals::creature_family_owner(c) != 255)
+        return false; // player home families cannot be impressed as wild species
+    uint32_t sp = game::species_instance(c);
+    if (sp == 0 || creature_rivals::is_species_extinct(sp))
+        return false;
+    int32_t rel = creature_rivals::player_species_relation(player, sp);
+    return !creature_rivals_logic::is_hostile_rel(rel) && !creature_rivals_logic::is_allied_rel(rel);
+}
+
 static bool is_recruit_candidate(void* c, uint8_t from)
 {
     if (!g_guest_recruit_fix || !c || game::is_dead(c) || from == 0)
         return false;
-    void* av = game::avatar();
-    void* mgr = rel_mgr();
-    void* pup = C.puppet_of ? C.puppet_of(from) : nullptr;
-    int rel = (mgr && a_RelGet && av) ? thiscall<int>(a_RelGet, mgr, (uint8_t*)c + game::kSpeciesKeyOff, c, av) : 0;
-    bool allied_or_kin = (rel == 6) || same_species_key(c, av) || same_species_key(c, pup);
+    bool allied_or_kin = false;
+    if (creature_rivals::active()) {
+        uint32_t sp = game::species_instance(c);
+        uint8_t fam = creature_rivals::creature_family_owner(c);
+        uint32_t gsp = creature_rivals::player_species_id(from);
+        bool allied = creature_rivals::player_allied_with_species(from, sp);
+        allied_or_kin = creature_rivals_logic::can_guest_recruit_in_rivals(from, sp, fam, gsp, allied);
+    } else {
+        void* av = game::avatar();
+        void* mgr = rel_mgr();
+        void* pup = C.puppet_of ? C.puppet_of(from) : nullptr;
+        int rel = (mgr && a_RelGet && av) ? thiscall<int>(a_RelGet, mgr, (uint8_t*)c + game::kSpeciesKeyOff, c, av) : 0;
+        allied_or_kin = (rel == 6) || same_species_key(c, av) || same_species_key(c, pup);
+    }
     return social_logic::can_recruit(g_guest_recruit_fix, allied_or_kin, game::pack_member(c),
                                      npc::pack_count_of(from), guest_pack_cap_of(from)) ==
            social_logic::RecruitFail::Ok;
@@ -1070,17 +1106,19 @@ static void apply_success(uint8_t player, uint16_t id, bool recruit)
             C.feed(C.sess->name_of(player) + " recruited a pack member");
         return;
     }
-    if (!c || !mgr || !a_RelEvent || game::is_dead(c) || game::impressed(c)) {
-        g_refused++; // gone, died or impressed by somebody else meanwhile
+    if (!c || !mgr || !a_RelEvent || game::is_dead(c) || npc_impressed_for(player, id, c)) {
+        g_refused++; // gone, died or impressed already meanwhile
         send_result(id, player, false, 0, 0);
         return;
     }
     void* av = game::avatar();
     void* key = (uint8_t*)c + game::kSpeciesKeyOff;
-    int rel = a_RelGet ? thiscall<int>(a_RelGet, mgr, key, c, av) : 0;
-    int mode = social_mode(c);
+    const bool crivals = creature_rivals::active();
+    int rel = crivals ? creature_rivals::player_species_relation(player, game::species_instance(c))
+                      : (a_RelGet ? thiscall<int>(a_RelGet, mgr, key, c, av) : 0);
+    int mode = crivals ? 1 : social_mode(c);
     uint32_t anim = reaction_anim(rel);
-    bool rivals_handled = creature_rivals::active() && creature_rivals::on_guest_impress(player, (const uint32_t*)key, c, 0.f);
+    bool rivals_handled = crivals && creature_rivals::on_guest_impress(player, (const uint32_t*)key, c, 0.f);
     if (!rivals_handled) {
         // WP-H1 (BUG-1471): the impress event's species goal (its trait progress, the alliance) is this guest's act
         actor::Scope act(player);
@@ -1100,7 +1138,10 @@ static void apply_success(uint8_t player, uint16_t id, bool recruit)
         // BUG-1469 (own progress, PR #209's social-win credit): the friend is that guest's: its DNA goes with the
         // result below, into its own game (the host's game pays nothing)
     }
-    game::set_impressed(c, true);
+    if (crivals)
+        g_rivals_impressed.mark(player, id, game::object_serial(c));
+    else
+        game::set_impressed(c, true);
     if (a_PlayReaction)
         thiscall<int>(a_PlayReaction, c, anim, 1, -1);
     g_impressed++;
@@ -1180,7 +1221,8 @@ static void host_engage(uint8_t from, uint16_t id, int pack_limit)
     if (!c || game::is_dead(c))
         return;
     bool recruit = is_recruit_candidate(c, from);
-    if (!recruit && (game::impressed(c) || social_mode(c) == 0))
+    bool can_social = creature_rivals::active() ? can_impress_in_rivals(from, c) : (social_mode(c) != 0);
+    if (!recruit && (npc_impressed_for(from, id, c) || !can_social))
         return;
     double now = H->time_seconds();
     Game& g = g_games[{from, id}];
@@ -1209,7 +1251,8 @@ static void host_prompt_tick(double now)
             ++it;
             continue;
         }
-        bool done_already = g.recruit ? (game::pack_member(c) || !is_recruit_candidate(c, from)) : game::impressed(c);
+        bool done_already = g.recruit ? (game::pack_member(c) || !is_recruit_candidate(c, from))
+                                      : npc_impressed_for(from, id, c);
         if (!c || game::is_dead(c) || done_already || now - g.last > kEngageTime) {
             it = g_games.erase(it);
             continue;
@@ -1244,7 +1287,8 @@ static void host_act(uint8_t from, uint16_t id, uint32_t type)
     void* c = npc::host_npc(id);
     void* pup = C.puppet_of ? C.puppet_of(from) : nullptr;
     bool recruit = is_recruit_candidate(c, from);
-    bool valid_normal = c && !game::is_dead(c) && !game::impressed(c) && social_mode(c) != 0;
+    bool can_social = creature_rivals::active() ? can_impress_in_rivals(from, c) : (social_mode(c) != 0);
+    bool valid_normal = c && !game::is_dead(c) && !npc_impressed_for(from, id, c) && can_social;
     if (!c || game::is_dead(c) || (!recruit && !valid_normal) ||
         (pup && net::dist(game::position(pup), game::position(c)) > kActRange + 4)) {
         g_refused++;
@@ -1661,7 +1705,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         void* px = npc::proxy(id);
         bool mine = player == C.sess->my_id();
         if (ok && px) {
-            game::set_impressed(px, true);
+            if (!creature_rivals::active() || mine)
+                game::set_impressed(px, true);
             if (a_PlayReaction)
                 thiscall<int>(a_PlayReaction, px, anim, 1, -1);
         } else if (px && anim && a_PlayReaction && !game::is_dead(px)) // BUG-0525: a failed game's animation
@@ -1693,6 +1738,7 @@ void on_session_end()
     g_goal_paid.clear();
     g_goal_owed.clear();
     g_games.clear();
+    g_rivals_impressed.clear(); // BUG-1553
     g_guest_pack_cap.clear(); // BUG-1256
     g_pack_sent_at = 0;
     g_have_table = false;

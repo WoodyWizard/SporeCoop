@@ -6,7 +6,9 @@
 #include "lifecycle.h"
 #include "coop_state.h"
 #include "cocoon.h"
+#include "creature_rivals.h"
 #include "own_progress.h"
+#include "rivals.h"
 
 namespace coop_core {
 
@@ -155,6 +157,7 @@ COOP_FIX("creature.partner_pass", "BUG-0913", g_partner_pass_fix, "creature: wit
 // what the hooks read (they may run inside Havok's step): written once a frame by partner_pass_tick
 static void* volatile g_pass_avatar;
 void* volatile g_pass_puppets[8];
+static void* volatile g_social_puppets[8];
 volatile bool g_pass_on;
 uint32_t g_pass_pairs, g_pass_hover_skipped, g_pass_seen_own; // tests (coop.status)
 uintptr_t a_AbilityModeCore;
@@ -170,25 +173,42 @@ uint32_t g_social_hover_skipped; // tests (coop.partnerpass)
 void partner_pass_tick()
 {
     bool creature = g_mode == modes::kCreature && g_sess.connected() && !(spaceext::rivals() || pfind::g_test_rivals);
-    bool on = g_partner_pass_fix && creature && !settings::on(settings::kFriendlyFire);
+    bool crivals = creature && creature_rivals::active();
+    bool ff = settings::on(settings::kFriendlyFire);
+    bool pass_enabled = g_partner_pass_fix && creature && (crivals || !ff);
     bool social = g_social_hover_fix && creature;
-    size_t n = 0;
-    if (on || social)
+    uint8_t me = g_sess.my_id();
+    size_t n_pass = 0, n_social = 0;
+    if (pass_enabled || social)
         for (auto& [id, r] : g_remotes)
-            if (n < 8 && r.puppet && !r.echo)
-                if (void* p = creature_puppet_live(id))
-                    g_pass_puppets[n++] = p;
-    for (size_t i = n; i < 8; i++)
+            if (r.puppet && !r.echo)
+                if (void* p = creature_puppet_live(id)) {
+                    if (pass_enabled && n_pass < 8 &&
+                        creature_rivals_logic::should_pass_through_puppet(crivals, ff, crivals && rivals::at_war(me, id)))
+                        g_pass_puppets[n_pass++] = p;
+                    if (social && n_social < 8)
+                        g_social_puppets[n_social++] = p;
+                }
+    for (size_t i = n_pass; i < 8; i++)
         g_pass_puppets[i] = nullptr;
-    g_pass_avatar = on ? game::avatar() : nullptr;
-    g_pass_on = on && n > 0;
-    g_social_hover_on = social && n > 0;
+    for (size_t i = n_social; i < 8; i++)
+        g_social_puppets[i] = nullptr;
+    g_pass_avatar = (pass_enabled && n_pass > 0) ? game::avatar() : nullptr;
+    g_pass_on = pass_enabled && n_pass > 0;
+    g_social_hover_on = social && n_social > 0;
 }
 // o is the creature (its base pointer, as the casts give it) or its spatial part (+0xC0)
 static bool pass_is(void* who, void* o) { return who && o && (o == who || o == (char*)who + 0xC0); }
 static bool pass_partner(void* o)
 {
     for (void* p : g_pass_puppets)
+        if (pass_is(p, o))
+            return true;
+    return false;
+}
+static bool social_partner(void* o)
+{
+    for (void* p : g_social_puppets)
         if (pass_is(p, o))
             return true;
     return false;
@@ -250,7 +270,7 @@ bool SK_CDECL h_HoverFilter(void** hit)
         if ((g_pass_on && mode != 0) || (g_social_hover_on && mode == 0)) {
             void* owner = *(void**)((uint8_t*)hit[0] + 0x64);
             void* obj = owner ? skg::vcall<void*>(owner, 0xC / 4, 0x17F243Bu) : nullptr; // the hover filter's own cast
-            if (pass_partner(obj)) {
+            if (mode == 0 ? social_partner(obj) : pass_partner(obj)) {
                 (mode == 0 ? g_social_hover_skipped : g_pass_hover_skipped)++;
                 return false; // the next object along the ray (the animal behind the partner)
             }
