@@ -208,6 +208,9 @@ unit-cpp: sanitizer-probe
 	@# WP-R1 of 0.8.0: Rivals shared systems (rivals_logic.h, wire/rivals.h, BUG-0794)
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/rivals_tests tests/rivals_tests.cpp
 	$(B)/host/rivals_tests
+	@# WP-R6 of 0.8.0: Space Rivals (space_rivals_logic.h, BUG-1550)
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/space_rivals_tests tests/space_rivals_tests.cpp
+	$(B)/host/space_rivals_tests
 	@# WP-Q2 of 0.7.99: Creature editor depth handle (editor_depth_logic.h, BUG-0871) and shared creations library (library_core.h, BUG-0873)
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/editor_depth_tests tests/editor_depth_tests.cpp
 	$(B)/host/editor_depth_tests
