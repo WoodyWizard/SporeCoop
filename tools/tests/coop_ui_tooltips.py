@@ -10,6 +10,7 @@ Verifies by real mouse moves (`move <x> <y>`) against `coop.ui state`:
 
 Twin: ui_tooltips_off (SPORE_FIX_OFF=ui.tooltips) must FAIL.
 """
+import os
 import re
 import time
 
@@ -101,9 +102,10 @@ def main():
         s_en = ui_state(host)
     tip_en = s_en.get('tooltip', {})
     print(f'  at {time.time() - t_move:.2f}s (EN): btn={s_en.get("tooltip_btn")} tip={tip_en!r}', flush=True)
+    suf = '_off' if os.environ.get('SPORE_FIX_OFF') else ''
     ck(tip_en.get('vis') and s_en.get('tooltip_btn') == 'host' and 'Start hosting' in tip_en.get('text', ''),
        f'EN tooltip visible over Host after 1.0 s (btn={s_en.get("tooltip_btn")}, tip={tip_en!r})')
-    shot(host, 'ui_tooltip_host_en.png')
+    shot(host, f'ui_tooltip_host_en{suf}.png')
 
     # ---- 3. Move mouse away: hidden immediately ----
     host.call('move 4 540')
@@ -133,7 +135,7 @@ def main():
     print(f'  at {time.time() - t_ru:.2f}s (RU): btn={s_ru.get("tooltip_btn")} tip={tip_ru!r}', flush=True)
     ck(tip_ru.get('vis') and 'Открыть сервер' in tip_ru.get('text', ''),
        f'RU tooltip visible over Host after 1.0 s ({tip_ru!r})')
-    shot(host, 'ui_tooltip_host_ru.png')
+    shot(host, f'ui_tooltip_host_ru{suf}.png')
 
     # ---- 5. Move away and restore English ----
     host.call('move 4 540')

@@ -17,6 +17,7 @@ Twin: password_recent_off (SPORE_FIX_OFF=session.password,ui.recent_servers) mus
 """
 import glob
 import os
+import re
 import time
 
 from coop_ui import Ui
@@ -55,19 +56,22 @@ def wait_offline(con, timeout=15):
     return False
 
 
-def wait_join_outcome(guest, gui, timeout=15):
-    """Wait until guest either connects or gets rejected/offline with status text."""
+def rej_count(con):
+    return con.call('log 60')['out'].count(BAD_PW_TEXT)
+
+
+def wait_join_outcome(guest, gui, prev_rej, timeout=15):
+    """Wait until guest either connects or gets a fresh password rejection."""
     t0 = time.time()
     while time.time() - t0 < timeout:
         st_txt = guest.call('coop.status')['out']
-        if 'connected' in st_txt and 'client id=' in st_txt:
+        if re.search(r'^client id=\d+ connected\b', st_txt, re.M):
             return 'connected', ''
-        ui_st = gui.state()
-        status_line = ui_st.get('status', '')
-        if BAD_PW_TEXT in status_line:
-            return 'rejected', status_line
-        if st_txt.splitlines()[:1] == ['offline'] and time.time() - t0 > 2.0:
-            return 'offline', status_line
+        if rej_count(guest) > prev_rej:
+            time.sleep(0.3)  # let coop_ui refresh status line
+            return 'rejected', gui.state().get('status', '')
+        if st_txt.splitlines()[:1] == ['offline'] and time.time() - t0 > 3.0:
+            return 'offline', gui.state().get('status', '')
         time.sleep(0.25)
     return 'timeout', gui.state().get('status', '')
 
@@ -97,8 +101,14 @@ def main():
     ck(PASSWORD not in hst, 'host: coop.status never leaks raw password')
 
     # ---- 2. Guest Join step: LAN discovery shows [Locked] ----
+    suf = '_off' if os.environ.get('SPORE_FIX_OFF') else ''
     guest.call('coop.uistate 1')
-    st = gui.wait(lambda s: s.get('open') == '1' and s.get('page') == 'connect', 15, 'guest connect page')
+    st = gui.wait(lambda s: s.get('open') == '1' and s.get('page') == 'connect'
+                  and (s.get('gojoin', {}).get('vis') or s.get('nameok', {}).get('vis') or s.get('join', {}).get('vis')),
+                  15, 'guest connect page')
+    if st and st.get('step') == 'name' and st.get('nameok', {}).get('vis'):
+        gui.click('nameok')
+        st = gui.wait(lambda s: s.get('step') == 'choose' and s.get('gojoin', {}).get('vis'), 10, 'guest choose step')
     if st and st.get('step') == 'choose' and st.get('gojoin', {}).get('vis'):
         gui.click('gojoin')
     st = gui.wait(lambda s: s.get('step') == 'join', 15, 'guest Join step')
@@ -119,21 +129,23 @@ def main():
     print(f'  guest LAN row: {lan_text!r}', flush=True)
     ck(bool(lan_text) and '[Locked]' in lan_text,
        f'guest: LAN discovery shows [Locked] for password-protected host ({lan_text!r})')
-    shot(guest, 'password_lan_locked.png')
+    shot(guest, f'password_lan_locked{suf}.png')
 
     # ---- 3. Guest join with empty password -> rejected ----
+    prev_rej = rej_count(guest)
     guest.call('coop.password clear')
     guest.call(lane.JOIN)
-    outcome, status_line = wait_join_outcome(guest, gui, timeout=12)
+    outcome, status_line = wait_join_outcome(guest, gui, prev_rej, timeout=12)
     print(f'  empty pw join: outcome={outcome} status={status_line!r}', flush=True)
     ck(outcome == 'rejected' and BAD_PW_TEXT in status_line,
        f'guest: empty password rejected with readable text ({outcome}, {status_line!r})')
     wait_offline(guest, timeout=8)
 
     # ---- 4. Guest join with wrong password -> rejected ----
+    prev_rej = rej_count(guest)
     guest.call(f'coop.password set {WRONG_PW}')
     guest.call(lane.JOIN)
-    outcome, status_line = wait_join_outcome(guest, gui, timeout=12)
+    outcome, status_line = wait_join_outcome(guest, gui, prev_rej, timeout=12)
     print(f'  wrong pw join: outcome={outcome} status={status_line!r}', flush=True)
     ck(outcome == 'rejected' and BAD_PW_TEXT in status_line,
        f'guest: wrong password rejected with readable text ({outcome}, {status_line!r})')
@@ -144,9 +156,10 @@ def main():
     ck('count=0' in rec_before, f'guest: rejected joins do not add to recent servers ({rec_before.strip()!r})')
 
     # ---- 6. Guest join with right password -> accepted ----
+    prev_rej = rej_count(guest)
     guest.call(f'coop.password set {PASSWORD}')
     guest.call(lane.JOIN)
-    outcome, status_line = wait_join_outcome(guest, gui, timeout=15)
+    outcome, status_line = wait_join_outcome(guest, gui, prev_rej, timeout=15)
     print(f'  right pw join: outcome={outcome}', flush=True)
     ck(outcome == 'connected', f'guest: right password joins cleanly (outcome={outcome}, status={status_line!r})')
     t0 = time.time()
@@ -180,7 +193,12 @@ def main():
     ck(target_addr in rec_reload, f'guest: recent server persists after reload ({rec_reload.strip()!r})')
 
     guest.call('coop.uistate 1')
-    st = gui.wait(lambda s: s.get('open') == '1' and s.get('page') == 'connect', 15, 'guest connect after reload')
+    st = gui.wait(lambda s: s.get('open') == '1' and s.get('page') == 'connect'
+                  and (s.get('gojoin', {}).get('vis') or s.get('nameok', {}).get('vis') or s.get('join', {}).get('vis')),
+                  15, 'guest connect after reload')
+    if st and st.get('step') == 'name' and st.get('nameok', {}).get('vis'):
+        gui.click('nameok')
+        st = gui.wait(lambda s: s.get('step') == 'choose' and s.get('gojoin', {}).get('vis'), 10, 'guest choose after reload')
     if st and st.get('step') == 'choose' and st.get('gojoin', {}).get('vis'):
         gui.click('gojoin')
     st = gui.wait(lambda s: s.get('step') == 'join', 15, 'guest Join step after reload')
@@ -188,13 +206,12 @@ def main():
     ck(rec0 and rec0['vis'] and rec0['text'] == target_addr,
        f'guest: Join step shows persisted recent server rec0 ({rec0!r})')
     if rec0 and rec0['vis']:
-        # Clear address field via UI or verify click fills it
         gui.click('rec0')
         time.sleep(0.5)
         st2 = gui.state()
         ck(st2.get('address', {}).get('text') == target_addr,
            f'guest: clicking rec0 fills address field ({st2.get("address")!r})')
-    shot(guest, 'password_recent_join.png')
+    shot(guest, f'password_recent_join{suf}.png')
 
     # ---- 9. Security: raw password never appears in sporekit logs or UI state ----
     ui_dump = guest.call('coop.ui state')['out'] + '\n' + host.call('coop.ui state')['out']
