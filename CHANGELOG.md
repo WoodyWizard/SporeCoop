@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.7.99.1] - 2026-11-24
+
+### Added
+- Installer: added a **Version to install** dropdown to `SporeCoopSetup.exe` (and `/version:<ver>` in silent mode) so players can install or roll back to any recent release (fetching from GitHub's release list with an automatic `releases.atom` fallback on API rate limits). (BUG-1545)
+
+### Fixed
+- Space: entering a star system containing a tech-5 planet whose star has no empire no longer crashes in `cEmpire::IsContactedByPlayer` (`0x00C30A70`) or triggers a fault storm in `SpaceGameUI::Update` (`0x0107453A`) (`space.null_empire_contact`, GitHub #222). (BUG-1544)
+
 ## [0.7.99] - 2026-11-24
 
 Final pre-0.8 release bringing co-op Galactic Adventures, display and camera quality-of-life improvements, Creature editor depth handle, persistent shared creations library, extended friendly fire, guest pack recruitment, and stage sync fixes. Thanks to the `SporeCoop-Lineages` and `SporeCoopGA` community forks for design ideas and reverse-engineering notes referenced in this release.

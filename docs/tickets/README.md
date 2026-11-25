@@ -1547,3 +1547,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-1541](BUG-1541-ui-hide-the-co-op-lobby-window-during-report-a-probl.md) | fixed | feature | All | 2026-11-24 | 0.7.99 | UI: hide the co-op lobby window while taking Report a problem and /bug screenshots |
 | [BUG-1542](BUG-1542-tribe-co-op-epic-creature-can-spawn-as-a-friendly-d.md) | open | bug | Tribe | 2026-11-24 |  | Tribe: co-op epic creature can spawn as a friendly/domesticated species near the village |
 | [BUG-1543](BUG-1543-tribe-guest-does-not-see-the-host-s-visiting-drama.md) | open | desync | Tribe | 2026-11-24 |  | Tribe: guest does not see the host's visiting drama UFO spaceship |
+| [BUG-1544](BUG-1544-space-entering-a-star-system-with-an-unowned-tec.md) | fixed | crash | Space | 2026-11-24 | 0.7.99.1 | Space: entering a star system with an unowned tech-5 planet crashes in cEmpire::IsContactedByPlayer (0xC30A70, null this) |
+| [BUG-1545](BUG-1545-installer-allow-choosing-which-sporecoop-version.md) | fixed | feature | Installer | 2026-11-24 | 0.7.99.1 | Installer: allow choosing which SporeCoop version to install in SporeCoopSetup.exe |
