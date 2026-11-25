@@ -30,6 +30,7 @@
 // path above.
 #include "coop_state.h"
 #include "civ_editors.h"
+#include "civ_rivals.h"
 #include "designs.h"
 #include "ship_editor_logic.h"
 #include "species_line.h"
@@ -219,9 +220,14 @@ void civ_arrival_vote(uint32_t editor, uint32_t mode)
     feed("Civilization: your own City Hall and vehicle editors open when you have arrived in the Civilization stage");
 }
 
-// the vehicle editor the game's end of Tribe would open here (the consequence archetype, cPlayer +0x1104)
+// the vehicle editor the game's end of Tribe would open here (the consequence archetype, cPlayer +0x1104;
+// in Civ Rivals, prefers the guest's converted capital specialty when assigned so it matches the nation, BUG-1563)
 static uint32_t vehicle_editor()
 {
+    if (civ_rivals::active() && civ_rivals::spec_convert_enabled()) {
+        if (uint32_t ed = civ_rivals_logic::land_vehicle_editor_for_specialty(civ_rivals::my_capital_specialty()))
+            return ed;
+    }
     void* nm = game::noun_manager();
     void* pl = nm && skg::readable((char*)nm + 0x74, 4) ? skg::field<void*>(nm, 0x74) : nullptr;
     uint32_t a = pl && skg::readable((char*)pl + 0x1104, 4) ? skg::field<uint32_t>(pl, 0x1104) : 0;

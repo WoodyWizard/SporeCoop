@@ -19,6 +19,8 @@ namespace civ_rivals {
 // Master COOP_FIX("rivals.civ", "BUG-1549") state & active query (Civ mode + Civ stage set to Rivals + connected).
 bool enabled();
 bool active();
+bool spec_convert_enabled();
+bool sw_spend_enabled();
 
 // Lifecycle wired from civ.cpp
 void init();
@@ -30,6 +32,8 @@ int player_of_pol(uint32_t pol);
 bool is_guest_nation(void* civ);
 bool is_guest_city(void* city);
 bool is_player_capital(void* city, uint8_t* owner_out = nullptr);
+int my_capital_specialty();
+int foreign_city_count(void* civ);
 
 // Host ownership sync (replaces Together mode's host_assign_cities while Civ Rivals is active)
 void host_sync_owners();
@@ -39,6 +43,21 @@ bool host_spend_civ_money(void* civ, float cost);
 bool host_charge_player(uint8_t pid, float amount);
 void host_credit_player(uint8_t pid, float amount);
 void host_mark_assign_dirty();
+void host_finalize_sw_spend(uint8_t from, void* civ, float before_wealth, float cost);
+void record_sw_refused_funds();
+
+// RAII guard: temporarily lends host player civ's superweapon tool vector (+0x470) to an NPC-origin guest civ
+// during FireSuperweapon (NPC civs have mIsPlayer==0 so 0x00BF7020 never populates +0x470, crashing at 0x00BF18CA).
+struct SwToolsBorrow {
+    void* civ = nullptr;
+    uint32_t saved[3] = {};
+    size_t mark = 0;
+    bool active_borrow = false;
+    explicit SwToolsBorrow(void* target_civ);
+    ~SwToolsBorrow();
+    SwToolsBorrow(const SwToolsBorrow&) = delete;
+    SwToolsBorrow& operator=(const SwToolsBorrow&) = delete;
+};
 
 // R7 & War/Neutral/Ally enforcement hooks called from civ.cpp / civ_shots.cpp / civ_host.cpp
 civ_rivals_logic::CombatGate damage_gate(uint8_t attacker_pid, uint8_t victim_pid, bool is_capital, int dmg_type);
