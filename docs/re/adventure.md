@@ -222,3 +222,89 @@ remove the local one) does not carry over; its driving, damage request and old-p
 Verdict for 0.7.17 (provisional owner choice of question 6): the proxies do not work in an adventure, so no
 `adventure.shared_npcs` setting in 0.7.17; the feature goes to 0.8 with co-op adventures (BUG-0793,
 docs/11-rivals.md), proposal in BUG-1474.
+
+## Adventure Editor internals for shared editing (2026-11-25, w08/adv-editor)
+<a id="adventure-shared-editor"></a>
+
+BUG-0863 (WP-AE of 0.8.0). GOG 2024 (`dc04aee5`), verified directly via `objdump` disassembly of `SporeApp.exe`
+(superseding the unverified `?` editor notes in `#adventure-ga-fork`). Every verified symbol is recorded in
+`data/symbols/overrides_dc04aee5.sym`.
+
+**Mode, sub-mode, and active pointers**
+* ✔ (disassembly) Adventure Editor runs inside `kScenario` (`0x1654C10`) under `App::cScenarioMode::ptr` (`0x016C7AA4`).
+  `cScenarioMode +0xCC` (`int32_t`) is the sub-mode: **`1` = Edit Mode**, **`2` = Play Mode**.
+  * `SporeCoop::ScenarioMode_SetSubMode` (`0x00EF11F0`, `thiscall(cScenarioMode*, int mode)` `ret 4`) switches between
+    Edit (`1`) and Play (`2`), updating `+0xCC`, calling `cScenarioData` `0xF45E70(mode, 0, 0)`, and initializing the
+    target mode (`0xEF0990(0)` for Edit, `0xEF0E00()` for Play).
+  * `SporeCoop::ScenarioMode_SwitchToEditMode` (`0x00EF1280`, `thiscall(cScenarioMode*)` plain `ret`) switches from Play
+    to Edit; `SporeCoop::ScenarioMode_SwitchToPlayMode` (`0x00EF12D0`, `thiscall(cScenarioMode*, int)` `ret 4`) is
+    native preview (Edit -> Play).
+* ✔ (disassembly) `SporeCoop::ScenarioEdit_StatePtr` (`0x016C7B88`) holds the active Edit Mode state pointer: `+0x00`
+  is `int32_t currentAct`, `+0x04` is the hovered object handle, `+0x08` / `+0x0C` is the selected object.
+  `SporeCoop::ScenarioEdit_GetAct` (`0x00EFC410`, `cdecl() -> int`) reads `*(int*)[0x16C7B88]` (or 0 if null);
+  `SporeCoop::ScenarioEdit_SetAct` (`0x00EFC7B0`, `cdecl(int act)`) writes it and calls `cScenarioData` `0xF462B0(1,
+  oldAct, newAct)`.
+
+**`cScenarioData` (`cScenarioMode +0x74`) and `cScenarioResource` (`cScenarioData +0x10`, size `0x2CB0`)**
+* ✔ (disassembly) `cScenarioData` key fields: `+0x10` `cScenarioResource*`, `+0x18` `int32_t saveState` (`0` idle, `1`
+  saving), `+0x8C` `cScenarioMarker* avatarMarker` (classIndex `-2`), `+0x90` `hash_map<cGameData*, uint32_t>` (object
+  -> marker slot index), `+0xB0` `hash_map<uint32_t, cGameData*>` (marker slot index -> object).
+* ✔ (disassembly) `cScenarioResource` key fields:
+  * `+0x08`: `uint32_t instance` (`0` for an unsaved draft);
+  * `+0x130`..`+0x13B`: `ResourceKey captainKey {instance, type, group}`;
+  * `+0x150`..`+0x16F`: avatar spawn `pos[3]` (`+0x150`), `rot[4]` (`+0x15C`), `scale` (`+0x16C`);
+  * `+0x23C`..`+0x240`: act vector (`begin`, `end`, stride `0x534`, 1..8 acts; up to 3 goals of `0x188` at act `+0x84`);
+  * `+0x2BF4`..`+0x2BF8`: sorted class map vector (`begin`, `end`, stride `0x27E8`: `{int32_t classId, pad4,
+    cScenarioClass (0x27E0)}`); `+0x2C0C` is `nextClassId`. Inside `cScenarioClass` (returned by `GetClass` at entry
+    `+0x08`), `+0x00`..`+0x0B` is the asset `ResourceKey {instance, type, group}` (verified at `0xF439F0` and `0xEEC980`);
+  * `+0x2C10`..`+0x2C14`: marker slot pool (`begin`, `end`, stride `0x238`; `+0x2C24` first used slot index, `+0x2C28`
+    free-list head). **Crucial offset detail:** each `0x238`-byte pool slot begins with a 4-byte slot header at
+    `slot +0x00` (bit 31 `0x80000000` = free, `0` = live), and **`cScenarioMarker` starts at `slot +0x04`** (verified
+    in `CreateMarker` `0xF442AE`, `CloneMarker` `0xF4450C`, `GetMarkerForObject` `0xF3DB71`, `MarkerPoolRemove`
+    `0xF40F90`).
+* ✔ (disassembly) `cScenarioMarker` (`slot +0x04`) fields:
+  * `+0x00`: `int32_t classIndex` (`-2` / `0xFFFFFFFE` for the avatar marker);
+  * `+0x04`..`+0x0F`: `float pos[3]`;
+  * `+0x10`..`+0x1F`: `float rot[4]` (quaternion);
+  * `+0x20`: `float scale`; `+0x24`: `float relScale`;
+  * `+0x28`..`+0x30`: per-act marker vector (stride `0x34`);
+  * `+0x228`: `uint32_t placementIndex` (slot index in the marker pool).
+
+**Verified marker, act, captain, history, and save functions**
+* ✔ (disassembly) `ScenarioData_GetNumActs` (`0xF3BCD0`, `thiscall(data) -> int`, plain `ret`), `ScenarioData_GetAct`
+  (`0xF3BD00`, `thiscall(data, int act) -> void*`, `ret 4`), `ScenarioData_GetClass` (`0xF3E740`, `thiscall(data, int
+  classId) -> void*`, `ret 4`), `ScenarioData_CreateClass` (`0xF462F0`, `thiscall(data, const uint32_t key[3]) -> int`,
+  `ret 4`, max 1024 classes).
+* ✔ (disassembly) `ScenarioData_CreateMarker` (`0xF44210`, `thiscall(data, int classId, const float pos[3], const float
+  rot[4], float scale) -> void*`, `ret 0x10`, caller `0xEFEE20`): checks class and `< 0x400` markers (`0xF44267`),
+  allocates pool slot, copies pos/rot/scale (`scale <= 0` uses default scale), instantiates live object via `0xF3F8C0`,
+  syncs transform via `0xF3D930`, returns `cScenarioMarker*`.
+* ✔ (disassembly) `ScenarioData_CloneMarker` (`0xF44460`, `thiscall(data, void* srcMarker) -> void*`, `ret 4`, callers
+  `0xF0042E`, `0xF0096B`): copies marker slot (`< 0x400`), instantiates object, syncs transform, returns new marker*.
+* ✔ (disassembly) `ScenarioData_DeleteMarker` (`0xF428A0`, `thiscall(data, void* marker) -> void`, `ret 4`, callers
+  `0xF00484`, `0xF02E93`, `0xF0301A`, `0xF03652`): calls `0xF42660`, `0xF416C0` (which clears editor selection if the
+  marker's object is selected via `0xF3FC30`, destroys the live object via `0xB22560`, frees the pool slot via
+  `0xF40F90`, and posts `0x7311FF7`), then `0xF42660`.
+* ✔ (disassembly) `ScenarioData_SyncMarkerTransform` (`0xF3D930`, `thiscall(data, void* marker, bool snap) -> void`,
+  `ret 8`, 23 call sites including drag/move/rotate/scale handlers `0xF00631`, `0xF01461`, `0xF017B5`, `0xF01ACC`,
+  `0xF02455`): propagates `marker->pos/rot/scale` to `resource +0x150..+0x16C` (if avatar) and to the live instantiated
+  spatial object (`GetObjectForMarker` -> `SetPosition`/`SetOrientation`/`SetScale`).
+* ✔ (disassembly) `ScenarioData_AddAct` (`0xF448E0`, `thiscall(data, int insertIndex) -> int`, `ret 4`, caller
+  `0xEE4F21`): inserts act at `1..numActs` (max 8 acts), clones prior act rows for every class and marker; returns
+  `insertIndex` or `-1`. `ScenarioData_DeleteAct` (`0xF440B0`, `thiscall(data, int actIndex) -> void`, `ret 4`, caller
+  `0xEE4D4B`): removes act from `resource +0x23C` and every class/marker act vector.
+* ✔ (disassembly) `ScenarioData_SetCaptainAsset` (`0xF42420`, `thiscall(data, const uint32_t key[3]) -> void`, `ret 4`,
+  callers `0xED108C`, `0xED3AAE`, `0xEF1F33`): copies 3-dword `ResourceKey` to `resource +0x130` and refreshes avatar
+  if `+0x8C` exists.
+* ✔ (disassembly) Edit history: `ScenarioEditHistory_Singleton` (`0x016065D8`, `+0x00/+0x04` entry ptr vector, `+0x14`
+  cursor, `+0x18` changeCount, `+0x1C` maxEntries, `+0x20` enabled byte at `0x016065F8`, `+0x24` pending entry at
+  `0x016065FC`). `ScenarioData_StartHistory` (`0xF45810`, plain `ret`) and `ScenarioData_CommitHistory` (`0xF45920`,
+  plain `ret`) wrap every native edit gesture. UI Undo/Redo (`0xEDA4CF..0xEDA56C`) checks
+  `ScenarioEditHistory_CanUndo` (`0xED4750`) / `CanRedo` (`0xED47C0`) and invokes `ScenarioEditHistory_Undo`
+  (`0xED9B20`) / `Redo` (`0xED9B60`), which call vtable slots 4/5 (`0xF464B0` / `0xF464C0` -> `0xF46400`, replacing the
+  entire `cScenarioResource` snapshot). In shared editing, native Undo/Redo must be intercepted and routed through
+  per-player inverse deltas on the host so one player's Undo never reverts another player's edits.
+* ✔ (disassembly) Save: `ScenarioData_CanSave` (`0xF41110`, `thiscall(data, int* reasonOut) -> bool`, `ret 4`, 7 call
+  sites `0xED64C8..0xED8078`) requires `cScenarioMode +0xCC == 1`, `saveState == 0`, avatar marker present, and valid
+  complexity. `0xED7390` calls `CanSave` and dispatches to `ScenarioData_Save` (`0xF3D760`, `thiscall(data, bool
+  saveAs) -> void`, `ret 4`).
