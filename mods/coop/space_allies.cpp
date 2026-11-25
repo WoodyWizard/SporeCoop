@@ -31,6 +31,7 @@
 #include "savestrip.h"
 #include "space_ext.h"
 #include "store.h"
+#include "world.h"
 #include "space_logic.h"
 #include "space_map.h"
 #include "sporekit_game.hpp"
@@ -831,6 +832,7 @@ static void SK_THISCALL h_Save(void* mgr, const char16_t* name, int flag)
     if (name && *name) {
         spaceext::note_saved();
         store::after_save(); // E1 (BUG-1149): the per-player store follows every save of the game (any stage)
+        world::on_host_save(); // BUG-0869: invalidate older Cell warm reconnect receipts after any host save
     }
 }
 

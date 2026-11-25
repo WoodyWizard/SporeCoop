@@ -1049,6 +1049,21 @@ void on_player_leave(int id)
     g_puppet_seen.erase(id);
 }
 
+void on_warm_resume_host(uint8_t peer)
+{
+    g_food_tx.erase(peer);
+    pace_forget(peer);
+    g_last_food = -10.0;
+    g_last_send = -10.0;
+}
+
+void on_warm_resume_guest()
+{
+    g_rounds.reset();
+    g_cycle_seen.clear();
+    g_food_q.clear();
+}
+
 
 // BUG-0314: the game populates the background decoration (query G+0x4100) of the tiles around the
 // camera and frees those cells only on a level change (RemoveCellsOfOldScale). A cell that jumps far

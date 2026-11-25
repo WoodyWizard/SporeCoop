@@ -1721,3 +1721,6 @@ add('guest_pack_recruit_off', 'SPORE_FIX_OFF=social.guest_recruit ' + P + 'coop_
 # 0.7.99.1 (rel/0.7.99.1): BUG-1544 Space null empire IsContactedByPlayer crash (GitHub #222)
 add('space_null_empire', P + 'coop_space_null_empire.py', minutes=5, fixture='space')  # BUG-1544: entering a star system with a tech-5 planet on an unowned star returns false from cEmpire::IsContactedByPlayer instead of crashing at 0xC30A70 (SPORE_FIX_OFF=space.null_empire_contact fails: space_null_empire_off)
 add('space_null_empire_off', 'SPORE_FIX_OFF=space.null_empire_contact ' + P + 'coop_space_null_empire.py', ('twin',), minutes=5, fixture='space', reports=True)  # BUG-1544 twin: unguarded cEmpire::IsContactedByPlayer crashes at 0xC30A70 reading 0x84: must FAIL
+# 0.8.0 WP-C: BUG-0869 Cell warm reconnect
+add('cell_warm_reconnect', P + 'coop_cell_warm_reconnect.py', minutes=5, fixture='cell')  # BUG-0869: Cell warm reconnect reuses unchanged Cell tide pool without MSG_WORLD_OFFER and falls back to full transfer after host save (SPORE_FIX_OFF=cell.warm_reconnect fails: cell_warm_reconnect_off)
+add('cell_warm_reconnect_off', 'SPORE_FIX_OFF=cell.warm_reconnect ' + P + 'coop_cell_warm_reconnect.py', ('twin',), minutes=5, fixture='cell')  # BUG-0869 twin: warm reconnect disabled, reconnect always sends MSG_WORLD_OFFER and reloads guest: must FAIL

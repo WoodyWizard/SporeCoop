@@ -51,6 +51,8 @@ void on_session_end();
 bool voluntary_leave_cleanup_enabled(); // test switch; other session endings always clean up
 bool totals_resend_enabled(); // BUG-0128 switch (coop.pool fix resend): DNA total resent every 2 s too
 void on_player_leave(int id); // a remote player left: its knockout and food bookkeeping go
+void on_warm_resume_host(uint8_t peer); // BUG-0869: immediately re-sync Cell state and food to a warm-resumed guest
+void on_warm_resume_guest();            // BUG-0869: reset round/food queues on guest after warm reconnect ack
 void draw_overlay();
 void dna_note(const char* when); // BUG-0351: food, spent DNA and the editor budget in the log
 int editor_budget();

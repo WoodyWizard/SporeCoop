@@ -11,9 +11,11 @@
 
 #include <cstdio>
 #include <algorithm>
+#include <atomic>
 #include <deque>
 #include <map>
 
+#include "cellsync.h"
 #include "game.h"
 #include "sporekit_game.hpp"
 #include "modes.h"
@@ -22,6 +24,7 @@
 #include "share_logic.h"
 #include "slotfs.h"
 #include "world_path.h"
+#include "world_resume.h"
 #include "net/fixes.h"
 #include "net/utf8.h"
 #include "sui.h"
@@ -42,6 +45,7 @@ struct Out {
     uint8_t peer;
     std::vector<File> files;
     uint32_t world_id = 0;
+    uint64_t resume_receipt = 0; // BUG-0869: non-zero for Cell world shares (appended to MSG_WORLD_DONE)
     std::string planet;
     size_t fi = 0, off = 0;
     bool header_sent = false;
@@ -86,6 +90,41 @@ void set_share_hook(std::function<void(uint8_t, const std::vector<const std::vec
 static bool g_auto_load = true;
 static In g_in;
 
+// BUG-0869 (0.8.0 WP-C): Cell warm reconnect reuses the guest's unchanged Cell world instead of a new MSG_WORLD_OFFER transfer.
+static_assert(world_resume::kCellMode == modes::kCell && world_resume::kEditMode == modes::kEdit &&
+                  world_resume::kLoadMode == modes::kLoad && world_resume::kEditorMode == modes::kEditor &&
+                  world_resume::kMenuMode == modes::kMenu,
+              "world_resume.h mode ids");
+static bool g_warm_reconnect_fix = true;
+COOP_FIX("cell.warm_reconnect", "BUG-0869", g_warm_reconnect_fix,
+         "cell: a reconnecting guest reuses its already loaded, unchanged Cell world instead of downloading the save again");
+static world_resume::HostLedger g_host_ledger;
+static std::atomic<uint64_t> g_receipt_serial{0};
+static uint64_t g_save_gen = 0; // monotonic host save counter; bumped on every save
+static unsigned g_warm_resumes = 0;
+static unsigned g_warm_fallbacks = 0;
+static unsigned g_world_offers_sent = 0;
+static unsigned g_world_offers_recv = 0;
+static world_resume::GuestState g_guest_resume;
+static std::string g_join_raw_addr;
+static std::string g_join_resolved_addr;
+static double g_guest_key_check_at = -100.0;
+
+WORLD_STATE("world.warm_resume_host", &g_warm_reconnect_fix, [] { g_host_ledger.clear(); },
+            []() -> size_t { return g_host_ledger.size(); });
+
+void on_host_save() { g_save_gen++; }
+void on_host_start() { g_guest_resume.clear(); }
+
+static uint64_t next_resume_receipt()
+{
+    LARGE_INTEGER qpc{};
+    QueryPerformanceCounter(&qpc);
+    uint64_t serial = g_receipt_serial.fetch_add(1, std::memory_order_relaxed) + 1;
+    uint64_t pid = (uint64_t)GetCurrentProcessId();
+    return world_resume::make_receipt((uint64_t)qpc.QuadPart, serial, pid, GetTickCount64());
+}
+
 static std::wstring games_dir()
 {
     wchar_t p[MAX_PATH];
@@ -107,6 +146,20 @@ static std::wstring widen(const std::string& s)
     std::wstring w(n, 0);
     MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), w.data(), n);
     return w;
+}
+
+static std::string canonical_slot_key(const std::wstring& slot, const std::string& planet_file)
+{
+    std::wstring w = slot;
+    while (!w.empty() && (w.back() == L'\\' || w.back() == L'/'))
+        w.pop_back();
+    if (!planet_file.empty()) {
+        w += L'\\';
+        w += widen(planet_file);
+    }
+    for (auto& ch : w)
+        ch = towlower(ch == L'/' ? L'\\' : ch);
+    return narrow(w);
 }
 
 // newest Games\Game* folder = the slot the host played/saved last
@@ -153,6 +206,7 @@ static int g_land_after_ms = -1;
 static uint64_t g_land_at;
 static void save_write_watch()
 {
+    g_save_gen++; // BUG-0869: any save write invalidates older Cell warm reconnect receipts
     if (game::mode_id() != modes::kSpace)
         return;
     uintptr_t get = H->sym("Simulator::GetCurrentContext");
@@ -566,8 +620,10 @@ static bool SK_THISCALL h_SaveHandler(void* self, uint32_t msg, void* data)
                 H->log(M, SK_INFO, "world: the game drops a Save now (its last save is still finishing): it is made again "
                                    "as soon as the game takes one (BUG-1413)");
             }
-        } else
+        } else {
             g_resave_tries = 0;
+            g_save_gen++; // BUG-0869: player or mod save accepted by the game
+        }
     }
     return o_SaveHandler(self, msg, data);
 }
@@ -667,6 +723,7 @@ bool save_game(std::string& err)
     // Present) deadlocked DXVK threads.
     vcall<void>(mm, 0x18 / 4, kSaveMsg, (void*)nullptr, (void*)nullptr, 0);
     g_saves_posted++;
+    g_save_gen++; // BUG-0869: invalidate older Cell warm reconnect receipts immediately on save post
     g_own_unhandled++; // BUG-1413
     g_own_posted_at = GetTickCount64();
     GetSystemTimeAsFileTime(&g_saved_ft);
@@ -1065,6 +1122,28 @@ bool share_now(uint8_t peer, std::string& err)
     off.total_size = total;
     off.file_count = (uint16_t)o.files.size();
     off.planet = o.planet;
+    if (g_warm_reconnect_fix && game::mode_id() == modes::kCell && !cur_planet.empty()) {
+        uint64_t receipt = next_resume_receipt();
+        world_resume::HostEntry e;
+        e.receipt = receipt;
+        e.slot_key = canonical_slot_key(slot, cur_planet);
+        e.world_id = modes::current_world();
+        e.stage_epoch = game::stage_epoch(modes::kCell);
+        e.slot_mtime = newest_write(slot);
+        e.save_gen = g_save_gen;
+        int food = 0;
+        if (cellsync::food_total(food))
+            e.food_total = food;
+        e.transfer_world_id = o.world_id;
+        if (e.world_id != 0 && e.stage_epoch != 0 && e.slot_mtime != 0) {
+            g_host_ledger.record(e);
+            o.resume_receipt = receipt;
+            H->log(M, SK_INFO,
+                   "world: issued Cell warm reconnect receipt %016llX for player %u (world %08X, epoch %u, mtime %llu, save_gen %llu, food %d, BUG-0869)",
+                   (unsigned long long)receipt, peer, e.world_id, e.stage_epoch, (unsigned long long)e.slot_mtime,
+                   (unsigned long long)e.save_gen, e.food_total);
+        }
+    }
     H->log(M, SK_INFO, "world: sharing %s, planet %s (%u files, %u bytes, id %08X) with player %u",
            narrow(slot).c_str(), o.planet.c_str(), (unsigned)o.files.size(), total, crc, peer);
     o.header_sent = false;
@@ -1081,6 +1160,73 @@ bool share_now(uint8_t peer, std::string& err)
     // offer is sent by tick() so it is ordered before the files
     (void)off;
     return true;
+}
+
+bool try_warm_resume(net::Session& s, uint8_t peer, uint64_t receipt, const std::string& peer_name)
+{
+    world_resume::HostQuery q;
+    q.enabled = g_warm_reconnect_fix;
+    q.mode = game::mode_id();
+    q.world_id = modes::current_world();
+    q.stage_epoch = game::stage_epoch(modes::kCell);
+    q.save_gen = g_save_gen;
+    q.save_in_flight = save_busy() || save_pending();
+    if (q.mode == modes::kCell) {
+        std::string cur_planet;
+        bool miss = false;
+        std::wstring slot = current_slot(cur_planet, miss);
+        if (!slot.empty() && !miss && !cur_planet.empty()) {
+            q.slot_key = canonical_slot_key(slot, cur_planet);
+            q.slot_mtime = newest_write(slot);
+        }
+    }
+    auto res = g_host_ledger.validate(receipt, q);
+    if (!res.ok) {
+        g_warm_fallbacks++;
+        H->log(M, SK_INFO,
+               "world: warm reconnect for player %u (%s) receipt %016llX rejected (%s): falling back to full world transfer (BUG-0869)",
+               peer, peer_name.c_str(), (unsigned long long)receipt, world_resume::reason_name(res.reason));
+        return false;
+    }
+    world_resume::WorldDone done;
+    done.world_id = res.entry->transfer_world_id;
+    done.has_receipt = true;
+    done.resume_receipt = receipt;
+    done.flags = world_resume::kFlagResumed;
+    net::Writer w;
+    done.write(w);
+    if (!s.send_reliable_to(peer, net::MSG_WORLD_DONE, w)) {
+        g_warm_fallbacks++;
+        return false;
+    }
+    g_warm_resumes++;
+    H->log(M, SK_INFO,
+           "world: warm reconnect accepted for player %u (%s) receipt %016llX (world %08X, epoch %u, mtime %llu, save_gen %llu, BUG-0869): skipped MSG_WORLD_OFFER",
+           peer, peer_name.c_str(), (unsigned long long)receipt, q.world_id, q.stage_epoch,
+           (unsigned long long)q.slot_mtime, (unsigned long long)q.save_gen);
+    return true;
+}
+
+static std::string normalize_addr(const std::string& addr)
+{
+    net::Endpoint ep;
+    std::string err, name;
+    if (net::Endpoint::parse_numeric(addr, net::kDefaultPort, ep, err, &name))
+        return ep.str();
+    return "";
+}
+
+uint64_t resume_receipt_for_join(const std::string& addr)
+{
+    std::string norm = normalize_addr(addr);
+    g_join_raw_addr = addr;
+    g_join_resolved_addr = norm;
+    uint64_t r = g_guest_resume.receipt_for_join(g_warm_reconnect_fix, norm, addr, game::mode_id(),
+                                                 game::stage_epoch(modes::kCell), modes::current_world());
+    if (r != 0)
+        H->log(M, SK_INFO, "world: attaching Cell warm reconnect receipt %016llX to HELLO (BUG-0869)",
+               (unsigned long long)r);
+    return r;
 }
 
 // Every load runs from the galaxy menu, outside the frame, once the menu has settled (see load_slot)
@@ -1659,6 +1805,9 @@ static void drop_share_loads()
         g_in = In{};
         n++;
     }
+    // BUG-0869: an unfinished pending load that was dropped cannot arm a receipt, while an already Active
+    // Cell receipt is preserved across disconnect/leave so reconnect can reuse the tide pool.
+    g_guest_resume.on_session_end(n > 0);
     if (n) {
         g_loads_dropped += n;
         H->log(M, SK_INFO, "world: the session ended: %u queued world load(s) / transfer(s) dropped", n);
@@ -1849,6 +1998,25 @@ void guest_tick()
     deferred_tick();
     box_tick();
     resave_tick(); // BUG-1413
+    // BUG-0869: step the guest's Cell warm reconnect receipt (PendingLoad -> Active, or clear when leaving Cell).
+    if (g_guest_resume.phase() != world_resume::GuestState::Phase::Empty) {
+        double now_s = H->time_seconds();
+        std::string gkey;
+        if (g_guest_resume.phase() == world_resume::GuestState::Phase::PendingLoad ||
+            now_s - g_guest_key_check_at >= 1.0) {
+            g_guest_key_check_at = now_s;
+            gkey = current_game_key();
+        }
+        const char* cleared_why = nullptr;
+        if (g_guest_resume.tick(game::mode_id(), game::stage_epoch(modes::kCell), modes::current_world(),
+                                gkey, load_queued(), GetTickCount64(), &cleared_why)) {
+            H->log(M, SK_INFO, "world: Cell warm reconnect receipt %016llX armed (world %08X, epoch %u, BUG-0869)",
+                   (unsigned long long)g_guest_resume.active_receipt(), g_guest_resume.world_id(),
+                   g_guest_resume.stage_epoch());
+        } else if (cleared_why) {
+            H->log(M, SK_INFO, "world: cleared Cell warm reconnect receipt (%s, BUG-0869)", cleared_why);
+        }
+    }
 }
 
 void tick(net::Session& s)
@@ -2088,6 +2256,7 @@ void tick(net::Session& s)
                 o.done = true; // peer gone
                 continue;
             }
+            g_world_offers_sent++;
             o.header_sent = true;
             s.link_of(o.peer, o.l0);
         }
@@ -2098,8 +2267,15 @@ void tick(net::Session& s)
         int budget = 300;
         while (budget-- > 0 && s.pending_to(o.peer) < window && !o.done) {
             if (o.fi >= o.files.size()) {
+                world_resume::WorldDone done;
+                done.world_id = o.world_id;
+                if (o.resume_receipt != 0) {
+                    done.has_receipt = true;
+                    done.resume_receipt = o.resume_receipt;
+                    done.flags = 0;
+                }
                 net::Writer w;
-                w.u32(o.world_id);
+                done.write(w);
                 s.send_reliable_to(o.peer, net::MSG_WORLD_DONE, w);
                 o.done = true;
                 uint64_t ms = GetTickCount64() - o.t0;
@@ -2307,7 +2483,7 @@ static bool load_now(const std::wstring& slot, const std::string& planet_file, s
     return true;
 }
 
-static void finish(const std::string& host_name)
+static void finish(const std::string& host_name, const std::string& host_addr, uint64_t resume_receipt)
 {
     uint32_t crc = 0;
     for (auto& [i, f] : g_in.files) {
@@ -2403,15 +2579,28 @@ static void finish(const std::string& host_name)
                "not have. Install the pack or mod they come from, or the host replaces those parts");
         return;
     }
+    auto arm_receipt = [&] {
+        if (!g_warm_reconnect_fix || resume_receipt == 0 || planet.empty())
+            return;
+        std::string skey = canonical_slot_key(slot, planet);
+        uint32_t pwid = net::crc32_update(0, (const uint8_t*)planet.data(), planet.size());
+        std::string haddr = !host_addr.empty() ? host_addr : g_join_resolved_addr;
+        g_guest_resume.arm_pending(resume_receipt, haddr, g_join_raw_addr, skey, pwid,
+                                   game::stage_epoch(modes::kCell), GetTickCount64());
+        H->log(M, SK_INFO, "world: received Cell warm reconnect receipt %016llX (pending load of %s, world %08X, BUG-0869)",
+               (unsigned long long)resume_receipt, planet.c_str(), pwid);
+    };
     // a player in its own editor (everybody evolves its own creature) loads it when it is back:
     // loading a world under an open editor crashed the game
     uint32_t mode = game::mode_id();
     if (g_auto_load && !planet.empty() && (mode == modes::kEditor || mode == modes::kEdit)) {
         g_deferred = Deferred{true, slot, planet, host_name, 0};
+        arm_receipt();
         g_feed("the world of " + host_name + " is loaded when you leave the editor");
         return;
     }
     if (g_auto_load && !planet.empty() && load_slot(slot, planet, err, host_name)) {
+        arm_receipt();
         g_feed("loading the world of " + host_name + "...");
         return;
     }
@@ -2419,7 +2608,7 @@ static void finish(const std::string& host_name)
            (err.empty() ? "" : " (" + err + ")"));
 }
 
-void on_message(uint8_t type, net::Reader& r, const std::string& host_name)
+void on_message(uint8_t type, net::Reader& r, const std::string& host_name, const std::string& host_addr)
 {
     switch (type) {
     case net::MSG_WORLD_OFFER: {
@@ -2429,6 +2618,8 @@ void on_message(uint8_t type, net::Reader& r, const std::string& host_name)
             g_in.offer.planet = utf8::clean_text(g_in.offer.planet, 120);
         if (got && g_in.offer.total_size <= kMaxWorldBytes && g_in.offer.file_count <= kMaxWorldFiles) {
             g_in.active = true;
+            g_world_offers_recv++;
+            g_guest_resume.clear(); // BUG-0869: a new full world transfer supersedes any older receipt
             g_feed("receiving world from " + host_name + " (" + std::to_string(g_in.offer.total_size / 1024) +
                    " KB)");
         }
@@ -2465,10 +2656,22 @@ void on_message(uint8_t type, net::Reader& r, const std::string& host_name)
         }
         break;
     }
-    case net::MSG_WORLD_DONE:
-        if (g_in.active)
-            finish(host_name);
+    case net::MSG_WORLD_DONE: {
+        world_resume::WorldDone done;
+        done.read(r);
+        if (g_in.active) {
+            finish(host_name, host_addr, done.has_receipt ? done.resume_receipt : 0);
+        } else if (g_warm_reconnect_fix && done.resumed() && done.has_receipt && done.resume_receipt != 0 &&
+                   g_guest_resume.accept_ack(done.resume_receipt)) {
+            g_warm_resumes++;
+            H->log(M, SK_INFO,
+                   "world: warm reconnect accepted by %s (receipt %016llX, world %08X, BUG-0869): keeping current Cell tide pool",
+                   host_name.c_str(), (unsigned long long)done.resume_receipt, done.world_id);
+            g_feed("reconnected to " + host_name + "'s Cell world (no reload)");
+            cellsync::on_warm_resume_guest();
+        }
         break;
+    }
     }
 }
 
@@ -2520,6 +2723,12 @@ std::string status()
     s += b;
     snprintf(b, sizeof b, "loads delayed for graphics device %u (active_device=%d, device_lost=%d, test_busy=%d)\n",
              g_device_load_waits, (int)g_active_device_fix, (int)g_device_lost, (int)g_test_device_busy); // tests (BUG-1537)
+    s += b;
+    snprintf(b, sizeof b,
+             "warm_reconnect: enabled=%d warm_resumes=%u warm_fallbacks=%u world_offers_sent=%u world_offers_recv=%u host_receipts=%u guest_receipt=%016llX (%s)\n",
+             (int)g_warm_reconnect_fix, g_warm_resumes, g_warm_fallbacks, g_world_offers_sent, g_world_offers_recv,
+             (unsigned)g_host_ledger.size(), (unsigned long long)g_guest_resume.active_receipt(),
+             g_guest_resume.state_name()); // tests (BUG-0869)
     s += b;
     if (g_sw.m.coop) // BUG-1434: the slot the save database points to is a co-op copy
         s += "slot " + narrow(g_sw.slot) + ": a copy of " + g_sw.m.host + "'s world, made for " + g_sw.m.planet +
