@@ -25,7 +25,7 @@ uint8_t vote_next_stage()
         return (uint8_t)rivals::Stage::Creature;
     if (t.find("Tribe stage") != std::string::npos)
         return (uint8_t)rivals::Stage::Tribe;
-    if (t.find("Civilization stage") != std::string::npos)
+    if (t.find("Civilization stage") != std::string::npos || t.find("evolve (Tribe)") != std::string::npos)
         return (uint8_t)rivals::Stage::Civ;
     if (t.find("Space stage") != std::string::npos)
         return (uint8_t)rivals::Stage::Space;
@@ -939,6 +939,8 @@ bool SK_CDECL h_Submit(void* req)
                     start_vote(req, g_name + " wants to move on to the Tribe stage");
                 } else if (designs::outfit_texts(mode, editor)) // BUG-1156: the outfitter is no evolution
                     start_vote(req, g_name + " wants to change the tribe's outfit");
+                else if (mode == modes::kTribe && tribe_civ_editor(editor)) // BUG-1551: Tribe -> Civ graduation
+                    start_vote(req, g_name + " wants to move on to the Civilization stage");
                 else if (mode == modes::kCiv && editor == designs::kShipEditor) // BUG-1531: Civ -> Space launch
                     start_vote(req, g_name + " wants to move on to the Space stage");
                 else
@@ -1100,8 +1102,26 @@ static bool switch_hold(bool at_end, void* from)
 static unsigned g_own_end_held; // tests (coop.vote)
 static bool own_end_hold(bool at_end)
 {
-    if (g_switch_go || g_end_go || game::mode_id() != modes::kCell || !g_sess.connected() || !own_progress::active() ||
-        cellsync::rivals_active())
+    if (g_switch_go || g_end_go || game::mode_id() != modes::kCell || !g_sess.connected())
+        return false;
+    if (cellsync::rivals_active()) {
+        // BUG-1551: in Cell Rivals, hold History's check / Cell->Creature switch until catch-up timer and draft end.
+        if (rivals::is_catchup_active() || rivals::draft_state().active) {
+            if (at_end != (own_progress::end_click_fix() && o_CellStageEnd != nullptr))
+                return false;
+            g_own_end_held++;
+            if (rivals::draft_state().active) {
+                LOG("the Creature stage waits until the Cell Rivals draft finishes (BUG-1551)");
+                feed("Cell Rivals: wait until the winner draft finishes before moving on to the Creature stage");
+            } else {
+                LOG("the Creature stage waits until the Cell Rivals catch-up timer ends (BUG-1551)");
+                feed("Cell Rivals: wait until the catch-up timer ends before moving on to the Creature stage");
+            }
+            return true;
+        }
+        return false;
+    }
+    if (!own_progress::active())
         return false;
     if (at_end != (own_progress::end_click_fix() && o_CellStageEnd != nullptr))
         return false;

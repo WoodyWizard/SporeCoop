@@ -133,6 +133,18 @@ static void emit_notice(const std::string& msg)
         C.feed(msg);
 }
 
+static void send_event_to(uint8_t target, uint8_t code, uint8_t a, uint8_t b, int32_t value, const std::string& text)
+{
+    if (!g_rivals_core_fix || !is_host() || !C.sess || target == 0 || !peer_reads_rivals(target) || text.empty())
+        return;
+    wire::rivals::Event ev{code, a, b, value, text};
+    net::Writer w;
+    w.u8(wire::rivals::K_EVENT);
+    ev.write(w);
+    C.sess->send_reliable_to(target, net::MSG_RIVALS, w);
+    g_tx++;
+}
+
 static void send_event_to_guests(uint8_t code, uint8_t a, uint8_t b, int32_t value, const std::string& text)
 {
     if (!g_rivals_core_fix || !is_host() || !C.sess)
@@ -154,8 +166,14 @@ static void sync_persisted_from_state()
     if (!is_host())
         return;
     g_persisted.config = g_state.config;
-    g_persisted.history = g_state.chronicle.history;
     if (C.sess) {
+        for (auto& e : g_state.chronicle.history) {
+            if (e.player_key.empty() && valid_player(e.player_id)) {
+                std::string k = store::key_of(e.player_id);
+                if (!k.empty())
+                    e.player_key = k;
+            }
+        }
         auto ps = C.sess->players();
         for (size_t i = 0; i < ps.size(); i++) {
             uint8_t id_a = ps[i].id;
@@ -178,6 +196,7 @@ static void sync_persisted_from_state()
             }
         }
     }
+    g_persisted.history = g_state.chronicle.history;
 }
 
 static void apply_persisted_for_present_players()
@@ -185,10 +204,12 @@ static void apply_persisted_for_present_players()
     if (!is_host() || !C.sess)
         return;
     auto ps = C.sess->players();
+    std::map<std::string, uint8_t> key_to_id;
     for (size_t i = 0; i < ps.size(); i++) {
         uint8_t id_a = ps[i].id;
         std::string ka = store::key_of(id_a);
         if (!ka.empty() && valid_player(id_a)) {
+            key_to_id[ka] = id_a;
             if (auto it = g_persisted.chronicle_by_key.find(ka); it != g_persisted.chronicle_by_key.end())
                 g_state.chronicle.totals[id_a] = it->second;
         }
@@ -202,6 +223,8 @@ static void apply_persisted_for_present_players()
                 g_state.rel.set(id_a, id_b, it->second);
         }
     }
+    PersistedWorld::remap_history_ids(g_state.chronicle.history, key_to_id);
+    PersistedWorld::remap_history_ids(g_persisted.history, key_to_id);
 }
 
 static void host_broadcast(bool bump_rev = true, int only_peer = -1)
@@ -272,12 +295,10 @@ static void disk_save(pstore::Store& s, int64_t now)
         return;
     if (is_host())
         sync_persisted_from_state();
-    // Only write if non-default config or any relations/chronicle exist
-    bool has_data = g_persisted.config.any_rivals() || g_persisted.config.catchup_secs != kDefaultCatchupSecs ||
-                    g_persisted.config.draft_picks != kDefaultDraftPicks ||
-                    g_persisted.config.base_distance != BaseDistance::Middle || !g_persisted.rel_by_key.empty() ||
-                    !g_persisted.chronicle_by_key.empty() || !g_persisted.history.empty();
-    if (!has_data)
+    // Write when non-default data exists OR when a record already exists on disk (BUG-1551: switching back to
+    // AllTogether must overwrite the previous AllRivals record with a clean default record).
+    bool had_record = s.get_world(kStoreFeature) != nullptr;
+    if (!g_persisted.should_write(had_record))
         return;
     std::vector<std::string> owners;
     for (const auto& [kp, r] : g_persisted.rel_by_key) {
@@ -289,6 +310,10 @@ static void disk_save(pstore::Store& s, int64_t now)
         (void)pts;
         owners.push_back(k);
     }
+    for (const auto& e : g_persisted.history) {
+        if (!e.player_key.empty())
+            owners.push_back(e.player_key);
+    }
     store::mark_owners(s, "rivals.owner", owners, now);
     s.put_world(kStoreFeature, kStoreVer, g_persisted.encode());
     g_store_writes++;
@@ -299,6 +324,10 @@ static void disk_adopt(const std::string& from, const std::string& to)
     if (!g_rivals_core_fix)
         return;
     g_persisted.adopt_key(from, to);
+    for (auto& e : g_state.chronicle.history) {
+        if (e.player_key == from)
+            e.player_key = to;
+    }
     apply_persisted_for_present_players();
     if (is_host())
         host_broadcast();
@@ -308,10 +337,8 @@ static void disk_opened()
 {
     if (!g_rivals_core_fix)
         return;
-    if (pstore::Store* w = store::world()) {
-        g_store_serial = store::serial();
-        g_persisted_world = w->world;
-    }
+    // BUG-1551: load any existing "rivals.state" before disk_save() runs (do not just mark serial loaded).
+    disk_load_if_opened();
 }
 
 static bool g_store_reg = store::add({kStoreFeature, disk_save, disk_adopt, disk_opened});
@@ -320,6 +347,9 @@ SESSION_STATE(
     "rivals.session", nullptr,
     [] {
         g_state.reset_all();
+        g_persisted = PersistedWorld{};
+        g_persisted_world.clear();
+        g_store_serial = 0;
         g_have_snapshot = false;
         g_fast_timers = false;
         g_fast_catchup_secs = 0.0;
@@ -444,11 +474,31 @@ static std::string host_apply_influence(uint8_t actor, InfluenceAction action, u
         break;
     }
     case InfluenceAction::Protect: {
-        err = g_state.inf.spend_protect(actor, npc_id, now);
+        Stage st = current_stage();
+        err = g_state.inf.can_spend_protect(actor);
         if (!err.empty())
             return err;
-        if (auto* cb = active_npc_cb(current_stage()); cb)
-            (*cb)(current_stage(), action, actor, npc_id, 255);
+        // BUG-1551: if the active stage exposes live NPC diplomacy status, verify actor is allied / allowed to protect.
+        if (auto* hk = active_stage_hooks(st); hk && hk->on_npc_ui_list) {
+            auto entries = hk->on_npc_ui_list(actor);
+            bool found = false;
+            bool ok_protect = false;
+            for (const auto& e : entries) {
+                if (e.npc_id == npc_id) {
+                    found = true;
+                    ok_protect = e.can_protect || e.allied;
+                    break;
+                }
+            }
+            if (found && !ok_protect)
+                return "must be allied with faction to protect";
+        }
+        auto* cb = active_npc_cb(st);
+        err = g_state.inf.try_spend_protect(actor, npc_id, now, [&] {
+            return !cb || (*cb)(st, action, actor, npc_id, 255);
+        });
+        if (!err.empty())
+            return err;
         char b[128];
         snprintf(b, sizeof b, "%s protected bond with faction 0x%X (%.0f s)", name_of(actor).c_str(), (unsigned)npc_id,
                  g_state.inf.protect_duration_secs);
@@ -625,7 +675,9 @@ void on_message(uint8_t from, net::Reader& r)
             return;
         }
         g_rx++;
-        host_apply_relation(from, req.target, (RelAction)req.action);
+        std::string err = host_apply_relation(from, req.target, (RelAction)req.action);
+        if (!err.empty())
+            send_event_to(from, wire::rivals::E_REL, from, req.target, -1, "Rivals: " + err);
     } else if (kind == wire::rivals::K_INF_REQ) {
         wire::rivals::InfReq req;
         if (!req.read(r)) {
@@ -633,7 +685,9 @@ void on_message(uint8_t from, net::Reader& r)
             return;
         }
         g_rx++;
-        host_apply_influence(from, (InfluenceAction)req.action, req.npc_id, req.rival_id);
+        std::string err = host_apply_influence(from, (InfluenceAction)req.action, req.npc_id, req.rival_id);
+        if (!err.empty())
+            send_event_to(from, wire::rivals::E_INFLUENCE, from, req.rival_id, -1, "Rivals: " + err);
     } else if (kind == wire::rivals::K_DRAFT_REQ) {
         wire::rivals::DraftReq req;
         if (!req.read(r)) {
@@ -641,7 +695,9 @@ void on_message(uint8_t from, net::Reader& r)
             return;
         }
         g_rx++;
-        host_apply_draft(from, req.skip != 0, req.item_id);
+        std::string err = host_apply_draft(from, req.skip != 0, req.item_id);
+        if (!err.empty())
+            send_event_to(from, wire::rivals::E_DRAFT, from, 0, -1, "Rivals: " + err);
     } else {
         g_bad++;
     }
@@ -664,12 +720,33 @@ void on_player_leave(uint8_t id)
 {
     if (!g_rivals_core_fix || !is_host())
         return;
+    bool race_ended = false;
+    bool draft_ended = false;
     if (valid_player(id)) {
-        g_state.race.players[id].present = false;
-        if (g_state.draft.active)
+        bool pres[kMaxPlayers];
+        fill_present(pres);
+        for (int i = 0; i < kMaxPlayers; i++)
+            g_state.race.players[i].present = pres[i];
+        race_ended = g_state.race.on_player_leave(id, active_player_count());
+        if (g_state.draft.active) {
+            bool was_active = g_state.draft.active;
             g_state.draft.skip(id);
+            draft_ended = was_active && !g_state.draft.active;
+        }
     }
     host_broadcast(true);
+    if (race_ended) {
+        std::string msg = "All remaining players finished! Ready to advance to the next stage.";
+        emit_notice(msg);
+        send_event_to_guests(wire::rivals::E_RACE, g_state.race.winner, 0, 0, msg);
+        if (auto* hk = active_stage_hooks(g_state.race.stage); hk && hk->on_stage_race_end)
+            hk->on_stage_race_end(g_state.race.winner);
+    }
+    if (draft_ended) {
+        std::string msg = "Draft finished!";
+        emit_notice(msg);
+        send_event_to_guests(wire::rivals::E_DRAFT, g_state.draft.winner, 0, g_state.draft.winner_payout, msg);
+    }
 }
 
 LIFECYCLE_HOOK("rivals.player", lifecycle::kPlayerJoin | lifecycle::kPlayerLeave, 0,
@@ -683,19 +760,17 @@ LIFECYCLE_HOOK("rivals.player", lifecycle::kPlayerJoin | lifecycle::kPlayerLeave
 
 void on_stage_change(uint32_t from_mode, uint32_t to_mode)
 {
+    (void)from_mode;
     if (!g_rivals_core_fix)
         return;
-    Stage from_s = stage_from_mode(from_mode);
     Stage to_s = stage_from_mode(to_mode);
-    if (valid_stage(to_s) && to_s != from_s) {
+    if (valid_stage(to_s)) {
+        // BUG-1551: compare against g_state.race.stage (not from_mode) so Stage -> Editor -> Stage never wipes race/inf.
         if (is_host()) {
-            g_state.race.reset(to_s);
-            g_state.inf.reset_stage();
             bool pres[kMaxPlayers];
             fill_present(pres);
-            for (int i = 0; i < kMaxPlayers; i++)
-                g_state.race.players[i].present = pres[i];
-            host_broadcast(true);
+            if (g_state.on_stage_enter(to_s, pres))
+                host_broadcast(true);
         }
         if (to_s == Stage::Space)
             sync_space_rivalry();
@@ -828,13 +903,20 @@ uint8_t report_stage_complete(uint8_t player_id)
         return 0;
     if (g_state.race.stage == Stage::None)
         g_state.race.stage = current_stage();
+    bool pres[kMaxPlayers];
+    fill_present(pres);
+    for (int i = 0; i < kMaxPlayers; i++)
+        g_state.race.players[i].present = pres[i];
     double cu = (g_fast_timers && g_fast_catchup_secs > 0.0) ? g_fast_catchup_secs : (double)g_state.config.catchup_secs;
     uint8_t rank = g_state.race.report_complete(player_id, active_player_count(), cu, now_s());
     if (rank > 0) {
         int32_t pts = rank == 1 ? kPtsStageWin : (rank == 2 ? kPtsSecond : (rank == 3 ? kPtsThird : 0));
         if (pts > 0) {
             const char* reason = rank == 1 ? "stage win" : (rank == 2 ? "2nd place" : "3rd place");
-            g_state.chronicle.add_points(player_id, g_state.race.stage, pts, reason);
+            if (g_state.chronicle.add_points(player_id, g_state.race.stage, pts, reason) && is_host() &&
+                !g_state.chronicle.history.empty()) {
+                g_state.chronicle.history.back().player_key = store::key_of(player_id);
+            }
         }
         char b[160];
         if (rank == 1 && g_state.race.catchup_active)
@@ -1089,6 +1171,8 @@ void add_chronicle_points(uint8_t player_id, int32_t pts, const std::string& rea
         return;
     Stage st = current_stage();
     if (g_state.chronicle.add_points(player_id, st, pts, reason) && is_host()) {
+        if (!g_state.chronicle.history.empty())
+            g_state.chronicle.history.back().player_key = store::key_of(player_id);
         host_broadcast(true);
         char b[128];
         snprintf(b, sizeof b, "Chronicle: %s +%d (%s)", name_of(player_id).c_str(), (int)pts, reason.c_str());
@@ -1192,72 +1276,185 @@ std::vector<UiRow> ui_rows()
             rows.push_back({buf, "", nullptr, pr.finish_rank == 1 ? kGreen : 0});
         }
 
+        auto report_ui_err = [](const std::string& err) {
+            if (!err.empty())
+                emit_notice(std::string(tr("Rivals: ", "Соперники: ")) + err);
+        };
+
         // Section 3: Relations (11.4)
         rows.push_back({tr("Player relations", "Отношения игроков"), "", nullptr, kGold});
         uint8_t me = my_id();
-        for (const auto& p : C.sess->players()) {
-            if (!valid_player(p.id) || p.id == me)
-                continue;
-            Relation rel = g_state.rel.get(me, p.id);
-            const BreakNotice* bn = g_state.rel.find_break_notice(me, p.id);
-            bool in_ally = g_state.rel.has_proposal(p.id, me, ProposalKind::Ally);
-            bool in_peace = g_state.rel.has_proposal(p.id, me, ProposalKind::Peace);
-            std::string btn;
-            RelAction act = RelAction::ProposeAlly;
-            if (bn) {
-                snprintf(buf, sizeof buf, "  %s: %s (war in %.0f s)", p.name.c_str(), relation_name(rel, ru()),
-                         bn->remaining_secs);
-            } else if (in_ally) {
-                snprintf(buf, sizeof buf, "  %s: %s (%s)", p.name.c_str(), relation_name(rel, ru()),
-                         tr("ally offered", "предложен союз"));
-                btn = tr("Accept ally", "Принять союз");
-                act = RelAction::AcceptAlly;
-            } else if (in_peace) {
-                snprintf(buf, sizeof buf, "  %s: %s (%s)", p.name.c_str(), relation_name(rel, ru()),
-                         tr("peace offered", "предложен мир"));
-                btn = tr("Accept peace", "Принять мир");
-                act = RelAction::AcceptPeace;
-            } else if (rel == Relation::Neutral) {
-                snprintf(buf, sizeof buf, "  %s: %s", p.name.c_str(), relation_name(rel, ru()));
-                btn = tr("Propose ally", "Союз");
-                act = RelAction::ProposeAlly;
-            } else if (rel == Relation::Ally) {
-                snprintf(buf, sizeof buf, "  %s: %s", p.name.c_str(), relation_name(rel, ru()));
-                btn = tr("Break ally", "Разорвать");
-                act = RelAction::BreakAlly;
-            } else {
-                snprintf(buf, sizeof buf, "  %s: %s", p.name.c_str(), relation_name(rel, ru()));
-                btn = tr("Propose peace", "Мир");
-                act = RelAction::ProposePeace;
-            }
-            uint8_t tid = p.id;
-            rows.push_back({buf, btn, btn.empty() ? nullptr : std::function<void()>([tid, act] {
-                                request_relation(tid, act);
-                            }),
-                            rel == Relation::War ? kRed : (rel == Relation::Ally ? kGreen : 0)});
-            if (rel == Relation::Neutral && !bn) {
-                snprintf(buf, sizeof buf, "    %s %s", tr("Hostility:", "Вражда:"), p.name.c_str());
-                rows.push_back({buf, tr("Declare war", "Война"),
-                                [tid] { request_relation(tid, RelAction::DeclareWar); }, kRed});
+        if (valid_player(me)) {
+            for (const auto& p : C.sess->players()) {
+                if (!valid_player(p.id) || p.id == me)
+                    continue;
+                Relation rel = g_state.rel.get(me, p.id);
+                const BreakNotice* bn = g_state.rel.find_break_notice(me, p.id);
+                bool in_ally = g_state.rel.has_proposal(p.id, me, ProposalKind::Ally);
+                bool in_peace = g_state.rel.has_proposal(p.id, me, ProposalKind::Peace);
+                std::string btn;
+                RelAction act = RelAction::ProposeAlly;
+                if (bn) {
+                    snprintf(buf, sizeof buf, "  %s: %s (war in %.0f s)", p.name.c_str(), relation_name(rel, ru()),
+                             bn->remaining_secs);
+                } else if (in_ally) {
+                    snprintf(buf, sizeof buf, "  %s: %s (%s)", p.name.c_str(), relation_name(rel, ru()),
+                             tr("ally offered", "предложен союз"));
+                    btn = tr("Accept ally", "Принять союз");
+                    act = RelAction::AcceptAlly;
+                } else if (in_peace) {
+                    snprintf(buf, sizeof buf, "  %s: %s (%s)", p.name.c_str(), relation_name(rel, ru()),
+                             tr("peace offered", "предложен мир"));
+                    btn = tr("Accept peace", "Принять мир");
+                    act = RelAction::AcceptPeace;
+                } else if (rel == Relation::Neutral) {
+                    snprintf(buf, sizeof buf, "  %s: %s", p.name.c_str(), relation_name(rel, ru()));
+                    btn = tr("Propose ally", "Союз");
+                    act = RelAction::ProposeAlly;
+                } else if (rel == Relation::Ally) {
+                    snprintf(buf, sizeof buf, "  %s: %s", p.name.c_str(), relation_name(rel, ru()));
+                    btn = tr("Break ally", "Разорвать");
+                    act = RelAction::BreakAlly;
+                } else {
+                    snprintf(buf, sizeof buf, "  %s: %s", p.name.c_str(), relation_name(rel, ru()));
+                    btn = tr("Propose peace", "Мир");
+                    act = RelAction::ProposePeace;
+                }
+                uint8_t tid = p.id;
+                rows.push_back({buf, btn,
+                                btn.empty() ? nullptr : std::function<void()>([tid, act, report_ui_err] {
+                                    report_ui_err(request_relation(tid, act));
+                                }),
+                                rel == Relation::War ? kRed : (rel == Relation::Ally ? kGreen : 0)});
+                if (in_ally && !bn) {
+                    snprintf(buf, sizeof buf, "    %s %s", tr("Ally offer from", "Предложение союза:"), p.name.c_str());
+                    rows.push_back({buf, tr("Decline", "Отклонить"),
+                                    [tid, report_ui_err] { report_ui_err(request_relation(tid, RelAction::DeclineAlly)); },
+                                    kDim});
+                } else if (in_peace && !bn) {
+                    snprintf(buf, sizeof buf, "    %s %s", tr("Peace offer from", "Предложение мира:"), p.name.c_str());
+                    rows.push_back({buf, tr("Decline", "Отклонить"),
+                                    [tid, report_ui_err] { report_ui_err(request_relation(tid, RelAction::DeclinePeace)); },
+                                    kDim});
+                }
+                if (rel == Relation::Neutral && !bn) {
+                    snprintf(buf, sizeof buf, "    %s %s", tr("Hostility:", "Вражда:"), p.name.c_str());
+                    rows.push_back({buf, tr("Declare war", "Война"),
+                                    [tid, report_ui_err] { report_ui_err(request_relation(tid, RelAction::DeclareWar)); },
+                                    kRed});
+                }
             }
         }
 
-        // Section 4: Influence (11.4)
-        int32_t my_inf = influence_balance(me);
-        int32_t buy_c = g_state.inf.buy_cost(me);
-        snprintf(buf, sizeof buf, "%s: %d (%s: %d, prot=%u)", tr("Influence", "Влияние"), (int)my_inf,
-                 tr("buy cost", "цена"), (int)buy_c, (unsigned)g_state.inf.protections.size());
-        rows.push_back({buf, tr("Buy +25", "Купить +25"),
-                        [] { request_influence(InfluenceAction::Buy, 0, 255); }, kGold});
+        // Section 4: Influence & NPC Diplomacy (11.4, BUG-1551)
+        Stage st = current_stage();
+        if (st == Stage::Cell) {
+            rows.push_back({tr("Influence: not used in Cell stage", "Влияние: не используется на этапе Клетки"),
+                            "", nullptr, kDim});
+        } else if (valid_player(me)) {
+            int32_t my_inf = influence_balance(me);
+            snprintf(buf, sizeof buf, "%s: %d | %s %d | %s %d | %s %d", tr("Influence", "Влияние"), (int)my_inf,
+                     tr("Turn", "Ссора"), (int)kCostTurnAgainst, tr("Protect", "Защита"), (int)kCostProtect,
+                     tr("Smooth", "Мир"), (int)kCostSmoothOver);
+            rows.push_back({buf, tr("Buy +25", "Купить +25"),
+                            [report_ui_err] { report_ui_err(request_influence(InfluenceAction::Buy, 0, 255)); }, kGold});
+
+            if (st != Stage::None) {
+                if (auto* hk = active_stage_hooks(st); hk && hk->on_npc_ui_list) {
+                    auto npcs = hk->on_npc_ui_list(me);
+                    std::vector<uint8_t> rivals_list;
+                    for (const auto& p : C.sess->players()) {
+                        if (valid_player(p.id) && p.id != me)
+                            rivals_list.push_back(p.id);
+                    }
+                    double now = now_s();
+                    auto prot_rem = [&](uint8_t owner, uint32_t nid) -> double {
+                        for (const auto& pr : g_state.inf.protections) {
+                            if (pr.owner == owner && pr.npc_id == nid) {
+                                double rem = pr.expires_at > now ? (pr.expires_at - now) : pr.remaining_secs;
+                                if (rem > 0.0)
+                                    return rem;
+                            }
+                        }
+                        return 0.0;
+                    };
+                    for (const auto& e : npcs) {
+                        uint32_t nid = e.npc_id;
+                        std::string lbl = e.label;
+                        if (lbl.empty()) {
+                            char nb[32];
+                            snprintf(nb, sizeof nb, "NPC 0x%X", (unsigned)nid);
+                            lbl = nb;
+                        }
+                        double my_prot = prot_rem(me, nid);
+                        std::string status = e.allied ? tr("Allied", "Союз")
+                                                      : (e.hostile ? tr("Hostile", "Враг") : tr("Neutral", "Нейтрал"));
+                        if (my_prot > 0.0) {
+                            char pb[48];
+                            snprintf(pb, sizeof pb, ", %s %.0fs", tr("Protected", "Защита"), my_prot);
+                            status += pb;
+                        }
+                        snprintf(buf, sizeof buf, "  %s [%s]", lbl.c_str(), status.c_str());
+                        bool offer_protect = e.can_protect && my_prot <= 0.0;
+                        bool offer_smooth = e.can_smooth;
+                        uint32_t col = e.allied ? kGreen : (e.hostile ? kRed : 0);
+                        if (offer_protect) {
+                            rows.push_back({buf, tr("Protect (20)", "Защита (20)"),
+                                            [nid, report_ui_err] {
+                                                report_ui_err(request_influence(InfluenceAction::Protect, nid, 255));
+                                            },
+                                            col});
+                        } else if (offer_smooth) {
+                            rows.push_back({buf, tr("Smooth (25)", "Мир (25)"),
+                                            [nid, report_ui_err] {
+                                                report_ui_err(request_influence(InfluenceAction::SmoothOver, nid, 255));
+                                            },
+                                            col});
+                        } else {
+                            rows.push_back({buf, "", nullptr, col});
+                        }
+                        if (offer_protect && offer_smooth) {
+                            snprintf(buf, sizeof buf, "    %s", tr("Smooth over relations", "Улучшить отношения"));
+                            rows.push_back({buf, tr("Smooth (25)", "Мир (25)"),
+                                            [nid, report_ui_err] {
+                                                report_ui_err(request_influence(InfluenceAction::SmoothOver, nid, 255));
+                                            },
+                                            kDim});
+                        }
+                        if (e.can_turn && !rivals_list.empty()) {
+                            for (uint8_t rid : rivals_list) {
+                                double rprot = prot_rem(rid, nid);
+                                std::string rname = name_of(rid);
+                                if (rprot > 0.0) {
+                                    snprintf(buf, sizeof buf, "    %s %s (%s %.0fs)", tr("Turn vs", "Ссора с"),
+                                             rname.c_str(), tr("Protected", "Защита"), rprot);
+                                    rows.push_back({buf, "", nullptr, kDim});
+                                } else {
+                                    snprintf(buf, sizeof buf, "    %s %s", tr("Turn vs", "Ссора с"), rname.c_str());
+                                    rows.push_back({buf, tr("Turn (30)", "Ссора (30)"),
+                                                    [nid, rid, report_ui_err] {
+                                                        report_ui_err(
+                                                            request_influence(InfluenceAction::TurnAgainst, nid, rid));
+                                                    },
+                                                    kYellow});
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Section 5: Active Draft (11.6)
-        if (g_state.draft.active) {
+        if (g_state.draft.active && valid_player(me)) {
             snprintf(buf, sizeof buf, "%s: %s (%.0f s, picks=%u, pay=%d)", tr("DRAFT", "ДРАФТ"),
                      name_of(g_state.draft.winner).c_str(), g_state.draft.remaining_secs,
                      (unsigned)g_state.draft.players[me].picks_left, (int)g_state.draft.winner_payout);
             bool can_skip = me != g_state.draft.winner && !g_state.draft.players[me].done;
             rows.push_back({buf, can_skip ? tr("Skip", "Пропустить") : "",
-                            can_skip ? std::function<void()>([] { request_draft_skip(); }) : nullptr, kYellow});
+                            can_skip ? std::function<void()>([report_ui_err] { report_ui_err(request_draft_skip()); })
+                                     : nullptr,
+                            kYellow});
             for (const auto& it : g_state.draft.items) {
                 bool picked = std::find(g_state.draft.players[me].picked.begin(),
                                         g_state.draft.players[me].picked.end(), it.id) !=
@@ -1267,7 +1464,10 @@ std::vector<UiRow> ui_rows()
                          picked ? tr(" [copied]", " [взято]") : "");
                 uint32_t iid = it.id;
                 rows.push_back({buf, can_pick ? tr("Copy", "Взять") : "",
-                                can_pick ? std::function<void()>([iid] { request_draft_pick(iid); }) : nullptr,
+                                can_pick ? std::function<void()>([iid, report_ui_err] {
+                                    report_ui_err(request_draft_pick(iid));
+                                })
+                                         : nullptr,
                                 picked ? kGreen : 0});
             }
         }
@@ -1553,7 +1753,12 @@ int command(void*, int argc, const char* const* argv, SkOut* out)
     }
     if (sub == "chronicle") {
         if (argc >= 6 && strcmp(argv[2], "add") == 0) {
-            uint8_t pid = (uint8_t)atoi(argv[3]);
+            int raw_pid = atoi(argv[3]);
+            if (raw_pid < 0 || raw_pid >= kMaxPlayers) {
+                say("error: invalid player id (0..3)\n");
+                return 0;
+            }
+            uint8_t pid = (uint8_t)raw_pid;
             int32_t pts = atoi(argv[4]);
             add_chronicle_points(pid, pts, argv[5]);
             say("chronicle[" + std::to_string(pid) + "] = " + std::to_string(g_state.chronicle.totals[pid]) + "\n");

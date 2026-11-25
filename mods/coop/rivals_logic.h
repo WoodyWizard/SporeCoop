@@ -602,12 +602,20 @@ struct Influence {
         return "";
     }
 
-    std::string spend_protect(uint8_t actor, uint32_t npc_id, double now, int32_t cost = kCostProtect)
+    std::string can_spend_protect(uint8_t actor, int32_t cost = kCostProtect) const
     {
         if (!valid_player(actor))
             return "invalid player";
         if (balance[actor] < cost)
             return "not enough influence";
+        return "";
+    }
+
+    std::string spend_protect(uint8_t actor, uint32_t npc_id, double now, int32_t cost = kCostProtect)
+    {
+        std::string err = can_spend_protect(actor, cost);
+        if (!err.empty())
+            return err;
         balance[actor] -= cost;
         double dur = protect_duration_secs > 0.0 ? protect_duration_secs : kDefaultProtectSecs;
         for (auto& p : protections) {
@@ -621,6 +629,18 @@ struct Influence {
             protections.erase(protections.begin());
         protections.push_back({actor, npc_id, now + dur, dur});
         return "";
+    }
+
+    template <typename ValidateFn>
+    std::string try_spend_protect(uint8_t actor, uint32_t npc_id, double now, ValidateFn&& validate,
+                                  int32_t cost = kCostProtect)
+    {
+        std::string err = can_spend_protect(actor, cost);
+        if (!err.empty())
+            return err;
+        if (!validate())
+            return "npc rejected protect";
+        return spend_protect(actor, npc_id, now, cost);
     }
 
     std::string spend_smooth_over(uint8_t actor, uint32_t npc_id, double /*now*/, int32_t cost = kCostSmoothOver)
@@ -701,6 +721,51 @@ struct Race {
             players[id].finish_rank = keep_rank;
     }
 
+    int present_count() const
+    {
+        int n = 0;
+        for (int i = 0; i < kMaxPlayers; i++)
+            if (players[i].present)
+                n++;
+        return n;
+    }
+
+    int present_finished_count() const
+    {
+        int n = 0;
+        for (int i = 0; i < kMaxPlayers; i++)
+            if (players[i].present && players[i].finish_rank > 0)
+                n++;
+        return n;
+    }
+
+    // Re-evaluates whether all remaining active players have finished.
+    // Returns true if this call ended an active catch-up timer.
+    bool check_all_finished(int active_players)
+    {
+        int target = std::max(active_players, present_count());
+        if (target <= 0)
+            return false;
+        if (present_finished_count() >= target) {
+            bool was_catchup = catchup_active;
+            catchup_active = false;
+            catchup_remaining_secs = 0.0;
+            stage_finished = true;
+            return was_catchup;
+        }
+        return false;
+    }
+
+    // Updates presence when a player disconnects; returns true if catch-up ended immediately.
+    bool on_player_leave(uint8_t id, int remaining_active_players)
+    {
+        if (valid_player(id))
+            players[id].present = false;
+        if (!catchup_active)
+            return false;
+        return check_all_finished(remaining_active_players);
+    }
+
     // Returns assigned rank (1..4), or 0 if invalid.
     uint8_t report_complete(uint8_t id, int active_players, double catchup_secs, double now)
     {
@@ -717,7 +782,8 @@ struct Race {
         if (rank == 1) {
             winner = id;
             double dur = catchup_secs > 0.0 ? catchup_secs : 0.0;
-            if (active_players <= 1 || dur <= 0.0) {
+            int target = std::max(active_players, present_count());
+            if (target <= 1 || dur <= 0.0) {
                 catchup_active = false;
                 catchup_remaining_secs = 0;
                 stage_finished = true;
@@ -728,11 +794,7 @@ struct Race {
                 stage_finished = false;
             }
         }
-        if (active_players > 0 && finished_count >= active_players) {
-            catchup_active = false;
-            catchup_remaining_secs = 0;
-            stage_finished = true;
-        }
+        check_all_finished(active_players);
         return rank;
     }
 
@@ -964,6 +1026,7 @@ struct Chronicle {
         uint8_t player_id = 0;
         int32_t points = 0;
         std::string reason;
+        std::string player_key; // optional stable player key for disk persistence & adopt_key
     };
 
     int32_t totals[kMaxPlayers] = {};
@@ -1043,6 +1106,21 @@ struct State {
         chronicle.reset();
         rev = 0;
     }
+
+    // Resets stage-scoped Race and Influence only when entering a different real gameplay stage.
+    // Editor round-trips (Stage -> Editor(None) -> same Stage) never reset Race or Influence (BUG-1551).
+    bool on_stage_enter(Stage to_s, const bool present[kMaxPlayers] = nullptr)
+    {
+        if (!valid_stage(to_s) || to_s == race.stage)
+            return false;
+        race.reset(to_s);
+        inf.reset_stage();
+        if (present) {
+            for (int i = 0; i < kMaxPlayers; i++)
+                race.players[i].present = present[i];
+        }
+        return true;
+    }
 };
 
 // ---------------- Persistent Store Format (for store.cpp) ----------------
@@ -1073,31 +1151,68 @@ struct PersistedWorld {
         return out;
     }
 
+    static std::string sanitize_key(const std::string& s, size_t max_len = 40)
+    {
+        std::string out;
+        out.reserve(std::min(s.size(), max_len));
+        for (char c : s) {
+            if (out.size() >= max_len)
+                break;
+            if (c <= ' ' || c > '~')
+                continue;
+            out.push_back(c);
+        }
+        return out;
+    }
+
+    bool has_non_default_data() const
+    {
+        return config.any_rivals() || config.catchup_secs != kDefaultCatchupSecs ||
+               config.draft_picks != kDefaultDraftPicks || config.base_distance != BaseDistance::Middle ||
+               !rel_by_key.empty() || !chronicle_by_key.empty() || !history.empty();
+    }
+
+    // Write whenever non-default data exists OR a record was previously stored on disk
+    // (so switching back to AllTogether overwrites the stale record instead of resurrecting AllRivals).
+    bool should_write(bool had_existing_record) const
+    {
+        return has_non_default_data() || had_existing_record;
+    }
+
     std::vector<uint8_t> encode() const
     {
         std::string out;
-        char buf[160];
+        char buf[192];
         snprintf(buf, sizeof buf, "cfg %u %u %u %u %u %u %u %u\n",
                  (unsigned)config.stages[0], (unsigned)config.stages[1], (unsigned)config.stages[2],
                  (unsigned)config.stages[3], (unsigned)config.stages[4],
                  (unsigned)config.catchup_secs, (unsigned)config.draft_picks, (unsigned)config.base_distance);
         out += buf;
         for (const auto& [kp, r] : rel_by_key) {
-            if (kp.first.empty() || kp.second.empty() || r == Relation::Neutral)
+            std::string ka = sanitize_key(kp.first, 40);
+            std::string kb = sanitize_key(kp.second, 40);
+            if (ka.empty() || kb.empty() || ka == kb || r == Relation::Neutral)
                 continue;
-            snprintf(buf, sizeof buf, "rel %s %s %u\n", sanitize_token(kp.first, 40).c_str(),
-                     sanitize_token(kp.second, 40).c_str(), (unsigned)r);
+            snprintf(buf, sizeof buf, "rel %s %s %u\n", ka.c_str(), kb.c_str(), (unsigned)r);
             out += buf;
         }
         for (const auto& [k, pts] : chronicle_by_key) {
-            if (k.empty() || pts == 0)
+            std::string sk = sanitize_key(k, 40);
+            if (sk.empty() || pts == 0)
                 continue;
-            snprintf(buf, sizeof buf, "chr %s %d\n", sanitize_token(k, 40).c_str(), (int)pts);
+            snprintf(buf, sizeof buf, "chr %s %d\n", sk.c_str(), (int)pts);
             out += buf;
         }
         for (const auto& e : history) {
-            snprintf(buf, sizeof buf, "his %u %u %d %s\n", (unsigned)e.stage, (unsigned)e.player_id,
-                     (int)e.points, sanitize_token(e.reason, kMaxReasonLen).c_str());
+            uint8_t pid = valid_player(e.player_id) ? e.player_id : 0;
+            std::string sk = sanitize_key(e.player_key, 40);
+            if (!sk.empty()) {
+                snprintf(buf, sizeof buf, "hisk %u %u %s %d %s\n", (unsigned)e.stage, (unsigned)pid, sk.c_str(),
+                         (int)e.points, sanitize_token(e.reason, kMaxReasonLen).c_str());
+            } else {
+                snprintf(buf, sizeof buf, "his %u %u %d %s\n", (unsigned)e.stage, (unsigned)pid,
+                         (int)e.points, sanitize_token(e.reason, kMaxReasonLen).c_str());
+            }
             out += buf;
         }
         return std::vector<uint8_t>(out.begin(), out.end());
@@ -1139,6 +1254,23 @@ struct PersistedWorld {
                 int pts = 0;
                 if (sscanf(line.c_str(), "chr %63s %d", k, &pts) == 2)
                     chronicle_by_key[k] = pts;
+            } else if (line.rfind("hisk ", 0) == 0) {
+                unsigned st = 255, pid = 0;
+                char pk[64] = {};
+                int pts = 0;
+                int consumed = 0;
+                if (sscanf(line.c_str(), "hisk %u %u %63s %d %n", &st, &pid, pk, &pts, &consumed) >= 4 &&
+                    pid < kMaxPlayers && (st < kStages || st == 255)) {
+                    Chronicle::Entry e;
+                    e.stage = (Stage)st;
+                    e.player_id = (uint8_t)pid;
+                    e.points = pts;
+                    e.player_key = sanitize_key(pk, 40);
+                    if (consumed > 0 && (size_t)consumed < line.size())
+                        e.reason = sanitize_token(line.substr((size_t)consumed), kMaxReasonLen);
+                    if ((int)history.size() < kMaxChronicleHistory)
+                        history.push_back(std::move(e));
+                }
             } else if (line.rfind("his ", 0) == 0) {
                 unsigned st = 255, pid = 0;
                 int pts = 0;
@@ -1175,6 +1307,21 @@ struct PersistedWorld {
                 moved[norm_pair(a, b)] = r;
         }
         rel_by_key = std::move(moved);
+        for (auto& e : history) {
+            if (e.player_key == from)
+                e.player_key = to;
+        }
+    }
+
+    static void remap_history_ids(std::vector<Chronicle::Entry>& entries,
+                                  const std::map<std::string, uint8_t>& key_to_id)
+    {
+        for (auto& e : entries) {
+            if (e.player_key.empty())
+                continue;
+            if (auto it = key_to_id.find(e.player_key); it != key_to_id.end() && valid_player(it->second))
+                e.player_id = it->second;
+        }
     }
 };
 

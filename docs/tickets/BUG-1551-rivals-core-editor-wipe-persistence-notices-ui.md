@@ -11,7 +11,7 @@ versions: 0.8.0
 fixed_in:
 branch: w0801/core
 commits:
-tests:
+tests: rivals_tests (ASan+UBSan), net_tests, test_lint.py
 signature:
 docs: docs/11-rivals.md
 related: BUG-0794, BUG-0867, BUG-1543
@@ -33,7 +33,20 @@ Independent static audit of v0.8.0 and the first `campaign_rivals` run uncovered
 See `docs/plan-0.8.0.1.md` WP-1.
 
 ## Fix
-TBD.
+Implemented all WP-1 items on branch `w0801/core`:
+1. Added `rivals::State::on_stage_enter()` comparing `to_s != race.stage` so `Stage -> Editor -> Stage` round-trips never wipe `race` or `inf` (`rivals_logic.h`, `rivals.cpp`).
+2. Fixed Rivals store persistence: reset `g_store_serial` and persisted cache in `SESSION_STATE`; load existing `"rivals.state"` in `disk_opened()`; overwrite existing disk record with a clean default record when switching back to `AllTogether`; persist stable `player_key` in `PersistedWorld::history` (`hisk` format, keeping legacy `his` backwards-compatible), remap keys in `adopt_key()`, and remap `player_id` on player join/load (`rivals_logic.h`, `rivals.cpp`).
+3. Made `rivals::Ctx::notice` local-only (`feed` + `chat_log`) in `coop.cpp` so Rivals events display once on host and once on guests via `K_EVENT` without duplicate `MSG_NOTICE` or guest bounce-back; send unicast `K_EVENT` error feedback to guests on rejected requests.
+4. Added `Influence::can_spend_protect()` / `try_spend_protect()` and checked alliance via `on_npc_ui_list` plus stage callback return value before deducting influence or adding a protection (`rivals_logic.h`, `rivals.cpp`).
+5. Tracked present-only finishers (`present_finished_count()`, `check_all_finished()`, `on_player_leave()`) so departed finishers are discounted and catch-up ends immediately when all remaining present players have finished (`rivals_logic.h`, `rivals.cpp`).
+6. Added OOB bounds guards for `coop.rivals chronicle add <pid>` and `valid_player(me)` in `rivals::ui_rows()`.
+7. Completed F9 Influence & Relations UI parity: hid `Buy +25` in Cell, added clickable `Decline` buttons for incoming Ally/Peace proposals, displayed local error notices on rejected F9 actions, rendered `on_npc_ui_list(me)` entries with status/protection timers and clickable `Protect (20)`, `Smooth (25)`, and per-rival `Turn (30)` buttons, and tightened `rprev`/`rnext` pagination bounds in `coop_ui.cpp`.
+8. Placed `D.vote_mode_btn` cleanly at `{450, 558, 720, 592}` (or `{40, 558, 440, 592}` while a report round hides disabled `D.ask_btn`) with zero overlap against `D.ask_btn` and `D.rline`; emitted `"wants to move on to the Civilization stage"` for Tribe->Civ graduation editors in `vote.cpp` (matching both new and legacy text in `vote_next_stage()`); held `own_end_hold()` in Cell Rivals while `rivals::is_catchup_active() || rivals::draft_state().active`.
+9. Fixed pre-auth password eviction (`net/session.cpp`), added `std::isfinite` validation on `K_UFO` rx (`player_rules.cpp`), and fixed `ensure_lanes(range(2, a.n + 1))` in `tools/lab.py`.
 
 ## Verification
-TBD.
+- `make -j$(nproc)`: clean build (0 warnings, 0 errors).
+- `make unit-cpp`: all ASan+UBSan unit tests pass, including `rivals_tests` (444 passed, 0 failed) covering editor round-trip, persistence clear/keyed history, `Protect` callback rejection, 3-4p disconnect race completion, and draft payout stage isolation.
+- `make unit-net`: 8 shards + `fakepeer_check.py`, ALL OK.
+- `python3 tools/tests/test_lint.py`: 0 problem(s).
+- Pending Wine/lab verification before closing.

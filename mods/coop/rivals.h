@@ -17,7 +17,7 @@ namespace rivals {
 struct Ctx {
     net::Session* sess = nullptr;
     std::function<void(const std::string&)> feed;
-    std::function<void(const std::string&)> notice;
+    std::function<void(const std::string&)> notice; // local-only feed + chat display (no MSG_NOTICE relay)
     std::function<uint32_t()> mode;
     std::function<bool()> russian;
 };

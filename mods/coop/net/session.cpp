@@ -1446,19 +1446,27 @@ void Session::update()
                 halfopen_refused_++;
                 continue;
             }
-            if (p && p->accepted && g_fix.replace_checked) {
-                // BUG-1003: a joined guest goes only for the same game (its rejoin token) or once its own connection
-                // has been silent for 2 s (the old game is gone); until then the new HELLO waits (it is sent again)
+            if (p && p->accepted) {
                 Hello nh;
                 bool hello = carries_hello(buf, (size_t)n, &nh);
                 bool pw_ok = !g_fix.session_password || password.empty() ||
                              (hello && nh.has_join_proof && proof_equal(nh.join_proof, join_proof(conn, password)));
-                bool same = hello && pw_ok && nh.has_token && p->has_token && nh.token == p->token;
-                if (!same && now - p->conn.last_recv_ms <= 2000) {
+                if (!pw_ok) { // BUG-1551: an unauthenticated HELLO with a wrong password must never evict an active peer
                     if (replace_refused_++ < 5 || replace_refused_ % 100 == 0)
-                        logf(cb, "a new connection from %s waits: player %u is live (%u so far)", from.masked().c_str(), p->id,
-                             replace_refused_);
+                        logf(cb, "a new connection from %s rejected: wrong password (player %u stays live, %u so far)",
+                             from.masked().c_str(), p->id, replace_refused_);
                     continue;
+                }
+                if (g_fix.replace_checked) {
+                    // BUG-1003: a joined guest goes only for the same game (its rejoin token) or once its own connection
+                    // has been silent for 2 s (the old game is gone); until then the new HELLO waits (it is sent again)
+                    bool same = hello && nh.has_token && p->has_token && nh.token == p->token;
+                    if (!same && now - p->conn.last_recv_ms <= 2000) {
+                        if (replace_refused_++ < 5 || replace_refused_ % 100 == 0)
+                            logf(cb, "a new connection from %s waits: player %u is live (%u so far)", from.masked().c_str(), p->id,
+                                 replace_refused_);
+                        continue;
+                    }
                 }
             }
             if (p) {
