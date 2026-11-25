@@ -1,5 +1,6 @@
 #include "cellsync_internal.h"
 #include "own_progress.h"
+#include "rivals.h"
 #include "effects.h"
 #include "net/manifest.h"
 
@@ -647,6 +648,9 @@ bool go_down(uint8_t* c)
 {
     if (!c || c != avatar() || !C.sess || !C.sess->connected() || g_ko_dying)
         return false;
+    // WP-R2 (BUG-1546, 11.3.1): knockout & revive (Symbiosis) are Together-only
+    if (rivals_active())
+        return false;
     // F3 (BUG-0768): cell.knockout off: a lethal hit kills as in a solo game, also next to a partner
     if (!g_downed && !settings::on(settings::kCellKnockout))
         return false;
@@ -899,6 +903,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_ChunkA, (void*)h_ChunkA, (void**)&o_ChunkA);
         H->hook_create(M, (void*)a_ChunkB, (void*)h_ChunkB, (void**)&o_ChunkB);
     }
+    rivals_init(); // WP-R2 (BUG-1546): Cell stage Rivals mode hooks & MSG_RIVALS_FACTION router
     return true;
 }
 
@@ -959,7 +964,9 @@ static void symbiosis_tick(double now)
     g_last_regen = now;
     int hp = F<int>(a, kHp);
     // the session setting cell.regen (live, the host's): off = no health from a partner nearby, as in a solo game
-    if ((!g_regen_setting || settings::on(settings::kCellRegen)) && hp > 0 && hp < 6 && !nearest_partner(12.f).empty()) {
+    // WP-R2 (BUG-1546, 11.1 / 11.3.1): Symbiosis proximity regen is Together-only
+    if (!rivals_active() && (!g_regen_setting || settings::on(settings::kCellRegen)) && hp > 0 && hp < 6 &&
+        !nearest_partner(12.f).empty()) {
         F<int>(a, kHp) = hp + 1;
         if (a_Rollover && F<uint32_t>(a, 0x248))
             skg::cdecl_call<void>(a_Rollover, a, hp);
@@ -1008,7 +1015,7 @@ static void forget_mirrors()
 // the 2-3 s after a revive or respawn left the cell invulnerable for good, one ending during a
 // knockout left it translucent at 1 hp, and a knockout across a stage change moved the next Cell
 // game's avatar to the old place and respawned it small.
-static void reset_knockout()
+void reset_knockout()
 {
     if (!g_fix_koreset)
         return;
@@ -1036,6 +1043,7 @@ void on_player_leave(int id)
     g_food_ack.erase(id);
     spend_forget(id); // BUG-1249
     mate_player_left(id); // BUG-1246
+    rivals_on_player_leave(id); // WP-R2 (BUG-1546)
     g_food_tx.erase(id);
     pace_forget(id); // BUG-1309
     if (!g_fix_kostale)
@@ -1215,7 +1223,7 @@ static unsigned g_own_spent_rows = 0;  // tests
 
 static void spend_in(int from, int spent, uint32_t meal, bool cell)
 {
-    if (!is_host() || !g_fix_guest_spend || spent == 0 || own_progress::active()) // BUG-1469: the guest's own DNA
+    if (!is_host() || !g_fix_guest_spend || spent == 0 || own_progress::active() || rivals_active()) // BUG-1469 / BUG-1546: guest's own DNA
         return;
     if (g_fix_elsewhere_spend && own_world::peer_elsewhere((uint8_t)from)) { // BUG-1507: its own world's spend
         g_elsewhere_spend_refused++;
@@ -1323,7 +1331,7 @@ void spend_measure()
     int d = F<int32_t>(s, 0x2C) - g_own_ed_before;
     H->log(M, SK_INFO, "cell: our own editor: spent %d -> %d (%+d)%s (BUG-1249)", g_own_ed_before, F<int32_t>(s, 0x2C), d,
            !g_fix_guest_spend ? ", not sent (cell.guest_spend off)" : d ? ", sent to the host" : "");
-    if (!g_fix_guest_spend || !d || !C.sess || !C.sess->connected() || own_progress::active()) // BUG-1469: ours
+    if (!g_fix_guest_spend || !d || !C.sess || !C.sess->connected() || own_progress::active() || rivals_active()) // BUG-1469 / BUG-1546: ours
         return;
     if (not_host_world()) { // BUG-1507: the spend of our own world's editor is not the host's
         g_elsewhere_spend_held++;
@@ -1431,6 +1439,7 @@ std::string spend_status()
 void tick(double now)
 {
     static bool was_in_cell;
+    rivals_tick(now); // WP-R2 (BUG-1546): Cell Rivals progress/race/draft & Creature DNA payout
     bool cell = in_cell();
     if (!cell)
         g_food_q.clear(); // the stage was left: its food went with it
@@ -1603,10 +1612,11 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         uint32_t idx = r.u32();
         int dmg = r.u8(), t = r.u8();
         uint8_t pvp_target = 0;
-        if (r.ok() && cell_logic::decode_pvp_target(idx, &pvp_target)) { // BUG-0899: guest PvP hit
+        if (r.ok() && cell_logic::decode_pvp_target(idx, &pvp_target)) { // BUG-0899 / BUG-1546: guest PvP hit
             bool ko = guest_knocked_out(from);
             bool present = pvp_target > 0 && net::is_player(*C.sess, pvp_target);
-            auto route = cell_logic::route_pvp_hit(cell_ff_on(), ko, from, pvp_target, present);
+            bool allow = rivals_active() ? rivals::at_war(from, pvp_target) : cell_ff_on();
+            auto route = cell_logic::route_pvp_hit(allow, ko, from, pvp_target, present);
             if (route == cell_logic::PvpRoute::Refuse) {
                 if (ko)
                     g_n.ko_hits_refused++;
@@ -1737,11 +1747,14 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                     shrink_plant(c, arg);
                 trace::ev("eat", "from shrink", "from %u shrink c%u (%s) to level %d food=%d: %s", from, idx, what, (int)arg,
                           food, is_plant ? "applied" : !g_fix_plant_shrink ? "cell.plant_shrink off" : "not a plant");
-                if (food && !own_progress::active()) // (the bite's points, as ACT_GONE's)
+                if (food && !own_progress::active() && !rivals_active()) // (the bite's points, as ACT_GONE's)
                     food_in_step([food, plant = e.plant] { o_AddFood(food, plant); });
             } else if (food) { // eaten first: no points for it (our next total takes them back)
                 g_n.eats_late++;
-                g_food_sent = -1;
+                if (rivals_active())
+                    rivals_on_late_food(from, food);
+                else
+                    g_food_sent = -1;
             }
             return;
         }
@@ -1769,13 +1782,16 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             if (c) {
                 g_n.eats_in++;
                 o_Destroy(idx, arg & 1, 0.f, 0); // with the loot the game asked for on the guest
-                if (food && !own_progress::active()) // BUG-1469: the guest's meal is its own food
+                if (food && !own_progress::active() && !rivals_active()) // BUG-1469 / BUG-1546: guest's meal is its own food
                     food_in_step([food, plant] { o_AddFood(food, plant); });
             } else if (food) {
                 // somebody ate it first: no points for it. The guest already counted them: our total
                 // goes out again and takes them back (MSG_CELL_FOOD -> its AddFoodPoints(diff))
                 g_n.eats_late++;
-                g_food_sent = -1;
+                if (rivals_active())
+                    rivals_on_late_food(from, food);
+                else
+                    g_food_sent = -1;
             }
         } else if (ko) {
             g_n.ko_hits_refused++; // BUG-0714: a lethal bite or kill of a knocked-out guest, as MSG_CELL_HIT (BUG-0509)
@@ -1806,7 +1822,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             if (f.has_spent)
                 spend_in(from, f.spent, f.meal, true); // BUG-1249
             if (f.valid && f.amount > -1000 && f.amount < 1000 && !(f.has_spent && f.amount == 0) &&
-                !own_progress::active()) // BUG-1469: a guest's meal is its own food (acknowledged, not added here)
+                !own_progress::active() && !rivals_active()) // BUG-1469 / BUG-1546: guest's meal is its own food
                 food_in_step([from, f] {
                     uint8_t* s0 = S();
                     int before = s0 ? F<int32_t>(s0, 0x1C) : 0;
@@ -1827,7 +1843,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             bool has_ack = r.ok();
             if (C.pace_heard) // BUG-0510: the host's pace divisor (an older host sends none: the full sum)
                 C.pace_heard(r.ok() && r.left() >= 1 ? r.u8() : 1);
-            if (own_progress::active()) { // BUG-1469: our food is our own: the host's total only acknowledges our meals
+            if (own_progress::active() || rivals_active()) { // BUG-1469 / BUG-1546: our food is our own
                 g_meals.diff(food, has_ack, ack, 0, 0, g_fix_foodseq);
                 return;
             }
@@ -2094,7 +2110,7 @@ std::string status()
     snprintf(pp, sizeof pp, "cell_partner_poison: fix=%d hurt_each_other=%d refused=%u taken=%u partner_clouds=%u last_hit=%s\n",
              (int)g_fix_partner_poison, (int)players_hurt_each_other(), g_n.partner_poison_refused, g_n.partner_poison_taken,
              (unsigned)g_partner_clouds.size(), g_own_hit_last);
-    return b + std::string(d) + t + j + o + sc + c1 + pp + audit_status();
+    return b + std::string(d) + t + j + o + sc + c1 + pp + audit_status() + rivals_status_line();
 }
 
 std::vector<syncdbg::Entry> sync_entries()

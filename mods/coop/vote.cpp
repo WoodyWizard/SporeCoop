@@ -1100,7 +1100,8 @@ static bool switch_hold(bool at_end, void* from)
 static unsigned g_own_end_held; // tests (coop.vote)
 static bool own_end_hold(bool at_end)
 {
-    if (g_switch_go || g_end_go || game::mode_id() != modes::kCell || !g_sess.connected() || !own_progress::active())
+    if (g_switch_go || g_end_go || game::mode_id() != modes::kCell || !g_sess.connected() || !own_progress::active() ||
+        cellsync::rivals_active())
         return false;
     if (at_end != (own_progress::end_click_fix() && o_CellStageEnd != nullptr))
         return false;

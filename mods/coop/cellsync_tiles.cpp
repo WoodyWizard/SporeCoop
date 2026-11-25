@@ -1115,10 +1115,14 @@ NoAttack_t& o_NoAttack_ptr() { return o_NoAttack; }
 bool SK_CDECL h_NoAttack(uint8_t* a, uint8_t* b)
 {
     uint8_t* g = G();
-    if (g && a && b && in_cell() && cell_ff_on()) {
+    if (g && a && b && in_cell()) {
         uint8_t* av = avatar();
-        if ((a == av && modes::cell_is_puppet(b)) || (b == av && modes::cell_is_puppet(a)))
-            return false; // BUG-0899: allow player-vs-player attacks despite shared species resource
+        uint8_t* pup = (a == av && modes::cell_is_puppet(b)) ? b : (b == av && modes::cell_is_puppet(a)) ? a : nullptr;
+        if (pup && C.puppet_owner) {
+            int owner = C.puppet_owner(pup);
+            if (owner >= 0 && can_pvp_hurt(owner))
+                return false; // BUG-0899 / BUG-1546: allow PvP attacks despite shared species resource
+        }
     }
     if (!g || !b || !in_cell() || !modes::cell_is_puppet(b))
         return o_NoAttack(a, b);

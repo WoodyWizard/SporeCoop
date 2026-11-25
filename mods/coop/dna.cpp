@@ -120,7 +120,8 @@ int dna_pace_announce()
 // the divisor for a gain of this machine's game now (1: whole)
 int pace_div()
 {
-    if (dna_pace::g_bypass || !g_sess.connected() || own_progress::active()) // BUG-1469: own bars, a solo game's pace
+    if (dna_pace::g_bypass || !g_sess.connected() || own_progress::active() ||
+        (g_mode == modes::kCell && cellsync::rivals_active())) // BUG-1469 / BUG-1546: own bars, a solo game's pace
         return 1;
     if (g_sess.role() == net::Role::Host)
         return dna_pace_announce();

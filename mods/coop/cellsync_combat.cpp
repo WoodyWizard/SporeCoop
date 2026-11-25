@@ -2,7 +2,9 @@
 // bite, chunk, kill, break, destroy and eat hooks, the food that comes in, the own cell's finite probes, the
 // collision pairs); moved out of cellsync.cpp (C8 of 0.7.15, BUG-1183).
 #include "cellsync_internal.h"
+#include "cell_rivals_logic.h"
 #include "own_progress.h"
+#include "rivals.h"
 #include "net/compat.h"
 
 namespace cellsync {
@@ -202,9 +204,31 @@ static double g_pvp_last_hit[8];
 
 bool cell_ff_on() { return g_fix_cell_ff && players_hurt_each_other(); }
 
+bool can_pvp_hurt(int target_id)
+{
+    if (!C.sess || !C.sess->connected() || target_id < 0 || target_id >= 8 || target_id == (int)C.sess->my_id())
+        return false;
+    bool cr = rivals_active();
+    bool war = cr && rivals::at_war(C.sess->my_id(), (uint8_t)target_id);
+    return cell_rivals_logic::can_pvp_damage(cr, war, cell_ff_on());
+}
+
+bool can_pvp_any()
+{
+    if (!C.sess || !C.sess->connected())
+        return false;
+    if (!rivals_active())
+        return cell_ff_on();
+    uint8_t me = C.sess->my_id();
+    for (const auto& p : C.sess->players())
+        if (p.id != me && rivals::at_war(me, p.id))
+            return true;
+    return false;
+}
+
 void cell_ff_sync_flag()
 {
-    cell_ff_damageable_on = (cell_ff_on() && in_cell() && C.sess && C.sess->connected()) ? 1 : 0;
+    cell_ff_damageable_on = (can_pvp_any() && in_cell() && C.sess && C.sess->connected()) ? 1 : 0;
 }
 
 void pvp_reset()
@@ -221,19 +245,27 @@ void cell_ff_install_hook()
 
 bool is_pvp_puppet_damageable(uint8_t* c)
 {
-    if (!c || !cell_ff_on() || !in_cell() || !modes::cell_is_puppet(c))
+    if (!c || !in_cell() || !modes::cell_is_puppet(c))
         return false;
     if (F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) || F<int>(c, kHp) <= 0)
         return false;
     int owner = C.puppet_owner ? C.puppet_owner(c) : -1;
     if (owner < 0 || owner >= 8)
         return false;
-    auto ko = g_ko.find(owner);
-    return ko == g_ko.end() || ko->second.state != KO_OUT;
+    if (!can_pvp_hurt(owner))
+        return false;
+    if (!rivals_active()) {
+        auto ko = g_ko.find(owner);
+        if (ko != g_ko.end() && ko->second.state == KO_OUT)
+            return false;
+    }
+    return true;
 }
 
 bool send_pvp_hit(int target_id, int dmg, int type)
 {
+    if (rivals_active())
+        return rivals_send_pvp_hit(target_id, dmg, type, false);
     if (!cell_ff_on() || !in_cell() || !C.sess || !C.sess->connected() || g_downed)
         return false;
     if (target_id < 0 || target_id >= 8 || target_id == (int)C.sess->my_id())
@@ -381,7 +413,7 @@ void SK_CDECL h_Zap(uint8_t* att, uint32_t a2, uint32_t* first)
         return;
     }
     bool track_mirrors = g_fix_electric && in_cell() && is_guest() && att && att == avatar();
-    bool track_puppets = cell_ff_on() && in_cell() && att && att == avatar() && C.puppets;
+    bool track_puppets = can_pvp_any() && in_cell() && att && att == avatar() && C.puppets;
     if (!track_mirrors && !track_puppets) {
         o_Zap(att, a2, first);
         return;
@@ -501,7 +533,7 @@ bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const float* dir,
     if (victim && C.puppet_owner) {
         int vo = C.puppet_owner(victim);
         if (vo >= 0) {
-            if (attacker && attacker == avatar() && cell_ff_on()) {
+            if (attacker && attacker == avatar() && can_pvp_hurt(vo)) {
                 int dmg = a_GetDamage ? skg::cdecl_call<int>(a_GetDamage, attacker, victim) : 1;
                 send_pvp_hit(vo, dmg, type);
                 return false;
@@ -534,7 +566,18 @@ bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const float* dir,
             return false;
         }
         if ((mirror_product || partner_cloud) && !strcmp(k, "poison")) {
-            if (g_fix_partner_poison && !players_hurt_each_other()) {
+            bool allow_poison = false;
+            if (rivals_active()) {
+                if (is_host() && partner_cloud) {
+                    auto pc_it = g_partner_clouds.find(F<uint32_t>(attacker, 0));
+                    allow_poison = pc_it != g_partner_clouds.end() && rivals::at_war(0, pc_it->second);
+                } else {
+                    allow_poison = can_pvp_any();
+                }
+            } else {
+                allow_poison = !g_fix_partner_poison || players_hurt_each_other();
+            }
+            if (!allow_poison) {
                 g_n.partner_poison_refused++;
                 return false;
             }
@@ -614,7 +657,7 @@ static void chunk(Chunk_t orig, uint32_t eater, uint32_t victim, uint32_t a, uin
     if (C.puppet_owner) {
         int vo = C.puppet_owner(v);
         if (vo >= 0) {
-            if (e == avatar() && cell_ff_on()) {
+            if (e == avatar() && can_pvp_hurt(vo)) {
                 int dmg = a_GetDamage ? skg::cdecl_call<int>(a_GetDamage, e, v) : 1;
                 send_pvp_hit(vo, dmg, 6);
             }
@@ -724,7 +767,7 @@ void SK_CDECL h_Break(uint8_t* victim, uint8_t* attacker, float f)
     if (in_cell() && victim && C.puppet_owner) {
         int vo = C.puppet_owner(victim);
         if (vo >= 0) {
-            if (attacker && attacker == avatar() && cell_ff_on()) {
+            if (attacker && attacker == avatar() && can_pvp_hurt(vo)) {
                 int dmg = a_GetDamage ? skg::cdecl_call<int>(a_GetDamage, attacker, victim) : 2;
                 send_pvp_hit(vo, dmg, 4);
             }
@@ -1020,7 +1063,7 @@ void SK_CDECL h_Swallow(uint8_t* eater, uint8_t* food, int type)
     if (in_cell() && food && C.puppet_owner) {
         int vo = C.puppet_owner(food);
         if (vo >= 0) {
-            if (eater && eater == avatar() && cell_ff_on())
+            if (eater && eater == avatar() && can_pvp_hurt(vo))
                 send_pvp_hit(vo, 2, 4);
             return; // BUG-0899: never swallow a puppet locally
         }
@@ -1078,7 +1121,7 @@ void SK_CDECL h_AddFood(int amount, bool plant)
     // BUG-1469 (own progress, cell.level_together): an own meal over the next level line while a partner is still below
     // it waits (banked) until that partner gets there (the one pool is populated at the host's level); the network's
     // totals, the released bank and the test setups come with the food guard or the bypass
-    if (!g_food_guard && amount > 0 && in_cell() && !dna_pace::g_bypass) {
+    if (!g_food_guard && amount > 0 && in_cell() && !dna_pace::g_bypass && !rivals_active()) {
         if (uint8_t* s = S()) {
             amount = own_progress::clip_meal(amount, F<int32_t>(s, 0x1C));
             if (amount <= 0)
@@ -1088,7 +1131,7 @@ void SK_CDECL h_AddFood(int amount, bool plant)
     // BUG-0510: an own meal (AvatarEat 0xE7D070 -> AddFoodPoints) enters the shared food at the
     // party's pace (amount / N, the remainder kept; coop.cpp dna_pace_meal). The guest's game applies
     // and sends its share, the host adds a guest's meal whole: scaled once, where it was eaten
-    if (!g_food_guard && amount > 0 && in_cell() && !dna_pace::g_bypass && C.pace_meal) {
+    if (!g_food_guard && amount > 0 && in_cell() && !dna_pace::g_bypass && !rivals_active() && C.pace_meal) {
         amount = C.pace_meal(amount);
         if (amount <= 0)
             return; // its share is still below one point (kept for the next meal)

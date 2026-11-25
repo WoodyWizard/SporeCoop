@@ -508,7 +508,7 @@ static bool r_spent(Table& out)
 static int s_spent(const Table& want, bool apply)
 {
     int v;
-    if (want.empty() || !cellsync::spent_dna(v) || own_progress::active()) // BUG-1469: our own editors' count
+    if (want.empty() || !cellsync::spent_dna(v) || own_progress::active() || cellsync::rivals_active()) // BUG-1469 / BUG-1546: own count
         return 0;
     int w = cellsync::spent_guest_want((int)want[0].v[0]); // BUG-1249: plus our own editor's spend not in it yet
     if (v == w)

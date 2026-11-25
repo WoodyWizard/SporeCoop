@@ -1685,8 +1685,8 @@ void on_overlay(void*, int, void*)
         g_cine_hidden++;
     }
     // F3 (BUG-0768): all.name_tags off hides the partners' names (creature, cell, ship, tribe members, civ cities and
-    // vehicles); pings, the knock-out bar and the arrows stay
-    bool tags = labels && settings::on(settings::kNameTags);
+    // vehicles); pings, the knock-out bar and the arrows stay. In Cell Rivals (11.3.1), rival name tags stay visible.
+    bool tags = labels && (settings::on(settings::kNameTags) || (g_mode == modes::kCell && cellsync::rivals_active()));
     g_tags_drawn = 0;
     pfind::labels_begin(); // (tests: coop.find labels)
     if (labels) {
@@ -2531,7 +2531,7 @@ void support_init()
         v = game::evolution_bar();
         return std::isfinite(v);
     };
-    p.cell_food = [](int& v) { return g_mode == modes::kCell && !own_progress::active() && cellsync::food_total(v); }; // BUG-1469
+    p.cell_food = [](int& v) { return g_mode == modes::kCell && !own_progress::active() && !cellsync::rivals_active() && cellsync::food_total(v); }; // BUG-1469 / BUG-1546
     p.cell_sent = [](uint8_t id) { return g_mode == modes::kCell ? cellsync::sent_cap(id) : (size_t)0; };
     p.cell_scale = [] { return g_mode == modes::kCell ? cellsync::scale_now() : 0.f; };
     p.over_ground = [](const net::Vec3& v) { // BUG-1216: the planet stages only
