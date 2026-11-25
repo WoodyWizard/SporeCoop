@@ -9530,3 +9530,26 @@ docs/12-server-and-players.md#server-alpha-goes-live). Host: instance 9, `coop.h
   copy's coop.ini before such a test and put it back after, or the older test galaxies are refused next time.
 * `galaxy_server.exe --local` binds 127.0.0.1 only: no firewall question for a new copy of the program.
 
+## The galaxy server's update check against a stand-in release (2026-11-24, feat/lineages-alpha)
+<a id="testing-server-update-check"></a>
+
+* No real newer release is needed: a folder with latest.json (one release as GitHub's releases/latest answers it:
+  "tag_name" and "assets" with "browser_download_url"), SHA256SUMS.txt and GalaxyServer-<version>.srvpack, served by
+  `py -m http.server 8971 --bind 127.0.0.1 -d <folder>`, and SPORECOOP_UPDATE_API=http://127.0.0.1:8971/latest.json
+  for galaxy_update.exe (asset addresses on http://127.0.0.1: are accepted by updater/pack.cpp). The pack: `mkpack.py
+  --server <a folder with the server's files> <version> <out>`. The 2026-11-24 check built it from the installed
+  server's files with one more line in the read-me, and two bad ones (another hash in the checksum file; one more
+  entry naming SporebinEP1/mods/coop.dll).
+* The stand-in pack holds the helper as it was when the pack was made: after a change to galaxy_update.exe make the
+  pack again, or the "updated" server runs the old helper (seen: a backup that was not cleared).
+* The start file by script: `cmd /c "echo Y| "<path>\Start-Galaxy-Server.cmd" > out.txt 2>&1"` answers the question;
+  without the echo give the line one more pair of quotes around all of it (cmd /c strips the outer quotes of a line
+  that starts with one) and `< NUL`. A pipe leaves a child cmd.exe at the start file's "pause": stop it by its
+  command line before the next run, or the output file stays locked. `--local` in GALAXY_OPTIONS: no firewall
+  question.
+* CORRECTION (2026-11-24, feat/lineages-alpha) to #testing-setup-on-windows: "from Git Bash the manifest's grep step
+  fails" was not about Git Bash. The Makefile's check had double quotes inside single quotes, which mingw32-make on
+  Windows does not pass on whole: the grep failed in every shell and a second make run went past it (the manifest was
+  written). The check has no inner quotes now and one run builds the setup. The make still needs
+  SHELL=C:/PROGRA~1/Git/usr/bin/bash.exe.
+

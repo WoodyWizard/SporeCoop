@@ -65,19 +65,25 @@ def main():
         subprocess.run([sys.executable, root / "tools/mkpack.py", stage, version, pack], check=True)
         # decision 8Y C: the optional galaxy server rides in the setup as a pack of its own (never in the update
         # pack: an in-game update would give it to every player). tools/build_galaxy.sh builds the program.
-        server_exe = build / "galaxy_server.exe"
-        sources = [root / "server/galaxy/main.cpp", root / "mods/coop/net/udp.cpp", root / "mods/coop/net/galaxy_crypto.cpp"]
-        if not server_exe.exists() or server_exe.stat().st_mtime < max(f.stat().st_mtime for f in sources):
-            sys.exit("build/galaxy_server.exe is missing or older than its sources: run tools/build_galaxy.sh first")
+        sources = [root / "server/galaxy/main.cpp", root / "mods/coop/net/udp.cpp", root / "mods/coop/net/galaxy_crypto.cpp",
+                   root / "server/galaxy/update_main.cpp", root / "updater/winupdate.cpp", root / "updater/pack.cpp",
+                   root / "updater/pack.h", root / "updater/sha256.cpp"]
         server = stage / "galaxy-server"
         server.mkdir()
-        shutil.copyfile(server_exe, server / "galaxy_server.exe")
-        subprocess.run([args.strip, server / "galaxy_server.exe"], check=True)
+        for name in ("galaxy_server.exe", "galaxy_update.exe"):  # the server and its update check (BUG-9378)
+            program = build / name
+            if not program.exists() or program.stat().st_mtime < max(f.stat().st_mtime for f in sources):
+                sys.exit(f"build/{name} is missing or older than its sources: run tools/build_galaxy.sh first")
+            shutil.copyfile(program, server / name)
+            subprocess.run([args.strip, server / name], check=True)
         for source in (root / "installer/galaxy-server").iterdir():  # the start file, the settings, the read-me: CRLF
             text = source.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
             (server / source.name).write_bytes(text)
-        server_pack = stage / f"GalaxyServer-{version}.pack"
+        # a release asset too, for the server's own update check: never named *.pack (updater/pack.h server_pack_name)
+        server_pack = stage / f"GalaxyServer-{version}.srvpack"
         subprocess.run([sys.executable, root / "tools/mkpack.py", "--server", server, version, server_pack], check=True)
+        shutil.copyfile(server_pack, dist / server_pack.name)
+        print(dist / server_pack.name)
         if sys.platform == "win32":
             embed_pack(stage / "SporeCoopSetup.exe", pack)
             embed_pack(stage / "SporeCoopSetup.exe", server_pack, 102)

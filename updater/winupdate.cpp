@@ -605,7 +605,7 @@ void cleanup_old(const std::wstring& root)
 static void cleanup_old_unlocked(const std::wstring& root)
 {
     for (const wchar_t* dir : {L"\\SporebinEP1", L"\\SporebinEP1\\mods", L"\\SporebinEP1\\mods\\sporekit\\symbols",
-                               L"\\Data"}) {
+                               L"\\Data", L"\\SporebinEP1\\mods\\galaxy-server"}) { // (the galaxy server: BUG-9378)
         std::wstring d = root + dir;
         WIN32_FIND_DATAW fd;
         HANDLE h = FindFirstFileW((d + L"\\*").c_str(), &fd);

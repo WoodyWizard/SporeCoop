@@ -23,6 +23,12 @@ struct PackFile {
 };
 constexpr uint8_t kOnlyIfMissing = 1;
 
+// The optional galaxy server (decision 8Y C) has a pack of its own in this format. It writes only below
+// kServerPrefix. Its name as a release asset must NOT end in ".pack": parse_release takes the last "*.pack" asset as
+// the game's update pack, so a second one would hide the release from every older game's updater (BUG-9378).
+inline constexpr const char* kServerPrefix = "SporebinEP1/mods/galaxy-server/";
+inline std::string server_pack_name(const std::string& version) { return "GalaxyServer-" + version + ".srvpack"; }
+
 struct Pack {
     std::string version;
     std::vector<PackFile> files;

@@ -79,7 +79,7 @@ $(B)/setup.ico: data/ui/coop_icon.png tools/make_ico.py
 # the manifest's assemblyIdentity version is COOP_VERSION too (BUG-0784; it was 1.0.0.0)
 $(B)/setup.manifest: installer/setup.manifest $(B)/version.h
 	sed 's/name="SporeCoop.Setup" version="[0-9.]*"/name="SporeCoop.Setup" version="$(subst $(comma),.,$(VER_NUM))"/' $< > $@
-	grep -q 'version="$(subst $(comma),.,$(VER_NUM))"' $@
+	grep -q 'SporeCoop.Setup. version=.$(subst $(comma),.,$(VER_NUM)).' $@
 $(B)/obj/installer/setup_rc.o: installer/setup.rc installer/version.rc $(B)/setup.manifest $(B)/setup.ico $(B)/version.h
 	@mkdir -p $(dir $@)
 	$(WINDRES) -i installer/setup.rc -o $@ -I$(B) -Iinstaller

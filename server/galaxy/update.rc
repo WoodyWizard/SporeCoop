@@ -1,0 +1,2 @@
+// galaxy_update.exe: its manifest (runs as the user, see update.manifest; BUG-9378)
+1 24 "update.manifest"

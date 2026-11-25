@@ -311,6 +311,7 @@ Result do_install(const std::wstring& root, const Options& opt, upd::ReleaseBox&
             msg = "SporeCoop " + pack.version + " is installed, but the galaxy server is not: " + serr;
             return Result::Failed;
         }
+        upd::cleanup_old(root); // (the backups of the server's files it replaced)
         msg += " The galaxy server is in SporebinEP1\\mods\\galaxy-server: start it with Start-Galaxy-Server.cmd.";
     }
     return Result::Ok;

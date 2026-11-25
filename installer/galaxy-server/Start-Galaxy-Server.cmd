@@ -1,15 +1,32 @@
 @echo off
 rem Lineages galaxy server (decision 8Y C). Change your settings in galaxy-settings.cmd, not here:
-rem a newer SporeCoopSetup replaces this file and keeps galaxy-settings.cmd.
+rem an update replaces this file and keeps galaxy-settings.cmd.
 setlocal
 set "GALAXY_NAME=My Lineages Galaxy"
 set "GALAXY_WORLDS=%APPDATA%\SporeCoop\galaxy-server\worlds"
 set "GALAXY_OPTIONS="
+set "GALAXY_UPDATE=ask"
 if exist "%~dp0galaxy-settings.cmd" call "%~dp0galaxy-settings.cmd"
 rem The port is fixed: the game's Co-op window knows a galaxy by the port 47900 in the address.
 set "GALAXY_PORT=47900"
-if not exist "%GALAXY_WORLDS%" mkdir "%GALAXY_WORLDS%"
 title Lineages Galaxy Server - %GALAXY_NAME% - close this window to stop it
+
+rem The update check before the server runs (BUG-9378). "updated" is this file's own restart after an update.
+if /i "%~1"=="updated" goto run
+if /i "%GALAXY_UPDATE%"=="off" goto run
+if not exist "%~dp0galaxy_update.exe" goto run
+"%~dp0galaxy_update.exe" --check
+if not errorlevel 10 goto run
+if /i "%GALAXY_UPDATE%"=="auto" goto update
+choice /C YN /T 30 /D Y /M "Update the galaxy server now (Y by itself in 30 seconds)"
+if errorlevel 2 goto run
+:update
+rem One line on purpose: the update replaces this file, so nothing after the update is read from the old one.
+"%~dp0galaxy_update.exe" --apply & "%~f0" updated
+
+:run
+if not exist "%GALAXY_WORLDS%" mkdir "%GALAXY_WORLDS%"
+echo.
 echo Lineages galaxy server "%GALAXY_NAME%", UDP port %GALAXY_PORT%.
 echo Its planets are kept in: %GALAXY_WORLDS%
 echo Players type this PC's address and the port into the Co-op window's Join,

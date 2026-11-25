@@ -2278,6 +2278,8 @@ static upd::Pack make_server_pack(const std::string& v)
     p.version = v;
     const std::string d = inst::kServerPrefix;
     p.files.push_back({d + "galaxy_server.exe", 0, bytes("galaxy server " + v)});
+    p.files.push_back({d + "galaxy_update.exe", 0, bytes("galaxy update " + v)}); // BUG-9378: its update check
+    p.files.push_back({d + "galaxy-server.version", 0, bytes(v + "\n")});
     p.files.push_back({d + "Start-Galaxy-Server.cmd", 0, bytes("start " + v)});
     p.files.push_back({d + "Read-me.txt", 0, bytes("read me " + v)});
     p.files.push_back({d + "galaxy-settings.cmd", upd::kOnlyIfMissing, bytes("set \"GALAXY_NAME=My Lineages Galaxy\"\r\n")});
@@ -2319,7 +2321,7 @@ static void test_setup_server()
     o.server_pack = dir + L"\\GalaxyServer-0.12.0.pack";
     CHECK(inst::do_install(g, o, box, msg) == inst::Result::Ok);
     CHECK(all_of_version(g, "0.12.0") && get(sd + L"\\galaxy_server.exe") == "galaxy server 0.12.0");
-    CHECK(get(sd + L"\\Start-Galaxy-Server.cmd") == "start 0.12.0");
+    CHECK(get(sd + L"\\Start-Galaxy-Server.cmd") == "start 0.12.0" && get(sd + L"\\galaxy-server.version") == "0.12.0\n");
     CHECK(get(sd + L"\\galaxy-settings.cmd") == "set \"GALAXY_NAME=Pandora\"\r\n");
     // (d) a server pack that names a file of the game: refused whole, said so, the game's files as they were
     upd::Pack bad = make_server_pack("0.13.0");
@@ -2340,6 +2342,14 @@ static void test_setup_server()
     bool ok = inst::do_uninstall(g, msg);
     printf("  (f) uninstall: %d, %s\n", ok, msg.c_str());
     CHECK(ok && !inst::has_server(g) && !exists(sd + L"\\Start-Galaxy-Server.cmd") && !exists(sd + L"\\Read-me.txt"));
+    CHECK(!exists(sd + L"\\galaxy_update.exe") && !exists(sd + L"\\galaxy-server.version"));
+    {   // no backup of a replaced server file stays behind (the cleanup knows the server's folder, BUG-9378)
+        WIN32_FIND_DATAW fd;
+        HANDLE h = FindFirstFileW((sd + L"\\*.sporecoop-old").c_str(), &fd);
+        CHECK(h == INVALID_HANDLE_VALUE);
+        if (h != INVALID_HANDLE_VALUE)
+            FindClose(h);
+    }
     CHECK(get(sd + L"\\galaxy-settings.cmd") == "set \"GALAXY_NAME=Pandora\"\r\n");
     CHECK(get(g + L"\\SporebinEP1\\steam_api.dll") == "the game's steam api");
 }

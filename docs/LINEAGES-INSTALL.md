@@ -62,7 +62,9 @@ address with the port 47900 into the Co-op window's Join, for example
 To host one yourself, tick "Also install the galaxy server" in the setup. It
 adds the folder SporebinEP1\mods\galaxy-server to the game folder. Open it and
 double-click Start-Galaxy-Server.cmd; Read-me.txt in the same folder explains
-the rest. Players who only join do not need it. This is an early alpha.
+the rest. Each time it starts, the server looks for a newer Lineages build and
+offers to update itself. Players who only join do not need it. This is an
+early alpha.
 
 ## Uninstall
 

@@ -7,7 +7,9 @@ the files an update installs, paths relative to the game folder, each with its S
 
 --server (decision 8Y C): the pack of the optional galaxy server, which the setup carries beside the game's pack and
 installs only when asked. Every file of the folder goes to SporebinEP1/mods/galaxy-server/; galaxy-settings.cmd is
-the host's own file (installed only when missing). File names: letters, digits, '_', '-' and '.' (updater/pack.cpp).
+the host's own file (installed only when missing); galaxy-server.version (the version, for the server's own update
+check, BUG-9378) is added. File names: letters, digits, '_', '-' and '.' (updater/pack.cpp). As a release asset the
+pack is named GalaxyServer-<version>.srvpack, never *.pack (updater/pack.h server_pack_name).
 """
 import glob
 import hashlib
@@ -36,8 +38,10 @@ def server(src, version, out):
     names = sorted(n for n in os.listdir(src) if os.path.isfile(os.path.join(src, n)))
     if 'galaxy_server.exe' not in names:
         sys.exit('mkpack --server: no galaxy_server.exe in ' + src)
-    write([(SERVER_PREFIX + n, open(os.path.join(src, n), 'rb').read(), ONLY_IF_MISSING if n in SERVER_KEEP else 0)
-           for n in names], version, out)
+    entries = [(SERVER_PREFIX + n, open(os.path.join(src, n), 'rb').read(), ONLY_IF_MISSING if n in SERVER_KEEP else 0)
+               for n in names]
+    entries.append((SERVER_PREFIX + 'galaxy-server.version', (version + '\n').encode(), 0))
+    write(entries, version, out)
 
 
 def main():

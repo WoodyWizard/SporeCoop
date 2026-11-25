@@ -31,9 +31,10 @@ struct Options {
 // 8Y C: where the galaxy server goes (inside the mods folder: the only folder a pack may write a new file to) and
 // the only place a server pack may write to
 inline constexpr const wchar_t* kServerDir = L"\\SporebinEP1\\mods\\galaxy-server";
-inline constexpr const char* kServerPrefix = "SporebinEP1/mods/galaxy-server/";
+inline constexpr const char* kServerPrefix = upd::kServerPrefix; // "SporebinEP1/mods/galaxy-server/"
 // the server's files the uninstall removes; galaxy-settings.cmd is the host's own and stays, as coop.ini does
-inline constexpr const wchar_t* kServerFiles[] = {L"galaxy_server.exe", L"Start-Galaxy-Server.cmd", L"Read-me.txt"};
+inline constexpr const wchar_t* kServerFiles[] = {L"galaxy_server.exe", L"galaxy_update.exe", L"Start-Galaxy-Server.cmd",
+                                                  L"Read-me.txt", L"galaxy-server.version"};
 bool has_server(const std::wstring& root);       // galaxy_server.exe is in the game folder's server folder
 bool has_server_pack(const Options& opt);        // this setup carries the server (the tick box is shown)
 
