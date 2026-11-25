@@ -286,6 +286,8 @@ std::string sap_report()
 
 std::string debug(const std::vector<std::string>& a)
 {
+    if (!a.empty() && a[0] == "rivals") // WP-R2 (BUG-1546): Cell Rivals status, war hit test, payout delivery
+        return rivals_debug(a);
     if (!a.empty() && a[0] == "fix") { // any stage (resend also covers the DNA total) // fix [<name>|all 0|1]: the wave 2 fixes, off = the old behaviour
         struct Sw {
             const char* name;

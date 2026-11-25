@@ -9,8 +9,10 @@
 #include <string>
 #include <vector>
 
+#include "cellsync.h"
 #include "coop_ui.h"
 #include "fixes.h"
+#include "game.h"
 #include "modes.h"
 #include "net/protocol.h"
 #include "net/utf8.h"
@@ -239,7 +241,11 @@ void on_session_end()
 LIFECYCLE_HOOK("pfind.session", lifecycle::kSessionEnd, -100, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session
 
 // ---------------- arrows ----------------
-bool arrows_on() { return g_arrows_fix && settings::on(settings::kPartnerArrows); }
+bool arrows_on()
+{
+    return g_arrows_fix && (settings::on(settings::kPartnerArrows) ||
+                            (game::mode_id() == modes::kCell && cellsync::rivals_active()));
+}
 bool map_on() { return g_map_fix && settings::on(settings::kPartnerMap); }
 
 struct Rec {

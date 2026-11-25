@@ -609,11 +609,24 @@ std::string kin_report(float r);
 // BUG-0899 (cellsync_combat.cpp): Cell friendly fire
 extern bool g_fix_cell_ff;
 bool cell_ff_on();
+bool can_pvp_hurt(int target_id);
+bool can_pvp_any();
 void cell_ff_sync_flag();
 bool send_pvp_hit(int target_id, int dmg, int type);
 void pvp_reset();
 void cell_ff_install_hook();
 std::string cell_ff_status();
+
+// WP-R2 (BUG-1546, cell_rivals.cpp): Cell stage Rivals mode
+extern bool g_fix_cell_rivals;
+void reset_knockout();
+void rivals_init();
+void rivals_tick(double now);
+void rivals_on_player_leave(int id);
+bool rivals_send_pvp_hit(int target_id, int dmg, int type, bool bypass_cooldown = false);
+void rivals_on_late_food(uint8_t from, int food);
+std::string rivals_status_line();
+std::string rivals_debug(const std::vector<std::string>& args);
 
 // cellsync_debug.cpp
 const char* kind_of(uint8_t* c);

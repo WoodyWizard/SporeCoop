@@ -10,6 +10,7 @@
 #include <set>
 #include <vector>
 
+#include "cellsync.h"
 #include "fixes.h"
 #include "game.h"
 #include "lifecycle.h"
@@ -380,7 +381,7 @@ static void cell_send(uint8_t kind, uint32_t world, uint32_t mask, bool to_host)
 
 static void cell_tick(double now)
 {
-    if (!g_cell_fix || !a_CellCollect || now - g_cell_last_poll < kPoll)
+    if (!g_cell_fix || cellsync::rivals_active() || !a_CellCollect || now - g_cell_last_poll < kPoll)
         return;
     int* st = cell_states();
     uint32_t world = C.world ? C.world() : 0;
@@ -484,7 +485,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         k.second = r.u32();
     }
     if (kind == kKindCellFound || kind == kKindCellSet) { // BUG-0467
-        if (!g_cell_fix)
+        if (!g_cell_fix || cellsync::rivals_active())
             return;
         uint32_t mask = 0;
         for (auto& k : keys)

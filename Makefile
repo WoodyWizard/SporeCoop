@@ -174,6 +174,9 @@ unit-cpp: sanitizer-probe
 	$(B)/host/validate_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/cell_tests tests/cell_tests.cpp
 	$(B)/host/cell_tests
+	@# WP-R2 of 0.8.0: Cell stage Rivals mode (cell_rivals_logic.h, BUG-1546)
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/cell_rivals_tests tests/cell_rivals_tests.cpp
+	$(B)/host/cell_rivals_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/npc_tests tests/npc_tests.cpp
 	$(B)/host/npc_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/space_tests tests/space_tests.cpp
