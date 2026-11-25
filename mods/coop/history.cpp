@@ -63,6 +63,11 @@ COOP_FIX("space.own_archetype", "BUG-1470", g_arch_fix,
 static bool g_rivals_own_history_fix = true;
 COOP_FIX("rivals.own_history", "BUG-1557", g_rivals_own_history_fix,
          "rivals: per-player Tribe and Civ consequence cards and independent Space philosophy/archetype");
+// BUG-1565: on = guests in worlds started past Cell can pick their own prior-stage consequence cards or starting
+// Space philosophy (K_PICK, coop.history pick, F9 Rivals UI); off = guests keep the host's seeded cards
+static bool g_midgame_pick_fix = true;
+COOP_FIX("history.midgame_pick", "BUG-1565", g_midgame_pick_fix,
+         "history: per-player starting evolutionary path and Space philosophy picker for worlds started past Cell");
 
 // ---- symbols
 static uintptr_t a_AddTrait, a_SetCard, a_GetCard, a_CreatureCard, a_CellCard, a_SpaceFromTraits, a_SetArchetype,
@@ -77,12 +82,12 @@ static std::map<uint8_t, wire::history::Record> g_sent; // player -> the record 
 static std::map<uint8_t, double> g_sent_at;
 static double g_host_next;
 static uint32_t g_hook_calls, g_redirected[2], g_redirect_fails, g_seeded, g_decided[kStages], g_tx, g_cell_rx,
-    g_released, g_social_wins, g_loaded;
+    g_released, g_social_wins, g_loaded, g_pick_rx;
 // ---- guest
 static bool g_have;
 static wire::history::Record g_mine;
 static double g_guest_next, g_cell_next, g_space_since;
-static uint32_t g_cell_sent, g_rx, g_card_writes, g_progress_writes, g_cell_tx, g_local_calls, g_arch_calls;
+static uint32_t g_cell_sent, g_rx, g_card_writes, g_progress_writes, g_cell_tx, g_local_calls, g_arch_calls, g_pick_tx;
 static uint32_t g_arch_applied; // the Space card whose archetype this world got (0: none yet)
 
 SESSION_STATE("history.session", nullptr, [] {
@@ -110,6 +115,20 @@ static void* cplayer()
 static bool stage_mode(uint32_t m)
 {
     return m == modes::kCell || m == modes::kCreature || m == modes::kTribe || m == modes::kCiv || m == modes::kSpace;
+}
+static int stage_index_of(uint32_t m)
+{
+    if (m == modes::kCell)
+        return kCell;
+    if (m == modes::kCreature)
+        return kCreature;
+    if (m == modes::kTribe)
+        return kTribe;
+    if (m == modes::kCiv)
+        return kCiv;
+    if (m == modes::kSpace)
+        return kSpace;
+    return -1;
 }
 static void read_cards(void* p, uint32_t (&c)[kStages])
 {
@@ -339,11 +358,11 @@ static uint32_t creature_card_for(float social, float combat)
     game::swap_close(mark, 2);
     return valid_card(kCreature, v) ? v : 0;
 }
-// the Space archetype of four cards (SpaceArchetype_FromTraits 0x556440, cdecl, 4 args)
+// the Space archetype of four cards (SpaceArchetype_FromTraits 0x556440, cdecl, 4 args; 0 = none, all 0 -> Wanderer)
 static uint32_t space_card_for(const uint32_t* c)
 {
     for (int i = 0; i < 4; i++)
-        if (!valid_card(i, c[i]))
+        if (!card_ok(i, c[i]))
             return 0;
     uint32_t v = a_SpaceFromTraits ? skg::cdecl_call<uint32_t>(a_SpaceFromTraits, c[0], c[1], c[2], c[3]) : 0;
     return valid_card(kSpace, v) ? v : 0;
@@ -394,6 +413,7 @@ static void host_tick(double now)
         Record* r = record_of(pl.id, p);
         if (!r)
             continue;
+        const int cur_st = stage_index_of(game::mode_id());
         const bool own_tribe = g_rivals_own_history_fix && (rivals::stage_is_rivals(rivals::Stage::Tribe) || r->has_tribe_own());
         const bool own_civ = g_rivals_own_history_fix && (rivals::stage_is_rivals(rivals::Stage::Civ) || r->has_civ_own());
         unsigned ch = update(*r, host, [&](int st, const Record& x) -> uint32_t {
@@ -413,7 +433,7 @@ static void host_tick(double now)
                 LOG("history: %s's own card of stage %d: %08X (the host's %08X)", pl.name.c_str(), st, v, host[st]);
             }
             return v;
-        }, own_tribe, own_civ);
+        }, own_tribe, own_civ, g_midgame_pick_fix ? cur_st : -1, g_midgame_pick_fix);
         if (ch)
             LOG("history: %s's cards now %08X %08X %08X %08X %08X (changed %X)", pl.name.c_str(), r->cards[0], r->cards[1],
                 r->cards[2], r->cards[3], r->cards[4], ch);
@@ -446,6 +466,75 @@ static bool guest_here(uint32_t m)
 bool guest_owns()
 {
     return g_own_fix && is_guest() && g_have && (g_mine.flags & wire::history::kFlagOwn) && !host_creature_mode();
+}
+
+bool midgame_pick_enabled() { return g_midgame_pick_fix && own_on(); }
+
+bool can_pick_ui()
+{
+    if (!g_midgame_pick_fix || !guest_owns())
+        return false;
+    const uint32_t m = game::mode_id();
+    if (!guest_here(m) || !host_reads_history())
+        return false;
+    return stage_index_of(m) > kCell;
+}
+
+uint32_t guest_card(int stage)
+{
+    if (stage < 0 || stage >= kStages)
+        return 0;
+    if (g_have && (g_mine.flags & wire::history::kFlagOwn))
+        return g_mine.cards[stage];
+    if (void* p = cplayer())
+        return skg::field<uint32_t>(p, kCardsOff + 4 * stage);
+    return 0;
+}
+
+bool pick_cards(const uint32_t cards[4])
+{
+    if (!g_midgame_pick_fix || !is_guest() || !own_on() || !host_reads_history() || !cards)
+        return false;
+    if (!guest_here(game::mode_id()))
+        return false;
+    for (int i = 0; i < 4; i++)
+        if (cards[i] != 0 && !valid_card(i, cards[i]))
+            return false;
+    net::Writer w;
+    w.u8(wire::history::K_PICK);
+    wire::history::Pick pk;
+    memcpy(pk.cards, cards, sizeof pk.cards);
+    pk.write(w);
+    if (!S->send_reliable_to(0, net::MSG_PLAYER_HISTORY, w))
+        return false;
+    g_pick_tx++;
+    LOG("history: sent mid-game path pick %08X %08X %08X %08X to host", pk.cards[0], pk.cards[1], pk.cards[2],
+        pk.cards[3]);
+    return true;
+}
+
+bool pick_philosophy(const std::string& name)
+{
+    const PhilosophyPreset* p = find_philosophy(name);
+    if (!p)
+        return false;
+    return pick_cards(p->cards);
+}
+
+bool cycle_philosophy()
+{
+    int idx = philosophy_index_of(guest_card(kSpace));
+    int next = (idx + 1) % kPhilosophyCount;
+    return pick_cards(kPhilosophies[next].cards);
+}
+
+bool cycle_stage_card(int stage)
+{
+    if (stage < 0 || stage >= 4)
+        return false;
+    uint32_t cards[4] = {};
+    cards[stage] = next_stage_card(stage, guest_card(stage));
+    return pick_cards(cards);
 }
 
 // this game's own Cell card now (Cell_GetConsequenceTrait 0xE5C9D0 reads cCellGame +0x5190, its own diet)
@@ -577,6 +666,47 @@ void on_message(uint8_t from, net::Reader& r)
             x->cell_own = c.card;
             g_cell_rx++;
         }
+    } else if (kind == wire::history::K_PICK && is_host() && from != 0) {
+        wire::history::Pick pk;
+        if (!pk.read(r) || !g_midgame_pick_fix || !own_on() || own_world::peer_elsewhere(from))
+            return;
+        void* p = cplayer();
+        const uint32_t m = game::mode_id();
+        if (!p || !stage_mode(m))
+            return;
+        book_load();
+        Record* x = record_of(from, p);
+        if (!x)
+            return;
+        uint32_t host[kStages] = {};
+        read_cards(p, host);
+        const int cur_st = stage_index_of(m);
+        bool accepted = false;
+        unsigned ch = apply_midgame_pick(*x, host, pk.cards, cur_st, &accepted);
+        if (!accepted) {
+            LOG("history: rejected mid-game path pick from %s (stage=%d cards=%08X %08X %08X %08X)",
+                S->name_of(from).c_str(), cur_st, pk.cards[0], pk.cards[1], pk.cards[2], pk.cards[3]);
+            return;
+        }
+        if ((valid_card(kSpace, host[kSpace]) || cur_st == kSpace) && !valid_card(kSpace, x->cards[kSpace])) {
+            uint32_t sp = space_card_for(x->cards);
+            if (valid_card(kSpace, sp))
+                x->cards[kSpace] = sp;
+            else if (valid_card(kSpace, host[kSpace]))
+                x->cards[kSpace] = host[kSpace];
+        }
+        g_pick_rx++;
+        LOG("history: %s picked starting path -> cards %08X %08X %08X %08X %08X (mask=%X ch=%X)",
+            S->name_of(from).c_str(), x->cards[0], x->cards[1], x->cards[2], x->cards[3], x->cards[4],
+            (unsigned)x->picked_mask, ch);
+        if (peer_reads_history(from)) {
+            wire::history::Record rec;
+            rec.flags = wire::history::kFlagOwn;
+            memcpy(rec.cards, x->cards, sizeof rec.cards);
+            rec.social = x->social;
+            rec.combat = x->combat;
+            send_record(from, rec, H ? H->time_seconds() : 0.0);
+        }
     }
 }
 
@@ -599,20 +729,20 @@ static std::string status()
     char b[512];
     std::string out;
     snprintf(b, sizeof b,
-             "history: own_fix=%d credit_fix=%d arch_fix=%d rivals_fix=%d role=%s active=%d\n"
+             "history: own_fix=%d credit_fix=%d arch_fix=%d rivals_fix=%d midgame_pick_fix=%d role=%s active=%d\n"
              "  host: hook calls=%u redirected social=%u combat=%u fails=%u social_wins=%u seeded=%u loaded=%u "
-             "decided=%u,%u,%u,%u,%u sent=%u released=%u cell_reports=%u records=%u world=%s\n"
+             "decided=%u,%u,%u,%u,%u sent=%u released=%u cell_reports=%u picks_rx=%u records=%u world=%s\n"
              "  guest: have=%d own=%d owns=%d rx=%u card_writes=%u progress_writes=%u local_calls=%u cell_sent=%08X "
-             "cell_tx=%u arch_calls=%u arch_applied=%08X\n"
+             "cell_tx=%u picks_tx=%u arch_calls=%u arch_applied=%08X\n"
              "  mine %08X %08X %08X %08X %08X social=%.1f combat=%.1f\n",
-             (int)g_own_fix, (int)g_credit_fix, (int)g_arch_fix, (int)g_rivals_own_history_fix,
+             (int)g_own_fix, (int)g_credit_fix, (int)g_arch_fix, (int)g_rivals_own_history_fix, (int)g_midgame_pick_fix,
              is_host() ? "host" : is_guest() ? "guest" : "none",
              (int)own_on(), g_hook_calls, g_redirected[0], g_redirected[1], g_redirect_fails, g_social_wins, g_seeded,
              g_loaded, g_decided[0], g_decided[1], g_decided[2], g_decided[3], g_decided[4], g_tx, g_released, g_cell_rx,
-             (unsigned)g_book.recs.size(), g_book.world.empty() ? "-" : g_book.world.c_str(), (int)g_have,
+             g_pick_rx, (unsigned)g_book.recs.size(), g_book.world.empty() ? "-" : g_book.world.c_str(), (int)g_have,
              (int)(g_mine.flags & 1), (int)guest_owns(), g_rx, g_card_writes, g_progress_writes, g_local_calls,
-             g_cell_sent, g_cell_tx, g_arch_calls, g_arch_applied, g_mine.cards[0], g_mine.cards[1], g_mine.cards[2],
-             g_mine.cards[3], g_mine.cards[4], g_mine.social, g_mine.combat);
+             g_cell_sent, g_cell_tx, g_pick_tx, g_arch_calls, g_arch_applied, g_mine.cards[0], g_mine.cards[1],
+             g_mine.cards[2], g_mine.cards[3], g_mine.cards[4], g_mine.social, g_mine.combat);
     out = b;
     if (void* p = cplayer()) {
         // the game's own getter (cPlayer::GetConsequenceTrait 0xC75880), what the game's History and powers read
@@ -630,10 +760,11 @@ static std::string status()
     for (auto& [k, r] : g_book.recs) {
         snprintf(b, sizeof b,
                  "  record %s %08X %08X %08X %08X %08X social=%.1f combat=%.1f cell_own=%08X "
-                 "tribe=%u/%u civ=%u/%u/%u start=%u\n",
+                 "tribe=%u/%u civ=%u/%u/%u start=%u picked=%X\n",
                  k.c_str(), r.cards[0], r.cards[1], r.cards[2], r.cards[3], r.cards[4], r.social, r.combat, r.cell_own,
                  (unsigned)r.tribe_allied, (unsigned)r.tribe_conquered, (unsigned)r.civ_military,
-                 (unsigned)r.civ_economic, (unsigned)r.civ_religious, (unsigned)r.civ_start_spec);
+                 (unsigned)r.civ_economic, (unsigned)r.civ_religious, (unsigned)r.civ_start_spec,
+                 (unsigned)(r.picked_mask & 0x0Fu));
         out += b;
     }
     return out;
@@ -780,6 +911,56 @@ static int command(int argc, const char* const* argv, std::string& out)
         out = b;
         return 0;
     }
+    if (!strcmp(a, "pick") && argc >= 4) {
+        if (!g_midgame_pick_fix) {
+            out = "not picked (disabled by history.midgame_pick)\n";
+            return 0;
+        }
+        if (!is_guest()) {
+            out = "usage: coop.history pick <cell|creature|tribe|civ> <card> | philosophy <name> (guest only)\n";
+            return 0;
+        }
+        if (!strcmp(argv[2], "philosophy") || !strcmp(argv[2], "phil")) {
+            const PhilosophyPreset* p = find_philosophy(argv[3]);
+            if (!p) {
+                out = "unknown philosophy (use warrior|trader|scientist|shaman|bard|zealot|diplomat|ecologist|knight|wanderer)\n";
+                return 0;
+            }
+            if (!pick_cards(p->cards)) {
+                out = "not picked (guest must be connected in host world with own history active)\n";
+                return 0;
+            }
+            snprintf(b, sizeof b, "picked philosophy %s (%08X %08X %08X %08X -> space %08X)\n", p->key, p->cards[0],
+                     p->cards[1], p->cards[2], p->cards[3], p->space_card);
+            out = b;
+            return 0;
+        }
+        int st = parse_stage_name(argv[2]);
+        uint32_t card = st >= 0 ? parse_card_name(st, argv[3]) : 0;
+        if (st < 0 || !card) {
+            out = "usage: coop.history pick <cell|creature|tribe|civ> <card_name> | philosophy <name>\n";
+            return 0;
+        }
+        uint32_t cards[4] = {};
+        cards[st] = card;
+        if (!pick_cards(cards)) {
+            out = "not picked (guest must be connected in host world with own history active)\n";
+            return 0;
+        }
+        snprintf(b, sizeof b, "picked stage %d card %08X (%s)\n", st, card, card_label(st, card, false));
+        out = b;
+        return 0;
+    }
+    if (!strcmp(a, "presets")) {
+        for (const auto& p : kPhilosophies) {
+            uint32_t sp = space_card_for(p.cards);
+            snprintf(b, sizeof b, "%-10s cards=%08X,%08X,%08X,%08X want=%08X got=%08X idx=%d match=%d\n", p.key,
+                     p.cards[0], p.cards[1], p.cards[2], p.cards[3], p.space_card, sp, archetype_index(sp),
+                     (int)(sp == p.space_card));
+            out += b;
+        }
+        return 0;
+    }
     if (!strcmp(a, "cell")) { // this game's own Cell card now (Cell only)
         snprintf(b, sizeof b, "own cell card %08X\n", own_cell_card());
         out = b;
@@ -808,10 +989,11 @@ void init(const SkHost* host, SkMod* mod, net::Session* sess)
     if (a_AddTrait)
         H->hook_create(M, (void*)a_AddTrait, (void*)h_AddTrait, (void**)&o_AddTrait);
     H->command_add(M, "coop.history",
-                   "coop.history [status | credit <player> social|combat <amount> | tribe <pid> ally|conquer | "
+                   "coop.history [status | pick <cell|creature|tribe|civ> <card> | pick philosophy <name> | presets | "
+                   "credit <player> social|combat <amount> | tribe <pid> ally|conquer | "
                    "civ <pid> mil|eco|rel | civ_start <pid> mil|eco|rel | end creature | set <player> <stage> <hex> | "
                    "space <c1> <c2> <c3> <c4> | decide <social> <combat> | cell] - every player's own stage history "
-                   "(BUG-1470, BUG-1557)",
+                   "(BUG-1470, BUG-1557, BUG-1565)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        std::string s;
                        int rc = command(argc, argv, s);

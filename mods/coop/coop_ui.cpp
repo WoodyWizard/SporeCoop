@@ -21,6 +21,8 @@
 #include "net/udp.h"
 #include "notify_text.h"
 #include "space_ext.h"
+#include "history.h"
+#include "history_logic.h"
 #include "rivals.h"
 #include "settings.h"
 #include "sui.h"
@@ -2140,6 +2142,32 @@ static void refresh_space()
 static void refresh_rivals()
 {
     auto rows = rivals::ui_rows();
+    // BUG-1565: compact guest starting-path / Space philosophy picker on the Rivals page (no lobby/Together impact)
+    if (A.role() == 2 && history::can_pick_ui()) {
+        const uint32_t m = A.mode ? A.mode() : 0;
+        const int cur_st = m == modes::kSpace ? history::kSpace
+                           : m == modes::kCiv ? history::kCiv
+                           : m == modes::kTribe ? history::kTribe
+                           : m == modes::kCreature ? history::kCreature
+                                                   : -1;
+        if (cur_st > history::kCell) {
+            rows.push_back({T("Starting Path (Mid-Game)", "Начальный путь (с середины игры)"), "", nullptr, kGold});
+            if (cur_st == history::kSpace) {
+                const uint32_t sp = history::guest_card(history::kSpace);
+                std::string label = std::string(T("Space Philosophy: ", "Философия в Космосе: ")) +
+                                    history::card_label(history::kSpace, sp, g_ru);
+                rows.push_back({label, T("Next >", "Далее >"), [] { history::cycle_philosophy(); }, kWhite});
+            }
+            static const char* const kStageEn[4] = {"Cell", "Creature", "Tribe", "Civ"};
+            static const char* const kStageRu[4] = {"Клетка", "Существо", "Племя", "Цивилизация"};
+            for (int st = 0; st < cur_st && st < 4; st++) {
+                const uint32_t c = history::guest_card(st);
+                std::string label = std::string(g_ru ? kStageRu[st] : kStageEn[st]) + ": " +
+                                    history::card_label(st, c, g_ru);
+                rows.push_back({label, T("Change", "Сменить"), [st] { history::cycle_stage_card(st); }, kDim});
+            }
+        }
+    }
     int n = (int)rows.size(), pages = std::max(1, (n + kRivalsRows - 1) / kRivalsRows);
     if (g_rivals_first < 0)
         g_rivals_first = 0;
