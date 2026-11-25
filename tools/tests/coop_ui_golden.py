@@ -155,6 +155,7 @@ def main():
     lane.sh('deploy')
     lane.sh('fixture', 'restore', FIXTURE, lane.HOST_PROFILE)
     twoinst.restore_creations()
+    twoinst.forget_store()
     subprocess.run(['rm', '-rf', lane.GUEST_DIR + '/Games', lane.GUEST_DIR + '/Games-sporecoop-backup'])
     twoinst.forget_settings()
     twoinst.forget_holds()
