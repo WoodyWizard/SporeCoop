@@ -70,6 +70,9 @@ extern bool g_guest_recruit_fix;
 void send_dismiss(uint16_t npc_id);
 std::string pack_dump();
 
+// BUG-1561: Tribe stage hook bridge into SporeCoop::AbilityBar_Use (0xD49560, already hooked by social.cpp)
+void set_tribe_bar_use(bool (*fn)(int));
+
 // WP-R3 (BUG-1547): Creature Rivals per-player species table helpers
 struct SpeciesRec {
     uint32_t key[3];

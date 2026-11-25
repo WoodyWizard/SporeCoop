@@ -511,4 +511,48 @@ inline bool ufo_mirror_stage(bool fix, uint32_t mode_id)
     return mode_id == kCreatureMode || (fix && mode_id == kTribeMode);
 }
 
+// ---------------- Tribe guest social befriending (BUG-1561) ----------------
+
+constexpr uint8_t kCmdSocialPlay = 5;   // MSG_TRIBE_CMD sub-kind: guest plays instrument slot 3/4/5 during social session
+constexpr uint8_t kAnimTribeSocial = 22; // MSG_TRIBE_ANIM sub-kind: host -> guest Tribal social session state sync
+
+// ChooseInputActionID (0xCCF130) returns 0x2B ("Select your Chieftain to socialize!") when clicking a neutral/friendly
+// NPC villager in Social Mode if playerTribe->mpLeader (+0x11C) is not selected. In Together co-op, the host owns the
+// single native mpLeader (or may give all members/leader away): allow any player who has living own members selected
+// and either does not own mpLeader or is a guest to start a social performance (0x27 -> CitizenAction 26).
+inline int choose_social_override(bool fix, bool active, bool rivals, int raw_action, bool own_selected,
+                                  bool owns_leader, bool is_guest)
+{
+    if (fix && active && !rivals && raw_action == 0x2B && own_selected && (!owns_leader || is_guest))
+        return 0x27;
+    return raw_action;
+}
+
+// TribeAbilities (0x0169DE64) instrument slots 3/4/5 -> cTribeTool specialized tool types 4/5/6 (Didgeridoo/Maracas/Horn).
+inline int instrument_tool_for_slot(uint32_t slot)
+{
+    return slot == 3 ? 4 : slot == 4 ? 5 : slot == 5 ? 6 : 0;
+}
+
+// AbilityBar_Status (0xD49220 -> 0xD1FB30) return code for Tribe instrument slots 3..5 on a guest during a synced
+// Tribal social performance: 0 = usable, 0xF = wait for turn / cooling down, 0xE = no performer with that instrument.
+inline uint32_t tribe_social_ability_status(bool fix, bool session_active, bool can_play, bool has_matching_performer,
+                                            bool any_ready)
+{
+    if (!fix || !session_active)
+        return 1;
+    if (!can_play)
+        return 0xFu;
+    if (!has_matching_performer)
+        return 0xEu;
+    return any_ready ? 0u : 0xFu;
+}
+
+// BUG-1068 / BUG-1561: guest CitizenActions that should register the village's goal mission on the host
+// (15 = raid, 9 = food gift, 26 = social performance).
+inline bool guest_mission_action(int action, bool social_fix)
+{
+    return action == 15 || action == 9 || (social_fix && action == 26);
+}
+
 } // namespace tribe_logic
