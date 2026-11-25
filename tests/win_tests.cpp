@@ -2270,6 +2270,80 @@ static void test_setup_retry()
     CHECK(l.find("attempt 2 of 3") != std::string::npos);
 }
 
+// ---------------- decision 8Y C: the galaxy server, an optional part of the setup ----------------
+
+static upd::Pack make_server_pack(const std::string& v)
+{
+    upd::Pack p;
+    p.version = v;
+    const std::string d = inst::kServerPrefix;
+    p.files.push_back({d + "galaxy_server.exe", 0, bytes("galaxy server " + v)});
+    p.files.push_back({d + "Start-Galaxy-Server.cmd", 0, bytes("start " + v)});
+    p.files.push_back({d + "Read-me.txt", 0, bytes("read me " + v)});
+    p.files.push_back({d + "galaxy-settings.cmd", upd::kOnlyIfMissing, bytes("set \"GALAXY_NAME=My Lineages Galaxy\"\r\n")});
+    return p;
+}
+
+static void test_setup_server()
+{
+    printf("setup: the optional galaxy server (8Y C)\n");
+    std::wstring g = fake_game(L"setup_server");
+    std::wstring dir = fresh_dir(L"setup_server_dl");
+    std::wstring sd = g + inst::kServerDir;
+    put_bytes(dir + L"\\SporeCoop-0.11.0.pack", upd::write_pack(make_pack("0.11.0")));
+    put_bytes(dir + L"\\SporeCoop-0.12.0.pack", upd::write_pack(make_pack("0.12.0")));
+    put_bytes(dir + L"\\GalaxyServer-0.11.0.pack", upd::write_pack(make_server_pack("0.11.0")));
+    put_bytes(dir + L"\\GalaxyServer-0.12.0.pack", upd::write_pack(make_server_pack("0.12.0")));
+    inst::Options o;
+    o.pack_dir = dir;
+    o.api = "";
+    o.pack = dir + L"\\SporeCoop-0.11.0.pack";
+    o.server_pack = dir + L"\\GalaxyServer-0.11.0.pack";
+    upd::ReleaseBox box;
+    std::string msg;
+    // (a) not asked for: the game's files only, no server folder
+    CHECK(inst::has_server_pack(o));
+    CHECK(inst::do_install(g, o, box, msg) == inst::Result::Ok);
+    printf("  (a) without the box: %s\n", msg.c_str());
+    CHECK(all_of_version(g, "0.11.0") && !inst::has_server(g) && !exists(sd));
+    // (b) asked for: the server's four files beside the game's
+    o.server = true;
+    CHECK(inst::do_install(g, o, box, msg) == inst::Result::Ok);
+    printf("  (b) with the box: %s\n", msg.c_str());
+    CHECK(inst::has_server(g) && get(sd + L"\\galaxy_server.exe") == "galaxy server 0.11.0");
+    CHECK(get(sd + L"\\Start-Galaxy-Server.cmd") == "start 0.11.0" && get(sd + L"\\Read-me.txt") == "read me 0.11.0");
+    CHECK(msg.find("Start-Galaxy-Server.cmd") != std::string::npos && all_of_version(g, "0.11.0"));
+    // (c) the next version: the program and the start file are replaced, the host's settings stay
+    put(sd + L"\\galaxy-settings.cmd", "set \"GALAXY_NAME=Pandora\"\r\n");
+    o.pack = dir + L"\\SporeCoop-0.12.0.pack";
+    o.server_pack = dir + L"\\GalaxyServer-0.12.0.pack";
+    CHECK(inst::do_install(g, o, box, msg) == inst::Result::Ok);
+    CHECK(all_of_version(g, "0.12.0") && get(sd + L"\\galaxy_server.exe") == "galaxy server 0.12.0");
+    CHECK(get(sd + L"\\Start-Galaxy-Server.cmd") == "start 0.12.0");
+    CHECK(get(sd + L"\\galaxy-settings.cmd") == "set \"GALAXY_NAME=Pandora\"\r\n");
+    // (d) a server pack that names a file of the game: refused whole, said so, the game's files as they were
+    upd::Pack bad = make_server_pack("0.13.0");
+    bad.files.push_back({"SporebinEP1/mods/coop.dll", 0, bytes("not the mod")});
+    put_bytes(dir + L"\\GalaxyServer-bad.pack", upd::write_pack(bad));
+    o.server_pack = dir + L"\\GalaxyServer-bad.pack";
+    inst::Result r = inst::do_install(g, o, box, msg);
+    printf("  (d) a pack reaching outside its folder: %s\n", msg.c_str());
+    CHECK(r == inst::Result::Failed && msg.find("outside the server's folder") != std::string::npos);
+    CHECK(all_of_version(g, "0.12.0") && get(sd + L"\\galaxy_server.exe") == "galaxy server 0.12.0");
+    // (e) asked for in a setup that carries no server
+    o.server_pack.clear();
+    CHECK(!inst::has_server_pack(o));
+    r = inst::do_install(g, o, box, msg);
+    printf("  (e) no server in the setup: %s\n", msg.c_str());
+    CHECK(r == inst::Result::Failed && msg.find("does not include it") != std::string::npos && all_of_version(g, "0.12.0"));
+    // (f) the uninstall takes the server's program, start file and read-me; the host's settings stay
+    bool ok = inst::do_uninstall(g, msg);
+    printf("  (f) uninstall: %d, %s\n", ok, msg.c_str());
+    CHECK(ok && !inst::has_server(g) && !exists(sd + L"\\Start-Galaxy-Server.cmd") && !exists(sd + L"\\Read-me.txt"));
+    CHECK(get(sd + L"\\galaxy-settings.cmd") == "set \"GALAXY_NAME=Pandora\"\r\n");
+    CHECK(get(g + L"\\SporebinEP1\\steam_api.dll") == "the game's steam api");
+}
+
 // ---------------- BUG-0851: the uninstaller ----------------
 
 // a fake game with SporeCoop 0.9.0 installed by do_install, the release's symbol file names and a
@@ -2509,6 +2583,12 @@ int main(int argc, char** argv)
         printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
         return g_fail ? 1 : 0;
     }
+    if (argc == 2 && !strcmp(argv[1], "--server-only")) { // 8Y C
+        test_setup_server();
+        rmtree(g_tmp);
+        printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
+        return g_fail ? 1 : 0;
+    }
     if (argc == 2 && !strcmp(argv[1], "--setup-close-only")) {
         test_setup_close();
         rmtree(g_tmp);
@@ -2546,6 +2626,7 @@ int main(int argc, char** argv)
     test_ini_unicode();
     test_ini_encoding();
     test_setup_packs();
+    test_setup_server(); // 8Y C
     test_setup_close();
     test_install_bat();
     test_uninstall_loader(); // (renamed: the upstream merge gave two tests one name and the file did not compile)

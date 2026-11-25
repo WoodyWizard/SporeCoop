@@ -9508,3 +9508,25 @@ docs/12-server-and-players.md#server-alpha-goes-live). Host: instance 9, `coop.h
   program at full load starves the game and every ssh command takes a minute. Two games on TITAN do for the stage
   logic then.
 
+## The setup on Windows without the lab (2026-11-24, feat/lineages-alpha)
+<a id="testing-setup-on-windows"></a>
+
+* The setup's unit tests run natively on TITAN: build with the toolchain's make from PowerShell
+  (`<llvm-mingw>\bin` and `C:\Program Files\Git\usr\bin` first on PATH, `mingw32-make
+  SHELL=C:/PROGRA~1/Git/usr/bin/bash.exe LLVM_MINGW=... build/win_tests.exe build/SporeCoopSetup.exe`; from Git Bash
+  the manifest's grep step fails), then `build\win_tests.exe --server-only` (8Y C), `--setup-close-only`,
+  `--slots-only`, `--founders-only`. The whole program was not run natively (some tests expect the lab's helpers).
+* A dummy game folder is enough for the setup: `SporebinEP1\SporeApp.exe` and `SporebinEP1\steam_api.dll` with any
+  text, an empty `Data`. Silent: `SporeCoopSetup.exe /S "/dir:<folder>" "/log:<file>" [/server]`, exit code 0 and the
+  log's last line "OK: ...". From Git Bash write the switches with two slashes (`//S`, `"//dir:..."`).
+* The window by script: the scratchpad scripts of the 8Y C check drove it with SendMessage (BM_SETCHECK on the box,
+  BM_CLICK on Install; SPORECOOP_SETUP_TEST_DELAY=0 switches the "Spore is running" question off) and took its
+  picture with PrintWindow. A picture for the docs: `subst T: <folder>` first, so the folder field shows no user
+  name, `subst T: /d` after.
+* A .cmd from Git Bash: `cmd //c name.cmd` does not find it; start it by its full path from PowerShell
+  (`cmd /c "\"<path>\" < NUL"`).
+* A QA game keeps one galaxy key per address (coop.ini [galaxy_keys]): a test server on 127.0.0.1:47900 with a new
+  key is refused ("refused keys 1") until `coop.galaxy forgetkey` AFTER a first connect set the address. Copy the QA
+  copy's coop.ini before such a test and put it back after, or the older test galaxies are refused next time.
+* `galaxy_server.exe --local` binds 127.0.0.1 only: no firewall question for a new copy of the program.
+

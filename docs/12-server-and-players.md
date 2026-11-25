@@ -2101,3 +2101,32 @@ The release check: direct sessions (no galaxy server) on the release build with 
 * The owner's own alpha copy (#server-owner-alpha-copy) carries the 70-dev build since then (coop.dll, sporekit.dll,
   the symbols, SporeCoop.package); not started after the copy.
 
+## The galaxy server in the installer (8Y C, 2026-11-24, feat/lineages-alpha)
+<a id="server-in-the-installer"></a>
+
+Decision 8Y C (owner 2026-11-24): the galaxy server is an optional part of the installer. Built, not released yet
+(the next release carries it). docs/tickets/BUG-9377-*.
+
+* For the player who hosts a galaxy: the setup's box "Also install the galaxy server (to host online worlds for
+  other players)", off by default (images/installer_galaxy_server_box.png). Ticked, the setup also puts four files
+  into the game's SporebinEP1\mods\galaxy-server: galaxy_server.exe, Start-Galaxy-Server.cmd (double-click: the
+  server's window; closing it stops the server), Read-me.txt (the host's how-to: joining, the router or a VPN, the
+  update, the data) and galaxy-settings.cmd (the name, the worlds folder, more options; the setup never replaces
+  it). Sources of the three text files: installer/galaxy-server/.
+* The worlds, the creations, the identities and galaxy_server.key are kept in
+  %APPDATA%\SporeCoop\galaxy-server\worlds unless the host changes GALAXY_WORLDS. The key is the galaxy's
+  identity: the players' games keep it by the server's address and refuse another one until `coop.galaxy forgetkey`.
+* The port is always UDP 47900: the Co-op window's Join treats an address that ends in :47900 as a galaxy
+  (coop_ui.cpp), so the start file does not offer another port.
+* Why a pack of its own and not the update pack: the build that applies an update is the OLD one. A 70-dev game
+  installs every file of the pack it downloads and knows no "optional" flag, so a server inside the update pack would
+  land in every player's game folder. The server therefore rides only in SporeCoopSetup.exe (resource 102), in the
+  update pack's own format, and goes through the same checked install (upd::parse_pack, upd::apply_pack).
+* The price: the game's own "Check for Updates" does not update the server. The host runs the new setup once after
+  an update (the box is ticked by itself when the server is installed; a silent run updates it too). A game and a
+  server of different galaxy protocols do not talk (kProto, net/galaxy.h; 9 today).
+* A release: tools/build_galaxy.sh before tools/package_duo.py (it stops when build/galaxy_server.exe is missing or
+  older than its sources).
+* Not done: the server updated by the in-game updater (a second pack the new updater fetches when the server folder
+  exists); a Start menu entry; the firewall rule made by the setup (Windows asks at the first start); Linux.
+

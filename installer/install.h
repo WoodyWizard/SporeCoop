@@ -20,7 +20,22 @@ struct Options {
     std::optional<lineages_graphics::Settings> graphics;
     const uint8_t* bundled_pack = nullptr; // embedded in the setup executable
     size_t bundled_size = 0;
+    // decision 8Y C: the galaxy server, an optional part of the setup (never of an in-game update). Its files are a
+    // second pack (tools/mkpack.py --server; resource 102 of the setup, or the file `server_pack`: /serverpack:, tests)
+    bool server = false;                     // install or update it with the game's files
+    const uint8_t* bundled_server = nullptr;
+    size_t bundled_server_size = 0;
+    std::wstring server_pack;
 };
+
+// 8Y C: where the galaxy server goes (inside the mods folder: the only folder a pack may write a new file to) and
+// the only place a server pack may write to
+inline constexpr const wchar_t* kServerDir = L"\\SporebinEP1\\mods\\galaxy-server";
+inline constexpr const char* kServerPrefix = "SporebinEP1/mods/galaxy-server/";
+// the server's files the uninstall removes; galaxy-settings.cmd is the host's own and stays, as coop.ini does
+inline constexpr const wchar_t* kServerFiles[] = {L"galaxy_server.exe", L"Start-Galaxy-Server.cmd", L"Read-me.txt"};
+bool has_server(const std::wstring& root);       // galaxy_server.exe is in the game folder's server folder
+bool has_server_pack(const Options& opt);        // this setup carries the server (the tick box is shown)
 
 std::wstring graphics_file(const std::wstring& root);
 

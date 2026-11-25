@@ -42,6 +42,7 @@ struct Options {
 
 HWND g_wnd, g_dir, g_game, g_inst, g_latest, g_status, g_install, g_remove, g_close;
 HWND g_fps, g_borderless;
+HWND g_server; // 8Y C: "Also install the galaxy server" (only when this setup carries it)
 std::wstring g_graphics_root;
 HFONT g_font, g_bold;
 // BUG-0077: the release check's result, shared by the check thread, the window and the install job
@@ -259,6 +260,9 @@ void refresh()
                                            : lineages_graphics::Settings{};
         SetWindowTextW(g_fps, settings.fps ? std::to_wstring(settings.fps).c_str() : L"");
         SendMessageW(g_borderless, BM_SETCHECK, settings.borderless ? BST_CHECKED : BST_UNCHECKED, 0);
+        if (g_server) // 8Y C: installed already = ticked, so the setup updates it with the game
+            SendMessageW(g_server, BM_SETCHECK,
+                         g_opt.inst.server || (is_game(root) && inst::has_server(root)) ? BST_CHECKED : BST_UNCHECKED, 0);
     }
     std::wstring game;
     if (!is_game(root))
@@ -310,6 +314,7 @@ void refresh()
         EnableWindow(g_close, !g_busy);
     if (g_fps) EnableWindow(g_fps, !g_busy);
     if (g_borderless) EnableWindow(g_borderless, !g_busy);
+    if (g_server) EnableWindow(g_server, !g_busy);
 }
 
 DWORD WINAPI check_thread(void*)
@@ -377,6 +382,7 @@ void start_job(bool uninstall, bool downgrade = false)
         }
         opt.graphics = lineages_graphics::Settings{
             (int)fps, SendMessageW(g_borderless, BM_GETCHECK, 0, 0) == BST_CHECKED};
+        opt.server = g_server && SendMessageW(g_server, BM_GETCHECK, 0, 0) == BST_CHECKED; // 8Y C
     }
     if (!g_test_mode && game_running() &&
         MessageBoxW(g_wnd, L"Spore is running. Close it first for a clean install.\n\nContinue anyway?",
@@ -438,12 +444,17 @@ LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         g_fps = add(L"EDIT", L"", WS_TABSTOP | ES_NUMBER | ES_AUTOHSCROLL, 303, 248, 48, 24);
         SendMessageW(g_fps, EM_SETLIMITTEXT, 3, 0);
         g_borderless = add(L"BUTTON", L"Borderless Window", WS_TABSTOP | BS_AUTOCHECKBOX, 371, 247, 170, 26);
-        g_install = add(L"BUTTON", L"Install", BS_DEFPUSHBUTTON, 20, 285, 170, 32, ID_INSTALL);
-        g_remove = add(L"BUTTON", L"Uninstall", BS_PUSHBUTTON, 200, 285, 120, 32, ID_REMOVE);
-        g_close = add(L"BUTTON", L"Close", BS_PUSHBUTTON, 440, 285, 100, 32, ID_CLOSE);
-        g_status = add(L"STATIC", L"", 0, 20, 328, 520, 52);
+        // 8Y C: the optional galaxy server; no box in a setup that does not carry it
+        const int dy = inst::has_server_pack(g_opt.inst) ? 30 : 0;
+        if (dy)
+            g_server = add(L"BUTTON", L"Also install the galaxy server (to host online worlds for other players)",
+                           WS_TABSTOP | BS_AUTOCHECKBOX, 20, 279, 520, 24);
+        g_install = add(L"BUTTON", L"Install", BS_DEFPUSHBUTTON, 20, 285 + dy, 170, 32, ID_INSTALL);
+        g_remove = add(L"BUTTON", L"Uninstall", BS_PUSHBUTTON, 200, 285 + dy, 120, 32, ID_REMOVE);
+        g_close = add(L"BUTTON", L"Close", BS_PUSHBUTTON, 440, 285 + dy, 100, 32, ID_CLOSE);
+        g_status = add(L"STATIC", L"", 0, 20, 328 + dy, 520, 52);
         add(L"STATIC", L"Lineages fork of WoodyWizard's SporeCoop. Use matching builds on every PC.", 0, 20,
-            388, 520, 18);
+            388 + dy, 520, 18);
         refresh();
         if (!g_opt.inst.api.empty())
             CloseHandle(CreateThread(nullptr, 0, check_thread, nullptr, 0, nullptr));
@@ -574,6 +585,10 @@ void parse_args()
             upd::g_retry_fix = false;
         else if (s == L"/oldmerge") // tests: the check thread's get-then-set before BUG-0244
             upd::g_release_merge_fix = false;
+        else if (s == L"/server") // 8Y C: the galaxy server too (silent mode; the window's box starts ticked)
+            g_opt.inst.server = true;
+        else if (!val(L"/serverpack:").empty()) // 8Y C (tests): the server's pack as a file
+            g_opt.inst.server_pack = val(L"/serverpack:");
         else if (!val(L"/pack:").empty())
             g_opt.inst.pack = val(L"/pack:");
         else if (!val(L"/api:").empty())
@@ -593,6 +608,12 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int show)
         if (HGLOBAL bytes = LoadResource(inst, resource)) {
             g_opt.inst.bundled_pack = static_cast<const uint8_t*>(LockResource(bytes));
             g_opt.inst.bundled_size = SizeofResource(inst, resource);
+        }
+    }
+    if (HRSRC resource = FindResourceW(inst, MAKEINTRESOURCEW(102), RT_RCDATA)) { // 8Y C: the galaxy server's pack
+        if (HGLOBAL bytes = LoadResource(inst, resource)) {
+            g_opt.inst.bundled_server = static_cast<const uint8_t*>(LockResource(bytes));
+            g_opt.inst.bundled_server_size = SizeofResource(inst, resource);
         }
     }
     upd::g_log = log; // the download retries (BUG-0755) go to the /log: file
@@ -615,6 +636,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int show)
         if (!note.empty())
             log(note);
         std::string msg;
+        if (!g_opt.uninstall && inst::has_server_pack(g_opt.inst) && inst::has_server(root))
+            g_opt.inst.server = true; // 8Y C: an installed galaxy server is updated with the game
         bool ok = g_opt.uninstall ? inst::do_uninstall(root, msg)
                                   : inst::do_install(root, g_opt.inst, g_rel, msg) == inst::Result::Ok;
         log(std::string(ok ? "OK: " : "FAILED: ") + msg);
@@ -631,7 +654,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int show)
     wc.hIcon = LoadIconW(inst, MAKEINTRESOURCEW(1));
     wc.lpszClassName = L"SporeCoopSetup";
     RegisterClassW(&wc);
-    RECT r{0, 0, 560, 418};
+    RECT r{0, 0, 560, 418 + (inst::has_server_pack(g_opt.inst) ? 30 : 0)}; // 8Y C: the server's row
     AdjustWindowRect(&r, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, FALSE);
     HWND w = CreateWindowW(L"SporeCoopSetup", L"SporeCoop Lineages Setup", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
                            CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left, r.bottom - r.top, nullptr, nullptr, inst, nullptr);

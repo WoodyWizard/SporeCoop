@@ -52,6 +52,18 @@ In Creature and Adventure third person, hold **Alt** and scroll down to widen
 the camera by up to 18 degrees. Hold Alt and scroll up to return to vanilla.
 Ordinary scroll still controls zoom. This is local on Steam and GOG 2024.
 
+## Online worlds (alpha, optional)
+
+Online worlds need a galaxy server: a small program one player runs, which keeps
+shared planets that stay when their players leave. To join one, type its
+address with the port 47900 into the Co-op window's Join, for example
+203.0.113.5:47900. Its planets then appear in the galaxy menu.
+
+To host one yourself, tick "Also install the galaxy server" in the setup. It
+adds the folder SporebinEP1\mods\galaxy-server to the game folder. Open it and
+double-click Start-Galaxy-Server.cmd; Read-me.txt in the same folder explains
+the rest. Players who only join do not need it. This is an early alpha.
+
 ## Uninstall
 
 Close Spore, open the same setup and click Uninstall. The installer restores

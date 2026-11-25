@@ -226,6 +226,30 @@ std::wstring local_pack(const Options& opt)
     return n.empty() ? std::wstring() : opt.pack_dir + L"\\" + upd::widen(n);
 }
 
+// 8Y C: the server's pack into the game folder. A server pack writes only into the server's own folder: one that
+// names another path is refused whole (the game's files are never a server pack's business).
+static bool install_server(const std::wstring& root, const Options& opt, std::string& err)
+{
+    upd::Pack sp;
+    if (!opt.server_pack.empty()) {
+        if (!upd::read_pack_file(opt.server_pack, sp, err))
+            return false;
+    } else if (opt.bundled_server && opt.bundled_server_size) {
+        const std::vector<uint8_t> bytes(opt.bundled_server, opt.bundled_server + opt.bundled_server_size);
+        if (!upd::parse_pack(bytes, sp, err))
+            return false;
+    } else {
+        err = "this setup does not include it";
+        return false;
+    }
+    for (const auto& f : sp.files)
+        if (f.path.rfind(kServerPrefix, 0) != 0) {
+            err = "its pack names a file outside the server's folder (" + f.path + "): nothing of it was installed";
+            return false;
+        }
+    return upd::apply_pack(root, sp, err);
+}
+
 Result do_install(const std::wstring& root, const Options& opt, upd::ReleaseBox& box, std::string& msg,
                   const upd::Progress& progress, std::string* older_version, std::string* installed)
 {
@@ -281,7 +305,22 @@ Result do_install(const std::wstring& root, const Options& opt, upd::ReleaseBox&
     msg = "SporeCoop " + pack.version + " is installed. Start Spore: the galaxy menu has a Co-op item.";
     if (opt.graphics && !lineages_graphics::write(graphics_file(root), *opt.graphics))
         msg += " Setup could not save the graphics settings.";
+    if (opt.server) { // 8Y C: the optional galaxy server, after the game's files (which are in place either way)
+        std::string serr;
+        if (!install_server(root, opt, serr)) {
+            msg = "SporeCoop " + pack.version + " is installed, but the galaxy server is not: " + serr;
+            return Result::Failed;
+        }
+        msg += " The galaxy server is in SporebinEP1\\mods\\galaxy-server: start it with Start-Galaxy-Server.cmd.";
+    }
     return Result::Ok;
+}
+
+bool has_server(const std::wstring& root) { return exists(root + kServerDir + L"\\galaxy_server.exe"); }
+
+bool has_server_pack(const Options& opt)
+{
+    return !opt.server_pack.empty() || (opt.bundled_server && opt.bundled_server_size);
 }
 
 bool has_sporecoop(const std::wstring& root)
@@ -483,6 +522,8 @@ bool do_uninstall(const std::wstring& root, std::string& msg)
     std::vector<std::wstring> files = {bin + L"\\sporekit.dll", bin + L"\\mods\\coop.dll", root + L"\\Data\\SporeCoop.package"};
     for (const wchar_t* n : upd::kSymbolFiles)
         files.push_back(bin + L"\\mods\\sporekit\\symbols\\" + n);
+    for (const wchar_t* n : kServerFiles) // 8Y C: the optional galaxy server (its settings file stays)
+        files.push_back(root + kServerDir + L"\\" + n);
     files.push_back(bin + L"\\mods\\sporecoop.version"); // last: the setup still offers Uninstall after a failure
     std::string failed;
     for (auto& f : files)
@@ -491,6 +532,7 @@ bool do_uninstall(const std::wstring& root, std::string& msg)
             if (e != ERROR_FILE_NOT_FOUND && e != ERROR_PATH_NOT_FOUND)
                 failed += (failed.empty() ? "" : ", ") + upd::narrow(f.substr(root.size() + 1));
         }
+    RemoveDirectoryW((root + kServerDir).c_str()); // (only when empty: the host's settings file keeps it)
     upd::cleanup_old(root);
     if (!failed.empty()) {
         msg = "The game's steam_api.dll is back, but these files could not be removed (in use? is Spore closed?): " +

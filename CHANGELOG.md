@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Online worlds (alpha): the installer can add the galaxy server, the program that hosts online worlds: the box
+  "Also install the galaxy server", off by default. It puts the program, a start file and a read-me into
+  SporebinEP1/mods/galaxy-server (decision 8Y C, BUG-9377). The in-game update does not update the server: run the
+  new setup on the server's PC after an update.
+
 ## [0.7.14.1-lineages70-dev] - 2026-11-24
 
 The Lineages alpha (online worlds on a galaxy server) becomes the live build (owner 2026-11-24). Direct co-op, hosting

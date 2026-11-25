@@ -9,8 +9,8 @@ import tempfile
 import zipfile
 
 
-def embed_pack(executable, pack):
-    """Add the checked update pack as Windows RCDATA resource 101."""
+def embed_pack(executable, pack, resource=101):
+    """Add a checked pack as a Windows RCDATA resource: 101 the game's update pack, 102 the galaxy server's (8Y C)."""
     from ctypes import wintypes as win
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     begin = kernel.BeginUpdateResourceW
@@ -24,7 +24,7 @@ def embed_pack(executable, pack):
     handle = begin(str(executable), False)
     if not handle:
         raise ctypes.WinError(ctypes.get_last_error())
-    if not update(handle, 10, 101, 0, data, len(data) - 1):
+    if not update(handle, 10, resource, 0, data, len(data) - 1):
         error = ctypes.get_last_error()
         end(handle, True)
         raise ctypes.WinError(error)
@@ -63,8 +63,24 @@ def main():
         shutil.copyfile(build / "SporeCoop.package", mod / "SporeCoop.package")
         pack = stage / f"SporeCoop-{version}.pack"
         subprocess.run([sys.executable, root / "tools/mkpack.py", stage, version, pack], check=True)
+        # decision 8Y C: the optional galaxy server rides in the setup as a pack of its own (never in the update
+        # pack: an in-game update would give it to every player). tools/build_galaxy.sh builds the program.
+        server_exe = build / "galaxy_server.exe"
+        sources = [root / "server/galaxy/main.cpp", root / "mods/coop/net/udp.cpp", root / "mods/coop/net/galaxy_crypto.cpp"]
+        if not server_exe.exists() or server_exe.stat().st_mtime < max(f.stat().st_mtime for f in sources):
+            sys.exit("build/galaxy_server.exe is missing or older than its sources: run tools/build_galaxy.sh first")
+        server = stage / "galaxy-server"
+        server.mkdir()
+        shutil.copyfile(server_exe, server / "galaxy_server.exe")
+        subprocess.run([args.strip, server / "galaxy_server.exe"], check=True)
+        for source in (root / "installer/galaxy-server").iterdir():  # the start file, the settings, the read-me: CRLF
+            text = source.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+            (server / source.name).write_bytes(text)
+        server_pack = stage / f"GalaxyServer-{version}.pack"
+        subprocess.run([sys.executable, root / "tools/mkpack.py", "--server", server, version, server_pack], check=True)
         if sys.platform == "win32":
             embed_pack(stage / "SporeCoopSetup.exe", pack)
+            embed_pack(stage / "SporeCoopSetup.exe", server_pack, 102)
             standalone = dist / f"SporeCoopSetup-{version}.exe"
             shutil.copyfile(stage / "SporeCoopSetup.exe", standalone)
             print(standalone)

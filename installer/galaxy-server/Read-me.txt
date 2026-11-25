@@ -1,0 +1,60 @@
+Lineages galaxy server
+======================
+
+This is the program behind "online worlds": it keeps shared planets that stay when their
+players leave, and it passes the players' traffic between them. It is an early alpha. Only
+the PC that hosts a galaxy needs it; everybody else just plays.
+
+Start and stop
+--------------
+* Double-click Start-Galaxy-Server.cmd. A window opens and stays open: that is the server.
+* The first time, Windows asks whether the program may use the network: allow it.
+* Close the window to stop the server. The planets are saved as the players play.
+
+How players join
+----------------
+* In Spore: the Co-op window, Join, and type the server PC's address with the port 47900,
+  for example 192.168.1.5:47900. The galaxy's planets then show in the galaxy menu.
+* You yourself, on the server PC: 127.0.0.1:47900
+* The port is always 47900 (UDP): the game knows a galaxy by that port.
+* Players outside your home network reach the server the same way as a co-op host: forward
+  UDP port 47900 on your router to this PC, or use a VPN that puts everybody on one network
+  (Tailscale, Hamachi, Radmin VPN).
+* Everybody needs the same Lineages build as the server.
+
+Updating
+--------
+* The game's own "Check for Updates" updates the game, not this server.
+* After a Lineages update, run the new SporeCoopSetup once on the server PC with
+  "Also install the galaxy server" ticked (it is ticked by itself when the server is
+  installed). Stop the server first, start it again afterwards.
+
+Your settings: galaxy-settings.cmd
+----------------------------------
+Open it with Notepad. The setup never replaces it.
+* GALAXY_NAME     the galaxy's name
+* GALAXY_WORLDS   the folder with the planets (see below)
+* GALAXY_OPTIONS  more options, for example:
+    --max-players 32        players on the whole galaxy at once (1024 if not given)
+    --planet-players 8      players a planet takes, 2 to 64 (16 if not given)
+    --max-worlds 100        stored worlds at most (500 if not given)
+    --encrypted-only        refuse games that do not encrypt their traffic
+    --no-visitors           players do not see the planet's other stages
+    --refresh-minutes 180   after this time an extinct species comes back (0: never)
+    --rotate-hours 72       after this time an abandoned nest gets a new species (0: never)
+
+Your galaxy's data
+------------------
+Unless you changed GALAXY_WORLDS it is in  %APPDATA%\SporeCoop\galaxy-server\worlds
+(paste that line into the Explorer's address bar).
+* The planets, the players' creations and galaxy_server.key are there. Back the whole folder
+  up to keep your galaxy, and copy the whole folder to move it to another PC.
+* Keep galaxy_server.key with it. It is how the players' games know your galaxy again. With a
+  new key they refuse to join until each player types  coop.galaxy forgetkey  in the game's
+  console.
+* banned.txt in that folder (you make it yourself) lists creations and players to keep out.
+
+Removing it
+-----------
+SporeCoopSetup's Uninstall removes the mod and this server program. Your settings file and
+your galaxy's data stay. You can also just delete this folder.
