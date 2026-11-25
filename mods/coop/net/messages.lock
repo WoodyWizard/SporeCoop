@@ -1,7 +1,7 @@
 # The wire lock of each message family (B6 of 0.7.15, BUG-1137): family rev minor hash. Written by
 # tools/msg_manifest.py lock after a bump; `make test` (msg_manifest.py check) fails when a family's rows
 # or wire files changed and its rev / minor in net/messages.def did not.
-session 1 4 c4216b30c8171e12
+session 1 4 8f972d37f856833c
 world 1 2 ea800256062e0a48
 creature 1 5 fa6dae0f4411ef4c
 npc 1 3 7a6dd3c2ea2ecf5a
@@ -23,3 +23,4 @@ creations 1 3 4aa6dc3bfc31e8f4
 # rebased space: WP-X1: K_SET have 3 (adopted budget, BUG-1482) and comments; unreleased space 1.3 of 0.7.17
 # rebased creature: WP-A: MSG_ADVENTURE shared run and host-authoritative actors; unreleased creature 1.4 of 0.7.99
 # rebased creations: WP-Q2: shared creations library sync (BUG-0873); unreleased creations 1.3 of 0.7.99
+# rebased session: WP-R1: MSG 80 RIVALS wire/rivals.h, unreleased session 1.4 of 0.8.0

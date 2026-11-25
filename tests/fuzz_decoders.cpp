@@ -40,6 +40,7 @@
 #include "library_core.h"
 #include "wire/common.h"
 #include "wire/history.h"
+#include "wire/rivals.h"
 #include "wire/shared_res.h"
 #include "wire/space_allies.h"
 #include "wire/space_badges.h"
@@ -1118,6 +1119,9 @@ static const WireDec kWireDecoders[] = {
     wire_dec<wire::adventure::Hello>, wire_dec<wire::adventure::Welcome>, wire_dec<wire::adventure::Propose>,
     wire_dec<wire::adventure::Commit>, wire_dec<wire::adventure::ActChange>, wire_dec<wire::adventure::Outcome>,
     wire_dec<wire::adventure::Death>, wire_dec<wire::adventure::Hit>, wire_dec<wire::adventure::ActorBatch>,
+    // wire/rivals.h (MSG_RIVALS, WP-R1 of 0.8.0)
+    wire_dec<wire::rivals::Snapshot>, wire_dec<wire::rivals::RelReq>, wire_dec<wire::rivals::InfReq>,
+    wire_dec<wire::rivals::DraftReq>, wire_dec<wire::rivals::Event>,
 };
 
 // fuzz_struct with a rule per prefix length instead of one base length (MSG_RES: the head alone is an older host's
@@ -1536,6 +1540,98 @@ static void fuzz_wire_adventure(Rng& R, int iters)
             x.actors.push_back(s);
         }
         return x;
+    });
+
+    // wire/rivals.h (MSG_RIVALS 80, WP-R1 of 0.8.0, BUG-0794)
+    namespace rv = wire::rivals;
+    auto mkstr = [](Rng& R, uint32_t mx) {
+        std::string s;
+        uint32_t len = R.below(mx + 1);
+        s.reserve(len);
+        for (uint32_t i = 0; i < len; i++)
+            s.push_back((char)('a' + R.below(26)));
+        return s;
+    };
+    fuzz_struct<rv::Snapshot>("wire::rivals::Snapshot", R, iters, [&](Rng& R) {
+        rv::Snapshot x;
+        x.version = rv::kWireVersion;
+        x.rev = R.u32();
+        for (int i = 0; i < ::rivals::kStages; i++)
+            x.stage_modes[i] = (uint8_t)R.below(2);
+        x.catchup_secs = (uint16_t)(::rivals::kMinCatchupSecs + R.below(::rivals::kMaxCatchupSecs - ::rivals::kMinCatchupSecs + 1));
+        x.draft_picks = (uint8_t)R.below(::rivals::kMaxDraftPicks + 1);
+        x.base_distance = (uint8_t)R.below(3);
+        for (int i = 0; i < ::rivals::kRelPairs; i++)
+            x.rel_pairs[i] = (uint8_t)R.below(3);
+        int pn = (int)R.below(4);
+        for (int i = 0; i < pn; i++) {
+            uint8_t a = (uint8_t)R.below(4);
+            uint8_t b = (uint8_t)((a + 1 + R.below(3)) % 4);
+            x.proposals.push_back({a, b, (uint8_t)(1 + R.below(2))});
+        }
+        int bn = (int)R.below(3);
+        for (int i = 0; i < bn; i++) {
+            auto [a, b] = ::rivals::pair_from_index((int)R.below(::rivals::kRelPairs));
+            x.breaks.push_back({a, b, R.below(2) ? a : b, (uint16_t)R.below(6000)});
+        }
+        for (int i = 0; i < ::rivals::kMaxPlayers; i++) {
+            x.inf_balance[i] = (int32_t)R.below(500);
+            x.inf_buys[i] = (uint16_t)R.below(20);
+        }
+        int prn = (int)R.below(4);
+        for (int i = 0; i < prn; i++)
+            x.protections.push_back({(uint8_t)R.below(4), R.u32(), (uint16_t)R.below(6000)});
+        x.race_stage = R.below(6) < 5 ? (uint8_t)R.below(5) : (uint8_t)255;
+        x.race_winner = R.below(5) < 4 ? (uint8_t)R.below(4) : (uint8_t)255;
+        x.race_finished = (uint8_t)R.below(5);
+        x.race_flags = (uint8_t)R.below(4);
+        x.catchup_remaining_tenths = (uint16_t)R.below(6000);
+        for (int i = 0; i < ::rivals::kMaxPlayers; i++) {
+            x.progress[i].present = (uint8_t)R.below(2);
+            x.progress[i].finish_rank = (uint8_t)R.below(5);
+            x.progress[i].primary = (float)R.below(1000) / 10.f;
+            x.progress[i].secondary = (float)R.below(5000);
+            x.progress[i].stat_a = (uint16_t)R.below(50);
+            x.progress[i].stat_b = (uint16_t)R.below(50);
+            x.progress[i].extra = (float)R.below(1000);
+        }
+        x.draft_active = (uint8_t)R.below(2);
+        x.draft_stage = R.below(6) < 5 ? (uint8_t)R.below(5) : (uint8_t)255;
+        x.draft_winner = R.below(5) < 4 ? (uint8_t)R.below(4) : (uint8_t)255;
+        x.draft_total_picks = (uint16_t)R.below(12);
+        x.draft_winner_payout = (int32_t)R.below(5000);
+        x.draft_remaining_tenths = (uint16_t)R.below(600);
+        int in = (int)R.below(5);
+        for (int i = 0; i < in; i++)
+            x.draft_items.push_back({R.u32(), (uint8_t)R.below(5), mkstr(R, 16)});
+        for (int i = 0; i < ::rivals::kMaxPlayers; i++) {
+            x.draft_players[i].picks_left = (uint8_t)R.below(6);
+            x.draft_players[i].done = (uint8_t)R.below(2);
+            int kn = (int)R.below(4);
+            for (int k = 0; k < kn; k++)
+                x.draft_players[i].picked.push_back(R.u32());
+            x.pending_payout[i] = (int32_t)R.below(5000);
+        }
+        for (int i = 0; i < ::rivals::kMaxPlayers; i++)
+            x.chronicle_totals[i] = (int32_t)R.below(2000);
+        int hn = (int)R.below(4);
+        for (int i = 0; i < hn; i++)
+            x.chronicle_history.push_back({R.below(6) < 5 ? (uint8_t)R.below(5) : (uint8_t)255, (uint8_t)R.below(4),
+                                           (int32_t)R.below(300), mkstr(R, 24)});
+        return x;
+    });
+    fuzz_struct<rv::RelReq>("wire::rivals::RelReq", R, iters, [](Rng& R) {
+        return rv::RelReq{(uint8_t)(1 + R.below(8)), (uint8_t)R.below(4)};
+    });
+    fuzz_struct<rv::InfReq>("wire::rivals::InfReq", R, iters, [](Rng& R) {
+        return rv::InfReq{(uint8_t)(1 + R.below(4)), R.u32(), R.below(5) < 4 ? (uint8_t)R.below(4) : (uint8_t)255};
+    });
+    fuzz_struct<rv::DraftReq>("wire::rivals::DraftReq", R, iters, [](Rng& R) {
+        return rv::DraftReq{(uint8_t)R.below(2), R.u32()};
+    });
+    fuzz_struct<rv::Event>("wire::rivals::Event", R, iters, [&](Rng& R) {
+        return rv::Event{(uint8_t)(1 + R.below(6)), (uint8_t)R.below(4), (uint8_t)R.below(4), (int32_t)R.u32(),
+                         mkstr(R, 40)};
     });
 }
 
