@@ -1158,6 +1158,7 @@ static void build_dialog()
                   std::to_string(net::kDefaultPort) + T(", e.g. 192.168.1.5)", ", например 192.168.1.5)"),
               kDim);
     D.rec_hdr = add_label(J, {40, 424, 590, 448}, "", kDim);
+    g_named["rechdr"] = D.rec_hdr;
     D.rec_more = add_button(J, "recmore", {600, 420, 720, 450}, T("More >", "Ещё >"), [] {
         g_rec_first += 3;
         g_dirty = true;
@@ -1267,7 +1268,7 @@ static void build_dialog()
         g_dirty = true;
     });
     // BUG-1477: a guest's consent to its old cells as wild species (only in Cell with the host's setting on)
-    D.lineage_btn = add_button(L, "lineage", {260, 66, 720, 98}, "", [] {
+    D.lineage_btn = add_button(L, "lineage", {260, 558, 720, 590}, "", [] {
         if (A.lineage_toggle)
             A.lineage_toggle();
         g_dirty = true;
@@ -1277,15 +1278,15 @@ static void build_dialog()
         g_rivals_page = false;
         g_dirty = true;
     });
-    // WP-R1 (BUG-0794): dedicated Rivals / Race page button in the lobby top bar
-    D.rivals_btn = add_button(L, "rivals", {260, 66, 405, 98}, T("Rivals >", "Соперники >"), [] {
+    // WP-R1 (BUG-0794): dedicated Rivals / Race page button in the lobby top bar (right of centered CO-OP LOBBY title)
+    D.rivals_btn = add_button(L, "rivals", {580, 66, 720, 98}, T("Rivals >", "Соперники >"), [] {
         g_rivals_page = true;
         g_space_page = false;
         g_settings_page = false;
         g_dirty = true;
     });
-    // WP-R1 (BUG-0794): stage transition vote mode preview/toggle button (host toggles before Ready)
-    D.vote_mode_btn = add_button(L, "votemode", {415, 66, 570, 98}, "", [] {
+    // WP-R1 (BUG-0794): stage transition vote mode preview/toggle button (host toggles before Ready; right half of bottom row)
+    D.vote_mode_btn = add_button(L, "votemode", {410, 558, 720, 590}, "", [] {
         if (A.vote_toggle_next_stage)
             A.vote_toggle_next_stage();
         g_dirty = true;
@@ -2523,13 +2524,22 @@ static void refresh()
         show(w, lobby && g_space_page);
     for (Win w : D.page_rivals)
         show(w, rpage);
-    show(D.space_btn, space && !g_space_page && !sett && !rpage);
-    { // WP-R1 (BUG-0794): Rivals / Race button in lobby top bar
+    bool show_sbtn = space && !g_space_page && !sett && !rpage;
+    show(D.space_btn, show_sbtn);
+    { // WP-R1 (BUG-0794): Rivals / Race button in lobby top bar (shares right side with Space > when in Space)
         bool show_rbtn = lobby && rivals_on && !g_space_page && !sett && !rpage;
         show(D.rivals_btn, show_rbtn);
         if (show_rbtn) {
+            if (show_sbtn) {
+                sui::set_area(D.rivals_btn, {480, 66, 590, 98});
+                sui::set_area(D.space_btn, {596, 66, 720, 98});
+            } else {
+                sui::set_area(D.rivals_btn, {580, 66, 720, 98});
+            }
             bool in_stage = rivals::valid_stage(rivals::current_stage());
             text(D.rivals_btn, in_stage ? T("Race >", "Гонка >") : T("Rivals >", "Соперники >"));
+        } else if (show_sbtn) {
+            sui::set_area(D.space_btn, {580, 66, 720, 98});
         }
         std::string vm_label;
         bool show_vm = lobby && rivals_on && !g_space_page && !sett && !rpage && role == 1 &&
@@ -2542,8 +2552,6 @@ static void refresh()
         const int lb = A.lineage_box ? A.lineage_box() : -1;
         show(D.lineage_btn, lobby && !g_space_page && !sett && !rpage && !space && lb >= 0);
         if (lb >= 0) {
-            if (rivals_on)
-                sui::set_area(D.lineage_btn, {415, 66, 720, 98});
             text(D.lineage_btn, lb ? T("[x] My old cells as wild species", "[x] Мои старые клетки как дикие виды")
                                    : T("[ ] My old cells as wild species", "[ ] Мои старые клетки как дикие виды"));
         }

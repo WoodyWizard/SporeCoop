@@ -43,7 +43,8 @@ VARY = {
     'lobby_menu': ['version', 'session', 'hostaddr', 'world', 'creationline'] + [f'chatline{i}' for i in range(5)]
                   + [f'ping{i}' for i in range(4)],
     'settings_menu': ['version', 'setline'],
-    'join_step': ['version', 'statusline', 'lanhdr', 'lan0', 'lan1', 'lan2', 'lanmore', 'address'],
+    'join_step': ['version', 'statusline', 'lanhdr', 'lan0', 'lan1', 'lan2', 'lanmore', 'address',
+                  'rechdr', 'rec0', 'rec1', 'rec2', 'recmore'],
     'ingame_host': ['version', 'session', 'hostaddr', 'world', 'creationline'] + [f'chatline{i}' for i in range(5)]
                    + [f'ping{i}' for i in range(4)],
     'settings_host': ['version', 'setline'],
