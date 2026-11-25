@@ -1,20 +1,20 @@
 ---
 id: BUG-0794
 title: Feature idea: per-stage Together/Rivals session state, relation table and faction diagnostics (Rivals foundation)
-status: open
+status: fixed
 kind: feature
 stage: All
 reported: 2026-11-10
 source: fork nvstlex/SporeCoopNVST nvst/rivals-foundation
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: 0.8.0
+branch: w08/rivals-core
+commits: 9f231149, 2a5cd27c
+tests: rivals_core, rivals_core_off, rivals_tests
 signature:
-docs:
-related: docs/11-rivals.md, docs/plan-0.7.12.md F3
+docs: docs/04-netcode.md, docs/11-rivals.md
+related: docs/11-rivals.md, docs/plan-0.7.12.md F3, docs/plan-0.8.md
 ---
 
 ## Report
@@ -62,7 +62,19 @@ host changes a stage's mode in the lobby; every guest's lobby page shows the sam
 rejoining guest gets it on join.
 
 ## Fix
+Implemented WP-R1 Rivals shared systems (`COOP_FIX("rivals.core", "BUG-0794")`) on `w08/rivals-core`:
+* `mods/coop/rivals_logic.h`: portable per-stage Together/Rivals mode table + presets (`AllTogether`, `AllRivals`, `Custom`), catch-up timer (60..600 s), draft picks (0..5), base distance (`Near`/`Middle`/`Far`), symmetric 4x4 player relation table (`Neutral`/`Ally`/`War`) with alliance/peace proposals and 60 s alliance-break countdown to War, Influence ledger (earn, rising buy cost `base * (1 + buys)`, `TurnAgainst`, 10 min `Protect`, `SmoothOver`), stage race progress & catch-up timer, stage-end winner Draft with rank penalty & escalating resource payouts (`100 + 50 * total_picks`), Chronicle scoreboard, and persistent store serialization.
+* `mods/coop/wire/rivals.h`: strictly bounds-checked binary codec for `MSG_RIVALS = 80` (`Family::session` 1.4, `Route::Rivals`), locked via `tools/msg_manifest.py lock --rebase session`.
+* `mods/coop/rivals.{h,cpp}`: runtime module with public C++ API for Wave 2 (`WP-R2..R6`), `store.cpp` per-world persistence (`"rivals.state"` v1), `LIFECYCLE_HOOK("rivals.player")` + `SESSION_STATE("rivals.session")`, `sync_space_rivalry()` wired to `space_rivalry.cpp`, and `coop.rivals` console command.
+* `mods/coop/coop_ui.{h,cpp}` & `mods/coop/vote.cpp`: dedicated F9 `"Rivals"` / `"Race"` page (host edits stage modes/settings, guests view read-only; in-game Race progress, catch-up timer, relations, influence, draft picks, and Chronicle) plus stage-transition vote next-stage mode preview and host toggle.
+* `mods/coop/tribe_debug.cpp` & `mods/coop/civ_debug.cpp`: read-only `coop.tribe factions` and `coop.civ factions` diagnostic commands.
+
 ## Verification
+* Native unit + ASan/UBSan + fuzzer + linters: `make -j$(nproc)`, `make unit-cpp` (`tests/rivals_tests.cpp`, `tests/validate_tests.cpp`), `make unit-fuzz` (`wire::rivals` decoders), `make unit-net`, `make unit-lint` (`msg_manifest.py check`, `re_lint.py`, `docs_lint.py`, `ratchet_lint.py`, `tickets.py check`), and `tools/tests/test_lint.py` all passed.
+* Wine lab run `20261125-030244` (lane 2):
+  * `rivals_core` (ON): **PASS** (38 s, 0 faults) - verified host/guest stage modes + F9 Rivals UI (read-only on guest) + rejoin persistence, Alliance -> Break (fast 2 s timer) -> War -> Peace, Influence earn/protect/turn/buy, stage win -> catch-up timer expiry -> Draft picks & escalating 250 payout -> Chronicle totals, and `coop.tribe factions` / `coop.civ factions`.
+  * `rivals_core_off` (`SPORE_FIX_OFF=rivals.core`): **FAIL** cleanly (37 s, 0 faults).
 
 ## History
 - 2026-11-10: opened.
+- 2026-11-25: implemented WP-R1 Rivals shared systems on `w08/rivals-core`, verified ON PASS and OFF FAIL in lab run `20261125-030244`.
