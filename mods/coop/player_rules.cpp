@@ -14,9 +14,11 @@
 
 #include "fixes.h"
 #include "game.h"
+#include "modes.h"
 #include "net/compat.h"
 #include "drama.h"
 #include "npc.h"
+#include "tribe_logic.h"
 #include "sporekit_game.hpp"
 
 namespace player_rules {
@@ -885,13 +887,19 @@ static std::string carry_dump()
     return out + b;
 }
 
-// ---------------------------------------------------------------- BUG-0558, the host's UFO on the guest
+// ---------------------------------------------------------------- BUG-0558 / BUG-1543, the host's UFO on the guest
 // The drama UFO is an event of the host's world (a guest's own game starts none: BUG-0486), so the
 // guest never saw the ship that came over the players (the report: the host saw the ship and its beam, the guest's game
 // at the same second nothing). Now the host sends its ships' poses 10 times a second while it has any, and the guest's
 // game shows a ship of its own at each: a type 7 ship made the way the event makes it (UFOAbductionEvent_SpawnUFO), not
 // ticked (no behaviour tree runs on it: it takes nothing in the guest's world) and placed at the host's ship every frame;
-// it goes (deferred destroy) when the host's ship is gone, when no pose came for 1.5 s and when the guest leaves Creature.
+// it goes (deferred destroy) when the host's ship is gone, when no pose came for 1.5 s and when the guest leaves Creature
+// or Tribe.
+// BUG-1543: drama.cpp blocks a guest's own UFO in Tribe stage too, so mirror the host's drama UFO in Tribe as well.
+static bool g_ufo_tribe_fix = true;
+COOP_FIX("tribe.ufo_mirror", "BUG-1543", g_ufo_tribe_fix,
+         "tribe: the guest sees the host's visiting drama UFO spaceship");
+static bool ufo_stage() { return tribe_logic::ufo_mirror_stage(g_ufo_tribe_fix, game::mode_id()); }
 struct UfoMirror {
     void* u = nullptr;
     net::Vec3 pos{};
@@ -919,14 +927,16 @@ static std::string ufo_dump()
             return true;
         },
         &u);
-    for (uint8_t id = 1; id < 8 && C.puppet_of; id++)
-        if (void* pp = C.puppet_of(id)) {
-            net::Vec3 v = game::position(pp);
-            char b[128];
-            snprintf(b, sizeof b, "puppet %u %p pos=(%.1f %.1f %.1f) b2b0=%d\n", id, pp, v.x, v.y, v.z,
-                     skg::readable((uint8_t*)pp + 0x2B0, 4) ? *(int*)((uint8_t*)pp + 0x2B0) : -1);
-            u.out += b;
-        }
+    if (game::in_creature_stage()) {
+        for (uint8_t id = 1; id < 8 && C.puppet_of; id++)
+            if (void* pp = C.puppet_of(id)) {
+                net::Vec3 v = game::position(pp);
+                char b[128];
+                snprintf(b, sizeof b, "puppet %u %p pos=(%.1f %.1f %.1f) b2b0=%d\n", id, pp, v.x, v.y, v.z,
+                         skg::readable((uint8_t*)pp + 0x2B0, 4) ? *(int*)((uint8_t*)pp + 0x2B0) : -1);
+                u.out += b;
+            }
+    }
     char b[96];
     snprintf(b, sizeof b, "pick fix=%d seen=%u skipped=%u ticks=%u hook=%d\n", (int)g_ufo_fix, g_ufo_seen, g_ufo_skipped,
              g_ufo_ticks, (int)(p2_o_IsEpic != nullptr && p2_ufo_pick_ret != 0));
@@ -950,7 +960,7 @@ static void ufo_mirror_rx(const std::vector<std::pair<net::Vec3, net::Quat>>& v)
 {
     g_ufo_rx++;
     g_ufo_rx_at = H->time_seconds();
-    if (!game::in_creature_stage())
+    if (!ufo_stage())
         return;
     while (g_ufo_mirrors.size() > v.size())
         ufo_mirror_drop(g_ufo_mirrors.size() - 1);
@@ -1002,7 +1012,7 @@ void tick(double now)
 {
     if (!g_thrown.empty() || !g_puts.empty() || !g_carried.empty() || !g_synced.empty())
         carry_tick(now);
-    if (is_host() && game::in_creature_stage() && now - g_ufo_tx_at >= 0.1) {
+    if (is_host() && ufo_stage() && now - g_ufo_tx_at >= 0.1) {
         g_ufo_tx_at = now;
         struct Q {
             std::vector<std::pair<net::Vec3, net::Quat>> v;
@@ -1037,7 +1047,7 @@ void tick(double now)
     }
     if (g_ufo_mirrors.empty())
         return;
-    if (!is_guest() || !game::in_creature_stage() || now - g_ufo_rx_at > 1.5) {
+    if (!is_guest() || !ufo_stage() || now - g_ufo_rx_at > 1.5) {
         while (!g_ufo_mirrors.empty())
             ufo_mirror_drop(g_ufo_mirrors.size() - 1);
         return;
@@ -1053,8 +1063,8 @@ void tick(double now)
             m.u = ((Spawn_t)a_SpawnEventUFO)(&vp, 0.f, false);
             if (m.u) {
                 g_ufo_made++;
-                H->log(M, SK_INFO, "rules: the host's UFO is shown here at (%.1f %.1f %.1f) (creature.ufo_mirror)", m.pos.x,
-                       m.pos.y, m.pos.z);
+                H->log(M, SK_INFO, "rules: the host's UFO is shown here at (%.1f %.1f %.1f) (%s)", m.pos.x, m.pos.y,
+                       m.pos.z, game::in_creature_stage() ? "creature.ufo_mirror" : "tribe.ufo_mirror");
             }
         }
         if (m.u)

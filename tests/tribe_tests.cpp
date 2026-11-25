@@ -560,6 +560,46 @@ static void friendly_fire()
     CHECK(ff_combat_step(2.f, 5.0, 4.0, 5.5) == FfStep::Wait);
 }
 
+static void epic_hostile_and_ufo_stage()
+{
+    printf("epic hostility (BUG-1542) and Tribe UFO mirror stage (BUG-1543)\n");
+    const bool fix = !g_nofix;
+    // BUG-1542: domesticated pet (rel 6, dist 5 m) vs friendly wild (rel 4, dist 20 m) vs wild undiscovered (rel 0, dist 80 m)
+    int t_pet = epic_candidate_tier(fix, true, false, 6);
+    int t_friendly = epic_candidate_tier(fix, false, false, 4);
+    int t_herd_fr = epic_candidate_tier(fix, false, true, 0);
+    int t_neutral = epic_candidate_tier(fix, false, false, 3);
+    int t_wild = epic_candidate_tier(fix, false, false, 0);
+    int t_hostile = epic_candidate_tier(fix, false, false, 5);
+    CHECK(t_wild == 0 && t_hostile == 0);
+    CHECK(epic_candidate_better(t_wild, 80.f, t_pet, 5.f));       // FAILS with --nofix: pet at 5 m wins
+    CHECK(epic_candidate_better(t_wild, 80.f, t_friendly, 20.f)); // FAILS with --nofix: friendly at 20 m wins
+    CHECK(epic_candidate_better(t_wild, 80.f, t_herd_fr, 20.f));  // FAILS with --nofix: herd-friendly at 20 m wins
+    CHECK(epic_candidate_better(t_neutral, 50.f, t_friendly, 10.f));
+    CHECK(epic_candidate_better(t_wild, 90.f, t_neutral, 30.f));
+    // Safe fallback when only friendly or domesticated species exist
+    CHECK(epic_candidate_better(t_friendly, 40.f, t_pet, 5.f));
+    CHECK(epic_candidate_tier(true, true, false, 6) == 3);
+    CHECK(epic_candidate_tier(true, false, false, 4) == 2);
+    CHECK(epic_candidate_tier(true, false, false, 3) == 1);
+    CHECK(epic_candidate_tier(true, false, false, 2) == 0);
+    // Species record update: only for wild non-friendly species (tier <= 1) not already hostile (2/5)
+    CHECK(epic_should_force_species_hostile(fix, 1, 3)); // FAILS with --nofix
+    CHECK(epic_should_force_species_hostile(fix, 0, 0));
+    CHECK(!epic_should_force_species_hostile(true, 0, 5));
+    CHECK(!epic_should_force_species_hostile(true, 0, 2));
+    CHECK(!epic_should_force_species_hostile(true, 2, 4)); // never overwrite friendly/allied fallback species
+    CHECK(!epic_should_force_species_hostile(true, 3, 6)); // never overwrite domesticated fallback species
+
+    // BUG-1543: UFO mirror stage gating
+    CHECK(ufo_mirror_stage(false, 0x1654C01u));
+    CHECK(ufo_mirror_stage(true, 0x1654C01u));
+    CHECK(ufo_mirror_stage(fix, 0x1654C02u)); // FAILS with --nofix: Tribe stage disabled
+    CHECK(!ufo_mirror_stage(true, 0x1654C00u));      // Cell
+    CHECK(!ufo_mirror_stage(true, 0x1654C04u));      // Civ
+    CHECK(!ufo_mirror_stage(true, 0x1654C05u));      // Space
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && !strcmp(argv[1], "--nofix");
@@ -579,6 +619,7 @@ int main(int argc, char** argv)
     audit_tr();
     hold_track_and_hand_side();
     friendly_fire();
+    epic_hostile_and_ufo_stage();
     if (g_fail) {
         printf("tribe_tests: %d FAILED\n", g_fail);
         return 1;

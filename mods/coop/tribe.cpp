@@ -3600,10 +3600,22 @@ void* g_epic_herd; // the herd g_epic lives in (ours: quieted when the epic is g
 static std::unordered_set<uint8_t> g_epic_hitters;
 // BUG-0146: only the players' members count as hitters (an NPC tribe's member is owner 0xFE).
 // BUG-0121: the epic's herd is reused and quieted, a live epic never goes into a save.
+// BUG-1542: co-op epic skips domesticated pets and friendly/allied species and is explicitly hostile to the player tribe.
 // `coop.tribe fix epic_players|epic_herd 0`: the old behaviour (tests).
-bool g_fix_epic_players = true, g_fix_epic_herd = true;
+bool g_fix_epic_players = true, g_fix_epic_herd = true, g_fix_epic_hostile = true;
 COOP_FIX("tribe.epic_players", "BUG-0146", g_fix_epic_players, "tribe: only players' members count as epic hitters");
 COOP_FIX("tribe.epic_herd", "BUG-0121", g_fix_epic_herd, "tribe: the epic's herd is reused and quieted, a live epic is not saved");
+COOP_FIX("tribe.epic_hostile", "BUG-1542", g_fix_epic_hostile,
+         "tribe: co-op epic skips domesticated pets and friendly species and is hostile to the player tribe");
+static uintptr_t a_SpecRelMgrGet, a_SpecRelGet, a_SpecRelRecord, a_RelIs2or5, a_GetDomHerd, a_Domesticate;
+using SpecRelGet_t = int(SK_THISCALL*)(void*, const void*, void*, void*);
+static SpecRelGet_t o_SpecRelGet;
+static int SK_THISCALL h_SpecRelGet(void* mgr, const void* key, void* a, void* b)
+{
+    if (g_fix_epic_hostile && g_epic && game::mode_id() == modes::kTribe && (a == g_epic || b == g_epic))
+        return 5; // hostile: the co-op epic is always hostile to the player tribe (BUG-1542)
+    return o_SpecRelGet(mgr, key, a, b);
+}
 static uint32_t g_epic_herd_reused, g_epic_saved_out;
 static double g_epic_next, g_last_duet, g_duet_told;
 
@@ -4121,21 +4133,110 @@ static float game_epic_damage_mult()
     return u.m > 1.f ? u.m : kEpicDamageMult;
 }
 
+static void* tribe_dom_herd(void* pt)
+{
+    if (!pt || !skg::readable((uint8_t*)pt + 0x19CC, 4))
+        return nullptr;
+    return a_GetDomHerd ? thiscall<void*>(a_GetDomHerd, pt) : F<void*>(pt, 0x19CC);
+}
+
+bool is_domesticated_animal(void* a, void* pt)
+{
+    if (!a || !skg::readable(a, 0xB68))
+        return false;
+    void* h = game::herd_of(a);
+    void* dom_h = tribe_dom_herd(pt);
+    if (h && dom_h && h == dom_h)
+        return true;
+    if (h && skg::readable(h, 0x160) &&
+        (F<uint32_t>(h, 0x88) == kDomesticatedArchetype || F<int32_t>(h, 0x15C) == kDomesticatedPersonality))
+        return true;
+    if (F<uint8_t>(a, 0xB65) != 0)
+        return true;
+    uint32_t pt_pol = pt && skg::readable((uint8_t*)pt + 0x30, 4) ? F<uint32_t>(pt, 0x30) : 0u;
+    if (pt_pol && F<uint32_t>(a, 0x30) == pt_pol)
+        return true;
+    return false;
+}
+
+int animal_species_rel(void* a)
+{
+    if (!a || !a_SpecRelMgrGet || (!o_SpecRelGet && !a_SpecRelGet) || !skg::readable((uint8_t*)a + game::kSpeciesKeyOff, 12))
+        return 0;
+    void* mgr = skg::cdecl_call<void*>(a_SpecRelMgrGet);
+    if (!mgr)
+        return 0;
+    const void* key = (const uint8_t*)a + game::kSpeciesKeyOff;
+    return o_SpecRelGet ? o_SpecRelGet(mgr, key, nullptr, nullptr)
+                        : thiscall<int>(a_SpecRelGet, mgr, key, (void*)nullptr, (void*)nullptr);
+}
+
+int animal_rel_to_member(void* a, void* member)
+{
+    if (!a || !a_SpecRelMgrGet || !a_SpecRelGet || !skg::readable((uint8_t*)a + game::kSpeciesKeyOff, 12))
+        return 0;
+    void* mgr = skg::cdecl_call<void*>(a_SpecRelMgrGet);
+    if (!mgr)
+        return 0;
+    return thiscall<int>(a_SpecRelGet, mgr, (const uint8_t*)a + game::kSpeciesKeyOff, a, member);
+}
+
+bool animal_is_hostile_to(void* a, void* member)
+{
+    if (!a || !member || !a_RelIs2or5)
+        return false;
+    return thiscall<bool>(a_RelIs2or5, a, member);
+}
+
+bool domesticate_animal(void* a, void* pt)
+{
+    if (!a || !pt || !a_Domesticate)
+        return false;
+    return skg::cdecl_call<bool>(a_Domesticate, a, pt);
+}
+
+bool set_animal_species_rel(void* a, int rel)
+{
+    if (!a || !a_SpecRelMgrGet || !a_SpecRelRecord || !skg::readable((uint8_t*)a + game::kSpeciesKeyOff, 12))
+        return false;
+    void* mgr = skg::cdecl_call<void*>(a_SpecRelMgrGet);
+    if (!mgr)
+        return false;
+    uint32_t* rec = thiscall<uint32_t*>(a_SpecRelRecord, (uint8_t*)mgr + 0x20, (const uint8_t*)a + game::kSpeciesKeyOff);
+    if (!rec)
+        return false;
+    rec[0] = (uint32_t)rel;
+    return true;
+}
+
+static bool herd_marked_friendly(void* h)
+{
+    return h && skg::readable(h, 0x194) && (F<uint8_t>(h, 0x190) != 0 || F<uint8_t>(h, 0x191) != 0);
+}
+
 bool spawn_epic()
 {
     void* pt = player_tribe();
     if (!pt || !a_CreateHerd || !a_HerdEnable || !a_CreatureCreate || g_epic)
         return false;
     net::Vec3 tp = tribe_pos(pt);
-    // a species already on the planet (the guests have its model): the nearest animal
+    // a species already on the planet (the guests have its model): prefer wild non-friendly species (BUG-1542)
     void* prof = nullptr;
+    struct Cand {
+        void* sp;
+        float dist;
+        bool dom;
+        bool hfr;
+        int rel;
+    };
     struct Pick {
         net::Vec3 tp;
-        void* prof = nullptr;
-        float bd = 1e9f;
-        std::vector<void*> players; // BUG-0563: the players' own species (their creatures of the Creature stage)
+        void* pt = nullptr;
+        std::vector<void*> players;     // BUG-0563: the players' own species (their creatures of the Creature stage)
+        std::vector<void*> dom_species; // BUG-1542: species of domesticated pets in the village pen
+        std::vector<Cand> cands;
         uint32_t skipped = 0;
-    } pick{tp};
+    } pick{tp, pt};
     for (auto& pl : C.sess->players())
         if (void* sp = creations::player_species(pl.id))
             pick.players.push_back(sp);
@@ -4144,23 +4245,43 @@ bool spawn_epic()
             auto* pk = (Pick*)u;
             if (noun != 0x18EB45E || !game::object_alive(a))
                 return true;
+            void* sp = game::species_profile(a);
+            if (!sp)
+                return true;
+            bool dom = g_fix_epic_hostile && is_domesticated_animal(a, pk->pt);
+            if (dom && std::find(pk->dom_species.begin(), pk->dom_species.end(), sp) == pk->dom_species.end())
+                pk->dom_species.push_back(sp);
             if (game::is_puppet(a) || npc::is_proxy(a) ||
-                std::find(pk->players.begin(), pk->players.end(), game::species_profile(a)) != pk->players.end()) {
+                std::find(pk->players.begin(), pk->players.end(), sp) != pk->players.end()) {
                 pk->skipped++; // a puppet / proxy of ours, or a player's species: never the epic (BUG-0563)
                 return true;
             }
-            float d = net::dist(game::position(a), pk->tp);
-            if (d < pk->bd && game::species_profile(a)) {
-                pk->bd = d;
-                pk->prof = game::species_profile(a);
-            }
+            int rel = g_fix_epic_hostile ? animal_species_rel(a) : 0;
+            bool hfr = g_fix_epic_hostile && herd_marked_friendly(game::herd_of(a));
+            pk->cands.push_back({sp, net::dist(game::position(a), pk->tp), dom, hfr, rel});
             return true;
         },
         &pick);
-    prof = pick.prof;
+    int best_tier = 99;
+    float bd = 1e9f;
+    int best_rel = 0;
+    uint32_t skipped_friendly = 0;
+    for (const auto& cd : pick.cands) {
+        bool dom = cd.dom || (g_fix_epic_hostile &&
+                              std::find(pick.dom_species.begin(), pick.dom_species.end(), cd.sp) != pick.dom_species.end());
+        int tier = tribe_logic::epic_candidate_tier(g_fix_epic_hostile, dom, cd.hfr, cd.rel);
+        if (tier >= 2)
+            skipped_friendly++;
+        if (tribe_logic::epic_candidate_better(tier, cd.dist, best_tier, bd)) {
+            best_tier = tier;
+            bd = cd.dist;
+            prof = cd.sp;
+            best_rel = cd.rel;
+        }
+    }
     if (!prof)
         return false;
-    g_epic_skipped += pick.skipped;
+    g_epic_skipped += pick.skipped + (best_tier < 2 ? skipped_friendly : 0u);
     float len = std::sqrt(tp.x * tp.x + tp.y * tp.y + tp.z * tp.z);
     // 60 m from the village, along a tangent of the planet
     net::Vec3 up = len > 1 ? net::Vec3{tp.x / len, tp.y / len, tp.z / len} : net::Vec3{0, 0, 1};
@@ -4181,6 +4302,13 @@ bool spawn_epic()
     F<uint32_t>(herd, 0x88) = kEpicArchetype; // an archetype with isEpic = 1
     F<uint32_t>(herd, 0xF0) = 0;
     F<float>(herd, 0x158) = game_epic_damage_mult(); // mDamageMultiplier, BUG-0515
+    if (g_fix_epic_hostile && skg::readable(herd, 0x194)) {
+        // BUG-1542: ensure the epic herd is wild and hostile (never domesticated personality 7 or friendly flags)
+        F<uint8_t>(herd, 0x84) = 0;
+        F<int32_t>(herd, 0x15C) = 0;
+        F<uint8_t>(herd, 0x190) = 0;
+        F<uint8_t>(herd, 0x191) = 0;
+    }
     if (g_fix_epic_herd)
         F<float>(herd, 0x34) = pp[0], F<float>(herd, 0x38) = pp[1], F<float>(herd, 0x3C) = pp[2]; // its home
     thiscall<void>(a_HerdEnable, herd, true);
@@ -4192,11 +4320,35 @@ bool spawn_epic()
             game::herd_quiet(herd);
         return false;
     }
+    if (g_fix_epic_hostile && skg::readable(c, 0xB68)) {
+        F<uint8_t>(c, 0xB65) = 0; // never domesticated
+        uint32_t pt_pol = skg::readable((uint8_t*)pt + 0x30, 4) ? F<uint32_t>(pt, 0x30) : 0u;
+        if (pt_pol && F<uint32_t>(c, 0x30) == pt_pol)
+            F<uint32_t>(c, 0x30) = 0;
+        // For wild non-friendly species (tier <= 1) whose unhooked relation to a player tribe member is not already
+        // hostile (2 or 5), explicitly set the species relation record to 5 (hostile) so even null-creature callers
+        // (e.g. TribeInputStrategy) see the epic's species as hostile without touching friendly/pet species records.
+        auto ms = members(pt);
+        void* m0 = ms.empty() ? nullptr : ms[0];
+        void* rmgr = a_SpecRelMgrGet ? skg::cdecl_call<void*>(a_SpecRelMgrGet) : nullptr;
+        const void* key = (const uint8_t*)c + game::kSpeciesKeyOff;
+        int unhooked = (rmgr && (o_SpecRelGet || a_SpecRelGet))
+                           ? (o_SpecRelGet ? o_SpecRelGet(rmgr, key, c, m0)
+                                           : thiscall<int>(a_SpecRelGet, rmgr, key, c, m0))
+                           : best_rel;
+        if (tribe_logic::epic_should_force_species_hostile(g_fix_epic_hostile, best_tier, unhooked) && rmgr &&
+            a_SpecRelRecord) {
+            if (uint32_t* rec = thiscall<uint32_t*>(a_SpecRelRecord, (uint8_t*)rmgr + 0x20, key))
+                rec[0] = 5;
+        }
+    }
     g_epic = c;
     g_epic_serial = game::object_serial(c); // BUG-0951
     g_epic_herd = herd;
     g_epic_hitters.clear();
     g_epics++;
+    H->log(M, SK_INFO, "tribe: co-op epic spawned %p species=%08X tier=%d rel=%d skipped_friendly=%u (tribe.epic_hostile=%d)",
+           c, game::species_key(c).instance, best_tier, best_rel, skipped_friendly, (int)g_fix_epic_hostile);
     if (C.notice)
         C.notice("an epic creature comes! together: 80 food");
     return true;
@@ -4620,11 +4772,19 @@ static void coop_init()
     a_CreateHerd = H->sym("Simulator::cGameNounManager::CreateHerd");
     a_HerdEnable = H->sym("Simulator::cHerd::SetEnabled");
     a_CreatureCreate = H->sym("Simulator::cCreatureAnimal::Create");
+    a_SpecRelMgrGet = H->sym("Simulator::cSpeciesRelationshipManager::Get");
+    a_SpecRelGet = H->sym("Simulator::cSpeciesRelationshipManager::GetRelationship");
+    a_SpecRelRecord = H->sym("SporeCoop::SpeciesRelationMap_Record");
+    a_RelIs2or5 = H->sym("SporeCoop::cCreature_RelationIs2or5");
+    a_GetDomHerd = H->sym("Simulator::cTribe::GetDomesticatedAnimalsHerd");
+    a_Domesticate = H->sym("SporeCoop::DomesticateAnimal");
     spaceext::on_save(before_save); // space_allies' save hook (the one hook on SaveGame)
     if (a_CitizenTD)
         H->hook_create(M, (void*)a_CitizenTD, (void*)h_CitizenTD, (void**)&o_CitizenTD);
     if (a_HealTick && a_PatientOf)
         H->hook_create(M, (void*)a_HealTick, (void*)h_HealTick, (void**)&o_HealTick);
+    if (a_SpecRelGet)
+        H->hook_create(M, (void*)a_SpecRelGet, (void*)h_SpecRelGet, (void**)&o_SpecRelGet);
     H->log(M, SK_INFO, "tribe co-op: citizen damage %s, heal %s, duet %s, epic %s", a_CitizenTD ? "on" : "off",
            a_HealTick && a_PatientOf ? "on" : "off", a_SessionGet ? "on" : "off",
            a_CreateHerd && a_HerdEnable && a_CreatureCreate ? "on" : "off");

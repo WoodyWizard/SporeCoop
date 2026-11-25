@@ -5047,3 +5047,51 @@ address.
   twins tribe_owners_rejoin_off, tribe_owners_rejoin_back_off.
 * ? Not changed: the dealing in turns (no claims) gives member k to players[k % n]; when the leader is not first in
   member order a guest can get it at the first join of a session. Not seen in the lab (the leader was first).
+
+## Domesticated animals, epic hostility, and Tribe drama UFO (2026-11-25, w08/tribe-fixes)
+<a id="tribe-epic-hostile-and-ufo"></a>
+
+BUG-1542, BUG-1543. GOG 2024 `dc04aee5` (`objdump` static analysis).
+
+### Domesticated pets and animal hostility in Tribe (BUG-1542)
+
+* ✔ `cTribe::GetDomesticatedAnimalsHerd` `0x00C90070` (`thiscall cHerd*(cTribe*)`, plain `ret`): returns `tribe+0x19CC`
+  (`mpDomesticatedAnimalsHerd`). Called by `DomesticateAnimal` (`0x00DB5E10` at `0xDB5E29`, `0xDB5E41`) and the
+  feed-wild action (`0xDBDA3A`).
+* ✔ `cTribe_SetupDomesticatedHerd` `0x00C90080` (callers `0xC9A067`, `0xDB5E3A`): creates `tribe+0x19CC` via
+  `CreateHerd(pos, species, 0, false, 7, false)` (`mCreaturePersonality = 7` at `herd+0x15C`), sets `herd+0x88`
+  (`mArchetype`) = `0xD77DC235` and `herd+0xF0` (`mGeneration`) = `0`, and creates `mpDomesticatedAnimalsPen`
+  (`tribe+0x19C4`).
+* ✔ `DomesticateAnimal` `0x00DB5E10` (`cdecl bool(cCreatureAnimal* animal, cTribe* tribe)`, plain `ret` at `0xDB60B3`;
+  callers `0xCD13F2` in `cTribeInputStrategy` and `0xD9E12B` in the tame BT node, both requiring
+  `GetRelationship(mgr, &animal+0xB28, nullptr, nullptr) == 6`): moves `animal` into `tribe+0x19CC` (`SetHerd`
+  `0xC04700`), reselects its behaviour tree (`0xC04440`, picking the personality-7 domesticated BT `0x1590998`/`0x1590A20`),
+  calls `cCreatureAnimal_SetDomesticated` (`0x00C0DAB0`, `thiscall(animal, true) ret 4`, setting byte `animal+0xB65 = 1`
+  and `[animal+0xB54]+0x84 = 1`), and sets `animal`'s political ID (`animal->vt[0x48](tribe->vt[0x4C]())`, writing
+  `animal+0x30 = tribe+0x30`).
+* ✔ `cTribeInputStrategy` (`0xCD13B4`) checks `herd+0x15C == 7` (`mCreaturePersonality == 7`) to identify an already
+  domesticated animal, and `0xC6AC14` checks `herd+0x191` (`mbBestFriends`), `herd+0x190` (`mbFriends`), or
+  `GetRelationship(mgr, &herd+0x98, nullptr, nullptr) == 4` for friendly herds.
+* ✔ Animal/epic hostility toward player tribe citizens goes through `cCreatureBase::IsHostileTo`
+  (`SporeCoop::cCreature_RelationIs2or5` `0x00C0B9C0`, called by BT attack nodes `0xD8CE53` and `0xD8CABA`), which calls
+  `cSpeciesRelationshipManager::GetRelationship(mgr, &epic+0xB28, epic, citizen)` (`0x00BA40E0`) and tests
+  `rel == 2 || rel == 5`. Inside `GetRelationship` (`0xBA4335`), the species hash map `mgr+0x20` is checked **before**
+  the creature's archetype tuning `+0x390` (`0xBA4370`): if `spawn_epic` picks a domesticated pet's or allied/friendly
+  species (relation `6` or `4` in `mgr+0x20`), `GetRelationship` returns `6`/`4` and ignores the epic's hostile tuning,
+  leaving the epic friendly to the player tribe.
+* Fix `tribe.epic_hostile` (`tribe.cpp`, `tribe_logic.h`): `spawn_epic` classifies candidates into tiers (preferring
+  wild non-domesticated, non-friendly species with undiscovered/hostile relation, falling back safely if none exist),
+  clears domesticated/friendly flags on the epic herd and creature, ensures non-friendly species records are hostile,
+  and hooks `cSpeciesRelationshipManager::GetRelationship` so any relation query involving the live co-op epic `g_epic`
+  in Tribe stage returns `5` (hostile).
+
+### Tribe visiting drama UFO (BUG-1543)
+
+* ✔ `cUFOAbductionEvent::Start` (`0x00D4F8A0`) handles Tribe mode (`0x1654C02`) at `0xD4F8E1`: calls
+  `cGameNounManager::GetPlayerTribe()` (`0xBFC730`) and spawns the ship over `tribe+0x120` spatial position (instead of
+  the Creature avatar at `0xD4F8FC`).
+* ✔ `UFOAbductionEvent_SpawnUFO` (`0x00D4C150`) is stage-agnostic: it calls `SpawnUFO(7, ...)` (`0x102ACC0`) and only
+  sets `[ufo+0x6C8]+0x5FC |= 1` when mode is `0x1654C01` (Creature) at `0xD4C2A1`.
+* Fix `tribe.ufo_mirror` (`player_rules.cpp`): extends `K_UFO` host send, guest `ufo_mirror_rx`, and mirror maintenance
+  to `modes::kTribe` (`0x1654C02`) in addition to Creature stage (`modes::kCreature`), and guards `ufo_dump()`'s puppet
+  listing to Creature stage only (in Tribe, `C.puppet_of` holds `modes::RtsMarker*`, not `cCreatureBase*`).
