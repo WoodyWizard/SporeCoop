@@ -1,20 +1,20 @@
 ---
 id: BUG-0867
 title: Feature idea: optional session password and a recent servers list in the co-op window
-status: open
+status: fixed
 kind: feature
 stage: All
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 lineages36-dev (net/session.cpp, coop_ui.cpp)
-role: 
-versions: 
+role: both
+versions: 0.8.0
 fixed_in:
-branch:
-commits:
-tests:
+branch: w08/lobby-qol
+commits: fe6af56e 80e954c7 c8149c8b f61197e6
+tests: password_recent, password_recent_off, net_tests::test_session_password, net_tests::test_recent_servers
 signature:
-docs:
-related:
+docs: docs/08-ui.md#ui-lobby-qol
+related: BUG-0874
 ---
 
 ## Report
@@ -43,5 +43,13 @@ Lab, 2 instances: host with password "x"; guest joins with none / wrong / right:
 accepted the third time; a pre-feature guest is refused with a readable text; the LAN list shows the lock; after a
 join the address is first in the recent list after a restart; the password is not in sporekit.log or the report zip.
 
+## Verification
+- Switches: `session.password`, `ui.recent_servers`
+- Native unit tests & fuzz: `make unit-net unit-fuzz` PASS (`test_session_password`, `test_recent_servers`, `fuzz_decoders` `Hello` / `DiscoverReply`); `./build/host/net_tests --only test_session_password --off session_password` FAIL (6 assertions).
+- Wine lab (lane 4, run `20261125-030621`, commit `f61197e6`):
+  - `password_recent`: PASS (28 s, 0 faults on host & guest): host `password=yes`, LAN `[Locked]`, empty & wrong passwords rejected with `"Incorrect or missing server password."`, right password joins cleanly, recent server persisted in `coop.ini` `[recent]` across `mod.reload coop` and fills address on click, raw password never in `sporekit.log`, `coop.ini`, `coop.status`, or `coop.ui state`.
+  - `password_recent_off` (`SPORE_FIX_OFF=session.password,ui.recent_servers`): FAIL (43 s, 8 assertions fail).
+
 ## History
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (feature idea, fork evidence only).
+- 2026-11-25: implemented in WP-Q (`w08/lobby-qol`) with `CAP_JOIN_PROOF` (`16`), `DiscoverReply` `DF_PASSWORD` lock bit, `ITextEdit::SetTextEditFlag(0x80)` password masking + Show/Hide toggle, report redaction, and persisted `[recent]` servers list (`server0..server7`); verified ON PASS and OFF FAIL in lab run `20261125-030621`.
