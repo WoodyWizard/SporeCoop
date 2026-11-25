@@ -128,6 +128,10 @@ constexpr uint32_t kDiscoverQuery = 0x51435053; // 'SPCQ'
 constexpr uint32_t kDiscoverReply = 0x52435053; // 'SPCR'
 constexpr uint16_t kDiscoverPorts = 20;         // kDefaultPort .. +19: test lanes 1..10 host on +2(N-1)
 
+enum DiscoverFlags : uint8_t {
+    DF_PASSWORD = 1, // BUG-0867: host requires a session password
+};
+
 struct DiscoverReply {
     uint16_t proto = kProtoVersion;
     uint16_t port = 0;
@@ -139,10 +143,18 @@ struct DiscoverReply {
     // (read() does not ask for the end); an older host sends none (has_id false).
     bool has_id = false;
     uint32_t host_id = 0;
+    // BUG-0867: optional trailing flags byte after host_id (bit 0 = DF_PASSWORD).
+    // Older readers ignore trailing bytes; older hosts send none (has_flags false, flags 0).
+    bool has_flags = false;
+    uint8_t flags = 0;
     void write(Writer& w) const
     {
         w.u32(kDiscoverReply); w.u16(proto); w.u16(port); w.str8(name); w.u8(players); w.u8(max_players); w.str8(info);
-        if (has_id) w.u32(host_id);
+        if (has_id) {
+            w.u32(host_id);
+            if (has_flags)
+                w.u8(flags);
+        }
     }
     bool read(Reader& r)
     {
@@ -150,6 +162,8 @@ struct DiscoverReply {
         proto = r.u16(); port = r.u16(); name = r.str8(); players = r.u8(); max_players = r.u8(); info = r.str8();
         has_id = r.ok() && r.left() >= 4;
         host_id = has_id ? r.u32() : 0;
+        has_flags = has_id && r.ok() && r.left() >= 1;
+        flags = has_flags ? r.u8() : 0;
         return r.ok();
     }
 };
@@ -199,8 +213,11 @@ enum Caps : uint32_t {
     // n x {u8 family, u16 rev, u16 minor}; in HELLO and WELCOME after CAP_VERSION's payload. Older readers ignore it
     // (unknown bit, trailing bytes); a peer without it counts as rev 1 minor 0 of every family
     CAP_FAMILIES = 8,
+    // WP-Q of 0.8.0 (BUG-0867): HELLO only: str8 sha256_hex(u32 conn_id || password), connection-bound join proof.
+    // Never in WELCOME or anything relayed. Older readers ignore unknown trailing bits.
+    CAP_JOIN_PROOF = 16,
 };
-constexpr uint32_t kMyCaps = CAP_SPLIT | CAP_VERSION | CAP_FAMILIES; // what this build supports (the token bit is per HELLO)
+constexpr uint32_t kMyCaps = CAP_SPLIT | CAP_VERSION | CAP_FAMILIES; // what this build supports (token & join proof are per HELLO)
 
 struct FamilyRev {
     uint8_t family = 0;
@@ -249,12 +266,15 @@ struct Hello {
     std::string version; // CAP_VERSION ("" read: an older peer)
     bool has_families = false; // CAP_FAMILIES read (false: an older peer, or a bad payload)
     std::vector<FamilyRev> families; // written when caps has CAP_FAMILIES
+    bool has_join_proof = false; // CAP_JOIN_PROOF (BUG-0867): optional trailing sha256_hex(conn_id || password)
+    std::string join_proof;
     void write(Writer& w) const
     {
         w.u16(proto); w.u32(build); w.str8(name);
         if (!ext)
             return;
-        uint32_t c = (caps & ~(uint32_t)CAP_TOKEN) | (has_token ? CAP_TOKEN : 0);
+        uint32_t c = (caps & ~((uint32_t)CAP_TOKEN | (uint32_t)CAP_JOIN_PROOF)) | (has_token ? CAP_TOKEN : 0) |
+                     (has_join_proof ? CAP_JOIN_PROOF : 0);
         w.u32(c);
         if (has_token)
             w.raw(&token, 8);
@@ -262,6 +282,8 @@ struct Hello {
             w.str8(version);
         if (c & CAP_FAMILIES)
             write_families(w, families);
+        if (has_join_proof)
+            w.str8(join_proof);
     }
     bool read(Reader& r)
     {
@@ -291,6 +313,18 @@ struct Hello {
         }
         families.clear();
         has_families = at_families && (caps & CAP_FAMILIES) && read_families(r, families);
+        bool at_proof = (caps & CAP_FAMILIES) ? has_families : at_families;
+        join_proof.clear();
+        has_join_proof = false;
+        if (at_proof && (caps & CAP_JOIN_PROOF) && r.left() >= 1) {
+            Reader v = r;
+            std::string s = v.str8();
+            if (v.ok()) {
+                join_proof = std::move(s);
+                r = v;
+                has_join_proof = true;
+            }
+        }
         return true;
     }
 };
@@ -318,7 +352,7 @@ struct Welcome {
         for (auto& p : players) { w.u8(p.id); w.str8(p.name); }
         if (!ext)
             return;
-        w.u32(caps & ~(uint32_t)CAP_TOKEN);
+        w.u32(caps & ~((uint32_t)CAP_TOKEN | (uint32_t)CAP_JOIN_PROOF));
         if (caps & CAP_VERSION) {
             w.str8(host_version);
             uint8_t n = 0;
@@ -349,7 +383,7 @@ struct Welcome {
         if (!r.ok())
             return false;
         ext = r.left() >= 4;
-        caps = ext ? r.u32() & ~(uint32_t)CAP_TOKEN : 0;
+        caps = ext ? r.u32() & ~((uint32_t)CAP_TOKEN | (uint32_t)CAP_JOIN_PROOF) : 0;
         host_version.clear();
         bool at_families = !(caps & CAP_VERSION); // the families follow the versions' payload
         if ((caps & CAP_VERSION) && r.left() >= 1) {

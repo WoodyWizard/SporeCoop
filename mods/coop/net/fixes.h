@@ -46,6 +46,8 @@ struct Fixes {
     bool refuse_fork = true; // BUG-1281: a peer running the Lineages fork is refused at HELLO / WELCOME, in both roles
     // 0.7.16.1
     bool timeout_told = true; // BUG-1420: host: a guest dropped for 30 s of silence is told (REJECT), it ends and may rejoin
+    // 0.8.0 (WP-Q)
+    bool session_password = true; // BUG-0867: optional session password (CAP_JOIN_PROOF, LAN lock flag, masked from logs)
 };
 inline Fixes g_fix;
 

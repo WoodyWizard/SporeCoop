@@ -35,6 +35,7 @@
 #include "net/ipmask.h"
 #include "net/kick.h"
 #include "net/utf8.h"
+#include "recent_servers.h"
 
 using namespace net;
 
@@ -5018,7 +5019,6 @@ static void test_host_families()
     }
 }
 
-
 // BUG-1296 (found by the Lineages fork, PR #196, its BUG-9098): does a world-sized reliable transfer stall on a
 // constrained lossy path? A model of such a path (ours, not the fork's): 200 packets/s through a 16-packet queue (a
 // full queue drops), 60 ms each way, 1 % random loss both ways; the sender flushes once a 33 ms frame as Session::flush
@@ -5256,6 +5256,183 @@ static void test_fork_refused()
     }
 }
 
+// WP-Q (BUG-0867): optional session password with connection-bound CAP_JOIN_PROOF, LAN lock flag, and log masking.
+// Fails with `--off session_password` and `--nofix`.
+static void test_session_password()
+{
+    printf("test_session_password...\n");
+    // 1. Wire round-trip of CAP_JOIN_PROOF and DiscoverReply::flags
+    {
+        Hello out;
+        out.name = "Bob";
+        out.version = "coop 0.8.0";
+        out.families = compat::my_families();
+        out.has_join_proof = true;
+        out.join_proof = join_proof(0x12345678u, "secret42");
+        CHECK(out.join_proof.size() == 64);
+        CHECK(out.join_proof != join_proof(0x12345679u, "secret42")); // connection-id bound
+        CHECK(out.join_proof != join_proof(0x12345678u, "secret43"));
+        Writer w;
+        out.write(w);
+        Hello in;
+        Reader r(w.data.data(), w.size());
+        CHECK(in.read(r));
+        CHECK((in.caps & CAP_JOIN_PROOF) != 0 && in.has_join_proof && in.join_proof == out.join_proof);
+        // Welcome never carries CAP_JOIN_PROOF
+        Welcome wl;
+        wl.caps = kMyCaps | CAP_JOIN_PROOF;
+        Writer ww;
+        wl.write(ww);
+        Welcome wlin;
+        Reader wr(ww.data.data(), ww.size());
+        CHECK(wlin.read(wr) && (wlin.caps & CAP_JOIN_PROOF) == 0);
+        // DiscoverReply lock flag round-trip + backward compat without trailing byte
+        DiscoverReply dr;
+        dr.port = 47810;
+        dr.name = "Alice";
+        dr.players = 1;
+        dr.max_players = 4;
+        dr.info = "Creature - Scalinus";
+        dr.has_id = true;
+        dr.host_id = 0xCAFEBABEu;
+        dr.has_flags = true;
+        dr.flags = DF_PASSWORD;
+        Writer dw;
+        dr.write(dw);
+        DiscoverReply din;
+        Reader drr(dw.data.data(), dw.size());
+        CHECK(din.read(drr) && din.has_id && din.host_id == 0xCAFEBABEu && din.has_flags && (din.flags & DF_PASSWORD));
+        // Older reply (without trailing flags byte)
+        DiscoverReply dold;
+        Reader drold(dw.data.data(), dw.size() - 1);
+        CHECK(dold.read(drold) && dold.has_id && !dold.has_flags && dold.flags == 0);
+    }
+
+    // 2. Live session handshake + replay check + LAN discovery lock flag + no password leak in logs/status
+    Session host;
+    host.password = "secret42";
+    host.lobby_info = "Creature - LockedWorld";
+    std::string host_logs, guest_logs;
+    host.cb.log = [&](const std::string& l) { host_logs += l + "\n"; };
+    std::string err;
+    CHECK(host.host(0, "Alice", err));
+    const std::string addr = "127.0.0.1:" + std::to_string(host.port());
+
+    // Host status must say password=yes and NEVER contain the raw password
+    std::string st = host.status();
+    CHECK(st.find("password=yes") != std::string::npos);
+    CHECK(st.find("secret42") == std::string::npos);
+
+    auto attempt = [&](const std::string& pw, bool send_caps, const std::vector<uint8_t>& raw_hello,
+                       bool& connected, std::string& disc) {
+        Session c;
+        c.password = pw;
+        c.send_caps = send_caps;
+        c.test_hello = raw_hello;
+        connected = false;
+        disc.clear();
+        c.cb.log = [&](const std::string& l) { guest_logs += l + "\n"; };
+        c.cb.connected = [&] { connected = true; };
+        c.cb.disconnected = [&](const std::string& why) { disc = why; };
+        CHECK(c.join(addr, "Bob", err));
+        for (int i = 0; i < 60 && !connected && disc.empty(); i++) {
+            host.update();
+            c.update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        c.leave();
+        for (int i = 0; i < 5; i++) {
+            host.update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    };
+
+    bool ok = false;
+    std::string disc;
+    // Empty password rejected
+    attempt("", true, {}, ok, disc);
+    CHECK(!ok && disc.find("Incorrect or missing server password.") != std::string::npos);
+    // Wrong password rejected
+    attempt("wrongpw", true, {}, ok, disc);
+    CHECK(!ok && disc.find("Incorrect or missing server password.") != std::string::npos);
+    // Pre-feature client (no HELLO caps) rejected with readable text
+    attempt("secret42", false, {}, ok, disc);
+    CHECK(!ok && disc.find("Incorrect or missing server password.") != std::string::npos);
+    // Replay of a HELLO signed for a different conn_id rejected
+    {
+        Hello replay;
+        replay.name = "Bob";
+        replay.families = compat::my_families();
+        replay.has_join_proof = true;
+        replay.join_proof = join_proof(0xDEAD0001u, "secret42");
+        Writer rw;
+        replay.write(rw);
+        attempt("", true, rw.data, ok, disc);
+        CHECK(!ok && disc.find("Incorrect or missing server password.") != std::string::npos);
+    }
+    // Right password accepted
+    attempt("secret42", true, {}, ok, disc);
+    CHECK(ok && disc.empty());
+
+    // LAN discovery shows DF_PASSWORD lock flag for password-protected host
+    {
+        Discovery disc_cli;
+        uint32_t lo = 0x0100007Fu;
+        disc_cli.targets = {lo};
+        disc_cli.ports = {host.port()};
+        CHECK(disc_cli.start());
+        bool saw_locked = false;
+        for (int i = 0; i < 40 && !saw_locked; i++) {
+            uint32_t t = now_ms();
+            disc_cli.update(t);
+            host.update();
+            for (auto& g : disc_cli.games(t))
+                if (g.info.port == host.port() && g.info.has_flags && (g.info.flags & DF_PASSWORD))
+                    saw_locked = true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        disc_cli.stop();
+        CHECK(saw_locked);
+    }
+
+    // Raw password must NEVER appear in logs
+    CHECK(host_logs.find("secret42") == std::string::npos);
+    CHECK(guest_logs.find("secret42") == std::string::npos);
+    host.leave();
+}
+
+static void test_recent_servers()
+{
+    printf("test_recent_servers...\n");
+    recent::List l;
+    CHECK(l.empty());
+    CHECK(!l.add("   "));
+    CHECK(l.add("192.168.1.10:47810"));
+    CHECK(l.add("Friends connect to: SporeCoop.Local:47811, 10.0.0.2:47811"));
+    CHECK(l.size() == 2 && l.items()[0] == "SporeCoop.Local:47811" && l.items()[1] == "192.168.1.10:47810");
+    // Deduplication is case-insensitive and moves entry to front
+    CHECK(l.add("192.168.1.10:47810"));
+    CHECK(l.size() == 2 && l.items()[0] == "192.168.1.10:47810");
+    CHECK(l.add("sporecoop.local:47811"));
+    CHECK(l.size() == 2 && l.items()[0] == "sporecoop.local:47811");
+    // Cap at kMaxRecent (8), keeping most recent
+    for (int i = 0; i < 10; i++)
+        CHECK(l.add("10.0.0." + std::to_string(i + 1) + ":47810"));
+    CHECK(l.size() == recent::kMaxRecent);
+    CHECK(l.items().front() == "10.0.0.10:47810");
+    CHECK(l.items().back() == "10.0.0.3:47810");
+    // Save / load round-trip clears unused slots
+    std::map<std::string, std::string> ini;
+    l.save([&](const char* k, const std::string& v) { ini[k] = v; });
+    recent::List l2;
+    l2.load([&](const char* k) { return ini.count(k) ? ini[k] : std::string(); });
+    CHECK(l2.items() == l.items());
+    l2.clear();
+    l2.add("127.0.0.1:47816");
+    l2.save([&](const char* k, const std::string& v) { ini[k] = v; });
+    CHECK(ini["server0"] == "127.0.0.1:47816" && ini["server1"].empty() && ini["server7"].empty());
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::string(argv[1]) == "--fakepeer-host")
@@ -5282,6 +5459,7 @@ int main(int argc, char** argv)
                                                {"family_check", &g_fix.family_check},
                                                {"refuse_fork", &g_fix.refuse_fork},
                                                {"timeout_told", &g_fix.timeout_told},
+                                               {"session_password", &g_fix.session_password},
                                                {"update_paths", &upd::g_path_fix}};
             for (size_t a = 0; a <= list.size();) {
                 size_t b = list.find(',', a);
@@ -5431,6 +5609,8 @@ int main(int argc, char** argv)
         {"test_kick", test_kick},
         {"test_timeout_told", test_timeout_told},
         {"test_fork_refused", test_fork_refused},
+        {"test_session_password", test_session_password},
+        {"test_recent_servers", test_recent_servers},
         {"test_bulk_bottleneck", test_bulk_bottleneck},
     };
     for (size_t i = 0; i < sizeof tests / sizeof tests[0]; i++) {
