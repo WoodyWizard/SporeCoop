@@ -34,6 +34,8 @@ bool is_player_capital(void* city, uint8_t* owner_out = nullptr);
 // Host ownership sync (replaces Together mode's host_assign_cities while Civ Rivals is active)
 void host_sync_owners();
 // Host wealth deduction/credit for a player's own cCivilization
+float civ_money(void* civ);
+bool host_spend_civ_money(void* civ, float cost);
 bool host_charge_player(uint8_t pid, float amount);
 void host_credit_player(uint8_t pid, float amount);
 void host_mark_assign_dirty();

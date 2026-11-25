@@ -29,5 +29,6 @@ void on_core_entered(uint8_t player_id);
 
 // Optional override of a guest's Civ city count (from Civ -> Space transition or test command).
 void set_guest_civ_cities(uint8_t player_id, uint16_t cities);
+uint16_t guest_civ_cities(uint8_t player_id);
 
 } // namespace spacerivals

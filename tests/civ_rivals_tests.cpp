@@ -225,6 +225,142 @@ static void test_draft_and_wire_codecs()
     assert(read_draft_apply(r4, dm) && dm.target_pid == 1 && dm.design_id == 0x7D433FADu && dm.key[0] == 0x11111111u);
 }
 
+static void test_bidirectional_native_npc_diplomacy_sync()
+{
+    NpcRelationTable tbl;
+    const uint32_t npc = 0x5001u;
+
+    // 1. First observation initializes from native without overwriting it.
+    auto r0 = tbl.sync_native_slot(npc, 0, 0.5f);
+    assert(r0.action == NativeSyncAction::ReadInit);
+    assert(std::fabs(tbl.get(npc, 0) - 0.5f) < 1e-4f);
+    assert(!tbl.is_dirty_native(npc, 0));
+
+    // Player 1 initialized independently with a different native value.
+    auto r1 = tbl.sync_native_slot(npc, 1, -2.0f);
+    assert(r1.action == NativeSyncAction::ReadInit);
+    assert(std::fabs(tbl.get(npc, 1) - (-2.0f)) < 1e-4f);
+
+    // 2. Subsequent 1 s tick with unchanged native value returns None (never overwrites).
+    auto r_idle = tbl.sync_native_slot(npc, 0, 0.52f); // within kNativeSyncEps
+    assert(r_idle.action == NativeSyncAction::None);
+
+    // 3. Real in-game gift raises native relation (+2.0 -> 2.5): read back + award diplomacy influence!
+    auto r_gift = tbl.sync_native_slot(npc, 0, 2.5f);
+    assert(r_gift.action == NativeSyncAction::ReadBack);
+    assert(std::fabs(tbl.get(npc, 0) - 2.5f) < 1e-4f);
+    assert(!r_gift.newly_allied);
+    assert(r_gift.influence_award == kDiplomacyImproveInfluenceGain);
+
+    // 4. Real in-game alliance crosses >= kNpcAllyThreshold (3.0): read back + award alliance influence!
+    auto r_ally = tbl.sync_native_slot(npc, 0, 5.0f);
+    assert(r_ally.action == NativeSyncAction::ReadBack);
+    assert(std::fabs(tbl.get(npc, 0) - 5.0f) < 1e-4f);
+    assert(r_ally.newly_allied);
+    assert(r_ally.influence_award == kDiplomacyAllyInfluenceGain);
+
+    // 5. Real in-game insult / war declaration drops native relation (-6.0): read back, 0 influence, not wiped!
+    auto r_war = tbl.sync_native_slot(npc, 1, -7.0f);
+    assert(r_war.action == NativeSyncAction::ReadBack);
+    assert(std::fabs(tbl.get(npc, 1) - (-7.0f)) < 1e-4f);
+    assert(r_war.influence_award == 0);
+    assert(tbl.sync_native_slot(npc, 1, -7.0f).action == NativeSyncAction::None);
+
+    // 6. Rivals TurnAgainst / SmoothOver marks dirty -> PushNative; confirm_native_push prevents false readback/award.
+    float nv = 0.0f;
+    assert(tbl.apply_turn_against(npc, 0, kNpcRelStep, &nv));
+    assert(std::fabs(nv - 2.5f) < 1e-4f);
+    assert(tbl.is_dirty_native(npc, 0));
+    auto r_push = tbl.sync_native_slot(npc, 0, 5.0f);
+    assert(r_push.action == NativeSyncAction::PushNative);
+    assert(std::fabs(r_push.target_native - 2.5f) < 1e-4f);
+    tbl.confirm_native_push(npc, 0, 2.5f);
+    assert(!tbl.is_dirty_native(npc, 0));
+    assert(tbl.sync_native_slot(npc, 0, 2.5f).action == NativeSyncAction::None);
+
+    // SmoothOver confirmed immediately does NOT award real-diplomacy influence on next tick.
+    assert(tbl.apply_smooth_over(npc, 0, kNpcRelStep, &nv));
+    assert(std::fabs(nv - 5.0f) < 1e-4f);
+    tbl.confirm_native_push(npc, 0, 5.0f);
+    auto r_after_smooth = tbl.sync_native_slot(npc, 0, 5.0f);
+    assert(r_after_smooth.action == NativeSyncAction::None && r_after_smooth.influence_award == 0);
+}
+
+static void test_guest_direct_spend_and_handoff_and_payout()
+{
+    // Direct wealth deduction avoids native SpendMoney NPC budget refill on mIsPlayer==0 civs.
+    float wealth = 3000.0f, dom = 450.0f, exp = 250.0f;
+    assert(!deduct_direct_wealth(wealth, dom, exp, 3500.0f));
+    assert(std::fabs(wealth - 3000.0f) < 1e-4f);
+    assert(deduct_direct_wealth(wealth, dom, exp, 800.0f));
+    assert(std::fabs(wealth - 2200.0f) < 1e-4f && dom == 0.0f && exp == 0.0f);
+
+    // spend_direct_wealth clamps at >= 0 and zeroes NPC budgets.
+    dom = 100.0f;
+    exp = 200.0f;
+    spend_direct_wealth(wealth, dom, exp, 5000.0f);
+    assert(wealth == 0.0f && dom == 0.0f && exp == 0.0f);
+
+    // Tribe -> Civ draft payout scaling
+    assert(std::fabs(civ_draft_payout_money(0) - 0.0f) < 1e-4f);
+    assert(std::fabs(civ_draft_payout_money(-50) - 0.0f) < 1e-4f);
+    assert(std::fabs(civ_draft_payout_money(100) - 1000.0f) < 1e-4f);
+    assert(std::fabs(civ_draft_payout_money(150) - 1500.0f) < 1e-4f);
+    assert(std::fabs(civ_draft_payout_money(250) - 2500.0f) < 1e-4f);
+
+    // Civ -> Space city handoff count clamped to 1..3 (docs/11-rivals.md 11.3.5)
+    assert(clamp_space_handoff_cities(-2) == 1);
+    assert(clamp_space_handoff_cities(0) == 1);
+    assert(clamp_space_handoff_cities(1) == 1);
+    assert(clamp_space_handoff_cities(2) == 2);
+    assert(clamp_space_handoff_cities(3) == 3);
+    assert(clamp_space_handoff_cities(8) == 3);
+}
+
+static void test_civ_npc_ui_list()
+{
+    assert(std::string(classify_civ_color(0.95f, 0.1f, 0.1f)) == "Red");
+    assert(std::string(classify_civ_color(0.1f, 0.2f, 0.95f)) == "Blue");
+    assert(std::string(classify_civ_color(0.1f, 0.85f, 0.2f)) == "Green");
+    assert(std::string(classify_civ_color(0.9f, 0.88f, 0.9f)) == "White");
+
+    std::vector<CivNpcSnapshot> snaps;
+    // Allied Red Military nation (2 cities)
+    snaps.push_back({0x6001u, 0, 2, true, 0.9f, 0.1f, 0.1f, 4.5f, true});
+    // Hostile Blue Economic nation (1 city)
+    snaps.push_back({0x6002u, 2, 1, true, 0.1f, 0.2f, 0.95f, -4.0f, true});
+    // Neutral Religious nation without color
+    snaps.push_back({0x6003u, 1, 3, false, 0, 0, 0, 0.5f, false});
+    // Max-relation nation (cannot smooth further)
+    snaps.push_back({0x6004u, -1, 1, false, 0, 0, 0, 10.0f, true});
+
+    auto list = build_civ_npc_ui_list(snaps, true);
+    assert(list.size() == 4);
+    // Sorted highest relation first: 0x6004 (+10.0), 0x6001 (+4.5), 0x6003 (+0.5), 0x6002 (-4.0)
+    assert(list[0].npc_id == 0x6004u && list[0].allied && !list[0].hostile && list[0].can_protect && !list[0].can_smooth &&
+           list[0].can_turn);
+    assert(list[0].label.find("0x") == std::string::npos);
+
+    assert(list[1].npc_id == 0x6001u && list[1].allied && !list[1].hostile && list[1].can_protect && list[1].can_smooth &&
+           list[1].can_turn);
+    assert(list[1].label.find("Red Military") != std::string::npos);
+    assert(list[1].label.find("2 cities") != std::string::npos);
+
+    assert(list[2].npc_id == 0x6003u && !list[2].allied && !list[2].hostile && !list[2].can_protect &&
+           list[2].can_smooth && !list[2].can_turn);
+    assert(list[2].label.find("Religious Nation") != std::string::npos);
+
+    assert(list[3].npc_id == 0x6002u && !list[3].allied && list[3].hostile && !list[3].can_protect &&
+           list[3].can_smooth && list[3].can_turn);
+    assert(list[3].label.find("Blue Economic") != std::string::npos);
+    assert(list[3].label.find("1 city") != std::string::npos);
+
+    // Without rival, can_turn is false for all entries
+    auto solo = build_civ_npc_ui_list(snaps, false);
+    for (const auto& e : solo)
+        assert(!e.can_turn);
+}
+
 int main()
 {
     test_base_distance_selection();
@@ -232,6 +368,9 @@ int main()
     test_npc_relations_and_influence();
     test_gifts_and_stage_win();
     test_draft_and_wire_codecs();
+    test_bidirectional_native_npc_diplomacy_sync();
+    test_guest_direct_spend_and_handoff_and_payout();
+    test_civ_npc_ui_list();
     printf("civ_rivals_tests: all passed\n");
     return 0;
 }

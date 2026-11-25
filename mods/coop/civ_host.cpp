@@ -1087,6 +1087,7 @@ void* host_buy(void* city, int loco)
     g_buy_fail = "no such city";
     if (!civ || !city)
         return nullptr;
+    bool direct_guest = riv && civ != player_civ(); // BUG-1555: guest civ has mIsPlayer==0 on host (SpendMoney refills NPC budget)
     int purpose = F<int>(city, kCitySpecialty);
     g_buy_fail = "no vehicle slot left";
     if (thiscall<int>(a_SlotsLeft, civ, purpose) <= 0)
@@ -1094,7 +1095,8 @@ void* host_buy(void* city, int loco)
     float cost = thiscall<float>(a_VehicleCost, civ, purpose, loco);
     civ_wallet::PayAs pay(riv ? -1 : g_pending_owner); // BUG-1468: Together own-money; Rivals uses the player's own cCivilization
     g_buy_fail = (riv || pay.paying()) ? "not enough money of your own" : "not enough money";
-    if (!civlogic::can_pay(thiscall<float>(a_GetMoney, civ), cost))
+    float avail = direct_guest ? civ_rivals::civ_money(civ) : thiscall<float>(a_GetMoney, civ);
+    if (!civlogic::can_pay(avail, cost))
         return nullptr;
     g_buy_fail = "the city cannot build it";
     uint32_t* key = thiscall<uint32_t*>(a_DesignKey, civ, skg::cdecl_call<int>(a_DesignId, purpose, loco));
@@ -1104,7 +1106,10 @@ void* host_buy(void* city, int loco)
     if (!v)
         return nullptr;
     thiscall<int>(a_PushEvent, v, 10);
-    thiscall<void>(a_SpendMoney, civ, cost);
+    if (direct_guest)
+        civ_rivals::host_spend_civ_money(civ, cost);
+    else
+        thiscall<void>(a_SpendMoney, civ, cost);
     if (riv)
         civ_rivals::host_mark_assign_dirty();
     return v;
@@ -1136,8 +1141,11 @@ void* build_in_city(void* city, uint32_t noun, const net::Vec3& pos, bool pay)
         return nullptr;
     thiscall<void>(a_SetBuildingModel, city, b, type);
     if (pay && g_fix_build_money) { // BUG-0613
-        void* civ = civ_rivals::active() ? F<void*>(city, kCityCiv) : player_civ();
-        if (civ && !civlogic::can_pay(thiscall<float>(a_GetMoney, civ), vcall<float>(b, 0x5C / 4))) {
+        bool riv = civ_rivals::active();
+        void* civ = riv ? F<void*>(city, kCityCiv) : player_civ();
+        float avail = (civ && riv && civ != player_civ()) ? civ_rivals::civ_money(civ)
+                                                          : (civ ? thiscall<float>(a_GetMoney, civ) : 0.0f);
+        if (civ && !civlogic::can_pay(avail, vcall<float>(b, 0x5C / 4))) {
             g_build_fail = "not enough money";
             if (a_DestroyInstance)
                 thiscall<void>(a_DestroyInstance, nm(), o);
@@ -1158,9 +1166,14 @@ void* build_in_city(void* city, uint32_t noun, const net::Vec3& pos, bool pay)
     }
     thiscall<int>(a_AddBuilding, city, b, 0);
     if (pay) {
-        if (void* civ = civ_rivals::active() ? F<void*>(city, kCityCiv) : player_civ()) {
-            thiscall<void>(a_SpendMoney, civ, vcall<float>(b, 0x5C / 4));
-            if (civ_rivals::active())
+        bool riv = civ_rivals::active();
+        if (void* civ = riv ? F<void*>(city, kCityCiv) : player_civ()) {
+            float cost = vcall<float>(b, 0x5C / 4);
+            if (riv && civ != player_civ())
+                civ_rivals::host_spend_civ_money(civ, cost);
+            else
+                thiscall<void>(a_SpendMoney, civ, cost);
+            if (riv)
                 civ_rivals::host_mark_assign_dirty();
         }
     }
@@ -1495,18 +1508,32 @@ void host_command(uint8_t from, net::Reader& r)
             snprintf(why, sizeof why, " (city %u: %s)", (unsigned)ci, !city ? "not in the host's game" : "refused");
             return reject();
         }
-        bool refused;
-        {
+        bool refused = false;
+        bool direct_guest = riv && pc != player_civ();
+        if (kind == 6 && direct_guest && !civlogic::can_pay(civ_rivals::civ_money(pc), price)) {
+            refused = true;
+        } else {
             civ_wallet::PayAs pay((kind == 6 && !riv) ? from : -1); // BUG-1468: Together own-money; Rivals uses pc directly
-            float money = thiscall<float>(a_GetMoney, pc);
+            float money = direct_guest ? civ_rivals::civ_money(pc) : thiscall<float>(a_GetMoney, pc);
             g_capture_for = from;
             if (kind == 6)
                 o_CityBuy(city, pol_of(pc), price);
             else
                 h_Capture(city, pol_of(pc), type, 0, 0, 0);
             g_capture_for = -1;
-            // (the owner changes when the capture's cinematic ends: a purchase that took spent the money)
-            refused = kind == 6 && pol_of(city) != pol_of(pc) && thiscall<float>(a_GetMoney, pc) >= money;
+            if (kind == 6 && direct_guest) {
+                float after = civ_rivals::civ_money(pc);
+                if (pol_of(city) == pol_of(pc)) {
+                    // BUG-1555: native SpendMoney refills NPC budgets on mIsPlayer==0 civs; deduct mWealth directly.
+                    if (after >= money - 0.5f && price > 0.0f)
+                        civ_rivals::host_spend_civ_money(pc, price);
+                } else {
+                    refused = after >= money - 0.5f;
+                }
+            } else {
+                // (the owner changes when the capture's cinematic ends: a purchase that took spent the money)
+                refused = kind == 6 && pol_of(city) != pol_of(pc) && thiscall<float>(a_GetMoney, pc) >= money;
+            }
         }
         if (refused) {
             net::Writer nw;

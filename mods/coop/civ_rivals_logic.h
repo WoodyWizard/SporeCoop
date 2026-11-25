@@ -22,11 +22,19 @@ constexpr float kNpcRelMin = -10.0f;
 constexpr float kNpcRelMax = 10.0f;
 constexpr float kNpcRelStep = 2.5f;                // TurnAgainst (-2.5) and SmoothOver (+2.5) shift
 constexpr float kNpcAllyThreshold = 3.0f;          // relation score counted as allied NPC nation
+constexpr float kNpcHostileThreshold = -1.5f;      // relation score counted as hostile/annoyed NPC nation
+constexpr float kNativeSyncEps = 0.05f;            // minimum native cRelationshipManager delta treated as a real change
+constexpr float kDiplomacyImproveMinDelta = 1.0f;  // minimum positive native delta to earn real-diplomacy influence
 constexpr float kStartingWealthFloor = 3000.0f;    // minimum starting wealth for a taken-over NPC nation
 constexpr float kMaxGiftAmount = 500000.0f;
 constexpr int32_t kCivMoneyPerInfluenceUnit = 10;  // 50 base price -> 500 Sporebucks
+constexpr int32_t kCivDraftPayoutScale = 10;       // Tribe->Civ draft pick: 100 -> 1000, 150 -> 1500, 200 -> 2000
 constexpr int32_t kTradeInfluenceGain = 5;
 constexpr int32_t kCaptureInfluenceGain = 5;
+constexpr int32_t kDiplomacyImproveInfluenceGain = 5;
+constexpr int32_t kDiplomacyAllyInfluenceGain = 10;
+constexpr uint16_t kMinSpaceHandoffCities = 1;
+constexpr uint16_t kMaxSpaceHandoffCities = 3;     // docs/11-rivals.md 11.3.5: Space homeworld city cap (1..3)
 
 enum class GiftKind : uint8_t {
     Money = 1,
@@ -201,11 +209,36 @@ inline int rel_category(float score)
     return 4;
 }
 
+enum class NativeSyncAction : uint8_t {
+    None = 0,       // native unchanged and Rivals not dirty: do not overwrite native
+    ReadInit = 1,   // first observation of (npc, pid): initialized from native
+    ReadBack = 2,   // native changed since last_native: read back into authoritative table
+    PushNative = 3, // Rivals modified score (dirty): caller must write target_native to cRelationshipManager
+};
+
+struct NativeSyncResult {
+    NativeSyncAction action = NativeSyncAction::None;
+    float target_native = 0.0f;
+    float delta = 0.0f;
+    int32_t influence_award = 0;
+    bool newly_allied = false;
+};
+
 struct NpcRelationTable {
     // npc_pol -> per-player relation score [-10, +10]
     std::map<uint32_t, std::array<float, kMaxPlayers>> scores;
+    // Per-(npc_pol, pid) native cRelationshipManager tracking (BUG-1555): avoids overwriting real in-game diplomacy.
+    std::map<uint32_t, std::array<float, kMaxPlayers>> last_native;
+    std::map<uint32_t, std::array<bool, kMaxPlayers>> has_native;
+    std::map<uint32_t, std::array<bool, kMaxPlayers>> dirty_native;
 
-    void clear() { scores.clear(); }
+    void clear()
+    {
+        scores.clear();
+        last_native.clear();
+        has_native.clear();
+        dirty_native.clear();
+    }
 
     void ensure_npc(uint32_t npc_pol, float initial = 0.0f)
     {
@@ -213,9 +246,18 @@ struct NpcRelationTable {
             return;
         float v = clamp_rel(initial);
         scores[npc_pol] = {v, v, v, v};
+        last_native[npc_pol] = {v, v, v, v};
+        has_native[npc_pol] = {false, false, false, false};
+        dirty_native[npc_pol] = {false, false, false, false};
     }
 
-    void remove_npc(uint32_t npc_pol) { scores.erase(npc_pol); }
+    void remove_npc(uint32_t npc_pol)
+    {
+        scores.erase(npc_pol);
+        last_native.erase(npc_pol);
+        has_native.erase(npc_pol);
+        dirty_native.erase(npc_pol);
+    }
 
     bool has_npc(uint32_t npc_pol) const { return scores.count(npc_pol) != 0; }
 
@@ -227,13 +269,87 @@ struct NpcRelationTable {
         return it == scores.end() ? 0.0f : it->second[pid];
     }
 
-    bool set(uint32_t npc_pol, uint8_t pid, float value)
+    bool is_dirty_native(uint32_t npc_pol, uint8_t pid) const
+    {
+        if (pid >= kMaxPlayers)
+            return false;
+        auto it = dirty_native.find(npc_pol);
+        return it != dirty_native.end() && it->second[pid];
+    }
+
+    bool set(uint32_t npc_pol, uint8_t pid, float value, bool mark_dirty = false)
     {
         if (!npc_pol || pid >= kMaxPlayers)
             return false;
-        auto& row = scores[npc_pol];
-        row[pid] = clamp_rel(value);
+        if (!scores.count(npc_pol))
+            ensure_npc(npc_pol, 0.0f);
+        float v = clamp_rel(value);
+        scores[npc_pol][pid] = v;
+        if (mark_dirty) {
+            dirty_native[npc_pol][pid] = true;
+        } else {
+            last_native[npc_pol][pid] = v;
+            has_native[npc_pol][pid] = true;
+            dirty_native[npc_pol][pid] = false;
+        }
         return true;
+    }
+
+    // Records the actual native cRelationshipManager value right after pushing a Rivals shift to native.
+    void confirm_native_push(uint32_t npc_pol, uint8_t pid, float observed_native)
+    {
+        if (!npc_pol || pid >= kMaxPlayers || !scores.count(npc_pol))
+            return;
+        last_native[npc_pol][pid] = clamp_rel(observed_native);
+        has_native[npc_pol][pid] = true;
+        dirty_native[npc_pol][pid] = false;
+    }
+
+    // Bidirectional 1.0 s sync for one (npc_pol, pid) pair:
+    //  - If Rivals modified the score (dirty_native), requests PushNative so caller writes target_native.
+    //  - Otherwise if native changed since last_native, reads back the real in-game diplomacy change and
+    //    awards influence for positive diplomacy improvements / new alliances.
+    //  - Otherwise returns None (never overwrites native).
+    NativeSyncResult sync_native_slot(uint32_t npc_pol, uint8_t pid, float native_val)
+    {
+        NativeSyncResult out;
+        if (!npc_pol || pid >= kMaxPlayers)
+            return out;
+        float nv = clamp_rel(native_val);
+        if (!scores.count(npc_pol))
+            ensure_npc(npc_pol, nv);
+        auto& sc = scores[npc_pol];
+        auto& ln = last_native[npc_pol];
+        auto& hn = has_native[npc_pol];
+        auto& dn = dirty_native[npc_pol];
+
+        if (dn[pid]) {
+            out.action = NativeSyncAction::PushNative;
+            out.target_native = sc[pid];
+            return out;
+        }
+        if (!hn[pid]) {
+            sc[pid] = nv;
+            ln[pid] = nv;
+            hn[pid] = true;
+            out.action = NativeSyncAction::ReadInit;
+            return out;
+        }
+        float delta = nv - ln[pid];
+        if (std::fabs(delta) >= kNativeSyncEps) {
+            float prev = sc[pid];
+            sc[pid] = nv;
+            ln[pid] = nv;
+            out.action = NativeSyncAction::ReadBack;
+            out.delta = delta;
+            if (prev < kNpcAllyThreshold && nv >= kNpcAllyThreshold) {
+                out.newly_allied = true;
+                out.influence_award = kDiplomacyAllyInfluenceGain;
+            } else if (delta >= kDiplomacyImproveMinDelta) {
+                out.influence_award = kDiplomacyImproveInfluenceGain;
+            }
+        }
+        return out;
     }
 
     bool apply_turn_against(uint32_t npc_pol, uint8_t rival_pid, float step = kNpcRelStep, float* new_val = nullptr)
@@ -244,6 +360,7 @@ struct NpcRelationTable {
         if (it == scores.end())
             return false;
         it->second[rival_pid] = clamp_rel(it->second[rival_pid] - std::fabs(step));
+        dirty_native[npc_pol][rival_pid] = true;
         if (new_val)
             *new_val = it->second[rival_pid];
         return true;
@@ -257,6 +374,7 @@ struct NpcRelationTable {
         if (it == scores.end())
             return false;
         it->second[actor_pid] = clamp_rel(it->second[actor_pid] + std::fabs(step));
+        dirty_native[npc_pol][actor_pid] = true;
         if (new_val)
             *new_val = it->second[actor_pid];
         return true;
@@ -281,6 +399,172 @@ inline float influence_buy_civ_cost(int32_t base_price)
     if (base_price <= 0)
         return 0.0f;
     return (float)(base_price * kCivMoneyPerInfluenceUnit);
+}
+
+inline float civ_draft_payout_money(int32_t raw_payout)
+{
+    if (raw_payout <= 0)
+        return 0.0f;
+    int64_t scaled = (int64_t)raw_payout * kCivDraftPayoutScale;
+    if (scaled > 500000LL)
+        scaled = 500000LL;
+    return (float)scaled;
+}
+
+inline uint16_t clamp_space_handoff_cities(int count)
+{
+    if (count < (int)kMinSpaceHandoffCities)
+        return kMinSpaceHandoffCities;
+    if (count > (int)kMaxSpaceHandoffCities)
+        return kMaxSpaceHandoffCities;
+    return (uint16_t)count;
+}
+
+// Direct wealth deduction for a guest cCivilization whose mIsPlayer == 0 on host (BUG-1555):
+// native cCivilization::SpendMoney refills NPC domestic/expansion budgets instead of deducting mWealth.
+inline bool deduct_direct_wealth(float& wealth, float& domestic_budget, float& expansion_budget, float cost)
+{
+    if (!std::isfinite(cost) || cost < 0.0f)
+        return false;
+    if (!std::isfinite(wealth) || wealth < cost)
+        return false;
+    wealth = std::max(0.0f, wealth - cost);
+    domestic_budget = 0.0f;
+    expansion_budget = 0.0f;
+    return true;
+}
+
+inline void spend_direct_wealth(float& wealth, float& domestic_budget, float& expansion_budget, float cost)
+{
+    if (!std::isfinite(wealth) || wealth < 0.0f)
+        wealth = 0.0f;
+    if (std::isfinite(cost) && cost > 0.0f)
+        wealth = std::max(0.0f, wealth - cost);
+    domestic_budget = 0.0f;
+    expansion_budget = 0.0f;
+}
+
+// ---------------- F9 Influence UI: readable NPC nation labels & action flags (BUG-1555) ----------------
+inline const char* classify_civ_color(float r, float g, float b)
+{
+    if (!std::isfinite(r) || !std::isfinite(g) || !std::isfinite(b))
+        return "";
+    float mx = std::max({r, g, b});
+    float mn = std::min({r, g, b});
+    float delta = mx - mn;
+    if (mx < 0.08f)
+        return "Dark";
+    if (delta < 0.12f) {
+        if (mx > 0.78f)
+            return "White";
+        return "Gray";
+    }
+    float hue = 0.0f;
+    if (mx == r)
+        hue = 60.0f * std::fmod(((g - b) / delta) + 6.0f, 6.0f);
+    else if (mx == g)
+        hue = 60.0f * (((b - r) / delta) + 2.0f);
+    else
+        hue = 60.0f * (((r - g) / delta) + 4.0f);
+
+    if (hue < 18.0f || hue >= 340.0f)
+        return (mx < 0.55f && mn < 0.2f) ? "Crimson" : "Red";
+    if (hue < 45.0f)
+        return (mx < 0.55f) ? "Brown" : "Orange";
+    if (hue < 72.0f)
+        return "Yellow";
+    if (hue < 160.0f)
+        return "Green";
+    if (hue < 200.0f)
+        return "Teal";
+    if (hue < 255.0f)
+        return "Blue";
+    if (hue < 300.0f)
+        return "Purple";
+    return "Pink";
+}
+
+inline const char* civ_specialty_name(int specialty)
+{
+    switch (specialty) {
+    case 0: return "Military";
+    case 1: return "Religious";
+    case 2: return "Economic";
+    default: return "";
+    }
+}
+
+struct CivNpcSnapshot {
+    uint32_t pol_id = 0;
+    int specialty = -1; // 0=Military, 1=Religious, 2=Economic, -1=unknown
+    int cities = 0;
+    bool has_color = false;
+    float color_r = 0.0f;
+    float color_g = 0.0f;
+    float color_b = 0.0f;
+    float viewer_rel = 0.0f;
+    bool any_rival_turnable = false;
+};
+
+struct CivNpcUiItem {
+    uint32_t npc_id = 0;
+    std::string label;
+    bool allied = false;
+    bool hostile = false;
+    bool can_turn = false;
+    bool can_protect = false;
+    bool can_smooth = false;
+};
+
+inline std::string format_civ_npc_label(const CivNpcSnapshot& s, int ordinal)
+{
+    const char* col = s.has_color ? classify_civ_color(s.color_r, s.color_g, s.color_b) : "";
+    const char* spec = civ_specialty_name(s.specialty);
+    std::string name;
+    if (col[0] && spec[0])
+        name = std::string(col) + " " + spec;
+    else if (col[0])
+        name = std::string(col) + " Nation";
+    else if (spec[0])
+        name = std::string(spec) + " Nation #" + std::to_string(ordinal);
+    else
+        name = "Nation #" + std::to_string(ordinal);
+
+    char tail[64];
+    float rel = clamp_rel(s.viewer_rel);
+    if (s.cities > 0) {
+        snprintf(tail, sizeof tail, " (%d %s, %+.1f)", s.cities, s.cities == 1 ? "city" : "cities", rel);
+    } else {
+        snprintf(tail, sizeof tail, " (%+.1f)", rel);
+    }
+    return name + tail;
+}
+
+inline std::vector<CivNpcUiItem> build_civ_npc_ui_list(std::vector<CivNpcSnapshot> snaps, bool has_rival)
+{
+    std::sort(snaps.begin(), snaps.end(), [](const CivNpcSnapshot& a, const CivNpcSnapshot& b) {
+        if (std::fabs(a.viewer_rel - b.viewer_rel) > 1e-3f)
+            return a.viewer_rel > b.viewer_rel;
+        return a.pol_id < b.pol_id;
+    });
+    std::vector<CivNpcUiItem> out;
+    out.reserve(snaps.size());
+    int ord = 1;
+    for (const auto& s : snaps) {
+        if (!s.pol_id)
+            continue;
+        float rel = clamp_rel(s.viewer_rel);
+        CivNpcUiItem item;
+        item.npc_id = s.pol_id;
+        item.label = format_civ_npc_label(s, ord++);
+        item.allied = rel >= kNpcAllyThreshold;
+        item.hostile = rel <= kNpcHostileThreshold;
+        item.can_turn = has_rival && s.any_rival_turnable;
+        item.can_protect = item.allied;
+        item.can_smooth = rel < (kNpcRelMax - 0.05f);
+        out.push_back(std::move(item));
+    }
+    return out;
 }
 
 // ---------------- Alliance money/spice gift validation ----------------
