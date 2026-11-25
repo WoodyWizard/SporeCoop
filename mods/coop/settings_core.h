@@ -135,8 +135,8 @@ inline const Def kDefs[kCount] = {
      "on: every partner's name shows over its creature, tribe chief, vehicle or ship; off: no name tags",
      1, 0, 1, Scope::Live, nullptr, false},
     {"all.friendly_fire", "All stages", "Friendly fire",
-     "on: players can hurt each other in Cell, Creature, Tribe, and Civilization (Space keeps its rivals mode); off: no player hurts another",
-     0, 0, 1, Scope::Session, nullptr, false},
+     "on: players can hurt each other in Together stages (Cell, Creature, Tribe, Civilization; enabled by default in the Rivals preset); in Rivals stages PvP is governed by War status (F9 -> Rivals -> Declare war); off: no friendly fire in Together stages",
+     0, 0, 1, Scope::Live, nullptr, false},
     {"all.max_players", "All stages", "Players who can join",
      "how many players the session takes, the host counted (2 to 4); a player over it is told the session is full",
      4, 2, 4, Scope::Live, nullptr, false},
@@ -428,6 +428,65 @@ inline std::string diff_text(const Values& v, const Values& defaults)
         if (v.v[i] != defaults.v[i])
             s += (s.empty() ? "" : " ") + std::string(kDefs[i].key) + "=" + std::to_string(v.v[i]);
     return s;
+}
+
+// BUG-1558: Mode preset value for Rivals mode. Returns >= 0 for settings managed by the Rivals vs Together preset,
+// or -1 for user/lobby settings preserved across mode switches (max players, autosave, name tags, etc.).
+inline int rivals_preset_value(Id id)
+{
+    switch (id) {
+    case kFriendlyFire:
+    case kCivOwnMoney:
+    case kSpaceRivals:
+        return 1;
+    case kDnaPace:
+    case kCreatureMode:
+    case kSwitchVote:
+    case kCellRegen:
+    case kPartnerArrows:
+    case kCellKnockout:
+    case kCellRespawn:
+    case kPackRescue:
+    case kRevive:
+    case kPackHeal:
+    case kJointHunt:
+    case kTribePincer:
+    case kTribeAura:
+    case kTribeDuet:
+    case kTribeEpic:
+    case kCivRoles:
+    case kCivSiege:
+    case kCivSwVote:
+    case kSpaceDisable:
+    case kSpaceContracts:
+    case kSpaceDiplomacy:
+    case kSpaceAllies:
+    case kSpaceFinale:
+    case kAdventureShared:
+        return 0;
+    default:
+        return -1;
+    }
+}
+
+// BUG-1558: Apply the Rivals (rivals_mode == true) or Together (rivals_mode == false) default preset to `cur`.
+// Together restores preset-managed keys to `together_defaults` (built-in + coop.ini overrides).
+// Non-preset user/lobby settings (rivals_preset_value(id) < 0) are preserved untouched.
+// Returns the number of settings whose value changed.
+inline int apply_mode_preset_values(Values& cur, const Values& together_defaults, bool rivals_mode)
+{
+    int changed = 0;
+    for (int i = 0; i < kCount; i++) {
+        int rv = rivals_preset_value((Id)i);
+        if (rv < 0)
+            continue;
+        int want = rivals_mode ? clamp_value(i, rv) : clamp_value(i, together_defaults.v[i]);
+        if (cur.v[i] != want) {
+            cur.v[i] = want;
+            changed++;
+        }
+    }
+    return changed;
 }
 
 } // namespace settings

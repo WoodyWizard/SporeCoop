@@ -41,6 +41,15 @@ COOP_FIX("settings.world_kept", "BUG-1502", g_world_kept_fix,
          "settings: the host's editor or a load keeps the session started (late join off and the session settings hold)");
 static uint32_t g_kept_frames; // status: frames the open world was kept through an editor / load
 
+// BUG-1558: switching Rivals vs Together preset automatically applies matching default Settings (friendly fire on,
+// full solo DNA pace, per-player Civ money, co-op bonuses off for Rivals; Together restores defaults while preserving
+// user/lobby settings), and all.friendly_fire is Scope::Live (toggleable mid-game).
+// Off (SPORE_FIX_OFF=rivals.settings_preset): mode preset switch leaves settings untouched and all.friendly_fire is
+// refused once a world is started (0.8.0.1 behaviour).
+static bool g_rivals_preset_fix = true;
+COOP_FIX("rivals.settings_preset", "BUG-1558", g_rivals_preset_fix,
+         "rivals: apply default Settings preset on All rivals / All together switch and allow live all.friendly_fire toggle");
+
 static bool is_client() { return C.sess && C.sess->role() == net::Role::Client; }
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
 
@@ -199,15 +208,23 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     g_msgs_in++;
     bool first = !g_have_host;
+    int changed_count = 0, last_changed = -1;
     for (int i = 0; i < kCount; i++) { // (every message is the host's whole table)
         bool was = !first && g_host_sent[i];
         int old = was ? g_host.v[i] : g_cur.v[i];
         if (sent[i] && got.v[i] != old) {
             H->log(M, SK_INFO, "settings: the host's %s = %d (was %d%s)", kDefs[i].key, got.v[i], old, was ? "" : ", own");
-            if (!first && C.feed)
-                C.feed(std::string("The host set ") + kDefs[i].label + ": " + value_text(i, got.v[i]));
+            changed_count++;
+            last_changed = i;
         }
         g_host_sent[i] = sent[i];
+    }
+    if (!first && C.feed && changed_count > 0) {
+        if (changed_count == 1)
+            C.feed(std::string("The host set ") + kDefs[last_changed].label + ": " +
+                   value_text(last_changed, got.v[last_changed]));
+        else
+            C.feed("The host updated " + std::to_string(changed_count) + " session settings");
     }
     g_host = got;
     g_have_host = true;
@@ -262,11 +279,22 @@ bool from_host() { return is_client() && g_have_host; }
 const Values& defaults() { return g_defaults; }
 std::string diff() { return diff_text(is_client() && g_have_host ? g_host : g_cur, Values()); }
 
+bool is_live(Id id)
+{
+    if (id < 0 || id >= kCount)
+        return false;
+    if (!g_rivals_preset_fix && id == kFriendlyFire)
+        return false;
+    return kDefs[id].scope == Scope::Live;
+}
+
 bool set(Id id, int value, bool force, std::string* why)
 {
     if (id < 0 || id >= kCount)
         return false;
     Refusal rf = can_set(id, !is_client(), started());
+    if (rf == Refusal::None && !is_live(id) && started())
+        rf = Refusal::SessionStarted;
     if (rf == Refusal::Guest || (rf != Refusal::None && !force)) {
         if (why)
             *why = refusal_text(rf);
@@ -285,6 +313,28 @@ bool set(Id id, int value, bool force, std::string* why)
     return true;
 }
 
+int apply_mode_preset(bool rivals_mode)
+{
+    if (is_client())
+        return -1;
+    if (!g_rivals_preset_fix)
+        return 0;
+    int changed = apply_mode_preset_values(g_cur, g_defaults, rivals_mode);
+    if (changed > 0) {
+        if (g_open.empty())
+            g_pending = true;
+        else
+            save();
+        H->log(M, SK_INFO, "settings: applied %s mode preset (%d settings changed)%s",
+               rivals_mode ? "Rivals" : "Together", changed, g_open.empty() ? ", for the next world" : "");
+        broadcast();
+    } else {
+        H->log(M, SK_INFO, "settings: %s mode preset already matched (0 settings changed)",
+               rivals_mode ? "Rivals" : "Together");
+    }
+    return changed;
+}
+
 static void list(SkOut* out)
 {
     const char* who = is_host() ? "host" : is_client() ? (g_have_host ? "guest (the host's table)" : "guest (own values: no table from the host)") : "alone";
@@ -295,7 +345,7 @@ static void list(SkOut* out)
         const Def& d = kDefs[i];
         int v = raw((Id)i), e = get((Id)i);
         SAY("%s=%d %s [%s, default %s%s] %s: %s%s - %s\n", d.key, v, value_text(i, v).c_str(),
-            d.scope == Scope::Live ? "live" : "session", value_text(i, g_defaults.v[i]).c_str(),
+            is_live((Id)i) ? "live" : "session", value_text(i, g_defaults.v[i]).c_str(),
             v != g_defaults.v[i] ? ", changed" : "", d.group, d.label, e != v ? " (off: Rivals mode)" : "", d.help);
     }
 }
@@ -334,6 +384,26 @@ int command(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s=%d %s%s", kDefs[id].key, v, value_text(id, v).c_str(), g_open.empty() ? " (for the next world)" : "");
         return 0;
     }
+    if (sub == "preset" && argc > 2) {
+        std::string pv = argv[2];
+        bool riv = false;
+        if (pv == "rivals" || pv == "all_rivals")
+            riv = true;
+        else if (pv == "together" || pv == "all_together")
+            riv = false;
+        else {
+            SAY("unknown preset '%s' (use rivals or together)", argv[2]);
+            return 1;
+        }
+        int n = apply_mode_preset(riv);
+        if (n < 0) {
+            SAY("refused: preset: %s", refusal_text(Refusal::Guest));
+            return 1;
+        }
+        SAY("preset %s: %d settings changed%s", riv ? "rivals" : "together", n,
+            g_open.empty() ? " (for the next world)" : "");
+        return 0;
+    }
     if (sub == "stored") { // tests: the stored file of the world open now
         Values v;
         if (g_open.empty() || !load(g_open, v)) {
@@ -343,8 +413,8 @@ int command(void*, int argc, const char* const* argv, SkOut* out)
         SAY("stored '%s': %s", g_open.c_str(), diff_text(v, Values()).c_str());
         return 0;
     }
-    SAY("coop.settings [list] | get <key> | set <key> on|off|default|<n> | force <key> <value> (tests: ignores the "
-        "scope) | stored");
+    SAY("coop.settings [list] | get <key> | set <key> on|off|default|<n> | preset rivals|together | force <key> <value> "
+        "(tests: ignores the scope) | stored");
     return 1;
 }
 

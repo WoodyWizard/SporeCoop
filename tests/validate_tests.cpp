@@ -592,8 +592,9 @@ static void test_settings()
     int v = -1;
     CHECK(parse_value(kCellRegen, "off", v) && v == 0 && parse_value(kCellRegen, "default", v) && v == 1);
     CHECK(!parse_value(kCellRegen, "2", v) && !parse_value(kCellRegen, "x", v) && !parse_value(kCellRegen, "", v));
-    // F3 step 3 (BUG-0768): defaults are 0.7.11's behaviour; friendly fire off; 2..4 players; F5's named values
-    CHECK(kDefs[kFriendlyFire].def == 0 && kDefs[kFriendlyFire].scope == Scope::Session);
+    // F3 step 3 (BUG-0768) + BUG-1558: defaults are 0.7.11's behaviour; friendly fire off and Live; 2..4 players; F5's named values
+    CHECK(kDefs[kFriendlyFire].def == 0 && kDefs[kFriendlyFire].scope == Scope::Live);
+    CHECK(can_set(kFriendlyFire, true, true) == Refusal::None && can_set(kFriendlyFire, false, false) == Refusal::Guest);
     CHECK(kDefs[kPlayerLimit].def == 4 && kDefs[kPlayerLimit].min == 2 && kDefs[kPlayerLimit].max == 4);
     CHECK(parse_value(kPlayerLimit, "3", v) && v == 3 && !parse_value(kPlayerLimit, "1", v) && !parse_value(kPlayerLimit, "5", v));
     CHECK(!parse_value(kPlayerLimit, "on", v) && value_text(kPlayerLimit, 3) == "3");
@@ -679,6 +680,64 @@ static void test_settings()
     CHECK(on_world_open(false, true, stored, defs, cur) == Opened::Stored && cur == stored);
     CHECK(on_world_open(false, false, stored, defs, cur) == Opened::Defaults && cur == defs);
     CHECK(diff_text(defs, Values()).empty() && diff_text(stored, Values()) == "creature.pack_rescue=0");
+
+    // BUG-1558: Rivals vs Together mode presets (rivals_preset_value, apply_mode_preset_values)
+    {
+        // Every preset-managed value is within its setting's [min, max]
+        for (int i = 0; i < kCount; i++) {
+            int rv = rivals_preset_value((Id)i);
+            CHECK(rv == -1 || (rv >= kDefs[i].min && rv <= kDefs[i].max));
+        }
+        // Key Rivals values and preserved user/lobby settings
+        CHECK(rivals_preset_value(kFriendlyFire) == 1 && rivals_preset_value(kCivOwnMoney) == 1 &&
+              rivals_preset_value(kSpaceRivals) == 1);
+        CHECK(rivals_preset_value(kDnaPace) == 0 && rivals_preset_value(kCreatureMode) == 0 &&
+              rivals_preset_value(kSwitchVote) == 0 && rivals_preset_value(kCellRegen) == 0 &&
+              rivals_preset_value(kPackRescue) == 0 && rivals_preset_value(kTribePincer) == 0 &&
+              rivals_preset_value(kCivRoles) == 0 && rivals_preset_value(kSpaceContracts) == 0 &&
+              rivals_preset_value(kAdventureShared) == 0);
+        CHECK(rivals_preset_value(kPlayerLimit) == -1 && rivals_preset_value(kAutosave) == -1 &&
+              rivals_preset_value(kNameTags) == -1 && rivals_preset_value(kLateJoin) == -1 &&
+              rivals_preset_value(kPartnerMap) == -1 && rivals_preset_value(kSharedDna) == -1 &&
+              rivals_preset_value(kNpcTargets) == -1 && rivals_preset_value(kPartyDifficulty) == -1 &&
+              rivals_preset_value(kLineageCells) == -1 && rivals_preset_value(kEditorNow) == -1 &&
+              rivals_preset_value(kSpaceTrade) == -1);
+
+        // Together -> Rivals -> Together round-trip with custom coop.ini defaults & custom user lobby knobs
+        Values ini_defs;
+        ini_defs.v[kDnaPace] = 0;   // custom coop.ini override
+        ini_defs.v[kPackHeal] = 0;  // custom coop.ini override
+        Values m = ini_defs;
+        m.v[kPlayerLimit] = 3;      // user-chosen lobby setting: must survive switches
+        m.v[kAutosave] = 4;         // user-chosen lobby setting: must survive switches
+        m.v[kNameTags] = 0;         // user-chosen general setting: must survive switches
+        m.v[kSpaceRivals] = 0;      // explicitly off before switching to Rivals: Rivals must re-enable it
+
+        int ch1 = apply_mode_preset_values(m, ini_defs, true);
+        CHECK(ch1 > 0);
+        CHECK(m.v[kFriendlyFire] == 1 && m.v[kDnaPace] == 0 && m.v[kCivOwnMoney] == 1 && m.v[kSpaceRivals] == 1);
+        CHECK(m.v[kCreatureMode] == 0 && m.v[kSwitchVote] == 0 && m.v[kCellRegen] == 0 && m.v[kPartnerArrows] == 0 &&
+              m.v[kCellKnockout] == 0 && m.v[kCellRespawn] == 0 && m.v[kPackRescue] == 0 && m.v[kRevive] == 0 &&
+              m.v[kPackHeal] == 0 && m.v[kJointHunt] == 0 && m.v[kTribePincer] == 0 && m.v[kTribeAura] == 0 &&
+              m.v[kTribeDuet] == 0 && m.v[kTribeEpic] == 0 && m.v[kCivRoles] == 0 && m.v[kCivSiege] == 0 &&
+              m.v[kCivSwVote] == 0 && m.v[kSpaceDisable] == 0 && m.v[kSpaceContracts] == 0 &&
+              m.v[kSpaceDiplomacy] == 0 && m.v[kSpaceAllies] == 0 && m.v[kSpaceFinale] == 0 &&
+              m.v[kAdventureShared] == 0);
+        // Preserved user settings untouched
+        CHECK(m.v[kPlayerLimit] == 3 && m.v[kAutosave] == 4 && m.v[kNameTags] == 0);
+        // Applying Rivals again is idempotent (0 changes)
+        CHECK(apply_mode_preset_values(m, ini_defs, true) == 0);
+
+        // Switching back to Together restores coop.ini defaults while preserving user settings
+        int ch2 = apply_mode_preset_values(m, ini_defs, false);
+        CHECK(ch2 > 0);
+        CHECK(m.v[kFriendlyFire] == 0 && m.v[kCivOwnMoney] == kCivOwnMoneyDefault && m.v[kSpaceRivals] == 1);
+        CHECK(m.v[kDnaPace] == 0 && m.v[kPackHeal] == 0); // restored to custom ini_defs, not hardcoded 1
+        CHECK(m.v[kCellRegen] == 1 && m.v[kPackRescue] == 1 && m.v[kTribePincer] == 1 && m.v[kCivRoles] == 1 &&
+              m.v[kSpaceContracts] == 1 && m.v[kAdventureShared] == 1);
+        CHECK(m.v[kPlayerLimit] == 3 && m.v[kAutosave] == 4 && m.v[kNameTags] == 0);
+        CHECK(apply_mode_preset_values(m, ini_defs, false) == 0);
+    }
 }
 
 // F2 of 0.7.12 (BUG-0764): the player colours, the arrow at the screen edge

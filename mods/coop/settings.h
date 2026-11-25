@@ -40,6 +40,11 @@ int get(Id id);
 inline bool on(Id id) { return get(id) != 0; }
 // set by the host or a player alone; false (and *why) when refused. force: tests, the scope is not checked
 bool set(Id id, int value, bool force, std::string* why = nullptr);
+// BUG-1558: effective live scope (respects rivals.settings_preset fix switch for kFriendlyFire)
+bool is_live(Id id);
+// BUG-1558: apply default Rivals (true) or Together (false) Settings preset on host/alone (no-op when fix is off;
+// returns -1 if called on a guest, else number of settings changed)
+int apply_mode_preset(bool rivals_mode);
 bool started();        // the session settings are fixed now (the host plays its world; a guest: the host's flag)
 bool from_host();      // a guest that plays with the host's table
 const Values& defaults(); // the defaults of a new world (coop.ini)

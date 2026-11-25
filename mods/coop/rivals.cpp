@@ -15,6 +15,7 @@
 #include "lifecycle.h"
 #include "modes.h"
 #include "net/manifest.h"
+#include "settings.h"
 #include "space_ext.h"
 #include "space_rivalry.h"
 #include "store.h"
@@ -808,6 +809,9 @@ bool set_preset(Preset p)
     if (!g_rivals_core_fix || (connected() && !is_host()))
         return false;
     g_state.config.apply_preset(p);
+    // BUG-1558: automatically apply matching default Settings preset for All rivals / All together (never Custom)
+    if (p == Preset::AllRivals || p == Preset::AllTogether)
+        settings::apply_mode_preset(p == Preset::AllRivals);
     if (is_host()) {
         host_broadcast(true);
         std::string msg = std::string("Rivals preset: ") + preset_name(p);

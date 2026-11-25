@@ -1963,7 +1963,10 @@ static std::string value_label(int id, int v)
 // only before the start)
 static settings::Refusal set_refusal(int id)
 {
-    return settings::can_set(id, A.role() != 2, settings::started());
+    auto rf = settings::can_set(id, A.role() != 2, settings::started());
+    if (rf == settings::Refusal::None && !settings::is_live((settings::Id)id) && settings::started())
+        rf = settings::Refusal::SessionStarted;
+    return rf;
 }
 
 static void do_set_click(int row)
@@ -2090,7 +2093,7 @@ static void refresh_settings()
         text(D.set_btn[i], value_label(id, v));
         auto r = set_refusal(id);
         enable(D.set_btn[i], r == settings::Refusal::None);
-        bool live = d.scope == settings::Scope::Live;
+        bool live = settings::is_live((settings::Id)id);
         bool locked = !live && started; // (a guest too: the host's started flag)
         text(D.set_tag[i], locked                                   ? T("locked", "закрыта")
                            : live                                   ? T("live", "живая")
@@ -2344,6 +2347,12 @@ static std::string tooltip_for(const std::string& name)
     if (name == "rivals")
         return T("Open Rivals mode settings, race progress, relations, and influence",
                  "Открыть настройки режима Соперники, прогресс гонки, отношения и влияние");
+    if (name == "rbtn0" && g_rivals_page && g_rivals_first == 0)
+        return rivals::config().preset() == rivals::Preset::AllRivals
+                   ? T("Switch all stages to Together and restore Together default Settings",
+                       "Переключить все этапы на Вместе и вернуть настройки по умолчанию")
+                   : T("Switch all stages to Rivals and apply Rivals default Settings",
+                       "Переключить все этапы на Соперников и применить настройки для соперников");
     if (name == "votemode")
         return T("Toggle Together or Rivals mode for the next stage",
                  "Переключить режим Вместе или Соперники для следующего этапа");
