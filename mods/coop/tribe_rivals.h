@@ -40,6 +40,11 @@ int override_choose_action(void* target_obj, int vanilla_action);
 // Returns true if handled by Tribe Rivals.
 bool handle_guest_baby(uint8_t from, float x, float y, float z);
 
+// Guest tool purchase food helpers in Tribe Rivals (BUG-1554).
+int32_t player_food(uint8_t pid);
+bool spend_player_food(uint8_t pid, int32_t cost);
+void sync_player_food(uint8_t pid);
+
 // Diagnostics and console subcommands (`coop.tribe rivals ...`).
 std::string status_summary();
 std::string debug_cmd(const std::vector<std::string>& args);

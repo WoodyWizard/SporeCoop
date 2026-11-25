@@ -1,6 +1,8 @@
 #include "tribe.h"
 #include "tribe_internal.h"
 #include "tribe_rivals.h"
+#include "tribe_rivals_logic.h"
+#include "rivals.h"
 #include "tribe_logic.h"
 #include "call_guard.h"
 #include "lifecycle.h"
@@ -496,6 +498,10 @@ void ff_cancel_member(uint16_t id)
 
 bool ff_try_order(uint16_t att_id, uint8_t att_owner, void* target, int action)
 {
+    if (tribe_rivals::active()) {
+        ff_cancel_member(att_id);
+        return false; // BUG-1554: Tribe Rivals uses separate player tribes + War PvP, never same-tribe FF
+    }
     void* pt = player_tribe();
     if (!pt || action != 7 || !target || !is_citizen(target) || F<void*>(target, kOwnerTribeOff) != pt) {
         ff_cancel_member(att_id);
@@ -521,7 +527,7 @@ void ff_host_tick(double now)
 {
     if (g_ff_orders.empty())
         return;
-    if (!ff_on() || !is_host() || !active()) {
+    if (!ff_on() || !is_host() || !active() || tribe_rivals::active()) {
         ff_clear_orders();
         return;
     }
@@ -609,20 +615,26 @@ COOP_FIX("tribe.guest_mission", "BUG-1068", g_guest_mission_fix,
          "tribe: a village the guests raid or give gifts to counts for the stage's goal, as one the host acts on");
 uint32_t g_guest_missions;
 // the village (cTribe) of an order's target: the tribe itself, a hut (+0x230), a tool (+0x1F8), a member (+0x1014)
-void* target_village(void* o)
+static void* tribe_of_target_obj(void* o)
 {
     if (!o || !game::object_alive(o))
         return nullptr;
     uint32_t noun = game::noun_id(o);
     void* t = noun == kTribeNoun        ? o
-              : noun == 0x1E4DAAEu      ? F<void*>(o, 0x230)       // cTribeHut (docs/re/tribe.md "Raids on buildings")
-              : noun == 0x18C8F0Cu      ? F<void*>(o, 0x1F8)       // cTribeTool
+              : noun == 0x1E4DAAEu      ? F<void*>(o, 0x230)          // cTribeHut (docs/re/tribe.md "Raids on buildings")
+              : noun == 0x18C8F0Cu      ? F<void*>(o, 0x1F8)          // cTribeTool
               : noun == 0x18EB4B7u      ? F<void*>(o, kOwnerTribeOff) // cCreatureCitizen
                                         : nullptr;
-    if (!t || t == player_tribe())
+    if (!t)
         return nullptr;
     auto ts = all_tribes();
     return std::find(ts.begin(), ts.end(), t) != ts.end() ? t : nullptr;
+}
+
+void* target_village(void* o)
+{
+    void* t = tribe_of_target_obj(o);
+    return (!t || t == player_tribe()) ? nullptr : t;
 }
 
 void host_command(uint8_t from, net::Reader& r)
@@ -666,7 +678,8 @@ void host_command(uint8_t from, net::Reader& r)
     if (kind != CMD_ACTION && kind != CMD_WALK)
         return;
     void* pt = player_tribe();
-    void* sender_tribe = tribe_rivals::active() ? tribe_rivals::tribe_of_player(from) : pt; // WP-R4 (BUG-1548)
+    const bool rivals_on = tribe_rivals::active();
+    void* sender_tribe = rivals_on ? tribe_rivals::tribe_of_player(from) : pt; // WP-R4 (BUG-1548)
     void* target = kind == CMD_ACTION ? resolve_target(tgt) : nullptr;
     char b[160];
     snprintf(b, sizeof b, "from=%u kind=%u n=%u action=%d target=%u/%u/%X (%.1f %.1f %.1f) -> %p", from, kind,
@@ -684,6 +697,15 @@ void host_command(uint8_t from, net::Reader& r)
         g_last_cmd += tgt.kind == 1 && g_host.members.has(tgt.id) ? " rejected: the target is gone (BUG-1053)" : " rejected: no such target here";
         return; // the object is gone on the host
     }
+    // BUG-1554: In Tribe Rivals, bypass ff_try_order and gate hostile rival orders on rivals::at_war().
+    uint8_t target_owner = tribe_rivals::kNoOwner;
+    if (rivals_on && kind == CMD_ACTION && target) {
+        if (void* tt = tribe_of_target_obj(target))
+            target_owner = tribe_rivals::owner_of_tribe(tt);
+    }
+    bool at_war_target = rivals_on && rivals::valid_player(target_owner) && rivals::at_war(from, target_owner);
+    auto order_dec = tribe_rivals::decide_host_order(rivals_on, action, from, target_owner, at_war_target);
+
     int ran = 0;
     for (uint16_t id : ids) {
         HEntry* hm = g_host.members.find(id);
@@ -703,13 +725,22 @@ void host_command(uint8_t from, net::Reader& r)
             float p[3] = {pos.x, pos.y, pos.z};
             if (rec)
                 thiscall<void>(a_SetValueVector3, (uint8_t*)rec + 0x39, (const float*)p);
-        } else if (!ff_try_order(id, hm->data.owner, target, action))
+        } else if (order_dec == tribe_rivals::OrderDecision::BlockHostile) {
+            g_cmds_rejected++;
+            continue;
+        } else if (order_dec == tribe_rivals::OrderDecision::RunFriendlyFire) {
+            if (!ff_try_order(id, hm->data.owner, target, action))
+                thiscall<void*>(a_DoAction, c, action, target, (void*)nullptr);
+        } else {
             thiscall<void*>(a_DoAction, c, action, target, (void*)nullptr);
+        }
         g_cmds_done++;
         ran++;
     }
-    // BUG-1068: the village's goal mission, as the host's own raid or gift click makes it
-    if (ran && g_guest_mission_fix && kind == CMD_ACTION && (action == 15 || action == 9) && from != C.sess->my_id())
+    // BUG-1068: the village's goal mission, as the host's own raid or gift click makes it.
+    // BUG-1554: in Tribe Rivals, guest NPC raids/gifts belong to the guest, never the host's goal bar.
+    if (ran && g_guest_mission_fix && !rivals_on && kind == CMD_ACTION && (action == 15 || action == 9) &&
+        from != C.sess->my_id())
         if (void* v = target_village(target); v && wsync::goal_target(v)) {
             g_guest_missions++;
             g_last_cmd += " (the village's goal mission: BUG-1068)";

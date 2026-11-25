@@ -130,5 +130,7 @@ bool remove_tool(void* tool);
 // BUG-0524 (host): a guest bought a tool of `type` for the player tribe and placed it at `pos`: the same here (a
 // tool of that type elsewhere goes, as the palette's placement of a type the tribe has); false: nothing done
 bool buy_player_tool(int type, const net::Vec3& pos);
+// BUG-1554 (host): same as buy_player_tool, routing to sender `from`'s own tribe and charging its food in Tribe Rivals
+bool buy_player_tool_for(uint8_t from, int type, const net::Vec3& pos);
 
 } // namespace tribe

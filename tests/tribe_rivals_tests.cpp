@@ -227,6 +227,159 @@ static void test_wire_roundtrip_and_bounds()
     }
 }
 
+static void test_war_order_routing()
+{
+    printf("tribe_rivals: War attack order routing vs Together FF (BUG-1554)\n");
+    // Together mode: always delegates to ff_try_order
+    CHECK(decide_host_order(false, 7, 1, 0, false) == OrderDecision::RunFriendlyFire);
+    CHECK(decide_host_order(false, 7, 1, 0, true) == OrderDecision::RunFriendlyFire);
+
+    // Tribe Rivals: guest attack (7) or raid (15) on host (0) at War -> AllowNative (never swallowed by FF!)
+    CHECK(decide_host_order(true, 7, 1, 0, true) == OrderDecision::AllowNative);
+    CHECK(decide_host_order(true, 15, 1, 0, true) == OrderDecision::AllowNative);
+    CHECK(decide_host_order(true, 7, 2, 1, true) == OrderDecision::AllowNative);
+
+    // Tribe Rivals: hostile order against rival while NOT at War -> BlockHostile
+    CHECK(decide_host_order(true, 7, 1, 0, false) == OrderDecision::BlockHostile);
+    CHECK(decide_host_order(true, 15, 1, 0, false) == OrderDecision::BlockHostile);
+    CHECK(decide_host_order(true, 7, 0, 1, false) == OrderDecision::BlockHostile);
+
+    // Tribe Rivals: attacks on NPC tribes, non-hostile actions, and self-target -> AllowNative
+    CHECK(decide_host_order(true, 7, 1, kNoOwner, false) == OrderDecision::AllowNative);
+    CHECK(decide_host_order(true, 15, 1, kNoOwner, false) == OrderDecision::AllowNative);
+    CHECK(decide_host_order(true, 9, 1, 0, false) == OrderDecision::AllowNative);  // gift
+    CHECK(decide_host_order(true, 2, 1, 0, false) == OrderDecision::AllowNative);  // gather
+    CHECK(decide_host_order(true, 7, 1, 1, false) == OrderDecision::AllowNative);  // self
+    CHECK(is_hostile_citizen_action(7) && is_hostile_citizen_action(15) && !is_hostile_citizen_action(9));
+}
+
+static void test_guest_tool_buy_routing()
+{
+    printf("tribe_rivals: guest tool/hut purchase routing & food charging (BUG-1554)\n");
+    // Together mode: routes to host tribe 0, food handled by shared ledger
+    auto tog = plan_tool_buy(false, 1, 1, 20.f, false, 0, true);
+    CHECK(tog.ok && tog.target_owner == 0 && tog.food_cost == 0);
+
+    // Tribe Rivals: guest buys Stone Axe (1, cost 15) near own hut with sufficient food
+    auto g_ok = plan_tool_buy(true, 1, 1, 25.f, false, 30, true);
+    CHECK(g_ok.ok && g_ok.target_owner == 1 && g_ok.food_cost == 15);
+
+    // Tribe Rivals: guest buys Torch (3, cost 25) with insufficient food -> rejected
+    auto g_poor = plan_tool_buy(true, 1, 3, 25.f, false, 20, true);
+    CHECK(!g_poor.ok && g_poor.food_cost == 25);
+
+    // Tribe Rivals: moving existing tool hut is free even with 0 food
+    auto g_move = plan_tool_buy(true, 1, 3, 25.f, true, 0, true);
+    CHECK(g_move.ok && g_move.target_owner == 1 && g_move.food_cost == 0);
+
+    // Tribe Rivals: distance check is against target tribe's hut (rejects > 150 m or NaN)
+    CHECK(!plan_tool_buy(true, 1, 1, 151.f, false, 100, true).ok);
+    CHECK(!plan_tool_buy(true, 1, 1, NAN, false, 100, true).ok);
+    CHECK(!plan_tool_buy(true, 1, 1, 10.f, false, 100, false).ok);
+
+    // Host buys locally in palette (0 extra deduction on host), invalid tool types rejected
+    auto h_ok = plan_tool_buy(true, 0, 6, 15.f, false, 0, true);
+    CHECK(h_ok.ok && h_ok.target_owner == 0 && h_ok.food_cost == 0);
+    CHECK(!plan_tool_buy(true, 1, 0, 10.f, false, 100, true).ok);
+    CHECK(!plan_tool_buy(true, 1, 11, 10.f, false, 100, true).ok);
+    CHECK(tool_buy_cost(10, false) == 0 && tool_buy_cost(9, false) == 20 && tool_buy_cost(6, false) == 25);
+}
+
+static void test_wsync_isolation_policy()
+{
+    printf("tribe_rivals: wsync isolation policy (BUG-1554)\n");
+    // Together mode (both off)
+    auto p_tog = wsync_policy(false, false);
+    CHECK(p_tog.apply_tribe_level && p_tog.apply_tribe_goal && p_tog.push_guest_goal_target &&
+          !p_tog.include_host_tribe_food && p_tog.apply_creature_nest);
+
+    // Tribe Rivals active: disable host level/goal clobbering & guest->host goal_target, include host village food
+    auto p_tr = wsync_policy(true, false);
+    CHECK(!p_tr.apply_tribe_level && !p_tr.apply_tribe_goal && !p_tr.push_guest_goal_target &&
+          p_tr.include_host_tribe_food && p_tr.apply_creature_nest);
+
+    // Creature Rivals active: disable host nest migration sync
+    auto p_cr = wsync_policy(false, true);
+    CHECK(!p_cr.apply_creature_nest && p_cr.apply_tribe_level && p_cr.apply_tribe_goal);
+
+    // Food sync targeting: Together syncs NPCs only; Tribe Rivals syncs host + NPCs + other rivals, never guest's own
+    CHECK(!should_sync_tribe_food(false, true, false));
+    CHECK(should_sync_tribe_food(false, false, false));
+    CHECK(!should_sync_tribe_food(true, true, true));   // guest's own swapped tribe: NEVER clobber
+    CHECK(!should_sync_tribe_food(true, false, true));  // guest's assigned tribe even before swap: NEVER clobber
+    CHECK(should_sync_tribe_food(true, false, false));  // host's village (orig_pt) or NPC tribe: sync!
+    CHECK(should_sync_tribe_food(true, true, false));   // pre-swap local player_tribe (host village): sync!
+}
+
+static void test_pvp_diplomacy_and_creature_payout()
+{
+    printf("tribe_rivals: PvP native diplomacy & Creature -> Tribe draft payout (BUG-1554)\n");
+    CHECK(pvp_npc_rel_for(rivals::Relation::War) == NpcRel::Hostile);
+    CHECK(pvp_npc_rel_for(rivals::Relation::Ally) == NpcRel::Allied);
+    CHECK(pvp_npc_rel_for(rivals::Relation::Neutral) == NpcRel::Neutral);
+
+    // Creature Rivals draft payout for guest winner (pid = 1)
+    rivals::Draft d;
+    d.pending_payout[1] = 250;
+    d.pending_payout_stage[1] = rivals::Stage::Creature;
+    d.pending_payout[0] = 100;
+    d.pending_payout_stage[0] = rivals::Stage::Cell; // wrong stage: must NOT be consumed by Tribe!
+
+    // Blocked while inactive, while draft is active, or before tribe is assigned
+    CHECK(deliver_creature_payout_for(d, false, true, 1) == 0);
+    d.active = true;
+    CHECK(deliver_creature_payout_for(d, true, true, 1) == 0);
+    d.active = false;
+    CHECK(deliver_creature_payout_for(d, true, false, 1) == 0);
+
+    // Does not steal Cell payout
+    CHECK(deliver_creature_payout_for(d, true, true, 0) == 0);
+    CHECK(d.pending_payout[0] == 100);
+
+    // Delivers Creature payout once to guest, then 0 on subsequent calls
+    CHECK(deliver_creature_payout_for(d, true, true, 1) == 250);
+    CHECK(deliver_creature_payout_for(d, true, true, 1) == 0);
+
+    // Delivers Creature payout to host (pid = 0) and clamps huge values
+    d.pending_payout[0] = 5000;
+    d.pending_payout_stage[0] = rivals::Stage::Creature;
+    CHECK(deliver_creature_payout_for(d, true, true, 0) == kMaxDraftFoodPayout);
+    CHECK(deliver_creature_payout_for(d, true, true, 0) == 0);
+    CHECK(creature_draft_payout_food(0) == 0 && creature_draft_payout_food(-10) == 0);
+}
+
+static void test_npc_ui_list()
+{
+    printf("tribe_rivals: F9 Influence UI NPC tribe list generation (BUG-1554)\n");
+    std::vector<NpcUiSource> src = {
+        {0, NpcRel::Neutral, false, ""},                  // invalid pol -> skipped
+        {0x101, NpcRel::Neutral, false, ""},              // #1 Neutral
+        {0x102, NpcRel::Allied, false, "Blue Tribe"},     // #2 Allied (custom name)
+        {0x103, NpcRel::Hostile, false, ""},              // #3 Hostile
+        {0x104, NpcRel::Annoyed, false, ""},              // #4 Annoyed (hostile=true)
+        {0x105, NpcRel::Friendly, false, ""},             // #5 Friendly
+        {0x106, NpcRel::Conquered, false, ""},            // conquered rel -> skipped
+        {0x107, NpcRel::Neutral, true, ""},               // conquered flag -> skipped
+    };
+    auto out = build_npc_ui_list(src);
+    CHECK(out.size() == 5);
+
+    CHECK(out[0].npc_id == 0x101 && out[0].label == "NPC Tribe #1 (Neutral)");
+    CHECK(!out[0].allied && !out[0].hostile && out[0].can_turn && !out[0].can_protect && !out[0].can_smooth);
+
+    CHECK(out[1].npc_id == 0x102 && out[1].label == "Blue Tribe (Allied)");
+    CHECK(out[1].allied && !out[1].hostile && out[1].can_turn && out[1].can_protect && !out[1].can_smooth);
+
+    CHECK(out[2].npc_id == 0x103 && out[2].label == "NPC Tribe #3 (Hostile)");
+    CHECK(!out[2].allied && out[2].hostile && out[2].can_turn && !out[2].can_protect && out[2].can_smooth);
+
+    CHECK(out[3].npc_id == 0x104 && out[3].label == "NPC Tribe #4 (Annoyed)");
+    CHECK(!out[3].allied && out[3].hostile && out[3].can_turn && !out[3].can_protect && out[3].can_smooth);
+
+    CHECK(out[4].npc_id == 0x105 && out[4].label == "NPC Tribe #5 (Friendly)");
+    CHECK(!out[4].allied && !out[4].hostile && out[4].can_turn && !out[4].can_protect && !out[4].can_smooth);
+}
+
 int main()
 {
     test_pick_rival_tribe();
@@ -235,6 +388,11 @@ int main()
     test_damage_and_inviolability();
     test_gifts_and_draft();
     test_wire_roundtrip_and_bounds();
+    test_war_order_routing();
+    test_guest_tool_buy_routing();
+    test_wsync_isolation_policy();
+    test_pvp_diplomacy_and_creature_payout();
+    test_npc_ui_list();
     if (g_fail) {
         printf("tribe_rivals_tests: %d FAILED\n", g_fail);
         return 1;

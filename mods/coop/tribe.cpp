@@ -1,6 +1,7 @@
 #include "tribe.h"
 #include "tribe_internal.h"
 #include "tribe_rivals.h"
+#include "tribe_rivals_logic.h"
 #include "party_difficulty.h"
 #include "tribe_logic.h"
 #include "call_guard.h"
@@ -1637,29 +1638,49 @@ bool remove_tool(void* tool)
 }
 
 uint32_t g_tools_bought;
-bool buy_player_tool(int type, const net::Vec3& pos)
+bool buy_player_tool_for(uint8_t from, int type, const net::Vec3& pos)
 {
-    void* pt = g_ok ? player_tribe() : nullptr;
-    if (!pt || type < 1 || type > 10 || !std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z) ||
-        !(net::dist(tribe_pos(pt), pos) <= 150.f)) // a guest's request: a place near the player tribe only
+    const bool rivals_on = tribe_rivals::active();
+    void* pt = g_ok ? (rivals_on ? tribe_rivals::tribe_of_player(from) : player_tribe()) : nullptr;
+    if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z))
         return false;
-    for (void* tool : tribe_tools(pt)) {
-        net::Vec3 p;
-        if (tool_type(tool) != type || !game::object_position(tool, p))
-            continue;
-        if (net::dist(p, pos) < 2.f)
-            return false; // there already
-        if (tool_dragged(tool))
-            return false; // this game's player is placing one of the type now
+    float d = pt ? net::dist(tribe_pos(pt), pos) : 1e9f;
+    bool replacing = false;
+    if (pt) {
+        for (void* tool : tribe_tools(pt)) {
+            net::Vec3 p;
+            if (tool_type(tool) != type || !game::object_position(tool, p))
+                continue;
+            if (net::dist(p, pos) < 2.f)
+                return false; // there already
+            if (tool_dragged(tool))
+                return false; // this game's player is placing one of the type now
+            replacing = true;
+        }
+    }
+    int32_t food = rivals_on ? tribe_rivals::player_food(from) : 0;
+    auto plan = tribe_rivals::plan_tool_buy(rivals_on, from, type, d, replacing, food, pt != nullptr);
+    if (!plan.ok) {
+        if (rivals_on && from != 0 && plan.food_cost > 0)
+            tribe_rivals::sync_player_food(from);
+        return false;
     }
     // the palette's placement of a type the tribe has: the old one goes (0xD13C05: RemoveObject, RemoveTool)
     for (void* tool : tribe_tools(pt))
         if (tool_type(tool) == type)
             vcall<void>(pt, 0xB8 / 4, tool);
     void* tool = make_tool_in(pt, type, pos);
-    if (tool)
+    if (tool) {
+        if (plan.food_cost > 0)
+            tribe_rivals::spend_player_food(from, plan.food_cost);
         g_tools_bought++;
+    }
     return tool != nullptr;
+}
+
+bool buy_player_tool(int type, const net::Vec3& pos)
+{
+    return buy_player_tool_for(0, type, pos);
 }
 // BUG-0505: what a member does in its game (docs/re/tribe.md#tribe-orders): the order record (ai+0x60C list,
 // rec+0 action, +0x28 target, +0x38 has target), the behaviour node (ai+0x1D8) with its depth (ai+0x1DC) and
@@ -3694,15 +3715,37 @@ static float host_health(void* c)
 bool g_fix_chiefs = true;
 COOP_FIX_UNSAFE("tribe.chiefs", "BUG-0081", g_fix_chiefs, "tribe: chiefs checked against the player tribe's own list, not freed memory");
 static uint32_t g_chief_restores, g_chief_gone, g_chief_bad_calls;
+// BUG-1554: In Tribe Rivals, every player owns a separate cTribe; walk all player-owned tribes for chiefs & tags.
+static std::vector<void*> owned_tribes()
+{
+    std::vector<void*> out;
+    if (tribe_rivals::active()) {
+        for (void* t : all_tribes())
+            if (tribe_rivals::is_player_owned_tribe(t))
+                out.push_back(t);
+    }
+    if (out.empty()) {
+        if (void* pt = player_tribe())
+            out.push_back(pt);
+    }
+    return out;
+}
+
 static void restore_chief_scales(const std::unordered_map<uint8_t, void*>* keep)
 {
     std::unordered_set<void*> mem;
-    if (void* pt = g_ok && game::mode_id() == modes::kTribe ? player_tribe() : nullptr) {
-        void** b = F<void**>(pt, kMembersOff);
-        void** e = F<void**>(pt, kMembersOff + 4);
-        for (void** it = b; it && it < e && mem.size() < 256; ++it)
-            if (*it)
-                mem.insert(*it);
+    if (g_ok && game::mode_id() == modes::kTribe) {
+        auto add_members = [&](void* t) {
+            if (!t || !skg::readable(t, kMembersOff + 8))
+                return;
+            void** b = F<void**>(t, kMembersOff);
+            void** e = F<void**>(t, kMembersOff + 4);
+            for (void** it = b; it && it < e && mem.size() < 512; ++it)
+                if (*it)
+                    mem.insert(*it);
+        };
+        for (void* t : all_tribes())
+            add_members(t);
     }
     for (auto it = g_chief_scale.begin(); it != g_chief_scale.end();) {
         bool still = false;
@@ -3729,11 +3772,10 @@ static void restore_chief_scales(const std::unordered_map<uint8_t, void*>* keep)
 // every machine picks the same chiefs (ids, owners and health come from the host)
 static void chiefs_tick()
 {
-    void* pt = player_tribe();
     std::unordered_map<uint8_t, void*> want;
     std::unordered_map<uint8_t, uint16_t> best;
-    if (pt)
-        for (void* c : members(pt)) {
+    for (void* t : owned_tribes())
+        for (void* c : members(t)) {
             uint8_t o = owner_of(c);
             uint16_t id = member_id(c);
             // a knocked-out member (the game's chieftain waits for its respawn with 0 health) leads nobody
@@ -3879,8 +3921,13 @@ static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type
         // animal, an epic). The attacker is ours when it is a member of the player tribe (members are citizens: ah)
         if (!is_ff_hit) {
             using party::Side;
-            Side vs = vt == pt && pt ? Side::Player : vt ? Side::Npc : Side::Other;
-            Side as = !ac ? Side::Other : ah && pt && F<void*>(ac, kOwnerTribeOff) == pt ? Side::Player : Side::Npc;
+            const bool rivals_on = tribe_rivals::active();
+            bool vic_is_player = vt && (rivals_on ? tribe_rivals::is_player_owned_tribe(vt) : (pt && vt == pt));
+            void* act = ac && is_citizen(ac) ? F<void*>(ac, kOwnerTribeOff) : nullptr;
+            bool att_is_player = ac && (rivals_on ? tribe_rivals::is_player_owned_tribe(act)
+                                                  : (ah && pt && act == pt));
+            Side vs = vic_is_player ? Side::Player : vt ? Side::Npc : Side::Other;
+            Side as = !ac ? Side::Other : att_is_player ? Side::Player : Side::Npc;
             dmg = party::hit(dmg, vs, as);
         }
         if (!tribe_rivals::active() && ao < 0xFE && vt && vt != pt) { // our member hits another tribe
@@ -4392,6 +4439,8 @@ bool epic_listed()
 
 static void epic_tick(double now)
 {
+    if (tribe_rivals::active()) // BUG-1554: co-op epic spawning is Together-only
+        return;
     if (g_epic && ((g_kept_refs_fix ? !kept_alive(g_epic, g_epic_serial, 0x18EB45Eu) // (BUG-0951: listed, the same object)
                                     : (!epic_listed() || !game::object_alive(g_epic))) ||
                    game::is_dead(g_epic))) {
@@ -4471,7 +4520,7 @@ static void put_chief(void* c, const net::Vec3& spot)
 static void spread_chiefs(double now)
 {
     void* pt = player_tribe();
-    if (!g_spread_fix || !pt)
+    if (!g_spread_fix || !pt || tribe_rivals::active())
         return;
     net::Vec3 centre = tribe_pos(pt);
     std::vector<std::pair<uint8_t, void*>> ch(g_chief.begin(), g_chief.end());
@@ -4501,7 +4550,7 @@ static void spread_chiefs(double now)
 static void place_chiefs(double now)
 {
     void* pt = player_tribe();
-    if (!g_place_fix || !pt || g_place_due == 0 || now < g_place_due)
+    if (!g_place_fix || !pt || tribe_rivals::active() || g_place_due == 0 || now < g_place_due)
         return;
     if (now > g_place_until) {
         g_place_due = 0;
@@ -5166,13 +5215,20 @@ bool center(net::Vec3& pos)
 
 void for_each_owned(void (*fn)(void* citizen, uint8_t owner, void* user), void* user)
 {
-    void* t = active() ? player_tribe() : nullptr;
-    if (!t)
+    if (!active())
         return;
-    for (void* c : members(t)) {
-        uint8_t o = owner_of(c);
-        if (o != 0xFF && o != 0xFE)
-            fn(c, o, user);
+    const bool rivals_on = tribe_rivals::active();
+    for (void* t : owned_tribes()) {
+        for (void* c : members(t)) {
+            uint8_t o = owner_of(c);
+            if (o == 0xFF && rivals_on) {
+                uint8_t to = tribe_rivals::owner_of_tribe(t);
+                if (to < 0xFE)
+                    o = to;
+            }
+            if (o != 0xFF && o != 0xFE)
+                fn(c, o, user);
+        }
     }
 }
 

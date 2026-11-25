@@ -14,6 +14,7 @@
 #include "cellsync.h"
 #include "civ.h"
 #include "civ_rivals.h"
+#include "creature_rivals.h"
 #include "designs.h"
 #include "fixes.h"
 #include "history.h"
@@ -22,6 +23,7 @@
 #include "game.h"
 #include "modes.h"
 #include "tribe_rivals.h"
+#include "tribe_rivals_logic.h"
 #include "net/protocol.h"
 #include "sporekit_game.hpp"
 
@@ -108,10 +110,9 @@ struct TribeRef {
     uint32_t pol;
     float x, y, z;
 };
-static std::vector<TribeRef> npc_tribes()
+static std::vector<TribeRef> all_tribes_ref()
 {
     std::vector<TribeRef> out;
-    void* pt = player_tribe();
     game::for_each_object(
         [](void* o, uint32_t noun, void* u) {
             auto* v = (std::vector<TribeRef>*)u;
@@ -122,6 +123,12 @@ static std::vector<TribeRef> npc_tribes()
             return true;
         },
         &out);
+    return out;
+}
+static std::vector<TribeRef> npc_tribes()
+{
+    std::vector<TribeRef> out = all_tribes_ref();
+    void* pt = player_tribe();
     for (auto it = out.begin(); it != out.end();)
         it = it->t == pt ? out.erase(it) : std::next(it);
     return out;
@@ -404,6 +411,8 @@ bool goal_target(void* tribe)
 }
 static int s_goal(const Table& want, bool apply)
 {
+    if (!tribe_rivals::wsync_policy(tribe_rivals::active(), false).apply_tribe_goal)
+        return 0; // BUG-1554: guest has its own NPC relations & goal bar in Tribe Rivals
     void* p = cplayer();
     void* mgr = mission_mgr();
     if (want.empty() || !p || !mgr)
@@ -613,7 +622,9 @@ static bool r_tfood(Table& out)
 {
     if (!player_tribe())
         return false;
-    for (auto& t : npc_tribes()) {
+    const bool include_host = tribe_rivals::wsync_policy(tribe_rivals::active(), false).include_host_tribe_food;
+    auto list = include_host ? all_tribes_ref() : npc_tribes();
+    for (auto& t : list) {
         float f = npc_food(t.t);
         if (!std::isfinite(f))
             continue;
@@ -629,13 +640,24 @@ static uint32_t g_tfood_adds; // tests: AddFood calls on NPC tribes
 static int s_tfood(const Table& want, bool apply)
 {
     uintptr_t add = S("SporeCoop::cTribe_AddFood");
-    if (!add || !player_tribe())
+    void* pt = player_tribe();
+    if (!add || !pt)
         return 0;
-    auto mine = npc_tribes();
+    const bool rivals_on = tribe_rivals::active();
+    void* my_rivals_tribe = nullptr;
+    if (rivals_on) {
+        if (C.sess)
+            my_rivals_tribe = tribe_rivals::tribe_of_player(C.sess->my_id());
+        if (!my_rivals_tribe && tribe_rivals::perspective_swapped())
+            my_rivals_tribe = pt;
+    }
+    auto mine = rivals_on ? all_tribes_ref() : npc_tribes();
     int n = 0;
     for (auto& w : want) {
         const TribeRef* t = match(mine, w.key, bitsf(w.v[1]), bitsf(w.v[2]), bitsf(w.v[3]));
         if (!t)
+            continue;
+        if (!tribe_rivals::should_sync_tribe_food(rivals_on, t->t == pt, my_rivals_tribe && t->t == my_rivals_tribe))
             continue;
         float hv = bitsf(w.v[0]), cur = npc_food(t->t);
         if (!std::isfinite(hv) || !std::isfinite(cur))
@@ -927,6 +949,8 @@ static bool r_nest(Table& out)
 constexpr float kSameNest = 30.f; // m: one nest (nests lie hundreds of metres apart)
 static int s_nest(const Table& want, bool apply)
 {
+    if (!tribe_rivals::wsync_policy(false, creature_rivals::active()).apply_creature_nest)
+        return 0; // BUG-1554: Creature Rivals guests own independent nests and never follow host migrations
     void* p = cplayer();
     void* av = game::avatar();
     net::Vec3 mine, target;
@@ -1005,6 +1029,8 @@ static bool r_tlevel(Table& out)
 }
 static int s_tlevel(const Table& want, bool apply)
 {
+    if (!tribe_rivals::wsync_policy(tribe_rivals::active(), false).apply_tribe_level)
+        return 0; // BUG-1554: guest owns its own swapped tribe (independent hut level & pop cap)
     void* t = player_tribe();
     if (want.empty() || !t || want[0].v[0] >= 8)
         return 0;
