@@ -83,6 +83,7 @@ struct PlayerNest {
 
 struct GuestProgress {
     bool known = false;
+    double last_at = -1e9;
     uint8_t brain_level = 0;
     float dna = 0.0f;
     float evo_bar = 0.0f;
@@ -136,6 +137,22 @@ bool active()
 {
     return g_creature_rivals_fix && connected() && game::in_creature_stage() &&
            rivals::stage_is_rivals(rivals::Stage::Creature);
+}
+
+// WP-081-5 (BUG-1566, consumed by world.cpp): true when rival guest `peer` is currently assigned and
+// playing in this Creature Rivals stage (live puppet or recent kSkProgress heartbeat), so post-editor
+// host shares can be skipped without hiding real menu/other-stage recovery shares.
+bool peer_recently_active(uint8_t peer, double max_age_s)
+{
+    if (!is_host() || !active() || !rivals::valid_player(peer) || peer == 0)
+        return false;
+    if (!g_nests[peer].assigned)
+        return false;
+    if (C.puppet_of && C.puppet_of(peer) != nullptr)
+        return true;
+    if (g_guest_prog[peer].known && H && (H->time_seconds() - g_guest_prog[peer].last_at) <= max_age_s)
+        return true;
+    return false;
 }
 
 static void reset_state()
@@ -531,13 +548,16 @@ static void host_assign_nests(bool force_reassign = false)
     if (!av || !ah)
         return;
 
-    // 1. Record host's home nest (player 0)
+    // 1. Record host's home nest (player 0), including species/nest updates after host Creature Editor or migration
     net::Vec3 hpos{};
     if (!herd_nest_pos(ah, hpos))
         return;
     game::Key hk = game::species_key(av);
     bool changed = false;
-    if (!g_nests[0].assigned || force_reassign || game::live(g_nests[0].herd) != ah) {
+    bool host_updated = !g_nests[0].assigned || force_reassign || game::live(g_nests[0].herd) != ah ||
+                        (hk.instance != 0 && g_nests[0].species_key[0] != hk.instance) ||
+                        net::dist(g_nests[0].nest_pos, hpos) > 5.0f;
+    if (host_updated) {
         g_nests[0].assigned = true;
         g_nests[0].species_swapped = true;
         g_nests[0].perspective_applied = true;
@@ -548,6 +568,17 @@ static void host_assign_nests(bool force_reassign = false)
         g_nests[0].species_key[2] = hk.group;
         g_tables.set_home_species(0, hk.instance);
         changed = true;
+    }
+
+    // 1b. Re-attach already-assigned guest herds by nest position before scanning, so host editor/migration never moves a guest's nest
+    if (!force_reassign) {
+        for (const auto& p : C.sess->players()) {
+            uint8_t pid = p.id;
+            if (pid == 0 || !rivals::valid_player(pid) || !g_nests[pid].assigned || game::live(g_nests[pid].herd))
+                continue;
+            if (void* existing = find_herd_near(g_nests[pid].nest_pos, 10.0f); existing && existing != ah)
+                g_nests[pid].herd = game::live_ref(existing, game::kHerdNoun);
+        }
     }
 
     // 2. Scan all planet nest herds ONLY when force_reassign or at least one connected guest needs a nest pick
@@ -1296,6 +1327,7 @@ static void on_faction_msg(uint8_t from, uint8_t subkind, net::Reader& r)
         if (!read_progress(r, pm))
             return;
         g_guest_prog[from].known = true;
+        g_guest_prog[from].last_at = H ? H->time_seconds() : 0.0;
         g_guest_prog[from].brain_level = pm.brain_level;
         g_guest_prog[from].dna = pm.dna;
         g_guest_prog[from].evo_bar = pm.evo_bar;
