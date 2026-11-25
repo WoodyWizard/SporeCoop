@@ -1333,8 +1333,9 @@ static void test_manifest()
     // BUG-1160), MSG_CELL_MATE 72 (BUG-1246), MSG_SPECIES_LINE 73 (WP-0 of 0.7.16, BUG-1270)
     // MSG_CIV_WALLET 74 (WP-M1 of 0.7.17, BUG-1468), MSG_PLAYER_HISTORY 75 (WP-H1, BUG-1470), MSG_PROGRESS 76 (WP-P1 / P2,
     // BUG-1469), MSG_RESCUE 77 (WP-R1, BUG-1472), MSG_UFO_LEAD 78 (WP-S1 of 0.7.17, BUG-1288),
-    // MSG_ADVENTURE 79 (WP-A of 0.7.99, BUG-1474 / BUG-0793), MSG_RIVALS 80 (WP-R1 of 0.8.0, BUG-0794)
-    const std::set<int> added_types = {70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81};
+    // MSG_ADVENTURE 79 (WP-A of 0.7.99, BUG-1474 / BUG-0793), MSG_RIVALS 80 (WP-R1, BUG-0794),
+    // MSG_RIVALS_FACTION 81 (Wave 2, BUG-1546..1550), MSG_ADV_EDITOR 82 (WP-AE, BUG-0863)
+    const std::set<int> added_types = {70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82};
     CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0] + added_types.size()));
     CHECK(MSG_HOST_BUSY == 70 && msg_info(70).known && msg_dir(70) == MsgDir::Host &&
           host_world::msg_class(70) == host_world::MsgClass::Session && dispatch_route(70, false) == Route::HostBusy &&
@@ -1385,6 +1386,11 @@ static void test_manifest()
           host_world::msg_class(81) == host_world::MsgClass::Module &&
           dispatch_route(81, true) == Route::RivalsFaction && dispatch_route(81, false) == Route::RivalsFaction &&
           reserved_msg(81) && std::string(reserved_msg(81)->name) == "RIVALS_FACTION");
+    // WP-AE of 0.8.0 (BUG-0863): shared Adventure Editor, Module-gated by draft key, creature 1.5
+    CHECK(MSG_ADV_EDITOR == 82 && std::string(msg_info(82).name) == "ADV_EDITOR" && msg_info(82).family == Family::creature &&
+          msg_dir(82) == MsgDir::Any && host_world::msg_class(82) == host_world::MsgClass::Module &&
+          dispatch_route(82, true) == Route::AdvEditor && dispatch_route(82, false) == Route::AdvEditor &&
+          reserved_msg(82) && std::string(reserved_msg(82)->name) == "ADV_EDITOR");
     for (int t : added_types)
         for (auto& g : golden0714::kTypes)
             CHECK(g.id != t);

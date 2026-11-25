@@ -1237,6 +1237,7 @@ static void frame_stage_ticks(double now)
     revive::tick(now); // WP-R1 of 0.7.17 (BUG-1472): a downed creature, its revive, the party wipe
     fov::tick(g_mode); // WP-Q1 of 0.7.99 (BUG-0866): reset widened third-person FOV when leaving Creature/Adventure
     adventure::tick(now); // WP-A of 0.7.99 (BUG-1474, BUG-0793): co-op Galactic Adventures shared run and host actors
+    adv_editor::tick(now); // WP-AE of 0.8.0 (BUG-0863): shared Adventure Editor
 }
 
 // on_frame, phase: our player state (net::state_due: every 0.05 s, a stop at once) and the echo test remote
@@ -3062,6 +3063,13 @@ static void init_tribe_and_creations()
         ac.notice = [](const std::string& t) { notice(t, -1); };
         ac.feed = feed;
         adventure::init(H, M, std::move(ac));
+    }
+    {
+        adv_editor::Ctx aec; // WP-AE of 0.8.0 (BUG-0863): shared Adventure Editor
+        aec.sess = &g_sess;
+        aec.notice = [](const std::string& t) { notice(t, -1); };
+        aec.feed = feed;
+        adv_editor::init(H, M, std::move(aec));
     }
     own_captain::init(H, M, &g_sess); // WP-K1 (BUG-1475)
     civedit::init(H, M, &g_sess); // WP-C3 (BUG-1275)

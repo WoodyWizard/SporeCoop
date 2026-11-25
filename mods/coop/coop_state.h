@@ -32,6 +32,7 @@
 
 #include "adapters.h"
 #include "adventure.h"
+#include "adv_editor.h"
 #include "coop_ui.h"
 #include "driver.h"
 #include "game.h"

@@ -1,20 +1,21 @@
 ---
 id: BUG-0863
 title: Feature idea: shared Adventure Editor (host plus up to 3 guests edit one adventure draft)
-status: open
+status: fixed
 kind: feature
 stage: Adventure
 reported: 2026-11-10
 source: fork jwhans0n/SporeCoopGA sync/upstream-0.7.8-editor (editor preview 10, unreleased)
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: 0.8.0
+branch: w08/adv-editor
+commits: 1d7c66e0, 93ed786b, 53d99b31, c1d632f1, be2719c4
+tests: adv_editor, adv_editor_off, tests/adv_editor_tests.cpp
 signature:
-docs:
+docs: docs/re/adventure.md#adventure-shared-editor
 related: BUG-0793
+switch: adventure.shared_editor
 ---
 
 ## Report
@@ -55,7 +56,18 @@ Their model: four players, host places an actor, a guest moves it, Undo / Redo o
 placement on every game.
 
 ## Fix
+Implemented a clean, SporeCoop-native, host-authoritative Shared Adventure Editor (WP-AE of 0.8.0) behind `COOP_FIX("adventure.shared_editor", "BUG-0863", ...)` on reserved `MSG_ADV_EDITOR = 82` (`Family::creature` 1.5):
+- **Verified GOG 2024 RE (`docs/re/adventure.md#adventure-shared-editor`, `data/symbols/overrides_dc04aee5.sym`):** verified 32 Adventure Editor symbols (`cScenarioMode` sub-mode `+0xCC`, `ScenarioRequest_Reset` `0xEF1910`, `App::IStateManager::Get` `0x67DCE0`, `cScenarioData` `CreateMarker`/`CloneMarker`/`DeleteMarker`/`SyncMarkerTransform`/`AddAct`/`DeleteAct`/`SetCaptainAsset`/`CreateClass`/`CanSave`/`Save`/`StartHistory`/`CommitHistory`, `cScenarioEditHistory` `CanUndo`/`CanRedo`/`Undo`/`Redo`, and the `cScenarioResource +0x2C10` marker pool layout where `cScenarioMarker` starts at `slot +0x04`).
+- **Portable logic & wire codec (`mods/coop/adv_editor_logic.h`, `mods/coop/wire/adv_editor.h`):** host-authoritative monotonic revision counter (`rev`), per-marker renewable leases with automatic 5 s inactivity expiry and disconnect cleanup, per-player Undo/Redo gesture stacks storing inverse deltas so each player undoes only their own gestures, chunked snapshot assembly (`<= 16` markers/chunk, up to 1024 markers), delta catch-up, and 10 Hz unreliable live drag previews (`K_DRAG_PREVIEW`).
+- **Runtime module (`mods/coop/adv_editor.{h,cpp}`):** hooks native Adventure Editor mutations with `CALL_GUARD("adv_editor.applying")` echo suppression, queues all native scene updates outside the D3D9 frame (`H->run_outside_frame`), skips captain puppets/avatars while in Edit Mode (`modes.cpp` `scenario_local` / `scenario_spawn`), pauses Play-mode `adventure.cpp` while editing, and provides `coop.adveditor` (`status`, `enter`, `snapshot`, `markers`, `create`, `move`, `delete`, `undo`, `redo`, `act`, `captain`, `lease`).
+
 ## Verification
+- Native unit tests (`tests/adv_editor_tests.cpp`, ASan + UBSan): 181 checks, 0 failed (`make unit-cpp`).
+- Decoder fuzzer (`tests/fuzz_decoders.cpp`, ASan + UBSan): all 7 `wire::adv_editor` structs pass (`make unit-fuzz`).
+- Wine lab (lane 6, GOG 2024 `dc04aee5`, run `20261125-031642`, commit `be2719c4`):
+  - `adv_editor` (ON): **PASS** in 58 s (0 faults on host & guest, 0 sync-check mismatches): both instances open stock adventure `F63B6851` in native Edit Mode (441 markers), snapshot syncs across 28 chunks, host CreateMarker replicates to guest native `cScenarioResource`, guest Move with lease replicates to host, guest Undo reverts on both, host Delete rejected while guest holds lease, lease release + host Delete removes marker natively on both.
+  - `adv_editor_off` (OFF-twin, `SPORE_FIX_OFF=adventure.shared_editor`): **FAIL** cleanly on checks 2, 3, and 4 (0 crashes) because edits remain local when the switch is off.
 
 ## History
 - 2026-11-10: opened.
+- 2026-11-25: implemented WP-AE Shared Adventure Editor on `w08/adv-editor` (`BUG-0863`), verified on GOG 2024 Wine lab lane 6 (`20261125-031642`: `adv_editor` PASS, `adv_editor_off` FAIL).

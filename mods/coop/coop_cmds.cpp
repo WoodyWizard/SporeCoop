@@ -1731,6 +1731,17 @@ void register_commands_core()
         "influence <add|buy|turn|protect|smooth> ... | win <id> | draft <start|pick|skip|payout> ... | chronicle | "
         "fasttimers <1|0>] - Rivals shared systems status and controls (BUG-0794)",
         rivals::command, nullptr, MT);
+    auto adved_cmd = [](void*, int argc, const char* const* argv, SkOut* out) {
+        std::vector<std::string> a;
+        for (int i = 1; i < argc; i++)
+            a.emplace_back(argv[i]);
+        std::string s = adv_editor::command(a);
+        SAY("%s", s.c_str());
+        return 0;
+    };
+    const char* adved_help =
+        "coop.adveditor [status|enter|snapshot|markers|create <cls|auto> <x> <y> <z> [s]|move <uid> <x> <y> <z> [s]|delete <uid>|undo|redo|act add|delete|captain <hex>|lease <uid> [release]] - shared Adventure Editor (BUG-0863)";
+    H->command_add(M, "coop.adveditor", adved_help, adved_cmd, nullptr, MT | SK_CMD_OUTSIDE_FRAME);
     H->command_add(M, "coop.awaytest", "coop.awaytest 1|0 - tests (BUG-1084, a guest): the host counts as in an editor (away after 4 s) until 0",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1)

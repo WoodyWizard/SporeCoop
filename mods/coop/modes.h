@@ -73,6 +73,10 @@ bool adventure_key(uint32_t& instance, uint32_t& group);
 bool adventure_mission_key(uint32_t out[3]);
 // cScenarioPlayMode* (cScenarioMode +0x78) when in kScenario, else nullptr
 void* adventure_play_mode();
+// cScenarioData* (cScenarioMode +0x74) when in kScenario, else nullptr
+void* adventure_data();
+// cScenarioMode +0xCC sub-mode when in kScenario (1 = Edit Mode, 2 = Play Mode), else 0
+int adventure_sub_mode();
 void adventure_force_place(uint32_t id);
 std::string current_world_name(); // the planet file being played, UTF-8 ("Name.spo"; "SaveGame" in menus)
 std::string raw_world_name(); // the game's CurrentGameName as is (may be "snapshot.spo", BUG-0258)

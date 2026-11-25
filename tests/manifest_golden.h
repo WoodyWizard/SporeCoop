@@ -79,6 +79,7 @@ inline host_world::MsgClass msg_class(uint8_t type)
     case net::MSG_ADVENTURE: // (added in 0.7.99, WP-A BUG-1474 / BUG-0793: a type 0.7.17 did not know)
     case net::MSG_RIVALS:    // (added in 0.8.0, WP-R1 BUG-0794: a type 0.7.99 did not know)
     case net::MSG_RIVALS_FACTION: // (added in 0.8.0, Wave 2 BUG-1546..1550: a type 0.7.99 did not know)
+    case net::MSG_ADV_EDITOR: // (added in 0.8.0, WP-AE BUG-0863: a type 0.7.99 did not know)
         return host_world::MsgClass::Unknown;
     }
     return host_world::MsgClass::Unknown;
