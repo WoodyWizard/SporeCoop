@@ -1492,4 +1492,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9376](BUG-9376-a-direct-session-no-longer-pauses-once-the-alpha.md) | fixed | bug | All | 2026-11-24 | 0.7.14.1-lineages70-dev | A direct session no longer pauses once the alpha is the live build |
 | [BUG-9377](BUG-9377-the-galaxy-server-as-an-optional-part-of-the-ins.md) | fixed | feature | Galaxy | 2026-11-24 | 0.7.14.1-lineages71-dev | The galaxy server as an optional part of the installer |
 | [BUG-9378](BUG-9378-the-galaxy-server-checks-for-updates-before-it-r.md) | fixed | feature | Galaxy | 2026-11-24 | 0.7.14.1-lineages71-dev | The galaxy server checks for updates before it runs |
-| [BUG-9379](BUG-9379-the-galaxy-server-s-update-follows-the-game-on-i.md) | fixed | feature | Galaxy | 2026-11-24 | unreleased | The galaxy server's update follows the game on its PC |
+| [BUG-9379](BUG-9379-the-galaxy-server-s-update-follows-the-game-on-i.md) | fixed | feature | Galaxy | 2026-11-24 | 0.7.14.1-lineages72-dev | The galaxy server's update follows the game on its PC |

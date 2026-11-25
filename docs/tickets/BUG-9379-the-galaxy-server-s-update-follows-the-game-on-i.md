@@ -8,7 +8,7 @@ reported: 2026-11-24
 source: decision 8Z (owner 2026-11-24)
 role: host
 versions: 0.7.14.1-lineages71-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages72-dev
 branch: feat/lineages-alpha
 commits: 155a04d4
 tests: tools/qa_win (manual): Start-Galaxy-Server.cmd and galaxy_update.exe against a stand-in release on 127.0.0.1 (docs/06-testing.md#testing-server-update-check; scratchpad make_web.py, run_start.ps1, run_timer.ps1)
@@ -55,3 +55,4 @@ no-fail-run: a feature (the behaviour before is 71-dev's, described above).
 ## History
 - 2026-11-24: opened.
 - 2026-11-24: built on feat/lineages-alpha (8Z, the owner's rule), not released yet.
+- 2026-11-24: released in 0.7.14.1-lineages72-dev.

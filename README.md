@@ -4,7 +4,7 @@
 
 Lineages is a fork of [WoodyWizard's SporeCoop](https://github.com/WoodyWizard/SporeCoop) for a co-op campaign where every player evolves their own species in one shared Spore world, from the tide pool to the galaxy. It is built on upstream SporeCoop 0.7.14.1 and keeps its crash guards, network code and tools.
 
-**Current build:** `0.7.14.1-lineages71-dev` ([Releases](https://github.com/PandizeLive/SporeCoop-Lineages/releases)). Everyone in a session needs the same build. A running game offers new builds itself (Co-op window, Check for Updates).
+**Current build:** `0.7.14.1-lineages72-dev` ([Releases](https://github.com/PandizeLive/SporeCoop-Lineages/releases)). Everyone in a session needs the same build. A running game offers new builds itself (Co-op window, Check for Updates).
 
 ## What Lineages adds
 
@@ -24,7 +24,7 @@ Also: a one-page Co-op window, Interface Size for Spore's whole UI, a loading sc
 - Three and four players: the difficulty scales for them, but full campaigns are not tested yet. More than four players is planned.
 - Known issues, each with how to reproduce it: [docs/known-issues.md](docs/known-issues.md). Changes per build: [CHANGELOG.md](CHANGELOG.md). Decisions and plan: [docs/ROADMAP.md](docs/ROADMAP.md). How the upstream 0.7.14.1 merge was done: [docs/merge-0.7.14.md](docs/merge-0.7.14.md).
 
-<details><summary>Build history (41-dev to 71-dev)</summary>
+<details><summary>Build history (41-dev to 72-dev)</summary>
 
 Done in 41-dev: 60% progress per extra seat, and one Difficulty Scaling slider (up to 400%) for progress, enemy health and damage, hunger, city takeover and Space raids.
 
@@ -47,6 +47,7 @@ Done in 52-dev: a connected player with their own custom creature gets their own
 Done in 53-dev: bones the other player digs up disappear on your screen too.
 Done in 54-dev: befriending works for connected players again, a partner's respawn no longer darkens your screen, Ctrl+Scroll FoV widens the view, partner villages use the partner's own creature, smoother sending on slow connections.
 Done in 63-dev: the impress meter fills on a partner's screen, no false "species is extinct" for old player species, no frame-cap notice for a cap you set, Co-op window text placement.
+Done in 72-dev: the galaxy server's update follows the game on its PC (that game already updated: the server updates by itself; not yet: it asks, and no answer means no); the game itself as 70-dev.
 Done in 71-dev: the installer can add the galaxy server (a box, off by default), so a player can host online worlds; the server looks for updates each time it starts; the game itself as 70-dev.
 Done in 70-dev: the alpha's online worlds (a galaxy server's shared planets, parties of four with a Social Menu, other stages seen as visitors) join the live build as an alpha; partner Tribe power buttons, nothing drawn over History, a partner's Siren Song, a load crash.
 Done in 69-dev: the frame rate no longer drops to 1-3 fps while partner rings are shown, six more broken early creatures banned from Lineages Caches, test copies never share creations.

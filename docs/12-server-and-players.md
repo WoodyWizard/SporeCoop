@@ -2205,4 +2205,5 @@ CORRECTION (2026-11-24, feat/lineages-alpha) to #server-update-check: "Y (or no 
   old one: it is asked at every start and answers no by itself, so it stays on its build. GALAXY_UPDATE=auto is for
   that machine; the read-me says so.
 * A 71-dev server behaves as 71-dev (ask, yes after 30 seconds) until its first update.
+* Released in 0.7.14.1-lineages72-dev (owner 2026-11-24: "Release").
 
