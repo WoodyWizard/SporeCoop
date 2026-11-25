@@ -5095,3 +5095,55 @@ BUG-1542, BUG-1543. GOG 2024 `dc04aee5` (`objdump` static analysis).
 * Fix `tribe.ufo_mirror` (`player_rules.cpp`): extends `K_UFO` host send, guest `ufo_mirror_rx`, and mirror maintenance
   to `modes::kTribe` (`0x1654C02`) in addition to Creature stage (`modes::kCreature`), and guards `ufo_dump()`'s puppet
   listing to Creature stage only (in Tribe, `C.puppet_of` holds `modes::RtsMarker*`, not `cCreatureBase*`).
+
+## Tribe Rivals RE: R1, R2, R3, R4, R6, R7 (2026-11-25, w08/rivals-tribe)
+<a id="tribe-rivals-re"></a>
+
+BUG-1548 (`docs/11-rivals.md` 11.3.3, 11.4-11.9). GOG 2024 `dc04aee5` (`objdump` static analysis).
+
+### R1 Perspective swap (guest `mpPlayerTribe`)
+* ✔ `Simulator::cGameNounManager::SetPlayerTribe` `0x00B1FD50` (`thiscall void(nm*, cTribe*) ret 4` at `0xB1FD7F`):
+  retains replacement via `vt[0]` AddRef, writes `nm+0x70`, and releases old player tribe via `vt[4]`.
+* ✔ `SporeCoop::Tribe_IsPlayerOwned` `0x00C8E660` (`thiscall bool(tribe+0x120)` plain `ret` at `0xC8E67F`): dynamically
+  calls `cGameNounManager::Get` (`0xB3D400`) -> `GetPlayerTribe` (`0xBFC730`) and compares against `this - 0x120`.
+* ✔ `SporeCoop::cGameTerrainCursor_SetObjects` `0x00B2FC70` (`thiscall void(cursor*, void* vec) ret 4` at `0xB2FC7A`):
+  writes `cursor+0x164 = vec` (candidate selectable spatial vector `&tribe->mSelectableMembers` at `tribe+0x354`).
+  Updating `SetPlayerTribe(my_tribe)` together with `SetObjects(cursor, my_tribe+0x354)` and `TribeGameUI_MinimapRebuild`
+  (`0x00CCDA20`) switches the guest's HUD, selection, food mat, and UI to its taken-over tribe. Restoring the original
+  `mpPlayerTribe` and `cursor+0x164` around `savestrip` save hooks and on session/world end prevents save corruption.
+
+### R2 NPC `cTribe` takeover & planner AI suppression
+* ✔ `SporeCoop::cTribePlanner_Update` `0x00CE4A70` (`cTribePlanner` vtable `0x014778F0` slot `+0x10`, `thiscall
+  void(planner*, uint32 dtLo, uint32 dtHi) ret 8` at `0xCE4DB0`/`0xCE4DBA`): reads `mpTribe` at `planner+0x74`, returns
+  early if null or conquered (`tribe+0x556`) or paused, accumulates dt at `planner+0x78` and ticks planner BT
+  `planner+0x10` every 1.0 s. Hooking `cTribePlanner_Update` and skipping when `planner+0x74` is a player-owned tribe
+  disables NPC AI completely while leaving `tribe+0x290` intact so vanilla save/teardown (`0xC96E39`/`0xC98188`) never
+  faults or corrupts saves.
+* ✔ `SporeCoop::cTribe_SetSpeciesSlot` `0x00C8E9C0` (`thiscall void(cTribe*, cSpeciesProfile*, int slot) ret 8`) sets
+  `tribe+0x18CC`; members and chief are rebuilt via `cCreatureAnimal::SetSpecies` / `CreatureBase_SetSpeciesProfile`
+  (`0x00C22450`) and original slot/keys are restored around saves.
+
+### R4 Per-player NPC relations & Tribe influence
+* ✔ `Simulator::cRelationshipManager::GetRelationshipLevel` `0x00D008E0` (`thiscall int(mgr*, float value) ret 4`):
+  compares against thresholds at `mgr+0x10..+0x1C` returning `0` (hostile), `1` (annoyed), `2` (neutral), `3` (friendly),
+  `4` (allied).
+* ✔ Social performance success (`0xDA3535`, `0xDAEAD3`) invokes `cRelationshipManager::ApplyRelationship` (`0x00D06280`)
+  with event `0x0530CF07`, and gift food delivery (`0xDBCEEE`) invokes it with event `0x0530CF02`.
+
+### R6 Tribe draft tool unlocks
+* ✔ `SporeCoop::Tribe_GrantEarnedTools` `0x00CD97E0` iterates a tribe's tools and unlocks each kind `1..9` by calling
+  `SporeCoop::Tribe_UnlockToolNotify` (`0x00CD7280`, `cdecl(int toolKind)`) and inserting `*TribeToolSet_At(TribeUI+0xA8,
+  &kind) = 1` (`SporeCoop::TribeToolSet_At` `0x00B54820`, `thiscall int*(map*, const int* key) ret 4`).
+* ✔ `SporeCoop::cTribe_IsToolPurchased` `0x00C8ED90` (`thiscall bool(cTribe*, int toolType) ret 4`) and
+  `SporeCoop::cTribe_SetToolPurchased` `0x00C8ED70` read/write bitmask `tribe+0x19D8`.
+
+### R7 Main village inviolability & extra tool hut raids
+* ✔ `SporeCoop::cTribeHut_TakeDamage` `0x00C9CA30` (`thiscall int(hut+0x120, float dmg, uint32 pol, int type, const
+  Vector3* dir, cCombatant* att) ret 0x14`): combatant `+0x38` is HP (`hut+0x158`), combatant `+0x110` is `mpTribe`
+  (`hut+0x230`), calls `cCombatant::TakeDamage` (`0x00BFCF10`). Clamping `dmg` here so HP stays above `max(1.0f,
+  max_hp * 0.10f)` and blocking `cTribe_SetConquered` (`0x00C8E8C0`) for player-owned tribes protects every player's
+  main village from destruction or conquest while still allowing member PvP and food/tool raids.
+* ✔ `SporeCoop::cTribeTool_TakeDamage` `0x00C9D800` (`thiscall int(tool+0x120, float dmg, uint32 pol, int type, const
+  Vector3* dir, cCombatant* att) ret 0x14` at `0xC9DB41`): skips firepit (`combatant+0xDC == 10`), reads owner tribe at
+  `combatant+0xD8` (`tool+0x1F8`), and calls `cCombatant::TakeDamage` (`0x00BFCF10`). Extra tool huts can be damaged
+  and burned during war while blocked when neutral or allied.

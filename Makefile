@@ -222,6 +222,9 @@ unit-cpp: sanitizer-probe
 	@# D3 of 0.7.15: the Tribe rules (tribe_logic.h, BUG-1161) and the member animations' message type (C7, BUG-1160)
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/tribe_tests tests/tribe_tests.cpp
 	$(B)/host/tribe_tests
+	@# WP-R4 of 0.8.0: Tribe Rivals logic & wire payloads (tribe_rivals_logic.h, BUG-1548)
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/tribe_rivals_tests tests/tribe_rivals_tests.cpp
+	$(B)/host/tribe_rivals_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/wire_tests tests/wire_tests.cpp
 	$(B)/host/wire_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/text_tests tests/text_tests.cpp

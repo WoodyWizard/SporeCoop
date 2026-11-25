@@ -1,5 +1,6 @@
 #include "tribe.h"
 #include "tribe_internal.h"
+#include "tribe_rivals.h"
 #include "party_difficulty.h"
 #include "tribe_logic.h"
 #include "call_guard.h"
@@ -1844,6 +1845,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     savestrip::add_save_hooks(save_start, save_end);
     species_init(); // BUG-1271
     graduation_init(); // BUG-1325 (optional)
+    tribe_rivals::init(host, mod, C.sess); // WP-R4 (BUG-1548)
     return true;
 }
 
@@ -2674,6 +2676,8 @@ static void SK_THISCALL h_BabyBorn(void* stage, float x, float y, float z)
 }
 void baby_on_host(uint8_t from, const net::Vec3& pos)
 {
+    if (tribe_rivals::handle_guest_baby(from, pos.x, pos.y, pos.z)) // WP-R4 (BUG-1548)
+        return;
     if (!o_BabyBorn || !std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z) || std::fabs(pos.x) > 1e6 ||
         std::fabs(pos.y) > 1e6 || std::fabs(pos.z) > 1e6 || g_baby_asks.size() >= 16) {
         g_cmds_rejected++;
@@ -3116,6 +3120,8 @@ static bool g_pace_hold;
 std::string g_pace_last; // tests: the last decision
 static bool pace_holds(double now)
 {
+    if (tribe_rivals::active()) // WP-R4 (BUG-1548): Tribe Rivals uses per-player food, not shared party food
+        return false;
     if (!g_form_pace_fix || !is_host() || game::mode_id() != modes::kTribe || !C.sess)
         return false;
     if (now - g_pace_checked < 1.0) // (the controller calls again every frame while it is held: decided once a second)
@@ -3794,6 +3800,8 @@ bool ff_on() { return g_ff_fix && settings::on(settings::kFriendlyFire); }
 static int SK_CDECL h_ChooseAction(void* obj, const void* pos)
 {
     int r = o_ChooseAction(obj, pos);
+    if (int rv = tribe_rivals::override_choose_action(obj, r); rv != 0) // WP-R4 (BUG-1548)
+        return rv > 0 ? rv : 0;
     if (r != 0 || !obj || !active() || !ff_on() || IsBadReadPtr(obj, 4))
         return r;
     void* gd = vcall<void*>(obj, 0xC / 4, (uint32_t)0x17F243Bu);
@@ -3845,6 +3853,9 @@ static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type
         }
         uint8_t ao = ah ? ah->data.owner : 0xFF;
         double now = H->time_seconds();
+        // WP-R4 (BUG-1548): Tribe Rivals war/neutral damage gate between rival player tribes
+        if (tribe_rivals::active() && !tribe_rivals::filter_citizen_damage(victim, ac))
+            return 0;
         // BUG-0899: friendly fire between two different players' members inside the shared player tribe
         bool is_ff_hit = false;
         if (vt == pt && pt && ac && F<void*>(ac, kOwnerTribeOff) == pt) {
@@ -3868,7 +3879,7 @@ static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type
             Side as = !ac ? Side::Other : ah && pt && F<void*>(ac, kOwnerTribeOff) == pt ? Side::Player : Side::Npc;
             dmg = party::hit(dmg, vs, as);
         }
-        if (ao < 0xFE && vt && vt != pt) { // our member hits another tribe
+        if (!tribe_rivals::active() && ao < 0xFE && vt && vt != pt) { // our member hits another tribe
             auto& hits = g_pincer[vt];
             hits[ao] = now;
             int players = 0;
@@ -3889,7 +3900,7 @@ static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type
             }
         }
         // a chief about to fall next to a partner's member: the tribe protects it (not from a partner's FF hit)
-        if (!is_ff_hit && vt == pt && is_chief(victim) && settings::on(settings::kTribeAura)) {
+        if (!is_ff_hit && !tribe_rivals::active() && vt == pt && is_chief(victim) && settings::on(settings::kTribeAura)) {
             // BUG-1052 (tribe.rescue_max): 30 % of its real maximum (game::max_health), as the heal hook (BUG-0745)
             float hp = F<float>(victim, 0x5E0), mx = g_fix_rescue_max ? game::max_health(victim) : F<float>(victim, 0x5D4);
             uint8_t o = owner_of(victim);
@@ -3964,7 +3975,7 @@ static bool SK_CDECL h_HealTick(void* healer, void* a2, void* a3, void* a4, void
         }
     }
     bool r = o_HealTick(healer, a2, a3, a4, a5, target, a7, a8, a9, a10, a11, a12);
-    if (pat && mx > 0 && hp0 < mx && F<float>(pat, 0x5E0) >= mx) {
+    if (!tribe_rivals::active() && pat && mx > 0 && hp0 < mx && F<float>(pat, 0x5E0) >= mx) {
         uint8_t ho = owner_of(healer), po = owner_of(pat);
         if (ho < 0xFE && po < 0xFE && ho != po) {
             bonus_food(5);
@@ -4003,7 +4014,7 @@ std::vector<Performer> performers()
 }
 static void duet_tick(double now)
 {
-    if (!g_duet_fix || now - g_last_duet < 0.5 || !a_SessionGet || !settings::on(settings::kTribeDuet)) // F3: tribe.duet
+    if (tribe_rivals::active() || !g_duet_fix || now - g_last_duet < 0.5 || !a_SessionGet || !settings::on(settings::kTribeDuet)) // F3: tribe.duet
         return;
     g_last_duet = now;
     void* pt = player_tribe();
@@ -4955,6 +4966,7 @@ void tick(double now)
         held_items_tick(now); // BUG-0906
     }
     coop_tick(now);
+    tribe_rivals::tick(now); // WP-R4 (BUG-1548)
 }
 
 uint32_t g_rx, g_rx_skipped, g_resets;
@@ -5128,7 +5140,15 @@ LIFECYCLE_HOOK("tribe.world", lifecycle::kWorldChange, -50, [](const lifecycle::
     on_world_change();
 }, true);
 // the Tribe world's root object for world_id.h (coop.cpp): the player tribe, null outside Tribe
-const void* world_anchor() { return g_ok && game::mode_id() == modes::kTribe ? player_tribe() : nullptr; }
+const void* world_anchor()
+{
+    if (!g_ok || game::mode_id() != modes::kTribe)
+        return nullptr;
+    if (tribe_rivals::perspective_swapped())
+        if (void* orig = tribe_rivals::orig_player_tribe())
+            return orig;
+    return player_tribe();
+}
 
 
 bool center(net::Vec3& pos)

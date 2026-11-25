@@ -20,6 +20,7 @@
 #include "own_progress.h"
 #include "game.h"
 #include "modes.h"
+#include "tribe_rivals.h"
 #include "net/protocol.h"
 #include "sporekit_game.hpp"
 
@@ -295,6 +296,8 @@ static bool r_rel(Table& out)
 static uint32_t g_rel_stuck; // tests: applies the game did not take
 static int s_rel(const Table& want, bool apply)
 {
+    if (tribe_rivals::active()) // WP-R4 (BUG-1548): Tribe Rivals syncs per-player NPC relations via SK_NPC_RELS
+        return 0;
     void* pt = player_tribe();
     void* mgr = rel_mgr();
     uintptr_t ap = S("Simulator::cRelationshipManager::ApplyRelationship");
