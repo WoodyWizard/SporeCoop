@@ -4,7 +4,7 @@
 session 1 4 5addd39ee7371f67
 world 1 2 89607c04f7164b48
 creature 1 5 fa6dae0f4411ef4c
-npc 1 3 7a6dd3c2ea2ecf5a
+npc 1 3 9581b24c163e42bc
 cell 1 4 81ca1ff89546a75e
 tribe 1 3 97d372dc1ab7a351
 civ 1 4 e803fd08f81279f4
@@ -28,3 +28,4 @@ creations 1 3 4aa6dc3bfc31e8f4
 # rebased session: WP-C: Cell warm reconnect receipt (BUG-0869), unreleased session 1.4 of 0.8.0
 # rebased world: WP-C: Cell warm reconnect receipt (BUG-0869), unreleased world 1.2 of 0.8.0
 # rebased session: Wave 1 merge: WP-R1 MSG 80 RIVALS + WP-Q CAP_JOIN_PROOF + WP-C CAP_RESUME_WORLD, unreleased session 1.4 of 0.8.0
+# rebased npc: Wave 2 scaffold: MSG 81 RIVALS_FACTION and wire/rivals_faction.h, unreleased npc 1.3 of 0.8.0

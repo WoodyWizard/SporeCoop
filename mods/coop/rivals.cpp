@@ -19,6 +19,7 @@
 #include "space_rivalry.h"
 #include "store.h"
 #include "wire/rivals.h"
+#include "wire/rivals_faction.h"
 
 namespace rivals {
 
@@ -41,6 +42,23 @@ static double g_last_broadcast = 0.0;
 static double g_last_tick_sync = 0.0;
 static uint32_t g_tx = 0, g_rx = 0, g_bad = 0, g_store_reads = 0, g_store_writes = 0;
 static NpcInfluenceCallback g_npc_cb;
+static NpcInfluenceCallback g_npc_stage_cb[kStages];
+static FactionMsgHandler g_faction_cb[kStages];
+static StageHooks g_stage_hooks[kStages];
+
+static NpcInfluenceCallback* active_npc_cb(Stage s)
+{
+    int idx = (int)s;
+    if (idx >= 0 && idx < kStages && g_npc_stage_cb[idx])
+        return &g_npc_stage_cb[idx];
+    return g_npc_cb ? &g_npc_cb : nullptr;
+}
+
+static StageHooks* active_stage_hooks(Stage s)
+{
+    int idx = (int)s;
+    return (idx >= 0 && idx < kStages) ? &g_stage_hooks[idx] : nullptr;
+}
 
 // Per-world persistence (store.cpp "rivals.state" v1)
 static PersistedWorld g_persisted;
@@ -398,6 +416,11 @@ static std::string host_apply_influence(uint8_t actor, InfluenceAction action, u
     int32_t cost_out = 0;
     switch (action) {
     case InfluenceAction::Buy: {
+        int32_t next_price = g_state.inf.buy_cost(actor);
+        if (auto* hk = active_stage_hooks(current_stage()); hk && hk->on_buy_influence) {
+            if (!hk->on_buy_influence(actor, next_price, kInfluenceBuyGain))
+                return "insufficient resources to buy influence";
+        }
         if (!g_state.inf.buy(actor, cost_out))
             return "buy failed";
         char b[128];
@@ -410,7 +433,7 @@ static std::string host_apply_influence(uint8_t actor, InfluenceAction action, u
         err = g_state.inf.spend_turn_against(actor, npc_id, rival_id, now);
         if (!err.empty())
             return err;
-        if (g_npc_cb && !g_npc_cb(current_stage(), action, actor, npc_id, rival_id)) {
+        if (auto* cb = active_npc_cb(current_stage()); cb && !(*cb)(current_stage(), action, actor, npc_id, rival_id)) {
             g_state.inf.earn(actor, kCostTurnAgainst);
             return "npc rejected turn against";
         }
@@ -424,8 +447,8 @@ static std::string host_apply_influence(uint8_t actor, InfluenceAction action, u
         err = g_state.inf.spend_protect(actor, npc_id, now);
         if (!err.empty())
             return err;
-        if (g_npc_cb)
-            g_npc_cb(current_stage(), action, actor, npc_id, 255);
+        if (auto* cb = active_npc_cb(current_stage()); cb)
+            (*cb)(current_stage(), action, actor, npc_id, 255);
         char b[128];
         snprintf(b, sizeof b, "%s protected bond with faction 0x%X (%.0f s)", name_of(actor).c_str(), (unsigned)npc_id,
                  g_state.inf.protect_duration_secs);
@@ -436,7 +459,7 @@ static std::string host_apply_influence(uint8_t actor, InfluenceAction action, u
         err = g_state.inf.spend_smooth_over(actor, npc_id, now);
         if (!err.empty())
             return err;
-        if (g_npc_cb && !g_npc_cb(current_stage(), action, actor, npc_id, 255)) {
+        if (auto* cb = active_npc_cb(current_stage()); cb && !(*cb)(current_stage(), action, actor, npc_id, 255)) {
             g_state.inf.earn(actor, kCostSmoothOver);
             return "npc rejected smooth over";
         }
@@ -469,9 +492,18 @@ static std::string host_apply_draft(uint8_t actor, bool skip, uint32_t item_id)
     char b[128];
     if (skip)
         snprintf(b, sizeof b, "%s skipped remaining draft picks", name_of(actor).c_str());
-    else
+    else {
         snprintf(b, sizeof b, "%s copied draft item #%u (winner +%d)", name_of(actor).c_str(), (unsigned)item_id,
                  (int)payout);
+        if (auto* hk = active_stage_hooks(g_state.draft.stage); hk && hk->on_draft_pick) {
+            for (const auto& it : g_state.draft.items) {
+                if (it.id == item_id) {
+                    hk->on_draft_pick(actor, it.id, it.kind, it.label);
+                    break;
+                }
+            }
+        }
+    }
     host_broadcast();
     emit_notice(b);
     send_event_to_guests(wire::rivals::E_DRAFT, actor, g_state.draft.winner, payout, b);
@@ -518,6 +550,8 @@ void tick(double now)
             std::string msg = "Catch-up timer ended! Ready to advance to the next stage.";
             emit_notice(msg);
             send_event_to_guests(wire::rivals::E_RACE, g_state.race.winner, 0, 0, msg);
+            if (auto* hk = active_stage_hooks(g_state.race.stage); hk && hk->on_stage_race_end)
+                hk->on_stage_race_end(g_state.race.winner);
         }
         if (g_state.draft.tick(now)) {
             dirty = true;
@@ -813,6 +847,10 @@ uint8_t report_stage_complete(uint8_t player_id)
             host_broadcast(true);
             emit_notice(b);
             send_event_to_guests(wire::rivals::E_RACE, player_id, rank, (int32_t)cu, b);
+            if (g_state.race.stage_finished) {
+                if (auto* hk = active_stage_hooks(g_state.race.stage); hk && hk->on_stage_race_end)
+                    hk->on_stage_race_end(g_state.race.winner);
+            }
         }
     }
     return rank;
@@ -839,6 +877,91 @@ void grant_influence(uint8_t player_id, int32_t amount, const std::string& reaso
 }
 
 void set_npc_influence_callback(NpcInfluenceCallback cb) { g_npc_cb = std::move(cb); }
+
+void register_npc_influence_callback(Stage stage, NpcInfluenceCallback cb)
+{
+    int idx = (int)stage;
+    if (idx >= 0 && idx < kStages)
+        g_npc_stage_cb[idx] = std::move(cb);
+}
+
+void register_faction_handler(Stage stage, FactionMsgHandler cb)
+{
+    int idx = (int)stage;
+    if (idx >= 0 && idx < kStages)
+        g_faction_cb[idx] = std::move(cb);
+}
+
+void register_stage_hooks(Stage stage, StageHooks hooks)
+{
+    int idx = (int)stage;
+    if (idx >= 0 && idx < kStages)
+        g_stage_hooks[idx] = std::move(hooks);
+}
+
+bool peer_reads_faction(uint8_t peer_id)
+{
+    if (!C.sess)
+        return false;
+    bool has = false;
+    std::vector<net::FamilyRev> fams;
+    if (is_host()) {
+        if (!C.sess->peer_families(peer_id, has, fams))
+            return false;
+        return wire::rivals_faction::peer_reads(has, fams);
+    }
+    if (!C.sess->host_families(has, fams))
+        return false;
+    return wire::rivals_faction::peer_reads(has, fams);
+}
+
+bool send_faction_to(uint8_t target, Stage stage, uint8_t subkind, const net::Writer& body)
+{
+    if (!g_rivals_core_fix || !C.sess || !connected() || (int)stage >= kStages || subkind == 0)
+        return false;
+    if (!peer_reads_faction(target))
+        return false;
+    net::Writer w;
+    wire::rivals_faction::write_header(w, stage, subkind);
+    if (!body.data.empty())
+        w.raw(body.data.data(), body.data.size());
+    C.sess->send_reliable_to(target, net::MSG_RIVALS_FACTION, w);
+    g_tx++;
+    return true;
+}
+
+void broadcast_faction(Stage stage, uint8_t subkind, const net::Writer& body, uint8_t except)
+{
+    if (!g_rivals_core_fix || !C.sess || !is_host() || (int)stage >= kStages || subkind == 0)
+        return;
+    net::Writer w;
+    wire::rivals_faction::write_header(w, stage, subkind);
+    if (!body.data.empty())
+        w.raw(body.data.data(), body.data.size());
+    for (const auto& p : C.sess->players()) {
+        if (p.id == 0 || p.id == except || !peer_reads_faction(p.id))
+            continue;
+        C.sess->send_reliable_to(p.id, net::MSG_RIVALS_FACTION, w);
+        g_tx++;
+    }
+}
+
+void on_faction_message(uint8_t from, net::Reader& r)
+{
+    if (!g_rivals_core_fix)
+        return;
+    Stage st = Stage::None;
+    uint8_t subkind = 0;
+    if (!wire::rivals_faction::read_header(r, st, subkind)) {
+        g_bad++;
+        return;
+    }
+    int idx = (int)st;
+    if (idx < 0 || idx >= kStages || !g_faction_cb[idx])
+        return;
+    g_rx++;
+    g_faction_cb[idx](from, subkind, r);
+}
 
 std::string request_influence(InfluenceAction action, uint32_t npc_id, uint8_t rival_id)
 {
@@ -1148,6 +1271,13 @@ std::vector<UiRow> ui_rows()
             snprintf(buf, sizeof buf, "  %s: %d pts%s", p.name.c_str(), (int)g_state.chronicle.totals[p.id],
                      p.id == ldr ? " *" : "");
             rows.push_back({buf, "", nullptr, p.id == ldr ? kGreen : 0});
+        }
+
+        // Section 7: Stage-specific Rivals rows (Wave 2: Cell/Creature/Tribe/Civ/Space)
+        if (auto* hk = active_stage_hooks(current_stage()); hk && hk->on_extra_ui_rows) {
+            auto extra = hk->on_extra_ui_rows();
+            for (auto& er : extra)
+                rows.push_back(std::move(er));
         }
     }
     return rows;

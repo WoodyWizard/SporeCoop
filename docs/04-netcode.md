@@ -138,13 +138,14 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | 78 | `UFO_LEAD` | RU | any | Module | Squadron | space | u8 kind (wire/space_ufo.h): 0 a guest leader's ship state, 1 a follower's hit, 2 the leader's NPC hit on a follower, 3 the host's table of guest leaders per place; the NPC ships of a star system or planet without the host (the host relays; BUG-1288) |
 | 79 | `ADVENTURE` | RU | any | Module | Adventure | creature | u8 kind (wire/adventure.h): co-op Galactic Adventures shared run journal (hello, welcome, goal propose/commit, act change, outcome, object deaths) and host-authoritative adventure creatures (actor batches, guest hit forwarding; WP-A, BUG-1474, BUG-0793) |
 | 80 | `RIVALS` | R | any | Session | Rivals | session | u8 kind (wire/rivals.h): Rivals shared systems (stage modes, 4x4 relations + 60 s war notice, influence, race progress & catch-up timer, draft, chronicle; WP-R1, BUG-0794) |
+| 81 | `RIVALS_FACTION` | R | any | Module | RivalsFaction | npc | u8 stage, u8 subkind (wire/rivals_faction.h): per-stage Rivals faction ownership, base sites, per-player NPC relations, alliance gifts, PvP, Space emigration (WP-R2..R6, BUG-1546..1550) |
 
 | Family | Id | Rev | Used in | Covers |
 |---|---|---|---|---|
 | session (session) | 1 | 1.4 | every stage and the menus | `HELLO`, `WELCOME`, `REJECT`, `PLAYER_JOIN`, `PLAYER_LEAVE`, `PLAYER_STATE`, `CHAT`, `PING`, `PONG`, `BYE`, `ABILITY`, `PING_MARK`, `READY`, `LOBBY`, `NOTICE`, `DIAG`, `SETTINGS`, `COLORS`, `REPORT`, `HOST_WORLD`, `HOST_BUSY`, `PLAYER_HISTORY`, `RIVALS` |
 | world (world transfer) | 2 | 1.2 | every stage and the menus | `WORLD_OFFER`, `WORLD_FILE`, `WORLD_CHUNK`, `WORLD_DONE` |
 | creature (Creature) | 3 | 1.5 | Creature | `ANIM`, `WORLD_TIME`, `DNA`, `DNA_ADD`, `VOTE`, `SPECIES`, `SOCIAL`, `NEST`, `PARTS`, `EFFECT`, `PROGRESS`, `RESCUE`, `ADVENTURE` |
-| npc (mirrored creature and world state) | 4 | 1.3 | Creature, Tribe, Civilization | `DAMAGE`, `NPC_STATE`, `NPC_SPAWN`, `NPC_DESPAWN`, `DAMAGE_REQ`, `WOBJ`, `FIELDS`, `NPC_RESYNC`, `NPC_ANIM`, `WSTATE`, `PLAYER_RULE`, `MIRROR_FX`, `NPC_MEAT` |
+| npc (mirrored creature and world state) | 4 | 1.3 | Creature, Tribe, Civilization | `DAMAGE`, `NPC_STATE`, `NPC_SPAWN`, `NPC_DESPAWN`, `DAMAGE_REQ`, `WOBJ`, `FIELDS`, `NPC_RESYNC`, `NPC_ANIM`, `WSTATE`, `PLAYER_RULE`, `MIRROR_FX`, `NPC_MEAT`, `RIVALS_FACTION` |
 | cell (Cell) | 5 | 1.4 | Cell | `CELL_STATE`, `CELL_HIT`, `CELL_EAT`, `CELL_FOOD`, `CELL_KO`, `CELL_BITTEN`, `CELL_MATE` |
 | tribe (Tribe) | 6 | 1.3 | Tribe | `TRIBE_STATE`, `TRIBE_CMD`, `TRIBE_ANIM` |
 | civ (Civilization) | 7 | 1.4 | Civilization, Space | `CIV_STATE`, `CIV_CMD`, `CIV_BUILD`, `ROLE`, `CIV_ALARM`, `CIV_WALLET` |

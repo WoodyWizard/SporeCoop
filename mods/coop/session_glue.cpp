@@ -1353,6 +1353,9 @@ void setup_callbacks()
         case net::Route::Rivals: // WP-R1 (BUG-0794): Rivals shared systems
             rivals::on_message(from, r);
             return;
+        case net::Route::RivalsFaction: // Wave 2 (BUG-1546..1550): per-stage Rivals faction/diplomacy/emigration
+            rivals::on_faction_message(from, r);
+            return;
         case net::Route::Tribe: {
             tribe::on_message(type, from, r);
             return;
