@@ -4792,6 +4792,42 @@ std::vector<std::pair<uint16_t, uint8_t>> pack_owners_snapshot()
     return out;
 }
 
+std::vector<uint32_t> pack_species_of(uint8_t player)
+{
+    std::vector<uint32_t> out;
+    if (!is_host() || !game::in_creature_stage())
+        return out;
+    auto push_species = [&](void* c) {
+        if (!c || out.size() >= (size_t)social_logic::kMaxPackSize)
+            return;
+        if (!game::creature_listed(c) || game::is_dead(c))
+            return;
+        uint32_t sp = game::species_instance(c);
+        if (sp != 0)
+            out.push_back(sp);
+    };
+    if (player == 0) {
+        for (void* c : read_posse_members()) {
+            if (!c || is_guest_pack_creature(c) || posse_is_summoned(c) || posse_is_temp_flag(c))
+                continue;
+            push_species(c);
+        }
+        return out;
+    }
+    for (const auto& [id, owner] : g_pack_owners.owners) {
+        if (owner != player)
+            continue;
+        push_species(host_npc(id));
+    }
+    for (const auto& [c, rb] : g_pack_rebind) {
+        if (rb.owner != player || !c)
+            continue;
+        if (game::creature_listed(c) && game::object_serial(c) == rb.serial)
+            push_species(c);
+    }
+    return out;
+}
+
 bool take_pack_dirty()
 {
     bool d = g_pack_dirty;

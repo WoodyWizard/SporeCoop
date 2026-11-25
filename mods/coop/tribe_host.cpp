@@ -640,6 +640,8 @@ void* target_village(void* o)
 // BUG-1561: defined in tribe.cpp (keeps tribe_internal.h untouched)
 extern bool g_guest_social_fix;
 bool host_social_play(uint8_t from, uint32_t slot, const std::vector<uint16_t>& ids);
+// BUG-1564: defined in tribe.cpp (keeps tribe_internal.h untouched)
+bool host_consequence_ability(uint8_t from, int ab_type, const net::Vec3& pos);
 
 void host_command(uint8_t from, net::Reader& r)
 {
@@ -676,6 +678,11 @@ void host_command(uint8_t from, net::Reader& r)
     }
     if (kind == tribe_logic::kCmdSocialPlay) { // BUG-1561: guest plays instrument slot 3/4/5 during Tribal social performance
         if (!host_social_play(from, (uint32_t)action, ids))
+            g_cmds_rejected++;
+        return;
+    }
+    if (kind == tribe_logic::kCmdConsequenceAbility) { // BUG-1564: guest activates Tribe consequence ability (types 52..57)
+        if (!host_consequence_ability(from, action, pos))
             g_cmds_rejected++;
         return;
     }
