@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 lineages30-dev (world.cpp resume receipt, CAP_RESUME_WORLD)
 role: both
 versions:
-fixed_in: unreleased
+fixed_in: 0.8.0
 branch: w08/cell-warm
 commits: 0db2c591, 25017314, e91ccf62
 tests: unit, cell_warm_reconnect, cell_warm_reconnect_off
@@ -45,3 +45,4 @@ Implemented behind `COOP_FIX("cell.warm_reconnect", "BUG-0869", ...)` (WP-C of 0
 ## History
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (feature idea, fork evidence only).
 - 2026-11-25: implemented in WP-C (`w08/cell-warm`, commits `0db2c591`, `25017314`, `e91ccf62`) behind `cell.warm_reconnect`, verified ON PASS + OFF FAIL in `out/lab/20261125-025448`.
+- 2026-11-25: released in 0.8.0.

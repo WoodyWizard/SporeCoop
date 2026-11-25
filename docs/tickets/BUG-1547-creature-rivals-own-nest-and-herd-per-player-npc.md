@@ -8,7 +8,7 @@ reported: 2026-11-25
 source: docs/11-rivals.md 11.3.2
 role: both
 versions: 0.8.0
-fixed_in: unreleased
+fixed_in: 0.8.0
 branch: w08/rivals-creature
 commits: eb9a846b, e8f516d6
 tests: rivals_creature, rivals_creature_off
@@ -46,3 +46,4 @@ Added portable logic in `mods/coop/creature_rivals_logic.h` (with ASan+UBSan uni
 ## History
 - 2026-11-25: opened.
 - 2026-11-25: implemented WP-R3 Creature Rivals (`rivals.creature`) with RE verification, ASan/UBSan unit tests, and two-game Wine lab tests (`out/lab/20261125-035446`).
+- 2026-11-25: released in 0.8.0.

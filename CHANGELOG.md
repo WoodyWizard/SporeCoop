@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-25
+
+Major feature release introducing **Rivals mode** across all five Spore stages (Cell, Creature, Tribe, Civilization, and Space), **Shared Adventure Editor** for co-op Galactic Adventures creation, optional session passwords, recent servers, Spore-style tooltips, Cell warm reconnect, and Tribe bug fixes. Thanks to the `SporeCoopNVST`, `SporeCoop-Lineages`, and `SporeCoopGA` community forks for design ideas and reverse-engineering notes referenced in this release.
+
+### Added
+- **Rivals Shared Systems** (`rivals.core`, `MSG_RIVALS 80`, `MSG_RIVALS_FACTION 81`): per-stage Together / Rivals mode table with `All together`, `All rivals`, and `Custom` presets, configurable catch-up timer, draft picks, and `Near / Middle / Far` base distance; unified 4x4 player diplomacy (Neutral, Ally, War) with alliance/peace proposals and a 60 s war countdown when breaking an alliance; influence economy (earned from deeds, bought at a rising price, spent on Turn Against, 10-minute Protect, and Smooth Over); dedicated F9 **Rivals / Race** page with live per-player progress, stage-end winner draft with escalating next-stage payouts, Chronicle campaign scoring, per-world persistence, and transition-vote mode preview. (BUG-0794)
+- **Cell Rivals** (`rivals.cell`): per-player evolution bars and DNA in one shared tide pool (physical food remains first-come-first-served), war-gated Cell PvP bites dropping physical meat chunks on kill (Symbiosis knockout/revive disabled in Rivals), first-to-full-bar stage win with catch-up timer, and Cell part draft unlocking copied parts natively for runners-up. (BUG-1546)
+- **Creature Rivals** (`rivals.creature`): own nest and family herd takeover per player by configured base distance, guest perspective swap to its own nest/herd, isolated DNA/brain level/parts, per-player wild species relationship tables (extinction remains shared) with Creature influence actions, war-gated creature/family PvP with inviolable home nest protection, and brain-level stage win with Creature part draft. (BUG-1547)
+- **Tribe Rivals** (`rivals.tribe`): NPC `cTribe` takeover per player with planner AI disabled and species swapped, guest perspective swap to its own tribe (`SetPlayerTribe`) with independent food/huts/tools, per-player NPC tribe relations and Tribe influence, war member PvP and extra-hut raids with inviolable main village protection, alliance food/tool gifts, and >50% subjugated NPC tribes stage win with Tribe tool draft. (BUG-1548)
+- **Civilization Rivals** (`rivals.civ`): NPC `cCivilization` takeover per player by base distance with AI disabled and guest species applied, guest perspective swap to its own nation with independent money/cities/vehicles, per-player NPC nation relations and Civ influence, war vehicle PvP and ordinary city capture with inviolable capital protection (blocking capture, conversion, buyout, and targeted/global superweapons), alliance money/spice gifts and trade income, and >50% NPC cities stage win with Civ design draft. (BUG-1549)
+- **Space Rivals** (`rivals.space`): guest homeworld emigration to a nearby similar planet with matching cities and an EN/RU emigration notice while the host keeps the original home planet, mutual rival empire mirrors that persist across rejoin, unified 4x4 diplomacy and per-player NPC empire relations with Space influence, inviolable player homeworlds blocking Planet Buster and system capture, live Space Race stats including distance to the galaxy core, and Chronicle galaxy core finale bonus with overall winner summary. (BUG-1550)
+- **Shared Adventure Editor** (`adventure.shared_editor`, `MSG_ADV_EDITOR 82`): host plus up to 3 guests collaboratively edit a Galactic Adventures draft with chunked snapshot sync, live marker create/clone/move/rotate/scale/delete, acts and captain asset sync, renewable per-marker editing leases, 10 Hz live drag preview, and per-player Undo/Redo stacks. (BUG-0863)
+- **Lobby QoL**: optional session password authentication (`session.password`, `CAP_JOIN_PROOF` SHA-256 connection-bound proof, LAN `[Locked]` indicator, native password masking, redacted from logs/reports), persistent recent servers list in `coop.ini` (`ui.recent_servers`), and native Spore-style hover tooltips on co-op window buttons after 0.8 s rest in English and Russian (`ui.tooltips`). (BUG-0867, BUG-0874)
+- **Cell Warm Reconnect** (`cell.warm_reconnect`, `CAP_RESUME_WORLD`): reconnecting to an unchanged Cell tide pool reuses the guest's existing Cell save slot without resending the full world transfer, automatically falling back to a full transfer after any host save or world change. (BUG-0869)
+
+### Fixed
+- Tribe: co-op epics now skip domesticated pets and friendly species near the village and enforce hostility toward the player tribe (`tribe.epic_hostile`). (BUG-1542)
+- Tribe: guests in the Tribe stage now see the host's visiting drama UFO spaceship (`tribe.ufo_mirror`). (BUG-1543)
+
 ## [0.7.99.1] - 2026-11-24
 
 ### Added

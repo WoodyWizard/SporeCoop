@@ -1,6 +1,6 @@
-# 11. Rivals: own bases in one world (design)
+# 11. Rivals: own bases in one world
 
-Status: **design, not implemented** (decided with the project owner, 2026-10-25). Chapter 9 is
+Status: **implemented in 0.8.0** (design decided with the project owner, 2026-10-25; shipped across all five stages in 0.8.0). Chapter 9 is
 the other session mode, "Together" (one team, one base). This chapter is the second mode,
 "Rivals": every player has a base, a species, a tribe, a nation and an empire of its own, all
 players live in the same world, everybody always sees where the others are, and every stage is a

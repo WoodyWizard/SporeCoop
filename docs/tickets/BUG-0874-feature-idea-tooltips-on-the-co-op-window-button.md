@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 lineages42-dev, BUG-9107 (coop_ui.cpp)
 role: both
 versions: 0.8.0
-fixed_in: unreleased
+fixed_in: 0.8.0
 branch: w08/lobby-qol
 commits: 80e954c7 c8149c8b f61197e6
 tests: ui_tooltips, ui_tooltips_off
@@ -45,3 +45,4 @@ no tooltip before 0.8 s.
 ## History
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (feature idea, fork evidence only).
 - 2026-11-25: implemented in WP-Q (`w08/lobby-qol`) with native `UTFWin::StdDrawable` 9-slice `data/ui/tooltip_bg.png` overlay, `0.8 s` hover rest timer via `mouse::last_move` / `mouse::clicks()`, EN + RU button tooltips, and `coop.ui state` inspection; verified ON PASS and OFF FAIL in lab run `20261125-030621`.
+- 2026-11-25: released in 0.8.0.

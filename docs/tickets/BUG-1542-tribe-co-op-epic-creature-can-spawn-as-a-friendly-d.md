@@ -8,7 +8,7 @@ reported: 2026-11-24
 source: Discord bug report 2026-11-24 (SporeCoop-report-20261124-214704)
 role: both
 versions: 0.7.16, 0.7.16.1, 0.7.99
-fixed_in: unreleased
+fixed_in: 0.8.0
 branch: w08/tribe-fixes
 commits: 4809df7d
 tests: tribe_epic_hostile, tribe_epic_hostile_off
@@ -53,3 +53,4 @@ Behind `COOP_FIX("tribe.epic_hostile", "BUG-1542", ...)`:
 ## History
 - 2026-11-24: opened from Discord bug report.
 - 2026-11-25: fixed in `4809df7d` on `w08/tribe-fixes`, verified PASS + OFF FAIL in `20261125-025515`.
+- 2026-11-25: released in 0.8.0.

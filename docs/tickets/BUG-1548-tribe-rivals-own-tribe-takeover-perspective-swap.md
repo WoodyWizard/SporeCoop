@@ -8,7 +8,7 @@ reported: 2026-11-25
 source: docs/11-rivals.md 11.3.3
 role: both
 versions: 0.8.0
-fixed_in: unreleased
+fixed_in: 0.8.0
 branch: w08/rivals-tribe
 commits: 38d7ac24
 tests: rivals_tribe, rivals_tribe_off
@@ -42,3 +42,4 @@ Behind `COOP_FIX("rivals.tribe", "BUG-1548", ...)` in dedicated `mods/coop/tribe
 ## History
 - 2026-11-25: opened.
 - 2026-11-25: implemented in `38d7ac24` on `w08/rivals-tribe`, verified PASS + OFF FAIL in `out/lab/20261125-035136`.
+- 2026-11-25: released in 0.8.0.

@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 lineages36-dev (net/session.cpp, coop_ui.cpp)
 role: both
 versions: 0.8.0
-fixed_in: unreleased
+fixed_in: 0.8.0
 branch: w08/lobby-qol
 commits: fe6af56e 80e954c7 c8149c8b f61197e6
 tests: password_recent, password_recent_off, net_tests::test_session_password, net_tests::test_recent_servers
@@ -53,3 +53,4 @@ join the address is first in the recent list after a restart; the password is no
 ## History
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (feature idea, fork evidence only).
 - 2026-11-25: implemented in WP-Q (`w08/lobby-qol`) with `CAP_JOIN_PROOF` (`16`), `DiscoverReply` `DF_PASSWORD` lock bit, `ITextEdit::SetTextEditFlag(0x80)` password masking + Show/Hide toggle, report redaction, and persisted `[recent]` servers list (`server0..server7`); verified ON PASS and OFF FAIL in lab run `20261125-030621`.
+- 2026-11-25: released in 0.8.0.

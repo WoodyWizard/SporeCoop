@@ -8,7 +8,7 @@ reported: 2026-11-25
 source: docs/11-rivals.md 11.3.5
 role: both
 versions: 0.8.0
-fixed_in: unreleased
+fixed_in: 0.8.0
 branch: w08/rivals-space
 commits: 8e1401bd, 7e36f161
 tests: rivals_space, rivals_space_off
@@ -45,3 +45,4 @@ Added `mods/coop/space_rivals_logic.h` (portable scoring, emigration store, R7 p
 ## History
 - 2026-11-25: opened.
 - 2026-11-25: implemented Space Rivals (`BUG-1550`) with R5 emigration, R7 homeworld protection, unified `rivals.h` relations/influence, Race stats, and Chronicle Galaxy Core finale; verified in ASan+UBSan unit tests and Wine lab lane 7 (`out/lab/20261125-041524`).
+- 2026-11-25: released in 0.8.0.
