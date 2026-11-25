@@ -48,6 +48,20 @@ constexpr float kMaxCredit = 1.0e6f;   // one credit beyond this is no game amou
 
 // the trait ids of each stage (the release cheat setConsequenceTrait's table .data 0x156ACD0,
 // docs/re/creations.md#creations-own-history)
+constexpr uint32_t kTribeAggressive  = 0x0CAC124Du;
+constexpr uint32_t kTribeFriendly    = 0x60A78928u; // social
+constexpr uint32_t kTribeIndustrious = 0xC2CA9495u; // mixed
+
+constexpr uint32_t kCivMilitary  = 0x0A35D0F5u;
+constexpr uint32_t kCivEconomic  = 0x3360727Fu;
+constexpr uint32_t kCivReligious = 0x6AEB96A1u;
+
+// 1-based Civ specialty codes stored in Record::civ_start_spec and host history API
+constexpr uint8_t kCivSpecNone      = 0;
+constexpr uint8_t kCivSpecMilitary  = 1;
+constexpr uint8_t kCivSpecEconomic  = 2;
+constexpr uint8_t kCivSpecReligious = 3;
+
 inline bool valid_card(int stage, uint32_t v)
 {
     static const uint32_t ids[kStages][10] = {
@@ -87,21 +101,152 @@ inline int archetype_index(uint32_t card)
     }
 }
 
+// BUG-1557: per-player Tribe consequence card from allied vs conquered NPC tribe tallies.
+// Spore rule: both 0 -> 0; conquered == 0 or allied >= 2 * conquered -> Friendly;
+// allied == 0 or conquered >= 2 * allied -> Aggressive; else Industrious (mixed).
+inline uint32_t tribe_card_for(uint16_t allied, uint16_t conquered)
+{
+    if (allied == 0 && conquered == 0)
+        return 0;
+    if (conquered == 0 || (uint32_t)allied >= 2u * (uint32_t)conquered)
+        return kTribeFriendly;
+    if (allied == 0 || (uint32_t)conquered >= 2u * (uint32_t)allied)
+        return kTribeAggressive;
+    return kTribeIndustrious;
+}
+
+// BUG-1557: per-player Civ consequence card from city outcomes (mil/eco/rel) and starting specialty
+// (1=military, 2=economic, 3=religious). Highest tally wins; ties prefer start_spec if tied for max,
+// else deterministic priority (military, economic, religious).
+inline uint32_t civ_card_for(uint16_t mil, uint16_t eco, uint16_t rel, uint8_t start_spec)
+{
+    const bool valid_start = start_spec >= kCivSpecMilitary && start_spec <= kCivSpecReligious;
+    if (mil == 0 && eco == 0 && rel == 0) {
+        if (start_spec == kCivSpecMilitary)
+            return kCivMilitary;
+        if (start_spec == kCivSpecEconomic)
+            return kCivEconomic;
+        if (start_spec == kCivSpecReligious)
+            return kCivReligious;
+        return 0;
+    }
+    uint16_t mx = mil;
+    if (eco > mx)
+        mx = eco;
+    if (rel > mx)
+        mx = rel;
+    if (valid_start) {
+        if (start_spec == kCivSpecMilitary && mil == mx)
+            return kCivMilitary;
+        if (start_spec == kCivSpecEconomic && eco == mx)
+            return kCivEconomic;
+        if (start_spec == kCivSpecReligious && rel == mx)
+            return kCivReligious;
+    }
+    if (mil == mx)
+        return kCivMilitary;
+    if (eco == mx)
+        return kCivEconomic;
+    return kCivReligious;
+}
+
+// BUG-1557: preferred 0-based Civ specialty from a Tribe consequence card
+// (0=Military, 1=Economic, 2=Religious, -1=unknown; matches civ_start_spec - 1).
+inline int civ_spec_for_tribe_card(uint32_t tribe_card)
+{
+    if (tribe_card == kTribeAggressive)
+        return 0; // Military
+    if (tribe_card == kTribeIndustrious)
+        return 1; // Economic
+    if (tribe_card == kTribeFriendly)
+        return 2; // Religious
+    return -1;
+}
+
+// Convert Spore's native cCity specialty / capture type (+0x540 / +0x29C: 0=Military, 1=Religious, 2=Economic)
+// to 1-based history specialty (1=Military, 2=Economic, 3=Religious, 0=none).
+inline uint8_t native_city_spec_to_history(int native_spec)
+{
+    switch (native_spec) {
+    case 0: return kCivSpecMilitary;
+    case 1: return kCivSpecReligious;
+    case 2: return kCivSpecEconomic;
+    default: return kCivSpecNone;
+    }
+}
+
+// Convert 1-based history specialty (1=Military, 2=Economic, 3=Religious)
+// to Spore's native cCity specialty (+0x540: 0=Military, 1=Religious, 2=Economic, -1=none).
+inline int history_spec_to_native_city(uint8_t spec_1_based)
+{
+    switch (spec_1_based) {
+    case kCivSpecMilitary: return 0;
+    case kCivSpecReligious: return 1;
+    case kCivSpecEconomic: return 2;
+    default: return -1;
+    }
+}
+
 inline bool sane(float v) { return std::isfinite(v) && std::fabs(v) <= kMaxProgress; }
 
 struct Record {
     uint32_t cards[kStages] = {};
     float social = 0, combat = 0;
     uint32_t cell_own = 0; // the Cell card the player's own game decides from its own diet (its last report), 0: none
+    // BUG-1557: per-player Rivals Tribe & Civ tallies (stored in extended v1 payload when any is non-zero)
+    uint16_t tribe_allied = 0, tribe_conquered = 0;
+    uint16_t civ_military = 0, civ_economic = 0, civ_religious = 0;
+    uint8_t civ_start_spec = 0; // 0 = none, 1 = military, 2 = economic, 3 = religious
+
+    bool has_tribe_own() const { return tribe_allied != 0 || tribe_conquered != 0; }
+    bool has_civ_own() const
+    {
+        return civ_military != 0 || civ_economic != 0 || civ_religious != 0 ||
+               (civ_start_spec >= kCivSpecMilitary && civ_start_spec <= kCivSpecReligious);
+    }
+    bool has_rivals_ext() const { return has_tribe_own() || has_civ_own(); }
+
     bool operator==(const Record& o) const
     {
         for (int i = 0; i < kStages; i++)
             if (cards[i] != o.cards[i])
                 return false;
-        return social == o.social && combat == o.combat && cell_own == o.cell_own;
+        return social == o.social && combat == o.combat && cell_own == o.cell_own &&
+               tribe_allied == o.tribe_allied && tribe_conquered == o.tribe_conquered &&
+               civ_military == o.civ_military && civ_economic == o.civ_economic &&
+               civ_religious == o.civ_religious && civ_start_spec == o.civ_start_spec;
     }
     bool operator!=(const Record& o) const { return !(*this == o); }
 };
+
+inline bool add_tribe_outcome(Record& r, bool allied)
+{
+    uint16_t& slot = allied ? r.tribe_allied : r.tribe_conquered;
+    if (slot < 0xFFFFu)
+        slot++;
+    return true;
+}
+
+inline bool set_civ_start(Record& r, uint8_t spec_1_based)
+{
+    if (spec_1_based < kCivSpecMilitary || spec_1_based > kCivSpecReligious)
+        return false;
+    r.civ_start_spec = spec_1_based;
+    return true;
+}
+
+inline bool add_civ_outcome(Record& r, uint8_t spec_1_based)
+{
+    uint16_t* slot = spec_1_based == kCivSpecMilitary    ? &r.civ_military
+                     : spec_1_based == kCivSpecEconomic  ? &r.civ_economic
+                     : spec_1_based == kCivSpecReligious ? &r.civ_religious
+                                                         : nullptr;
+    if (!slot)
+        return false;
+    if (*slot < 0xFFFFu)
+        (*slot)++;
+    return true;
+}
 
 // first sight of a guest in a world: the history so far was the party's one (every game showed the host's)
 inline Record seed(const uint32_t host_cards[kStages], float host_social, float host_combat)
@@ -129,20 +274,47 @@ inline bool credit(Record& r, bool social, float amount)
 
 // the host's cards decide which stages are done; a done stage the guest has no card of gets its own:
 // decide(stage, record) is the guest's own candidate (Cell: its game's report, Creature: the game's rule on its
-// progress, Space: the game's archetype of its four cards; the record holds the stages before it already), a
-// candidate that is no card of the stage is the host's card. Tribe and Civ are always the host's. Returns the bits
-// of the stages whose card changed.
+// progress, Tribe/Civ in Rivals: tribe_card_for / civ_card_for when own_tribe/own_civ is true, Space: the game's
+// archetype of its four cards; the record holds the stages before it already), a candidate that is no card of the
+// stage falls back to the existing valid card or the host's card. When own_tribe / own_civ is false (Together),
+// Tribe and Civ are always the host's. When own_tribe || own_civ and a prerequisite card (0..3) changed, Space is
+// recomputed via decide(kSpace, r). Returns the bits of the stages whose card changed.
 template <class Decide>
-inline unsigned update(Record& r, const uint32_t host[kStages], Decide&& decide)
+inline unsigned update(Record& r, const uint32_t host[kStages], Decide&& decide,
+                       bool own_tribe = false, bool own_civ = false)
 {
     unsigned changed = 0;
     for (int i = 0; i < kStages; i++) {
         uint32_t v = r.cards[i];
-        if (!valid_card(i, host[i]))
+        if (!valid_card(i, host[i])) {
             v = 0; // not done in this world (an earlier save, a game started later): nobody's
-        else if (i == kTribe || i == kCiv)
-            v = host[i]; // one shared tribe and nation: the host's card
-        else if (!valid_card(i, v)) {
+        } else if (i == kTribe) {
+            if (own_tribe) {
+                uint32_t d = decide(i, (const Record&)r);
+                if (valid_card(i, d))
+                    v = d;
+                else if (!valid_card(i, v))
+                    v = host[i];
+            } else {
+                v = host[i]; // one shared tribe: the host's card
+            }
+        } else if (i == kCiv) {
+            if (own_civ) {
+                uint32_t d = decide(i, (const Record&)r);
+                if (valid_card(i, d))
+                    v = d;
+                else if (!valid_card(i, v))
+                    v = host[i];
+            } else {
+                v = host[i]; // one shared nation: the host's card
+            }
+        } else if (i == kSpace) {
+            const bool prereq_changed = (changed & ((1u << kCell) | (1u << kCreature) | (1u << kTribe) | (1u << kCiv))) != 0;
+            if (!valid_card(i, v) || ((own_tribe || own_civ) && prereq_changed)) {
+                uint32_t d = decide(i, (const Record&)r);
+                v = valid_card(i, d) ? d : host[i];
+            }
+        } else if (!valid_card(i, v)) {
             uint32_t d = decide(i, (const Record&)r);
             v = valid_card(i, d) ? d : host[i];
         }
@@ -188,7 +360,8 @@ inline bool peer_reads(bool has_families, bool found, uint16_t rev, uint16_t min
 }
 
 // ---- the store record `history` v1 (per player, under its stable key): 5 x u32 cards, f32 social, f32 combat,
-// u32 the own Cell card (28 + 4 bytes)
+// u32 the own Cell card (32 bytes). When any Rivals Tribe/Civ field is non-zero (BUG-1557), 11 bytes follow:
+// u16 tribe_allied, u16 tribe_conquered, u16 civ_military, u16 civ_economic, u16 civ_religious, u8 civ_start_spec (43 bytes).
 inline std::vector<uint8_t> encode(const Record& r)
 {
     pstore::Out o;
@@ -197,6 +370,14 @@ inline std::vector<uint8_t> encode(const Record& r)
     o.f32(r.social);
     o.f32(r.combat);
     o.u32(r.cell_own);
+    if (r.has_rivals_ext()) {
+        o.u16(r.tribe_allied);
+        o.u16(r.tribe_conquered);
+        o.u16(r.civ_military);
+        o.u16(r.civ_economic);
+        o.u16(r.civ_religious);
+        o.u8(r.civ_start_spec);
+    }
     return o.d;
 }
 inline bool decode(const std::vector<uint8_t>& d, Record& out)
@@ -208,7 +389,19 @@ inline bool decode(const std::vector<uint8_t>& d, Record& out)
     r.social = in.f32();
     r.combat = in.f32();
     r.cell_own = in.u32();
-    if (!in.end() || !sane(r.social) || !sane(r.combat) || !card_ok(kCell, r.cell_own))
+    if (!in.ok)
+        return false;
+    if (!in.end()) {
+        r.tribe_allied = in.u16();
+        r.tribe_conquered = in.u16();
+        r.civ_military = in.u16();
+        r.civ_economic = in.u16();
+        r.civ_religious = in.u16();
+        r.civ_start_spec = in.u8();
+        if (!in.ok || !in.end() || r.civ_start_spec > kCivSpecReligious)
+            return false;
+    }
+    if (!sane(r.social) || !sane(r.combat) || !card_ok(kCell, r.cell_own))
         return false;
     for (int i = 0; i < kStages; i++)
         if (!card_ok(i, r.cards[i]))

@@ -20,12 +20,16 @@
 #include "modes.h"
 #include "net/manifest.h"
 #include "own_world.h"
+#include "rivals.h"
 #include "sporekit_game.hpp"
 #include "store.h"
 #include "wire/history.h"
 
 namespace coop_core {
 bool host_creature_mode(); // vote.cpp: creature.mode host (one creature, one history for everybody)
+}
+namespace spacerivals {
+bool emigration_in_progress(); // space_rivals.cpp: wait for guest homeworld emigration before SetArchetype
 }
 using coop_core::host_creature_mode;
 
@@ -54,6 +58,11 @@ COOP_FIX("core.trait_credit", "BUG-1471", g_credit_fix,
 static bool g_arch_fix = true;
 COOP_FIX("space.own_archetype", "BUG-1470", g_arch_fix,
          "space: a guest's empire plays the archetype of its own stage history (its own archetype tools)");
+// BUG-1557: on = in Rivals mode guests earn independent Tribe and Civ consequence cards from their own Tribe/Civ
+// outcomes, producing distinct Space philosophy/archetypes; off = Tribe and Civ cards copy the host's (Together)
+static bool g_rivals_own_history_fix = true;
+COOP_FIX("rivals.own_history", "BUG-1557", g_rivals_own_history_fix,
+         "rivals: per-player Tribe and Civ consequence cards and independent Space philosophy/archetype");
 
 // ---- symbols
 static uintptr_t a_AddTrait, a_SetCard, a_GetCard, a_CreatureCard, a_CellCard, a_SpaceFromTraits, a_SetArchetype,
@@ -226,6 +235,89 @@ void social_win(uint8_t player, float worth)
     g_social_wins++;
 }
 
+bool rivals_own_history_enabled() { return g_rivals_own_history_fix && own_on(); }
+
+void record_tribe_outcome(uint8_t player, bool allied)
+{
+    if (!is_host() || player == 0 || !own_on())
+        return;
+    book_load();
+    Record* r = record_of(player, cplayer());
+    if (!r)
+        return;
+    add_tribe_outcome(*r, allied);
+    g_host_next = 0;
+    LOG("history: %s recorded Tribe %s (allied=%u conquered=%u -> card %08X)", S->name_of(player).c_str(),
+        allied ? "ally" : "conquer", (unsigned)r->tribe_allied, (unsigned)r->tribe_conquered,
+        tribe_card_for(r->tribe_allied, r->tribe_conquered));
+}
+
+void set_civ_start_specialty(uint8_t player, uint8_t spec_1_based)
+{
+    if (!is_host() || player == 0 || !own_on())
+        return;
+    book_load();
+    Record* r = record_of(player, cplayer());
+    if (!r || !set_civ_start(*r, spec_1_based))
+        return;
+    g_host_next = 0;
+    LOG("history: %s Civ starting specialty=%u (card %08X)", S->name_of(player).c_str(), (unsigned)r->civ_start_spec,
+        civ_card_for(r->civ_military, r->civ_economic, r->civ_religious, r->civ_start_spec));
+}
+
+void record_civ_outcome(uint8_t player, uint8_t spec_1_based)
+{
+    if (!is_host() || player == 0 || !own_on())
+        return;
+    book_load();
+    Record* r = record_of(player, cplayer());
+    if (!r || !add_civ_outcome(*r, spec_1_based))
+        return;
+    g_host_next = 0;
+    LOG("history: %s recorded Civ outcome spec=%u (mil=%u eco=%u rel=%u start=%u -> card %08X)",
+        S->name_of(player).c_str(), (unsigned)spec_1_based, (unsigned)r->civ_military, (unsigned)r->civ_economic,
+        (unsigned)r->civ_religious, (unsigned)r->civ_start_spec,
+        civ_card_for(r->civ_military, r->civ_economic, r->civ_religious, r->civ_start_spec));
+}
+
+uint32_t player_card(uint8_t player, int stage)
+{
+    if (stage < 0 || stage >= kStages)
+        return 0;
+    if (player == 0) {
+        void* p = cplayer();
+        if (!p)
+            return 0;
+        uint32_t v = skg::field<uint32_t>(p, kCardsOff + 4 * stage);
+        return valid_card(stage, v) ? v : 0;
+    }
+    if (!is_host())
+        return 0;
+    book_load();
+    auto it = g_book.recs.find(key_of(player));
+    if (it == g_book.recs.end())
+        return 0;
+    const Record& r = it->second;
+    if (valid_card(stage, r.cards[stage]))
+        return r.cards[stage];
+    if (g_rivals_own_history_fix) {
+        if (stage == kTribe && r.has_tribe_own())
+            return tribe_card_for(r.tribe_allied, r.tribe_conquered);
+        if (stage == kCiv && r.has_civ_own())
+            return civ_card_for(r.civ_military, r.civ_economic, r.civ_religious, r.civ_start_spec);
+    }
+    return 0;
+}
+
+bool player_has_own_tribe(uint8_t player)
+{
+    if (!is_host() || player == 0)
+        return false;
+    book_load();
+    auto it = g_book.recs.find(key_of(player));
+    return it != g_book.recs.end() && it->second.has_tribe_own();
+}
+
 // the Creature card the game's rule gives this progress now (Creature_GetConsequenceTrait 0xD38780 reads cPlayer
 // +0x1278 / +0x127C and the History timeline's Cell value): run with it lent into the host's cPlayer (the swap
 // ledger undoes it should the call not return, BUG-0110), put back right after
@@ -302,13 +394,26 @@ static void host_tick(double now)
         Record* r = record_of(pl.id, p);
         if (!r)
             continue;
-        unsigned ch = update(*r, host, [&](int stage, const Record& x) -> uint32_t {
-            uint32_t v = stage == kCell ? x.cell_own : stage == kCreature ? creature_card_for(x.social, x.combat)
-                       : stage == kSpace ? space_card_for(x.cards) : 0;
-            g_decided[stage]++;
-            LOG("history: %s's own card of stage %d: %08X (the host's %08X)", pl.name.c_str(), stage, v, host[stage]);
+        const bool own_tribe = g_rivals_own_history_fix && (rivals::stage_is_rivals(rivals::Stage::Tribe) || r->has_tribe_own());
+        const bool own_civ = g_rivals_own_history_fix && (rivals::stage_is_rivals(rivals::Stage::Civ) || r->has_civ_own());
+        unsigned ch = update(*r, host, [&](int st, const Record& x) -> uint32_t {
+            uint32_t v = 0;
+            if (st == kCell)
+                v = x.cell_own;
+            else if (st == kCreature)
+                v = creature_card_for(x.social, x.combat);
+            else if (st == kTribe)
+                v = tribe_card_for(x.tribe_allied, x.tribe_conquered);
+            else if (st == kCiv)
+                v = civ_card_for(x.civ_military, x.civ_economic, x.civ_religious, x.civ_start_spec);
+            else if (st == kSpace)
+                v = space_card_for(x.cards);
+            if (v != x.cards[st] && (valid_card(st, v) || !valid_card(st, x.cards[st]))) {
+                g_decided[st]++;
+                LOG("history: %s's own card of stage %d: %08X (the host's %08X)", pl.name.c_str(), st, v, host[st]);
+            }
             return v;
-        });
+        }, own_tribe, own_civ);
         if (ch)
             LOG("history: %s's cards now %08X %08X %08X %08X %08X (changed %X)", pl.name.c_str(), r->cards[0], r->cards[1],
                 r->cards[2], r->cards[3], r->cards[4], ch);
@@ -320,6 +425,14 @@ static void host_tick(double now)
         if (sent == g_sent.end() || !same(sent->second, rec) || now - g_sent_at[pl.id] > 5)
             send_record(pl.id, rec, now);
     }
+}
+
+void host_sync_now()
+{
+    if (!is_host() || !S || !a_NounGet)
+        return;
+    g_host_next = 0;
+    host_tick(H ? H->time_seconds() : 0.0);
 }
 
 // ---- guest
@@ -361,6 +474,8 @@ static void guest_space(void* p, double now)
         g_space_since = now;
     if (!g_arch_fix || !a_SetArchetype || !a_SpaceGame || now - g_space_since < 5)
         return; // the world's own Space start first
+    if (spacerivals::emigration_in_progress() && now - g_space_since < 20)
+        return; // BUG-1557: wait for Space Rivals guest homeworld emigration before applying archetype
     const uint32_t own = g_mine.cards[kSpace];
     const int idx = empire_archetype();
     if (idx < 0 || !archetype_due(own, skg::field<uint32_t>(p, kCardsOff + 4 * kSpace), idx, g_arch_applied))
@@ -466,18 +581,32 @@ void on_message(uint8_t from, net::Reader& r)
 }
 
 // ---- coop.history
+static uint8_t parse_civ_spec_arg(const char* s)
+{
+    if (!s)
+        return kCivSpecNone;
+    if (!strcmp(s, "mil") || !strcmp(s, "military") || !strcmp(s, "1"))
+        return kCivSpecMilitary;
+    if (!strcmp(s, "eco") || !strcmp(s, "economic") || !strcmp(s, "2"))
+        return kCivSpecEconomic;
+    if (!strcmp(s, "rel") || !strcmp(s, "religious") || !strcmp(s, "3"))
+        return kCivSpecReligious;
+    return kCivSpecNone;
+}
+
 static std::string status()
 {
     char b[512];
     std::string out;
     snprintf(b, sizeof b,
-             "history: own_fix=%d credit_fix=%d arch_fix=%d role=%s active=%d\n"
+             "history: own_fix=%d credit_fix=%d arch_fix=%d rivals_fix=%d role=%s active=%d\n"
              "  host: hook calls=%u redirected social=%u combat=%u fails=%u social_wins=%u seeded=%u loaded=%u "
              "decided=%u,%u,%u,%u,%u sent=%u released=%u cell_reports=%u records=%u world=%s\n"
              "  guest: have=%d own=%d owns=%d rx=%u card_writes=%u progress_writes=%u local_calls=%u cell_sent=%08X "
              "cell_tx=%u arch_calls=%u arch_applied=%08X\n"
              "  mine %08X %08X %08X %08X %08X social=%.1f combat=%.1f\n",
-             (int)g_own_fix, (int)g_credit_fix, (int)g_arch_fix, is_host() ? "host" : is_guest() ? "guest" : "none",
+             (int)g_own_fix, (int)g_credit_fix, (int)g_arch_fix, (int)g_rivals_own_history_fix,
+             is_host() ? "host" : is_guest() ? "guest" : "none",
              (int)own_on(), g_hook_calls, g_redirected[0], g_redirected[1], g_redirect_fails, g_social_wins, g_seeded,
              g_loaded, g_decided[0], g_decided[1], g_decided[2], g_decided[3], g_decided[4], g_tx, g_released, g_cell_rx,
              (unsigned)g_book.recs.size(), g_book.world.empty() ? "-" : g_book.world.c_str(), (int)g_have,
@@ -499,8 +628,12 @@ static std::string status()
         out += b;
     }
     for (auto& [k, r] : g_book.recs) {
-        snprintf(b, sizeof b, "  record %s %08X %08X %08X %08X %08X social=%.1f combat=%.1f cell_own=%08X\n", k.c_str(),
-                 r.cards[0], r.cards[1], r.cards[2], r.cards[3], r.cards[4], r.social, r.combat, r.cell_own);
+        snprintf(b, sizeof b,
+                 "  record %s %08X %08X %08X %08X %08X social=%.1f combat=%.1f cell_own=%08X "
+                 "tribe=%u/%u civ=%u/%u/%u start=%u\n",
+                 k.c_str(), r.cards[0], r.cards[1], r.cards[2], r.cards[3], r.cards[4], r.social, r.combat, r.cell_own,
+                 (unsigned)r.tribe_allied, (unsigned)r.tribe_conquered, (unsigned)r.civ_military,
+                 (unsigned)r.civ_economic, (unsigned)r.civ_religious, (unsigned)r.civ_start_spec);
         out += b;
     }
     return out;
@@ -510,6 +643,68 @@ static int command(int argc, const char* const* argv, std::string& out)
 {
     char b[200];
     const char* a = argc > 1 ? argv[1] : "";
+    if (!strcmp(a, "status")) {
+        out = status();
+        return 0;
+    }
+    if (!strcmp(a, "tribe") && argc >= 4) {
+        uint8_t who = (uint8_t)atoi(argv[2]);
+        bool is_ally = !strcmp(argv[3], "ally") || !strcmp(argv[3], "friendly");
+        bool is_conq = !strcmp(argv[3], "conquer") || !strcmp(argv[3], "aggressive");
+        if (!is_host() || who == 0 || (!is_ally && !is_conq)) {
+            out = "usage: coop.history tribe <guest_id> ally|conquer (host only)\n";
+            return 0;
+        }
+        record_tribe_outcome(who, is_ally);
+        Record* r = record_of(who, cplayer());
+        if (!r) {
+            out = "not recorded (host must be in a stage)\n";
+            return 0;
+        }
+        snprintf(b, sizeof b, "tribe p=%u allied=%u conquered=%u card=%08X\n", (unsigned)who,
+                 (unsigned)r->tribe_allied, (unsigned)r->tribe_conquered,
+                 tribe_card_for(r->tribe_allied, r->tribe_conquered));
+        out = b;
+        return 0;
+    }
+    if (!strcmp(a, "civ") && argc >= 4) {
+        uint8_t who = (uint8_t)atoi(argv[2]);
+        uint8_t sp = parse_civ_spec_arg(argv[3]);
+        if (!is_host() || who == 0 || sp == kCivSpecNone) {
+            out = "usage: coop.history civ <guest_id> mil|eco|rel (host only)\n";
+            return 0;
+        }
+        record_civ_outcome(who, sp);
+        Record* r = record_of(who, cplayer());
+        if (!r) {
+            out = "not recorded (host must be in a stage)\n";
+            return 0;
+        }
+        snprintf(b, sizeof b, "civ p=%u mil=%u eco=%u rel=%u start=%u card=%08X\n", (unsigned)who,
+                 (unsigned)r->civ_military, (unsigned)r->civ_economic, (unsigned)r->civ_religious,
+                 (unsigned)r->civ_start_spec,
+                 civ_card_for(r->civ_military, r->civ_economic, r->civ_religious, r->civ_start_spec));
+        out = b;
+        return 0;
+    }
+    if (!strcmp(a, "civ_start") && argc >= 4) {
+        uint8_t who = (uint8_t)atoi(argv[2]);
+        uint8_t sp = parse_civ_spec_arg(argv[3]);
+        if (!is_host() || who == 0 || sp == kCivSpecNone) {
+            out = "usage: coop.history civ_start <guest_id> mil|eco|rel (host only)\n";
+            return 0;
+        }
+        set_civ_start_specialty(who, sp);
+        Record* r = record_of(who, cplayer());
+        if (!r) {
+            out = "not set (host must be in a stage)\n";
+            return 0;
+        }
+        snprintf(b, sizeof b, "civ_start p=%u start=%u card=%08X\n", (unsigned)who, (unsigned)r->civ_start_spec,
+                 civ_card_for(r->civ_military, r->civ_economic, r->civ_religious, r->civ_start_spec));
+        out = b;
+        return 0;
+    }
     // tests: `credit <player> social|combat <amount>` as the game credits a kill / social win of that player on this
     // (host) game: the game's AddTraitProgress inside an actor::Scope naming it (player 0: the host's own)
     if (!strcmp(a, "credit") && argc >= 5) {
@@ -613,9 +808,10 @@ void init(const SkHost* host, SkMod* mod, net::Session* sess)
     if (a_AddTrait)
         H->hook_create(M, (void*)a_AddTrait, (void*)h_AddTrait, (void**)&o_AddTrait);
     H->command_add(M, "coop.history",
-                   "coop.history [credit <player> social|combat <amount> | end creature | set <player> <stage> <hex> | "
+                   "coop.history [status | credit <player> social|combat <amount> | tribe <pid> ally|conquer | "
+                   "civ <pid> mil|eco|rel | civ_start <pid> mil|eco|rel | end creature | set <player> <stage> <hex> | "
                    "space <c1> <c2> <c3> <c4> | decide <social> <combat> | cell] - every player's own stage history "
-                   "(BUG-1470)",
+                   "(BUG-1470, BUG-1557)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        std::string s;
                        int rc = command(argc, argv, s);

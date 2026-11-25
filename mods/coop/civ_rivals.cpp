@@ -17,6 +17,8 @@
 #include "civ_internal.h"
 #include "fixes.h"
 #include "game.h"
+#include "history.h"
+#include "history_logic.h"
 #include "lifecycle.h"
 #include "modes.h"
 #include "rivals.h"
@@ -618,6 +620,7 @@ static void host_ensure_assignments(double now)
 
     // Build candidate list from free NPC civilizations with at least 1 city
     std::vector<BaseCandidate> cands;
+    std::map<uint32_t, int> cand_native_spec;
     for (void* c : all_civs()) {
         if (!c || c == host_civ)
             continue;
@@ -630,13 +633,36 @@ static void host_ensure_assignments(double now)
         if (cs.empty())
             continue;
         cands.push_back({pol, to_vec3(civ::city_pos(cs[0])), (int)cs.size()});
+        cand_native_spec[pol] =
+            skg::readable(cs[0], civ::kCitySpecialty + 4) ? F<int>(cs[0], civ::kCitySpecialty) : -1;
     }
 
     bool need_npc_spawn = false;
     for (const auto& pl : C.sess->players()) {
         if (pl.id == 0 || pl.id >= kMaxPlayers || g_nations[pl.id].assigned)
             continue;
-        uint32_t pick = select_base_nation(host_cap, cands, rivals::base_distance(), taken);
+        // BUG-1557: when the guest has its own Rivals Tribe path, prefer a free NPC nation matching
+        // its Tribe consequence card specialty (Aggressive->Mil, Industrious->Eco, Friendly->Rel).
+        uint32_t pick = 0;
+        int want_native = -1;
+        if (history::rivals_own_history_enabled() &&
+            (rivals::stage_is_rivals(rivals::Stage::Tribe) || history::player_has_own_tribe(pl.id))) {
+            uint32_t tcard = history::player_card(pl.id, history::kTribe);
+            int pref_h = history::civ_spec_for_tribe_card(tcard);
+            want_native = pref_h >= 0 ? history::history_spec_to_native_city((uint8_t)(pref_h + 1)) : -1;
+            if (want_native >= 0) {
+                std::vector<BaseCandidate> matched;
+                for (const auto& bc : cands) {
+                    auto it = cand_native_spec.find(bc.pol_id);
+                    if (it != cand_native_spec.end() && it->second == want_native)
+                        matched.push_back(bc);
+                }
+                if (!matched.empty())
+                    pick = select_base_nation(host_cap, matched, rivals::base_distance(), taken);
+            }
+        }
+        if (!pick)
+            pick = select_base_nation(host_cap, cands, rivals::base_distance(), taken);
         if (!pick) {
             need_npc_spawn = true;
             continue;
@@ -648,6 +674,10 @@ static void host_ensure_assignments(double now)
         if (gcities.empty())
             continue;
         Vec3 cap = to_vec3(civ::city_pos(gcities[0]));
+        int cap_native = skg::readable(gcities[0], civ::kCitySpecialty + 4) ? F<int>(gcities[0], civ::kCitySpecialty) : -1;
+        uint8_t hist_spec = history::native_city_spec_to_history(cap_native);
+        if (hist_spec != history::kCivSpecNone)
+            history::set_civ_start_specialty(pl.id, hist_spec);
 
         // R2 takeover: fold NPC domestic/expansion budgets back into mWealth and enforce baseline floor.
         // Do NOT set +0x89 (mIsPlayer) = 1 on guest nations on the host: cRelationshipManager::CalculateRelationshipAbsolute
@@ -1082,6 +1112,21 @@ void on_city_captured(void* city, uint32_t new_pol)
         } else if (old_pid < 0) {
             rivals::grant_influence((uint8_t)new_pid, kCaptureInfluenceGain, "city subjugated");
             rivals::add_chronicle_points((uint8_t)new_pid, rivals::kPtsNpcFaction, "npc city subjugated");
+        }
+        // BUG-1557: record guest's Civ outcome specialty (cCity +0x29C capture type: 0=Mil, 1=Rel, 2=Eco)
+        if (new_pid > 0) {
+            int cap_type = skg::readable(city, 0x29C + 4) ? F<int>(city, 0x29C) : -1;
+            if (cap_type < 0 || cap_type > 2) {
+                void* nc = civ_of_player((uint8_t)new_pid);
+                auto ncs = nc ? civ::vec_of((uint8_t*)nc + civ::kCivCities) : std::vector<void*>{};
+                if (!ncs.empty() && skg::readable(ncs[0], civ::kCitySpecialty + 4))
+                    cap_type = F<int>(ncs[0], civ::kCitySpecialty);
+                else if (skg::readable(city, civ::kCitySpecialty + 4))
+                    cap_type = F<int>(city, civ::kCitySpecialty);
+            }
+            uint8_t hist_spec = history::native_city_spec_to_history(cap_type);
+            if (hist_spec != history::kCivSpecNone)
+                history::record_civ_outcome((uint8_t)new_pid, hist_spec);
         }
         if (C.feed && C.sess)
             C.feed(C.sess->name_of((uint8_t)new_pid) + " captured a city");
@@ -1560,15 +1605,20 @@ std::string debug(const std::vector<std::string>& a)
     if (!a.empty() && a[0] == "capture_test" && a.size() >= 3 && is_host()) {
         int ci = atoi(a[1].c_str());
         uint8_t ap = (uint8_t)atoi(a[2].c_str());
+        int cap_type = a.size() >= 4 ? atoi(a[3].c_str()) : 0;
+        if (cap_type < 0 || cap_type > 2)
+            cap_type = 0;
         void* city = civ::host_city((size_t)ci);
         void* ac = civ_of_player(ap);
         if (!city || !ac)
             return "error: invalid city or player\n";
         uint32_t before = civ::pol_of(city);
-        civ::h_Capture(city, civ::pol_of(ac), 0, 0, 0, 0);
+        civ::h_Capture(city, civ::pol_of(ac), cap_type, 0, 0, 0);
         uint32_t after = civ::pol_of(city);
         // If capture succeeded synchronously or queued via ChangeOwner, ensure immediate ChangeOwner in instant test
         if (after == before && !block_capture(city, civ::pol_of(ac)) && civ::a_ChangeOwner) {
+            if (skg::readable(city, 0x29C + 4))
+                F<int>(city, 0x29C) = cap_type;
             thiscall<void>(civ::a_ChangeOwner, city, civ::pol_of(ac), 0, 0);
             after = civ::pol_of(city);
             if (after == civ::pol_of(ac))
