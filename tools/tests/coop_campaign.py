@@ -513,22 +513,25 @@ class Campaign:
                 detail = [o for o in over if o.startswith(k)] or [k]
                 self.finding('desync', f'{hst}:{k}', f'{name}: {"too few of the host objects" if k.endswith("coverage") else "objects of kind " + k.split(":")[1] + " out of sync"} '
                              f'in {hst} ({", ".join(detail)})', [host, self.byname(name)])
-            # shared food / money
-            hr = cl.res_of(host.call('coop.res'))
-            # BUG-1468: with civ.own_money every player's Civ money is its own (coop.wallet), not one shared total
-            own_money = hst == 'civ' and 'setting=on' in (host.call('coop.wallet') or '')
-            bad = []
-            for g in self.guests:
-                if g in alive and g.pid in tog:
-                    for k, hv, gv in cl.res_mismatch(hr, cl.res_of(g.call('coop.res'))):
-                        if not (own_money and k == 'money'):
-                            bad.append(f'{g.name}:{k}')
-            for k in self.persist['shared'].update(bad):
-                name, what = k.split(':')
-                self.finding('shared', f'{hst}:{k}', f'{name}: shared {what} differs from the host\'s in {hst}',
-                             [host, self.byname(name)])
-            # the game's objects (Creature and Civ)
-            if hst in ('creature', 'civ'):
+            # shared food / money (Together mode only: in --rivals every player has its own food/money/DNA)
+            if not self.a.rivals:
+                hr = cl.res_of(host.call('coop.res'))
+                # BUG-1468: with civ.own_money every player's Civ money is its own (coop.wallet), not one shared total
+                own_money = hst == 'civ' and 'setting=on' in (host.call('coop.wallet') or '')
+                bad = []
+                for g in self.guests:
+                    if g in alive and g.pid in tog:
+                        for k, hv, gv in cl.res_mismatch(hr, cl.res_of(g.call('coop.res'))):
+                            if not (own_money and k == 'money'):
+                                bad.append(f'{g.name}:{k}')
+                for k in self.persist['shared'].update(bad):
+                    name, what = k.split(':')
+                    self.finding('shared', f'{hst}:{k}', f'{name}: shared {what} differs from the host\'s in {hst}',
+                                 [host, self.byname(name)])
+            else:
+                self.check_rivals_stage(hst, alive, tog)
+            # the game's objects (Creature and Civ; skip Civ census in --rivals because R1 swaps guest player ownership)
+            if hst in ('creature', 'civ') and not (self.a.rivals and hst == 'civ'):
                 hc = census.dump(host.con)
                 probs = []
                 for g in self.guests:
@@ -548,6 +551,33 @@ class Campaign:
                         self.F.attach('census', f'{hst}:{k}', [f'both censuses: {os.path.relpath(path, lane.ROOT)}'])
         except (OSError, ValueError) as e:
             self.finding('info', f'check:{e!r}'[:80], f'a check could not read a game: {e!r}')
+
+    def check_rivals_stage(self, hst, alive, tog):
+        """Verify Rivals shared systems and the current stage's Rivals module stay active and synced."""
+        stage_cmd = {
+            'cell': 'coop.pool rivals',
+            'creature': 'coop.crivals',
+            'tribe': 'coop.tribe rivals',
+            'civ': 'coop.civ rivals',
+            'space': 'coop.space rivals',
+        }.get(hst)
+        if not stage_cmd:
+            return
+        hr = self.host.call('coop.rivals') or ''
+        if 'preset=All rivals' not in hr:
+            self.finding('rivals', f'{hst}:host_preset', f'host lost All rivals preset in {hst}: {hr.splitlines()[0] if hr else ""}', [self.host])
+        hs = self.host.call(stage_cmd) or ''
+        if 'active=1' not in hs:
+            self.finding('rivals', f'{hst}:host_active', f'host {stage_cmd} not active in {hst}: {hs.splitlines()[0] if hs else ""}', [self.host])
+        for g in self.guests:
+            if g not in alive or g.pid not in tog:
+                continue
+            gr = g.call('coop.rivals') or ''
+            if 'preset=All rivals' not in gr:
+                self.finding('rivals', f'{hst}:{g.name}:preset', f'{g.name} lost All rivals preset in {hst}: {gr.splitlines()[0] if gr else ""}', [self.host, g])
+            gs = g.call(stage_cmd) or ''
+            if 'active=1' not in gs:
+                self.finding('rivals', f'{hst}:{g.name}:active', f'{g.name} {stage_cmd} not active in {hst}: {gs.splitlines()[0] if gs else ""}', [self.host, g])
 
     def ground_probe(self, host, hst):
         """BUG-0332 (CAMPAIGN_GROUND=1): the game's own ground (coop.ground) on every machine at a place of the host's
@@ -1357,8 +1387,19 @@ class Campaign:
             m = re.match(r'(\S+) alive=(\d) pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', line)
             if m and m.group(2) == '1':
                 huts.append((m.group(1), tuple(float(m.group(i)) for i in (3, 4, 5))))
+        rival_pos = []
+        if self.a.rivals:
+            tr_st = self.host.call('coop.tribe rivals') or ''
+            rival_pols = {m.group(1).upper() for m in re.finditer(r'assign pid=[1-3] pol=([0-9A-Fa-f]+)', tr_st)}
+            if rival_pols:
+                tf = self.host.call('coop.tribe factions') or ''
+                for m in re.finditer(r'pol=([0-9A-Fa-f]+) .*?pos=\(([-\d.]+),([-\d.]+),([-\d.]+)\)', tf):
+                    if m.group(1).upper() in rival_pols:
+                        rival_pos.append(tuple(float(m.group(i)) for i in (2, 3, 4)))
         out = []
         for k, c in cent.items():
+            if any(math.dist(rp, c) < 40 for rp in rival_pos):
+                continue  # R7: player rival's inviolable main village (do not try to conquer it)
             v = min(vil, key=lambda v: math.dist(v[0], c), default=None)
             if v is not None and math.dist(v[0], c) < 40 and v[1] & 2:
                 continue  # conquered (or allied) already
@@ -1861,9 +1902,14 @@ class Campaign:
             self.finding('info', 'civ:noplayer', 'civ: no player city in coop.civ', [], [f'`{out[:300]}`'])
             return
         pol = mine.group(2)
+        rival_pols = set()
+        if self.a.rivals:
+            cr = h.call('coop.civ rivals') or ''
+            rival_pols = {m.group(1).upper() for m in re.finditer(r'p[1-3]:\s*pol=0x([0-9A-Fa-f]+)', cr)}
+            rival_pols |= {m.group(1).upper() for m in re.finditer(r'pid=[1-3]\s+pol=(?:0x)?([0-9A-Fa-f]+)', cr)}
         took = 0
-        left = [o for o in others if o[1] != pol]
-        for ptr, opol in others:
+        left = [o for o in others if o[1] != pol and o[1].upper() not in rival_pols]
+        for ptr, opol in left:
             if opol == pol:
                 continue
             # Capture(newPol, type, instant, nuked caption, a5) (docs/re/civ.md#civ-stage-end). The last city instant, as
@@ -2214,6 +2260,8 @@ def main():
                     '(<run>/segments/<stage>.tgz) instead of its fixture')
     ap.add_argument('--segment', help='A6: a failed run\'s segment.json: --from, --to, --save, '
                     '--seed from it')
+    ap.add_argument('--rivals', action='store_true',
+                    help='0.8.0: play the whole campaign in Rivals mode (all_rivals) with Rivals invariants checked')
     ap.add_argument('--seed', type=int, default=int(os.environ['CAMPAIGN_SEED']) if os.environ.get('CAMPAIGN_SEED') else None)  # CAMPAIGN_SEED: a lab replay
     a = ap.parse_args()
     seg_file = a.segment  # (the suite entry passes $CAMPAIGN_SEGMENT: other campaigns of that run ignore it)
@@ -2273,6 +2321,10 @@ def main():
             camp.note(f'planted on {p.name}: {cmd}: {p.call(cmd).strip()[:120]}')
     # the host's commands at the start, e.g. CAMPAIGN_HOST_CMDS="coop.settings force civ.own_money on" (BUG-1468: the
     # Civ -> Space segment with own money; a session setting forced in play, the guests ask for their wallets)
+    if a.rivals:
+        for cmd in ('coop.rivals preset all_rivals', 'coop.rivals fasttimers 1'):
+            camp.note(f'rivals setup on host: {cmd}: {players[0].call(cmd).strip()[:120]}')
+        time.sleep(2.0)
     for cmd in filter(None, os.environ.get('CAMPAIGN_HOST_CMDS', '').split(';')):
         camp.note(f'on the host: {cmd}: {players[0].call(cmd).strip()[:120]}')
     if a.save:  # A6: the failed segment's own save, loaded in game (the guests follow)

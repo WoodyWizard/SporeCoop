@@ -1069,6 +1069,16 @@ int32_t take_pending_draft_payout(uint8_t player_id)
     return v;
 }
 
+int32_t take_pending_draft_payout_for(Stage expected_stage, uint8_t player_id)
+{
+    if (!g_rivals_core_fix)
+        return 0;
+    int32_t v = g_state.draft.take_pending_payout_for(expected_stage, player_id);
+    if (v != 0 && is_host())
+        host_broadcast(true);
+    return v;
+}
+
 const Draft& draft_state() { return g_state.draft; }
 
 void add_chronicle_points(uint8_t player_id, int32_t pts, const std::string& reason)

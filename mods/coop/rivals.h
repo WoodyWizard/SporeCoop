@@ -38,6 +38,17 @@ using NpcInfluenceCallback =
 // Stage modules (WP-R2..R6) register a handler for MSG_RIVALS_FACTION (81) messages carrying their Stage byte.
 using FactionMsgHandler = std::function<void(uint8_t from, uint8_t subkind, net::Reader& r)>;
 
+// One NPC faction entry exposed by a stage module for the F9 Influence UI.
+struct NpcUiEntry {
+    uint32_t npc_id = 0;
+    std::string label;
+    bool allied = false;
+    bool hostile = false;
+    bool can_turn = false;
+    bool can_protect = false;
+    bool can_smooth = false;
+};
+
 // Optional per-stage hooks registered by Wave 2 stage modules (WP-R2..R6).
 struct StageHooks {
     // Called on host when `actor` buys influence; return false to reject (e.g. insufficient DNA/food/money).
@@ -48,6 +59,8 @@ struct StageHooks {
     std::function<void(uint8_t winner)> on_stage_race_end;
     // Optional stage-specific rows appended to the F9 Rivals / Race page.
     std::function<std::vector<UiRow>()> on_extra_ui_rows;
+    // Optional live NPC faction list for F9 Influence UI (TurnAgainst / Protect / SmoothOver).
+    std::function<std::vector<NpcUiEntry>(uint8_t viewer)> on_npc_ui_list;
 };
 
 // ---- lifecycle (wired in coop.cpp / session_glue.cpp) ----
@@ -109,6 +122,7 @@ bool start_draft(uint8_t winner, const std::vector<Draft::Item>& items);
 std::string request_draft_pick(uint32_t item_id);
 std::string request_draft_skip();
 int32_t take_pending_draft_payout(uint8_t player_id);
+int32_t take_pending_draft_payout_for(Stage expected_stage, uint8_t player_id);
 const Draft& draft_state();
 
 // ---- 11.7 Chronicle (Wave 2 API) ----

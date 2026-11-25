@@ -777,6 +777,7 @@ struct Draft {
     double remaining_secs = 0;
     double timeout_secs = kDefaultDraftTimeoutSecs;
     int32_t pending_payout[kMaxPlayers] = {};
+    Stage pending_payout_stage[kMaxPlayers] = {Stage::None, Stage::None, Stage::None, Stage::None};
 
     void reset_active()
     {
@@ -795,8 +796,10 @@ struct Draft {
     void reset_all()
     {
         reset_active();
-        for (int i = 0; i < kMaxPlayers; i++)
+        for (int i = 0; i < kMaxPlayers; i++) {
             pending_payout[i] = 0;
+            pending_payout_stage[i] = Stage::None;
+        }
     }
 
     static uint8_t compute_picks(uint8_t base_picks, uint8_t finish_rank)
@@ -882,8 +885,12 @@ struct Draft {
         int32_t pay = next_pick_payout();
         total_picks++;
         winner_payout += pay;
-        if (valid_player(winner))
+        if (valid_player(winner)) {
+            if (pending_payout_stage[winner] != stage)
+                pending_payout[winner] = 0;
             pending_payout[winner] += pay;
+            pending_payout_stage[winner] = stage;
+        }
         if (payout_out)
             *payout_out = pay;
         if (all_done()) {
@@ -930,6 +937,22 @@ struct Draft {
             return 0;
         int32_t v = pending_payout[player_id];
         pending_payout[player_id] = 0;
+        pending_payout_stage[player_id] = Stage::None;
+        return v;
+    }
+
+    int32_t take_pending_payout_for(Stage expected_stage, uint8_t player_id)
+    {
+        if (!valid_player(player_id) || expected_stage == Stage::None)
+            return 0;
+        if (pending_payout[player_id] == 0)
+            return 0;
+        if (pending_payout_stage[player_id] != Stage::None &&
+            pending_payout_stage[player_id] != expected_stage)
+            return 0;
+        int32_t v = pending_payout[player_id];
+        pending_payout[player_id] = 0;
+        pending_payout_stage[player_id] = Stage::None;
         return v;
     }
 };
