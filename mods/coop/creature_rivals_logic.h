@@ -25,14 +25,27 @@ constexpr float kMinNestSeparation = 25.0f; // m: avoid overlapping host home ne
 constexpr size_t kMaxSpeciesRecords = 512;
 constexpr size_t kMaxReportedParts = 64;
 
-// Species relationship table values (cSpeciesRelationshipManager::GetRelationship, 0x00BA40E0)
-constexpr int32_t kRelNone = 0;       // unset (archetype default)
-constexpr int32_t kRelHostile = 1;    // hostile
-constexpr int32_t kRelUnfriendly = 2; // cautious / unfriendly
-constexpr int32_t kRelNeutral = 3;    // neutral / impressed some
-constexpr int32_t kRelFriendly = 4;   // friendly / impressed more
-constexpr int32_t kRelExtinct = 5;    // extinct (shared across all players)
-constexpr int32_t kRelAllied = 6;     // allied (and own species)
+// Species relationship table values (cSpeciesRelationshipManager::GetRelationship, 0x00BA40E0;
+// verified in docs/re/creature.md#creature-npc-aggression, BUG-1553):
+//   0 = unset (archetype tuning +0x390 decides)
+//   1 = scared (flee; 0xD817A0 / 0xC0BA00)
+//   2 = aggressive / hostile (red face, attacks on sight; 0xD81830 / 0xC0B9C0)
+//   3 = neutral (0xD81680)
+//   4 = friendly (0xD815F0 / 0xD6E730)
+//   5 = aggressive / predator (also written on egg-eat event 7 and baby-kill event 5; NOT extinction)
+//   6 = allied (and own species; 0xD815F0 / 0xD6E730)
+// Extinction is tracked via SpeciesEntry::extinct and PerPlayerSpeciesTables::extinct_species
+// (populated ONLY from MakeExtinct / mark_extinct / cHerd::mbExtinction +0x190, never from rel == 5).
+constexpr int32_t kRelNone = 0;
+constexpr int32_t kRelScared = 1;
+constexpr int32_t kRelHostile = 2;
+constexpr int32_t kRelNeutral = 3;
+constexpr int32_t kRelFriendly = 4;
+constexpr int32_t kRelPredator = 5;
+constexpr int32_t kRelAllied = 6;
+
+inline bool is_hostile_rel(int32_t rel) { return rel == kRelHostile || rel == kRelPredator; }
+inline bool is_allied_rel(int32_t rel) { return rel == kRelAllied; }
 
 // Subkinds inside MSG_RIVALS_FACTION (81) for rivals::Stage::Creature
 constexpr uint8_t kSkAssign = 1;      // wire::rivals_faction::SK_ASSIGN
@@ -120,15 +133,17 @@ struct SpeciesEntry {
     uint32_t x = 0;
     uint32_t impressed = 0;
     uint32_t killed = 0;
+    bool extinct = false;
 
     bool operator==(const SpeciesEntry& o) const
     {
         return key[0] == o.key[0] && key[1] == o.key[1] && key[2] == o.key[2] && relation == o.relation && x == o.x &&
-               impressed == o.impressed && killed == o.killed;
+               impressed == o.impressed && killed == o.killed && extinct == o.extinct;
     }
 };
 
-// Step relation one notch toward hostile (TurnAgainst). Returns false if already hostile or extinct.
+// Step relation one notch toward aggressive/hostile (TurnAgainst / attack).
+// Returns false if already aggressive/hostile (2 or 5).
 inline bool step_toward_hostile(int32_t rel, int32_t& out)
 {
     switch (rel) {
@@ -139,28 +154,24 @@ inline bool step_toward_hostile(int32_t rel, int32_t& out)
         out = kRelNeutral;
         return true;
     case kRelNeutral:
-        out = kRelUnfriendly;
-        return true;
-    case kRelUnfriendly:
-        out = kRelHostile;
-        return true;
+    case kRelScared:
     case kRelNone:
-        out = kRelUnfriendly;
+        out = kRelHostile; // 2 = aggressive / attacks on sight (NOT 1 = scared/flee)
         return true;
-    default: // kRelHostile (1) or kRelExtinct (5)
+    default: // kRelHostile (2) or kRelPredator (5)
         out = rel;
         return false;
     }
 }
 
-// Step relation one notch toward allied (SmoothOver). Returns false if already allied or extinct.
+// Step relation one notch toward allied (SmoothOver). Returns false if already allied (6).
 inline bool step_toward_friendly(int32_t rel, int32_t& out)
 {
     switch (rel) {
     case kRelHostile:
-        out = kRelUnfriendly;
-        return true;
-    case kRelUnfriendly:
+    case kRelPredator:
+    case kRelScared:
+    case kRelNone:
         out = kRelNeutral;
         return true;
     case kRelNeutral:
@@ -169,10 +180,7 @@ inline bool step_toward_friendly(int32_t rel, int32_t& out)
     case kRelFriendly:
         out = kRelAllied;
         return true;
-    case kRelNone:
-        out = kRelNeutral;
-        return true;
-    default: // kRelAllied (6) or kRelExtinct (5)
+    default: // kRelAllied (6)
         out = rel;
         return false;
     }
@@ -227,10 +235,10 @@ struct PerPlayerSpeciesTables {
     {
         if (!rivals::valid_player(player) || species_inst == 0)
             return kRelNone;
-        if (extinct_species.count(species_inst))
-            return kRelExtinct;
         auto it = by_player[player].find(species_inst);
-        return it != by_player[player].end() ? it->second.relation : kRelNone;
+        if (it != by_player[player].end())
+            return it->second.relation;
+        return extinct_species.count(species_inst) ? kRelPredator : kRelNone;
     }
 
     SpeciesEntry& ensure_entry(uint8_t player, const uint32_t key[3])
@@ -242,8 +250,10 @@ struct PerPlayerSpeciesTables {
             e.key[0] = key[0];
             e.key[1] = key[1];
             e.key[2] = key[2];
-            if (extinct_species.count(key[0]))
-                e.relation = kRelExtinct;
+            if (extinct_species.count(key[0])) {
+                e.extinct = true;
+                e.relation = kRelPredator;
+            }
             it = tbl.emplace(key[0], e).first;
         } else if (it->second.key[1] == 0 && key[1] != 0) {
             it->second.key[1] = key[1];
@@ -259,27 +269,32 @@ struct PerPlayerSpeciesTables {
         extinct_species.insert(key[0]);
         for (int p = 0; p < rivals::kMaxPlayers; p++) {
             auto& e = ensure_entry((uint8_t)p, key);
-            e.relation = kRelExtinct;
+            e.extinct = true;
+            e.relation = kRelPredator; // Spore native table writes 5 when MakeExtinct fires
         }
     }
 
-    // Sync host's native table entries into player 0 (propagating shared extinctions to everyone).
+    // Sync host's native table entries into player 0.
+    // Never infer extinction from r.relation == 5 (predator / egg-eat / baby-kill); only r.extinct propagates extinction.
     void sync_from_host_native(const std::vector<SpeciesEntry>& native)
     {
         for (const auto& r : native) {
             if (r.key[0] == 0 || is_home_species(r.key[0]))
                 continue;
-            if (r.relation == kRelExtinct) {
+            if (r.extinct) {
                 mark_extinct(r.key);
                 by_player[0][r.key[0]].killed = std::max(by_player[0][r.key[0]].killed, r.killed);
                 continue;
             }
             if (extinct_species.count(r.key[0])) {
                 auto& e = ensure_entry(0, r.key);
-                e.relation = kRelExtinct;
+                e.extinct = true;
+                e.relation = kRelPredator;
                 continue;
             }
-            by_player[0][r.key[0]] = r;
+            SpeciesEntry copy = r;
+            copy.extinct = false;
+            by_player[0][r.key[0]] = copy;
         }
     }
 
@@ -294,13 +309,30 @@ struct PerPlayerSpeciesTables {
         e.impressed++;
         if (ally_need > 0 && e.impressed >= ally_need)
             e.relation = kRelAllied;
-        else if (friendly_need > 0 && e.impressed >= friendly_need && e.relation < kRelFriendly)
+        else if (friendly_need > 0 && e.impressed >= friendly_need &&
+                 (e.relation < kRelFriendly || is_hostile_rel(e.relation)))
             e.relation = kRelFriendly;
-        else if (e.relation < kRelNeutral)
+        else if (e.relation < kRelNeutral || is_hostile_rel(e.relation))
             e.relation = kRelNeutral;
         out.changed = true;
         out.became_allied = (prev != kRelAllied && e.relation == kRelAllied);
         return out;
+    }
+
+    // Lower a player's relation to a wild species on attack (ApplyEvent event == 2).
+    // Does not affect other players or mark the species extinct.
+    bool record_attack(uint8_t player, const uint32_t key[3])
+    {
+        if (!rivals::valid_player(player) || key[0] == 0 || is_extinct(key[0]) || is_home_species(key[0]))
+            return false;
+        auto& e = ensure_entry(player, key);
+        int32_t nxt = e.relation;
+        if (!step_toward_hostile(e.relation, nxt))
+            return false;
+        e.relation = nxt;
+        if (nxt < kRelFriendly || is_hostile_rel(nxt))
+            e.impressed = 0;
+        return true;
     }
 
     KillOutcome record_kill(uint8_t player, const uint32_t key[3], uint32_t extinct_need = 3)
@@ -317,7 +349,7 @@ struct PerPlayerSpeciesTables {
         auto& e = ensure_entry(player, key);
         e.killed++;
         e.impressed = 0;
-        e.relation = kRelHostile;
+        e.relation = kRelHostile; // 2 = aggressive / attacks on sight
         out.changed = true;
         uint32_t& tot = shared_kills[key[0]];
         tot++;
@@ -337,7 +369,7 @@ struct PerPlayerSpeciesTables {
         if (!step_toward_hostile(e.relation, nxt))
             return false;
         e.relation = nxt;
-        if (nxt < kRelFriendly)
+        if (nxt < kRelFriendly || is_hostile_rel(nxt))
             e.impressed = 0;
         return true;
     }
@@ -361,7 +393,7 @@ struct PerPlayerSpeciesTables {
         if (!rivals::valid_player(player))
             return;
         for (const auto& [inst, e] : by_player[player]) {
-            if (!is_home_species(inst) && e.relation == kRelAllied)
+            if (!is_home_species(inst) && !is_extinct(inst) && e.relation == kRelAllied)
                 allies_out++;
         }
     }
@@ -375,8 +407,11 @@ struct PerPlayerSpeciesTables {
         for (const auto& [inst, e] : by_player[player]) {
             if (out.size() >= kMaxSpeciesRecords)
                 break;
-            if (!is_home_species(inst))
-                out.push_back(e);
+            if (!is_home_species(inst)) {
+                SpeciesEntry copy = e;
+                copy.extinct = is_extinct(inst);
+                out.push_back(copy);
+            }
         }
         return out;
     }
@@ -408,6 +443,151 @@ inline bool allow_creature_damage(bool rivals_active, bool friendly_fire_setting
 inline bool block_extinction(bool rivals_active, bool is_player_home_species)
 {
     return rivals_active && is_player_home_species;
+}
+
+// Partner puppet pass-through / combat-hover filter policy (BUG-1553):
+// In Creature Rivals, War rivals MUST NOT be passed through or skipped by combat hover;
+// Neutral and Allied rivals remain pass-through and non-targetable in combat stance.
+inline bool should_pass_through_puppet(bool rivals_active, bool friendly_fire_setting, bool at_war)
+{
+    if (rivals_active)
+        return !at_war;
+    return !friendly_fire_setting;
+}
+
+// Guest pack recruitment policy in Creature Rivals (BUG-1553):
+// Evaluates strictly against the guest's own family ownership, own species, and own wild species relation table.
+inline bool can_guest_recruit_in_rivals(uint8_t guest_id, uint32_t npc_species_inst, uint8_t npc_family_owner,
+                                        uint32_t guest_home_species, bool guest_allied_with_species)
+{
+    if (!rivals::valid_player(guest_id) || guest_id == 0 || npc_species_inst == 0)
+        return false;
+    if (npc_family_owner != 255)
+        return npc_family_owner == guest_id;
+    if (guest_home_species != 0 && npc_species_inst == guest_home_species)
+        return true;
+    return guest_allied_with_species;
+}
+
+// Per-player NPC impressed tracking in Creature Rivals (BUG-1553):
+// Prevents one player impressing a wild creature from blocking rival players from impressing it.
+// Keyed by (npc_id, object_serial) so NPC ID reuse automatically resets stale entries.
+struct PerPlayerImpressed {
+    struct Entry {
+        uint32_t serial = 0;
+        uint8_t mask = 0; // bit (1u << player_id)
+    };
+    std::map<uint16_t, Entry> entries;
+
+    void clear() { entries.clear(); }
+
+    void forget_npc(uint16_t npc_id) { entries.erase(npc_id); }
+
+    void forget_player(uint8_t player_id)
+    {
+        if (!rivals::valid_player(player_id))
+            return;
+        uint8_t bit = (uint8_t)(1u << player_id);
+        for (auto it = entries.begin(); it != entries.end();) {
+            it->second.mask = (uint8_t)(it->second.mask & ~bit);
+            if (it->second.mask == 0)
+                it = entries.erase(it);
+            else
+                ++it;
+        }
+    }
+
+    bool has(uint8_t player_id, uint16_t npc_id, uint32_t serial) const
+    {
+        if (!rivals::valid_player(player_id))
+            return false;
+        auto it = entries.find(npc_id);
+        if (it == entries.end() || it->second.serial != serial)
+            return false;
+        return (it->second.mask & (uint8_t)(1u << player_id)) != 0;
+    }
+
+    void mark(uint8_t player_id, uint16_t npc_id, uint32_t serial)
+    {
+        if (!rivals::valid_player(player_id))
+            return;
+        auto& e = entries[npc_id];
+        if (e.serial != serial) {
+            e.serial = serial;
+            e.mask = 0;
+        }
+        e.mask = (uint8_t)(e.mask | (uint8_t)(1u << player_id));
+    }
+};
+
+// Automatic Creature -> Tribe transition trigger once catch-up and draft have both finished (BUG-1553).
+// Waits a short settle window after draft ends so final draft unlock packets land before advancing.
+inline bool should_auto_trigger_tribe_transition(bool is_host, bool rivals_active, bool race_finished,
+                                                 bool catchup_active, bool draft_active, uint8_t winner,
+                                                 bool race_end_handled, bool already_triggered,
+                                                 bool cinematic_playing, double ready_since, double now,
+                                                 double settle_secs = 2.0)
+{
+    if (!is_host || !rivals_active || already_triggered || cinematic_playing)
+        return false;
+    if (!race_end_handled || !race_finished || catchup_active || draft_active || winner == 255)
+        return false;
+    return ready_since > 0.0 && (now - ready_since) >= settle_secs;
+}
+
+// F9 Influence UI wild species list row (mirrors rivals::NpcUiEntry without runtime headers).
+struct WildNpcUiRow {
+    uint32_t npc_id = 0;
+    std::string label;
+    bool allied = false;
+    bool hostile = false;
+    bool can_turn = false;
+    bool can_protect = false;
+    bool can_smooth = false;
+};
+
+inline std::vector<WildNpcUiRow> build_wild_npc_ui_list(const PerPlayerSpeciesTables& tables, uint8_t viewer,
+                                                        const std::vector<uint32_t>& discovered_species,
+                                                        const std::map<uint32_t, std::string>* names = nullptr)
+{
+    std::vector<WildNpcUiRow> out;
+    if (!rivals::valid_player(viewer))
+        return out;
+    std::set<uint32_t> ids;
+    for (uint32_t sp : discovered_species)
+        if (sp != 0)
+            ids.insert(sp);
+    for (int p = 0; p < rivals::kMaxPlayers; p++)
+        for (const auto& [inst, e] : tables.by_player[p])
+            if (inst != 0)
+                ids.insert(inst);
+
+    out.reserve(ids.size());
+    for (uint32_t inst : ids) {
+        if (tables.is_home_species(inst) || tables.is_extinct(inst))
+            continue;
+        int32_t rel = tables.get_relation(viewer, inst);
+        bool allied = is_allied_rel(rel);
+        bool hostile = is_hostile_rel(rel);
+        WildNpcUiRow row{};
+        row.npc_id = inst;
+        if (names) {
+            if (auto it = names->find(inst); it != names->end() && !it->second.empty())
+                row.label = it->second;
+        }
+        if (row.label.empty()) {
+            char buf[32];
+            snprintf(buf, sizeof buf, "Wild 0x%08X", inst);
+            row.label = buf;
+        }
+        row.allied = allied;
+        row.hostile = hostile;
+        row.can_turn = true; // !extinct
+        row.can_protect = allied;
+        row.can_smooth = hostile;
+        out.push_back(std::move(row));
+    }
+    return out;
 }
 
 inline bool reached_tribe_threshold(int brain_level)
@@ -521,6 +701,9 @@ inline void write_npc_rels(net::Writer& w, const std::vector<SpeciesEntry>& entr
         w.u32(e.impressed);
         w.u32(e.killed);
     }
+    // Optional trailing per-entry flags (bit 0 = extinct; older readers ignore trailer).
+    for (uint16_t i = 0; i < n; i++)
+        w.u8(entries[i].extinct ? 1u : 0u);
 }
 
 inline bool read_npc_rels(net::Reader& r, std::vector<SpeciesEntry>& out)
@@ -542,6 +725,14 @@ inline bool read_npc_rels(net::Reader& r, std::vector<SpeciesEntry>& out)
         if (!r.ok())
             return false;
         out.push_back(e);
+    }
+    if (n > 0 && r.left() >= n) {
+        for (uint16_t i = 0; i < n; i++) {
+            uint8_t fl = r.u8();
+            if (!r.ok())
+                return false;
+            out[i].extinct = (fl & 1u) != 0;
+        }
     }
     return true;
 }

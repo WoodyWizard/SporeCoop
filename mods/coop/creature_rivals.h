@@ -34,6 +34,15 @@ bool active();
 uint8_t herd_owner(void* herd);                  // 0..3 or 255 (wild)
 uint8_t creature_family_owner(void* creature);   // 0..3 if creature belongs to a player's home family herd, else 255
 bool is_player_home_species(uint32_t species_inst);
+void* player_herd(uint8_t player_id);            // live cHerd* for player's assigned nest (never avatar_herd for rival)
+void note_proxy_family_owner(uint16_t proxy_id, uint8_t owner);
+void forget_proxy_family_owner(uint16_t proxy_id);
+
+// Per-player wild species relation & home species queries (used by social.cpp)
+bool player_allied_with_species(uint8_t player_id, uint32_t species_inst);
+uint32_t player_species_id(uint8_t player_id);
+int32_t player_species_relation(uint8_t player_id, uint32_t species_inst);
+bool is_species_extinct(uint32_t species_inst);
 
 // Surgical hooks consumed by social.cpp, npc.cpp, nest.cpp, parts.cpp, own_progress.cpp, tribe.cpp
 bool handle_host_rel_event(int event, const uint32_t key[3], void* creature, uint8_t actor);

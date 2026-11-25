@@ -92,16 +92,21 @@ struct GuestProgress {
 static PlayerNest g_nests[rivals::kMaxPlayers];
 static PerPlayerSpeciesTables g_tables;
 static std::map<uint32_t, std::array<uint32_t, 3>> g_known_wild_keys; // species_inst -> full ResourceKey
+static std::map<uint16_t, uint8_t> g_proxy_family_owner;              // guest: proxy_id -> owner player (0..3)
 static GuestProgress g_guest_prog[rivals::kMaxPlayers];
 static std::vector<PartKey> g_draft_keys; // index (item_id - 1) -> parts::Key
 static uint32_t g_last_world_epoch = 0;
 static rivals::BaseDistance g_last_assigned_dist = rivals::BaseDistance::Middle;
 
-// Timers
+// Timers & transition state
+static double g_next_assign_scan = 0.0;
 static double g_next_assign_tx = 0.0;
 static double g_next_rel_sync = 0.0;
 static double g_next_prog_tx = 0.0;
 static double g_next_map_sync = 0.0;
+static bool g_race_end_handled = false;
+static bool g_auto_transition_sent = false;
+static double g_transition_ready_at = 0.0;
 static bool g_map_queued = false;
 static uint32_t g_map_blip_keys[rivals::kMaxPlayers]; // addresses are unique minimap blip keys
 static void* g_last_minimap = nullptr;
@@ -141,17 +146,22 @@ static void reset_state()
     }
     g_tables.reset();
     g_known_wild_keys.clear();
+    g_proxy_family_owner.clear();
     g_draft_keys.clear();
     g_guest_last_table.clear();
     g_last_world_epoch = 0;
-    g_next_assign_tx = g_next_rel_sync = g_next_prog_tx = g_next_map_sync = 0.0;
+    g_next_assign_scan = g_next_assign_tx = g_next_rel_sync = g_next_prog_tx = g_next_map_sync = 0.0;
+    g_race_end_handled = false;
+    g_auto_transition_sent = false;
+    g_transition_ready_at = 0.0;
     g_last_minimap = nullptr;
 }
 
 SESSION_STATE(
     "creature_rivals.session", nullptr, [] { reset_state(); },
     []() -> size_t {
-        size_t n = g_known_wild_keys.size() + g_draft_keys.size() + g_guest_last_table.size();
+        size_t n = g_known_wild_keys.size() + g_proxy_family_owner.size() + g_draft_keys.size() +
+                   g_guest_last_table.size();
         for (int i = 0; i < rivals::kMaxPlayers; i++)
             n += g_nests[i].assigned ? 1 : 0;
         return n;
@@ -250,8 +260,83 @@ uint8_t creature_family_owner(void* creature)
         return 255;
     if (creature == game::avatar() || game::is_puppet(creature))
         return 255;
+    if (is_guest()) {
+        int pid = npc::proxy_id(creature);
+        if (pid >= 0) {
+            auto it = g_proxy_family_owner.find((uint16_t)pid);
+            if (it != g_proxy_family_owner.end() && rivals::valid_player(it->second))
+                return it->second;
+        }
+    }
     void* h = game::herd_of(creature);
     return h ? herd_owner(h) : 255;
+}
+
+void* player_herd(uint8_t player_id)
+{
+    if (!active() || !rivals::valid_player(player_id) || !g_nests[player_id].assigned)
+        return nullptr;
+    void* ah = game::avatar_herd();
+    bool is_rival = (player_id != my_id());
+    if (void* h = game::live(g_nests[player_id].herd)) {
+        if (!is_rival || h != ah)
+            return h;
+    }
+    if (finite3(g_nests[player_id].nest_pos.x, g_nests[player_id].nest_pos.y, g_nests[player_id].nest_pos.z)) {
+        if (void* h = find_herd_near(g_nests[player_id].nest_pos, 10.0f)) {
+            if (!is_rival || h != ah) {
+                g_nests[player_id].herd = game::live_ref(h, game::kHerdNoun);
+                return h;
+            }
+        }
+    }
+    return nullptr;
+}
+
+void note_proxy_family_owner(uint16_t proxy_id, uint8_t owner)
+{
+    if (rivals::valid_player(owner))
+        g_proxy_family_owner[proxy_id] = owner;
+    else
+        g_proxy_family_owner.erase(proxy_id);
+}
+
+void forget_proxy_family_owner(uint16_t proxy_id) { g_proxy_family_owner.erase(proxy_id); }
+
+bool player_allied_with_species(uint8_t player_id, uint32_t species_inst)
+{
+    if (!active() || !rivals::valid_player(player_id) || species_inst == 0)
+        return false;
+    if (is_player_home_species(species_inst) || g_tables.is_extinct(species_inst))
+        return false;
+    return is_allied_rel(g_tables.get_relation(player_id, species_inst));
+}
+
+uint32_t player_species_id(uint8_t player_id)
+{
+    if (!active() || !rivals::valid_player(player_id))
+        return 0;
+    if (g_nests[player_id].assigned && g_nests[player_id].species_key[0] != 0)
+        return g_nests[player_id].species_key[0];
+    if (g_tables.home_species[player_id] != 0)
+        return g_tables.home_species[player_id];
+    if (player_id == my_id()) {
+        if (void* av = game::avatar())
+            return game::species_instance(av);
+    }
+    return 0;
+}
+
+int32_t player_species_relation(uint8_t player_id, uint32_t species_inst)
+{
+    if (!active() || !rivals::valid_player(player_id) || species_inst == 0)
+        return kRelNone;
+    return g_tables.get_relation(player_id, species_inst);
+}
+
+bool is_species_extinct(uint32_t species_inst)
+{
+    return active() && species_inst != 0 && g_tables.is_extinct(species_inst);
 }
 
 static uint8_t creature_player_owner(void* creature)
@@ -288,19 +373,37 @@ bool is_player_home_species(uint32_t species_inst)
 
 static void refresh_known_wild_species()
 {
+    struct Scan {
+        std::map<uint32_t, std::array<uint32_t, 3>> keys;
+        std::map<uint32_t, bool> any_alive;
+        std::map<uint32_t, bool> any_extinct;
+    } scan;
     game::for_each_object(
-        [](void* o, uint32_t noun, void*) {
+        [](void* o, uint32_t noun, void* u) {
+            auto* s = (Scan*)u;
             if (noun != game::kHerdNoun || !game::listed(o, game::kHerdNoun) || !readable(o, 0x220))
                 return true;
             if (!game::herd_nest(o) || is_epic_herd(o))
                 return true;
             void* sp = game::herd_species(o);
             uint32_t k[3] = {};
-            if (species_key_of_profile(sp, k) && !is_player_home_species(k[0]))
-                g_known_wild_keys[k[0]] = {k[0], k[1], k[2]};
+            if (!species_key_of_profile(sp, k) || is_player_home_species(k[0]))
+                return true;
+            s->keys[k[0]] = {k[0], k[1], k[2]};
+            if (field<uint8_t>(o, 0x190) != 0) // cHerd::mbExtinction (+0x190)
+                s->any_extinct[k[0]] = true;
+            else
+                s->any_alive[k[0]] = true;
             return true;
         },
-        nullptr);
+        &scan);
+    for (const auto& [inst, arr] : scan.keys) {
+        g_known_wild_keys[inst] = arr;
+        if (is_host() && scan.any_extinct[inst] && !scan.any_alive[inst] && !g_tables.is_extinct(inst)) {
+            uint32_t k[3] = {arr[0], arr[1], arr[2]};
+            g_tables.mark_extinct(k);
+        }
+    }
 }
 
 static bool lookup_wild_key(uint32_t inst, uint32_t out[3])
@@ -402,6 +505,22 @@ static void host_broadcast_assignments()
     g_assigns_tx++;
 }
 
+static bool host_has_unassigned_player()
+{
+    if (!C.sess)
+        return false;
+    void* ah = game::avatar_herd();
+    if (!g_nests[0].assigned || (ah && game::live(g_nests[0].herd) != ah))
+        return true;
+    for (const auto& p : C.sess->players()) {
+        if (p.id == 0 || !rivals::valid_player(p.id))
+            continue;
+        if (!g_nests[p.id].assigned || !game::live(g_nests[p.id].herd))
+            return true;
+    }
+    return false;
+}
+
 static void host_assign_nests(bool force_reassign = false)
 {
     if (!is_host() || !active())
@@ -430,126 +549,144 @@ static void host_assign_nests(bool force_reassign = false)
         changed = true;
     }
 
-    // Collect all planet nest herds as candidates
-    struct CandWrap {
-        NestCandidate nc;
-        void* ptr;
-    };
-    std::vector<CandWrap> wraps;
-    std::vector<NestCandidate> cands;
-    game::for_each_object(
-        [](void* o, uint32_t noun, void* u) {
-            auto* wraps = (std::vector<CandWrap>*)u;
-            if (noun != game::kHerdNoun || !game::listed(o, game::kHerdNoun) || !readable(o, 0x220))
-                return true;
-            if (!game::herd_nest(o) || !field<uint32_t>(o, 0x88)) // must have real nest & archetype
-                return true;
-            net::Vec3 np{};
-            if (!herd_nest_pos(o, np))
-                return true;
-            void* sp = game::herd_species(o);
-            uint32_t sk[3] = {};
-            species_key_of_profile(sp, sk);
-            void** mb = field<void**>(o, 0x40);
-            void** me = field<void**>(o, 0x44);
-            int mcnt = (mb && me >= mb && (me - mb) <= 64) ? (int)(me - mb) : 0;
-            NestCandidate nc{};
-            nc.id = game::object_serial(o);
-            if (nc.id == 0)
-                nc.id = (uint32_t)(uintptr_t)o;
-            nc.x = np.x;
-            nc.y = np.y;
-            nc.z = np.z;
-            nc.species_inst = sk[0];
-            nc.is_avatar_herd = field<uint8_t>(o, 0x84) != 0;
-            nc.has_nest = true;
-            nc.is_epic = is_epic_herd(o);
-            nc.is_extinct = field<uint8_t>(o, 0x190) != 0;
-            nc.members = mcnt;
-            wraps->push_back({nc, o});
-            return true;
-        },
-        &wraps);
-
-    NestCandidate host_nc{};
-    host_nc.id = game::object_serial(ah);
-    host_nc.x = hpos.x;
-    host_nc.y = hpos.y;
-    host_nc.z = hpos.z;
-    host_nc.is_avatar_herd = true;
-    host_nc.has_nest = true;
-    for (const auto& w : wraps)
-        cands.push_back(w.nc);
-
-    std::vector<uint32_t> taken;
-    if (host_nc.id)
-        taken.push_back(host_nc.id);
-    if (!force_reassign) {
-        for (int i = 1; i < rivals::kMaxPlayers; i++) {
-            if (g_nests[i].assigned) {
-                if (void* h = game::live(g_nests[i].herd))
-                    taken.push_back(game::object_serial(h));
+    // 2. Scan all planet nest herds ONLY when force_reassign or at least one connected guest needs a nest pick
+    bool need_scan = force_reassign;
+    if (!need_scan) {
+        for (const auto& p : C.sess->players()) {
+            if (p.id != 0 && rivals::valid_player(p.id) &&
+                (!g_nests[p.id].assigned || !game::live(g_nests[p.id].herd))) {
+                need_scan = true;
+                break;
             }
         }
     }
 
     rivals::BaseDistance pref = rivals::base_distance();
     g_last_assigned_dist = pref;
-    for (const auto& p : C.sess->players()) {
-        uint8_t pid = p.id;
-        if (pid == 0 || !rivals::valid_player(pid))
-            continue;
-        bool need_pick = force_reassign || !g_nests[pid].assigned || !game::live(g_nests[pid].herd);
-        if (need_pick) {
-            uint32_t chosen_id = select_nest_for_guest(host_nc, cands, taken, pref);
-            if (chosen_id != 0) {
-                for (const auto& w : wraps) {
-                    if (w.nc.id == chosen_id) {
-                        g_nests[pid] = PlayerNest{};
-                        g_nests[pid].assigned = true;
-                        g_nests[pid].herd = game::live_ref(w.ptr, game::kHerdNoun);
-                        g_nests[pid].nest_pos = {w.nc.x, w.nc.y, w.nc.z};
-                        g_nests[pid].orig_species_inst = w.nc.species_inst;
-                        g_nests[pid].species_key[0] = w.nc.species_inst;
-                        taken.push_back(chosen_id);
-                        changed = true;
-                        if (H && M)
-                            H->log(M, SK_INFO,
-                                   "creature_rivals: assigned nest herd %p at (%.1f %.1f %.1f, dist=%.1f, pref=%s) to player %u",
-                                   w.ptr, w.nc.x, w.nc.y, w.nc.z, net::dist(g_nests[pid].nest_pos, hpos),
-                                   rivals::distance_name(pref), (unsigned)pid);
-                        break;
+
+    if (need_scan) {
+        struct CandWrap {
+            NestCandidate nc;
+            void* ptr;
+        };
+        std::vector<CandWrap> wraps;
+        std::vector<NestCandidate> cands;
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* u) {
+                auto* wraps = (std::vector<CandWrap>*)u;
+                if (noun != game::kHerdNoun || !game::listed(o, game::kHerdNoun) || !readable(o, 0x220))
+                    return true;
+                if (!game::herd_nest(o) || !field<uint32_t>(o, 0x88)) // must have real nest & archetype
+                    return true;
+                net::Vec3 np{};
+                if (!herd_nest_pos(o, np))
+                    return true;
+                void* sp = game::herd_species(o);
+                uint32_t sk[3] = {};
+                species_key_of_profile(sp, sk);
+                void** mb = field<void**>(o, 0x40);
+                void** me = field<void**>(o, 0x44);
+                int mcnt = (mb && me >= mb && (me - mb) <= 64) ? (int)(me - mb) : 0;
+                NestCandidate nc{};
+                nc.id = game::object_serial(o);
+                if (nc.id == 0)
+                    nc.id = (uint32_t)(uintptr_t)o;
+                nc.x = np.x;
+                nc.y = np.y;
+                nc.z = np.z;
+                nc.species_inst = sk[0];
+                nc.is_avatar_herd = field<uint8_t>(o, 0x84) != 0;
+                nc.has_nest = true;
+                nc.is_epic = is_epic_herd(o);
+                nc.is_extinct = field<uint8_t>(o, 0x190) != 0;
+                nc.members = mcnt;
+                wraps->push_back({nc, o});
+                return true;
+            },
+            &wraps);
+
+        NestCandidate host_nc{};
+        host_nc.id = game::object_serial(ah);
+        host_nc.x = hpos.x;
+        host_nc.y = hpos.y;
+        host_nc.z = hpos.z;
+        host_nc.is_avatar_herd = true;
+        host_nc.has_nest = true;
+        for (const auto& w : wraps)
+            cands.push_back(w.nc);
+
+        std::vector<uint32_t> taken;
+        if (host_nc.id)
+            taken.push_back(host_nc.id);
+        if (!force_reassign) {
+            for (int i = 1; i < rivals::kMaxPlayers; i++) {
+                if (g_nests[i].assigned) {
+                    if (void* h = game::live(g_nests[i].herd))
+                        taken.push_back(game::object_serial(h));
+                }
+            }
+        }
+
+        for (const auto& p : C.sess->players()) {
+            uint8_t pid = p.id;
+            if (pid == 0 || !rivals::valid_player(pid))
+                continue;
+            bool need_pick = force_reassign || !g_nests[pid].assigned || !game::live(g_nests[pid].herd);
+            if (need_pick) {
+                uint32_t chosen_id = select_nest_for_guest(host_nc, cands, taken, pref);
+                if (chosen_id != 0) {
+                    for (const auto& w : wraps) {
+                        if (w.nc.id == chosen_id) {
+                            g_nests[pid] = PlayerNest{};
+                            g_nests[pid].assigned = true;
+                            g_nests[pid].herd = game::live_ref(w.ptr, game::kHerdNoun);
+                            g_nests[pid].nest_pos = {w.nc.x, w.nc.y, w.nc.z};
+                            g_nests[pid].orig_species_inst = w.nc.species_inst;
+                            g_nests[pid].species_key[0] = w.nc.species_inst;
+                            taken.push_back(chosen_id);
+                            changed = true;
+                            if (H && M)
+                                H->log(M, SK_INFO,
+                                       "creature_rivals: assigned nest herd %p at (%.1f %.1f %.1f, dist=%.1f, pref=%s) to player %u",
+                                       w.ptr, w.nc.x, w.nc.y, w.nc.z, net::dist(g_nests[pid].nest_pos, hpos),
+                                       rivals::distance_name(pref), (unsigned)pid);
+                            break;
+                        }
                     }
                 }
             }
         }
-        // Swap assigned herd species to guest's own creature creation as soon as available
-        if (g_nests[pid].assigned) {
-            void* herd = game::live(g_nests[pid].herd);
-            void* gsp = creations::player_species(pid);
-            if (herd && gsp && game::herd_species(herd) != gsp) {
-                swap_herd_species(herd, gsp, pid);
+    }
+
+    // 3. Lightweight species swap & R7 non-extinction invariant on already-assigned guest herds
+    for (const auto& p : C.sess->players()) {
+        uint8_t pid = p.id;
+        if (pid == 0 || !rivals::valid_player(pid) || !g_nests[pid].assigned)
+            continue;
+        void* herd = game::live(g_nests[pid].herd);
+        void* gsp = creations::player_species(pid);
+        if (herd && gsp && game::herd_species(herd) != gsp) {
+            swap_herd_species(herd, gsp, pid);
+            changed = true;
+        } else if (herd && gsp && g_nests[pid].species_key[0] == g_nests[pid].orig_species_inst) {
+            uint32_t sk[3] = {};
+            if (species_key_of_profile(gsp, sk)) {
+                g_nests[pid].species_key[0] = sk[0];
+                g_nests[pid].species_key[1] = sk[1];
+                g_nests[pid].species_key[2] = sk[2];
+                g_nests[pid].species_swapped = true;
+                g_tables.set_home_species(pid, sk[0]);
                 changed = true;
-            } else if (herd && gsp && g_nests[pid].species_key[0] == g_nests[pid].orig_species_inst) {
-                uint32_t sk[3] = {};
-                if (species_key_of_profile(gsp, sk)) {
-                    g_nests[pid].species_key[0] = sk[0];
-                    g_nests[pid].species_key[1] = sk[1];
-                    g_nests[pid].species_key[2] = sk[2];
-                    g_nests[pid].species_swapped = true;
-                    g_tables.set_home_species(pid, sk[0]);
-                    changed = true;
-                }
             }
-            // Enforce R7 home nest non-extinction invariant every assign pass
-            if (herd && readable(herd, 0x220)) {
-                if (field<uint8_t>(herd, 0x190) != 0)
-                    field<uint8_t>(herd, 0x190) = 0;
-                if (void* ns = game::herd_nest(herd); ns && readable(ns, 0x124) && field<uint8_t>(ns, 0x120) != 0)
-                    field<uint8_t>(ns, 0x120) = 0;
-                if (field<int32_t>(herd, 0xF4) < 3)
-                    field<int32_t>(herd, 0xF4) = 3;
-            }
+        }
+        // Enforce R7 home nest non-extinction invariant every assign pass
+        if (herd && readable(herd, 0x220)) {
+            if (field<uint8_t>(herd, 0x190) != 0)
+                field<uint8_t>(herd, 0x190) = 0;
+            if (void* ns = game::herd_nest(herd); ns && readable(ns, 0x124) && field<uint8_t>(ns, 0x120) != 0)
+                field<uint8_t>(ns, 0x120) = 0;
+            if (field<int32_t>(herd, 0xF4) < 3)
+                field<int32_t>(herd, 0xF4) = 3;
         }
     }
 
@@ -717,6 +854,7 @@ static void host_sync_native_to_player0()
         e.x = r.x;
         e.impressed = r.impressed;
         e.killed = r.killed;
+        e.extinct = g_tables.is_extinct(e.key[0]);
         conv.push_back(e);
         if (e.key[0] && !is_player_home_species(e.key[0]))
             g_known_wild_keys[e.key[0]] = {e.key[0], e.key[1], e.key[2]};
@@ -789,7 +927,9 @@ bool handle_host_rel_event(int event, const uint32_t key[3], void* creature, uin
         return true; // do NOT pollute host's own table with guest's non-extinct kill
     }
     if (event == 2) {
-        // Guest attacked wild creature: keep host's own relation untouched
+        // Guest attacked wild creature: lower guest's own per-player wild relation without polluting host's table
+        if (g_tables.record_attack(actor, key))
+            host_send_rels_to(actor);
         return true;
     }
     return false;
@@ -890,16 +1030,27 @@ bool override_relationship(void* a, void* b, int& rel_out)
 
 static void SK_CDECL h_MakeExtinct(void* creature)
 {
+    uint32_t key[3] = {0, 0, 0};
+    bool have_key = false;
     if (active() && creature && readable(creature, game::kSpeciesKeyOff + 12)) {
-        uint32_t inst = game::species_instance(creature);
-        if (block_extinction(true, is_player_home_species(inst))) {
+        key[0] = field<uint32_t>(creature, game::kSpeciesKeyOff);
+        key[1] = field<uint32_t>(creature, game::kSpeciesKeyOff + 4);
+        key[2] = field<uint32_t>(creature, game::kSpeciesKeyOff + 8);
+        have_key = (key[0] != 0);
+        if (have_key && block_extinction(true, is_player_home_species(key[0]))) {
             g_home_extinct_blocked++;
             if (H && M)
-                H->log(M, SK_INFO, "creature_rivals: blocked extinction of player home species %08X (R7)", inst);
+                H->log(M, SK_INFO, "creature_rivals: blocked extinction of player home species %08X (R7)", key[0]);
             return;
         }
     }
     o_MakeExtinct(creature);
+    if (is_host() && active() && have_key && !is_player_home_species(key[0]) && !g_tables.is_extinct(key[0])) {
+        g_tables.mark_extinct(key);
+        for (const auto& p : C.sess->players())
+            if (p.id != 0)
+                host_send_rels_to(p.id);
+    }
 }
 
 // ---------------- Rivals Callbacks (Influence, Draft, Stage End, F9 UI) ----------------
@@ -915,6 +1066,11 @@ static bool on_npc_influence(rivals::Stage stage, rivals::InfluenceAction action
         return false;
 
     if (action == rivals::InfluenceAction::Protect) {
+        if (!rivals::valid_player(actor))
+            return false;
+        host_sync_native_to_player0();
+        if (!is_allied_rel(g_tables.get_relation(actor, npc_id)))
+            return false;
         g_inf_actions++;
         return true;
     }
@@ -974,6 +1130,7 @@ static void on_stage_race_end(uint8_t winner)
 {
     if (!is_host() || !active() || !rivals::valid_player(winner))
         return;
+    g_race_end_handled = true;
     std::vector<PartKey> winner_parts;
     std::set<PartKey> baseline;
     if (winner == 0) {
@@ -1046,6 +1203,35 @@ static std::vector<rivals::UiRow> on_extra_ui_rows()
     return rows;
 }
 
+static std::vector<rivals::NpcUiEntry> on_npc_ui_list(uint8_t viewer)
+{
+    std::vector<rivals::NpcUiEntry> out;
+    if (!active() || !rivals::valid_player(viewer))
+        return out;
+    if (is_host())
+        host_sync_native_to_player0();
+    std::vector<uint32_t> discovered;
+    discovered.reserve(g_known_wild_keys.size());
+    for (const auto& [inst, arr] : g_known_wild_keys) {
+        (void)arr;
+        discovered.push_back(inst);
+    }
+    auto rows = build_wild_npc_ui_list(g_tables, viewer, discovered, nullptr);
+    out.reserve(rows.size());
+    for (auto& r : rows) {
+        rivals::NpcUiEntry e{};
+        e.npc_id = r.npc_id;
+        e.label = std::move(r.label);
+        e.allied = r.allied;
+        e.hostile = r.hostile;
+        e.can_turn = r.can_turn;
+        e.can_protect = r.can_protect;
+        e.can_smooth = r.can_smooth;
+        out.push_back(std::move(e));
+    }
+    return out;
+}
+
 // ---------------- MSG_RIVALS_FACTION (Stage::Creature) Handler ----------------
 static void on_faction_msg(uint8_t from, uint8_t subkind, net::Reader& r)
 {
@@ -1080,6 +1266,19 @@ static void on_faction_msg(uint8_t from, uint8_t subkind, net::Reader& r)
             return;
         g_rels_rx++;
         g_guest_last_table = entries;
+        uint8_t me = my_id();
+        if (rivals::valid_player(me)) {
+            g_tables.by_player[me].clear();
+            for (const auto& e : entries) {
+                if (e.key[0] == 0)
+                    continue;
+                if (e.extinct)
+                    g_tables.extinct_species.insert(e.key[0]);
+                g_tables.by_player[me][e.key[0]] = e;
+                if (!is_player_home_species(e.key[0]))
+                    g_known_wild_keys[e.key[0]] = {e.key[0], e.key[1], e.key[2]};
+            }
+        }
         std::vector<social::SpeciesRec> conv;
         conv.reserve(entries.size());
         for (const auto& e : entries)
@@ -1186,6 +1385,7 @@ void tick(double now)
     uint32_t epoch = game::world_epoch();
     if (epoch != g_last_world_epoch) {
         g_last_world_epoch = epoch;
+        g_next_assign_scan = 0.0;
         for (int i = 0; i < rivals::kMaxPlayers; i++) {
             g_nests[i].herd = {};
             g_nests[i].perspective_applied = false;
@@ -1200,9 +1400,16 @@ void tick(double now)
     }
 
     if (is_host()) {
-        // R2: Assign nests & swap herd species (also re-broadcast every 5 s so late joiners sync)
+        // R2: Assign nests & swap herd species (throttled: scan immediately on distance change or first unassigned,
+        // otherwise >= 1.0 s cooldown; lightweight maintenance when all connected players already have live nests).
         bool dist_changed = (g_last_assigned_dist != rivals::base_distance());
-        host_assign_nests(dist_changed);
+        if (dist_changed || now >= g_next_assign_scan) {
+            bool any_unassigned = dist_changed || host_has_unassigned_player();
+            if (any_unassigned || now >= g_next_assign_scan) {
+                host_assign_nests(dist_changed);
+                g_next_assign_scan = now + 1.0;
+            }
+        }
         if (now >= g_next_assign_tx) {
             g_next_assign_tx = now + 5.0;
             host_broadcast_assignments();
@@ -1254,10 +1461,37 @@ void tick(double now)
                 }
             }
         }
+
+        // R3: Automatic Creature -> Tribe transition once catch-up and draft have both finished
+        const auto& race = rivals::race_state();
+        const auto& draft = rivals::draft_state();
+        if (race.winner == 255 || race.stage != rivals::Stage::Creature) {
+            g_race_end_handled = false;
+            g_auto_transition_sent = false;
+            g_transition_ready_at = 0.0;
+        } else if (g_race_end_handled && race.stage_finished && !race.catchup_active && !draft.active &&
+                   !g_auto_transition_sent) {
+            if (g_transition_ready_at <= 0.0)
+                g_transition_ready_at = now;
+            if (should_auto_trigger_tribe_transition(true, true, race.stage_finished, race.catchup_active, draft.active,
+                                                     race.winner, g_race_end_handled, g_auto_transition_sent,
+                                                     game::cinematic_playing(), g_transition_ready_at, now)) {
+                if (trigger_native_tribe_transition())
+                    g_auto_transition_sent = true;
+            }
+        } else {
+            g_transition_ready_at = 0.0;
+        }
     } else if (is_guest()) {
         // R1: Ensure guest perspective is applied once avatar & assignment exist
         if (!g_nests[my_id()].perspective_applied && g_nests[my_id()].assigned)
             guest_apply_perspective();
+
+        // Discover wild species on guest planet for F9 Influence UI (1 Hz)
+        if (now >= g_next_rel_sync) {
+            g_next_rel_sync = now + 1.0;
+            refresh_known_wild_species();
+        }
 
         // R3: Send local brain level, own DNA, and collected parts to host (1 Hz)
         if (now >= g_next_prog_tx && game::avatar()) {
@@ -1361,8 +1595,8 @@ int command(void*, int argc, const char* const* argv, SkOut* out)
                      g_tables.extinct_species.size());
             say(b);
             for (const auto& e : list) {
-                snprintf(b, sizeof b, "  sp=%08X rel=%d imp=%u kill=%u\n", e.key[0], (int)e.relation, e.impressed,
-                         e.killed);
+                snprintf(b, sizeof b, "  sp=%08X rel=%d imp=%u kill=%u ext=%d\n", e.key[0], (int)e.relation, e.impressed,
+                         e.killed, (int)e.extinct);
                 say(b);
             }
         } else {
@@ -1371,8 +1605,8 @@ int command(void*, int argc, const char* const* argv, SkOut* out)
                      g_guest_last_table.size());
             say(b);
             for (const auto& r : native) {
-                snprintf(b, sizeof b, "  sp=%08X rel=%d imp=%u kill=%u\n", r.key[0], (int)r.relation, r.impressed,
-                         r.killed);
+                snprintf(b, sizeof b, "  sp=%08X rel=%d imp=%u kill=%u ext=%d\n", r.key[0], (int)r.relation, r.impressed,
+                         r.killed, (int)g_tables.is_extinct(r.key[0]));
                 say(b);
             }
         }
@@ -1513,6 +1747,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     hk.on_draft_pick = on_draft_pick;
     hk.on_stage_race_end = on_stage_race_end;
     hk.on_extra_ui_rows = on_extra_ui_rows;
+    hk.on_npc_ui_list = on_npc_ui_list;
     rivals::register_stage_hooks(rivals::Stage::Creature, std::move(hk));
 
     H->command_add(M, "coop.crivals",

@@ -11,6 +11,7 @@
 
 #include "cellsync.h"
 #include "coop_ui.h"
+#include "creature_rivals.h"
 #include "fixes.h"
 #include "game.h"
 #include "modes.h"
@@ -244,7 +245,8 @@ LIFECYCLE_HOOK("pfind.session", lifecycle::kSessionEnd, -100, [](const lifecycle
 bool arrows_on()
 {
     return g_arrows_fix && (settings::on(settings::kPartnerArrows) ||
-                            (game::mode_id() == modes::kCell && cellsync::rivals_active()));
+                            (game::mode_id() == modes::kCell && cellsync::rivals_active()) ||
+                            (game::mode_id() == modes::kCreature && creature_rivals::active()));
 }
 bool map_on() { return g_map_fix && settings::on(settings::kPartnerMap); }
 
