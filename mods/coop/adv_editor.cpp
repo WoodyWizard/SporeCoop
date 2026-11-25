@@ -106,11 +106,14 @@ static double g_now = 0.0;
 static uint32_t g_session_nonce = 0;
 static uint32_t g_client_op_seq = 0;
 static void* g_last_data = nullptr;
+static wire::Key3 g_last_local_dk;
 static double g_last_hello_sent = -1e9;
 static double g_last_notice_at = -1e9;
 
 static HostEditor g_host;
 static GuestEditor g_guest;
+static DragLeaseTracker g_drag_leases;
+static UndoRouter g_undo_router;
 
 // Local native binding between authoritative marker uid and native pool placementIndex (+0x228)
 static std::unordered_map<uint32_t, uint32_t> g_uid_to_slot;
@@ -118,6 +121,8 @@ static std::unordered_map<uint32_t, uint32_t> g_slot_to_uid;
 
 // Pending local UI creates on guest (client_op_id -> local native placementIndex) awaiting host K_OP_APPLIED/K_OP_REJECT
 static std::unordered_map<uint32_t, uint32_t> g_pending_local_creates;
+// Pending guest OP_UNDO / OP_REDO requests (client_op_id -> is_undo) for rolling back g_undo_router on K_OP_REJECT
+static std::unordered_map<uint32_t, bool> g_pending_undo_ops;
 
 // Local transform drag tracking (batched into one gesture on CommitHistory or idle)
 struct PendingTransform {
@@ -762,9 +767,69 @@ static void queue_native_job(NativeJob job)
     }
 }
 
-// ---------------- Session Lifecycle ----------------
-static void reset_state(const char* why)
+static void queue_snap_back_marker(const wire::adv_editor::MarkerRec& m)
 {
+    NativeJob job;
+    job.kind = NativeJobKind::ApplyOp;
+    job.applied.op.kind = wire::adv_editor::OP_TRANSFORM_MARKER;
+    job.applied.op.uid = m.uid;
+    for (int i = 0; i < 3; i++)
+        job.applied.op.pos[i] = m.pos[i];
+    for (int i = 0; i < 4; i++)
+        job.applied.op.rot[i] = m.rot[i];
+    job.applied.op.scale = m.scale;
+    queue_native_job(std::move(job));
+}
+
+// ---------------- Session Lifecycle ----------------
+static void send_session_reset_to_peer(uint8_t peer, const wire::Key3& dk, uint32_t new_session_id)
+{
+    if (!is_host() || !connected() || peer == 0 || !peer_reads_editor(peer))
+        return;
+    wire::adv_editor::HelloSync rst{{dk, new_session_id}, 0};
+    send_to_peer(peer, wire::adv_editor::K_HELLO_SYNC, rst, true);
+}
+
+static void broadcast_session_reset(const wire::Key3& dk, uint32_t new_session_id, uint8_t except = 0xFF)
+{
+    if (!is_host() || !connected())
+        return;
+    wire::adv_editor::HelloSync rst{{dk, new_session_id}, 0};
+    broadcast_editor(wire::adv_editor::K_HELLO_SYNC, rst, true, except);
+}
+
+static void guest_send_hello_sync(const wire::Key3& local_dk)
+{
+    g_last_hello_sent = g_now;
+    wire::adv_editor::HelloSync hs;
+    hs.hdr = {g_guest.effective_draft_key(local_dk), g_guest.state.session_id};
+    hs.last_rev = g_guest.state.rev;
+    send_to_peer(0, wire::adv_editor::K_HELLO_SYNC, hs, true);
+}
+
+static bool guest_handle_session_reset(const wire::adv_editor::DraftHeader& hdr, const wire::Key3& local_dk)
+{
+    if (!g_guest.on_session_reset(hdr, local_dk))
+        return false;
+    g_uid_to_slot.clear();
+    g_slot_to_uid.clear();
+    g_pending_local_creates.clear();
+    g_pending_undo_ops.clear();
+    g_dirty_xforms.clear();
+    g_drag_leases.clear();
+    g_undo_router.clear();
+    g_last_hello_sent = -1e9;
+    H->log(M, SK_INFO, "adv_editor: guest session reset (new_session=%08X draft=%08X)", hdr.session_id,
+           hdr.draft_key.v[0]);
+    if (hdr.session_id != 0)
+        guest_send_hello_sync(local_dk);
+    return true;
+}
+
+static void reset_state(const char* why, bool notify_peers = true)
+{
+    if (notify_peers && is_host() && g_host.active() && connected())
+        broadcast_session_reset(g_host.state.draft_key, 0);
     if (g_host.active() || g_guest.synced || !g_uid_to_slot.empty())
         H->log(M, SK_INFO, "adv_editor: reset (%s)", why);
     g_host.reset();
@@ -772,19 +837,27 @@ static void reset_state(const char* why)
     g_uid_to_slot.clear();
     g_slot_to_uid.clear();
     g_pending_local_creates.clear();
+    g_pending_undo_ops.clear();
     g_dirty_xforms.clear();
+    g_drag_leases.clear();
+    g_undo_router.clear();
     g_native_jobs.clear();
     g_last_data = nullptr;
+    g_last_local_dk = {};
 }
 
-static void host_ensure_session(void* data)
+static void host_ensure_session(void* data, uint8_t skip_reset_peer = 0xFF)
 {
     wire::Key3 dk = current_draft_key();
     if (g_host.active() && g_last_data == data && g_host.state.draft_key == dk)
         return;
+    uint32_t prev_sid = g_host.state.session_id;
     g_uid_to_slot.clear();
     g_slot_to_uid.clear();
+    g_pending_undo_ops.clear();
     g_dirty_xforms.clear();
+    g_drag_leases.clear();
+    g_undo_router.clear();
 
     auto native_markers = scan_native_markers(data);
     std::vector<wire::adv_editor::MarkerRec> recs;
@@ -804,12 +877,16 @@ static void host_ensure_session(void* data)
         recs.push_back(r);
         bind_uid_slot(r.uid, info.slot_idx);
     }
-    uint32_t sid = next_nonzero(g_session_nonce);
+    uint32_t sid = 0;
+    do {
+        sid = next_nonzero(g_session_nonce);
+    } while (sid == prev_sid);
     g_host.start_session(dk, sid, (uint8_t)native_num_acts(data), (uint8_t)native_current_act(),
                          native_captain_key(data), recs);
     g_last_data = data;
     H->log(M, SK_INFO, "adv_editor: host session %08X started (draft=%08X markers=%zu acts=%u)",
            sid, dk.v[0], recs.size(), g_host.state.num_acts);
+    broadcast_session_reset(dk, sid, skip_reset_peer);
 }
 
 // ---------------- Local Op Submission (Host direct / Guest K_OP_REQ) ----------------
@@ -886,8 +963,21 @@ static void request_lease_local(uint32_t uid, uint8_t action)
     }
 }
 
-static void flush_dirty_transforms(bool force_all)
+static void release_all_drag_leases()
 {
+    for (uint32_t uid : g_drag_leases.take_all())
+        request_lease_local(uid, wire::adv_editor::LEASE_RELEASE);
+}
+
+static void release_settled_drag_leases(double now)
+{
+    for (uint32_t uid : g_drag_leases.take_settled(now))
+        request_lease_local(uid, wire::adv_editor::LEASE_RELEASE);
+}
+
+static bool flush_dirty_transforms(bool force_all)
+{
+    bool flushed = false;
     for (auto it = g_dirty_xforms.begin(); it != g_dirty_xforms.end();) {
         const PendingTransform& pt = it->second;
         if (!force_all && (g_now - pt.last_touch < kTransformFlushIdleSec)) {
@@ -906,8 +996,11 @@ static void flush_dirty_transforms(bool force_all)
             host_commit_and_broadcast(0, 0, op, false);
         else if (is_guest() && g_guest.synced)
             guest_send_op_req(op);
+        g_drag_leases.on_transform_flushed(pt.uid, g_now);
+        flushed = true;
         it = g_dirty_xforms.erase(it);
     }
+    return flushed;
 }
 
 // ---------------- Native Game Hooks ----------------
@@ -946,12 +1039,16 @@ static void* SK_THISCALL h_CreateMarker(void* data, int class_id, const float* p
 
     if (is_host()) {
         wire::adv_editor::OpApplied applied;
-        if (host_commit_and_broadcast(0, 0, op, false, &applied))
+        if (host_commit_and_broadcast(0, 0, op, false, &applied)) {
             bind_uid_slot(applied.op.uid, info.slot_idx);
+            g_undo_router.mark_synced_gesture();
+        }
     } else if (is_guest()) {
         uint32_t cid = guest_send_op_req(op);
-        if (cid != 0)
+        if (cid != 0) {
             g_pending_local_creates[cid] = info.slot_idx;
+            g_undo_router.mark_synced_gesture();
+        }
     }
     return created;
 }
@@ -985,12 +1082,16 @@ static void* SK_THISCALL h_CloneMarker(void* data, void* src_marker)
 
     if (is_host()) {
         wire::adv_editor::OpApplied applied;
-        if (host_commit_and_broadcast(0, 0, op, false, &applied))
+        if (host_commit_and_broadcast(0, 0, op, false, &applied)) {
             bind_uid_slot(applied.op.uid, info.slot_idx);
+            g_undo_router.mark_synced_gesture();
+        }
     } else if (is_guest()) {
         uint32_t cid = guest_send_op_req(op);
-        if (cid != 0)
+        if (cid != 0) {
             g_pending_local_creates[cid] = info.slot_idx;
+            g_undo_router.mark_synced_gesture();
+        }
     }
     return created;
 }
@@ -1018,6 +1119,7 @@ static void SK_THISCALL h_DeleteMarker(void* data, void* marker)
         return;
     }
     g_dirty_xforms.erase(uid);
+    g_drag_leases.forget(uid);
 
     wire::adv_editor::OpData op;
     op.kind = wire::adv_editor::OP_DELETE_MARKER;
@@ -1025,13 +1127,15 @@ static void SK_THISCALL h_DeleteMarker(void* data, void* marker)
     if (is_host()) {
         if (host_commit_and_broadcast(0, 0, op, false)) {
             unbind_uid(uid);
+            g_undo_router.mark_synced_gesture();
             g_applying = true;
             o_DeleteMarker(data, marker);
             g_applying = false;
         }
     } else if (is_guest()) {
         // Wait for host K_OP_APPLIED to delete locally (prevents loss if host rejects lease race)
-        guest_send_op_req(op);
+        if (guest_send_op_req(op) != 0)
+            g_undo_router.mark_synced_gesture();
     }
 }
 
@@ -1079,6 +1183,8 @@ static void SK_THISCALL h_SyncMarkerTransform(void* data, void* marker, bool sna
             return;
     }
 
+    g_undo_router.mark_synced_gesture();
+
     auto& pt = g_dirty_xforms[uid];
     pt.uid = uid;
     for (int i = 0; i < 3; i++)
@@ -1087,10 +1193,12 @@ static void SK_THISCALL h_SyncMarkerTransform(void* data, void* marker, bool sna
         pt.rot[i] = info.rot[i];
     pt.scale = info.scale;
     pt.last_touch = g_now;
+    g_drag_leases.on_drag_touch(uid, g_now);
 
     if (g_now - pt.last_lease_renew >= kLeaseRenewPeriodSec) {
         pt.last_lease_renew = g_now;
         request_lease_local(uid, wire::adv_editor::LEASE_ACQUIRE);
+        g_drag_leases.on_drag_acquire(uid, g_now);
     }
     if (g_now - pt.last_preview_sent >= kDragPreviewPeriodSec) {
         pt.last_preview_sent = g_now;
@@ -1123,11 +1231,13 @@ static int SK_THISCALL h_AddAct(void* data, int insert_index)
         int res = o_AddAct(data, insert_index);
         if (res >= 0) {
             op.act = (uint8_t)res;
-            host_commit_and_broadcast(0, 0, op, false);
+            if (host_commit_and_broadcast(0, 0, op, false))
+                g_undo_router.mark_synced_gesture();
         }
         return res;
     }
-    guest_send_op_req(op);
+    if (guest_send_op_req(op) != 0)
+        g_undo_router.mark_synced_gesture();
     return -1; // applied authoritatively when K_OP_APPLIED arrives
 }
 
@@ -1142,9 +1252,11 @@ static void SK_THISCALL h_DeleteAct(void* data, int act_index)
     op.act = (uint8_t)std::clamp(act_index, 0, (int)wire::adv_editor::kMaxActs - 1);
     if (is_host()) {
         o_DeleteAct(data, act_index);
-        host_commit_and_broadcast(0, 0, op, false);
+        if (host_commit_and_broadcast(0, 0, op, false))
+            g_undo_router.mark_synced_gesture();
     } else {
-        guest_send_op_req(op);
+        if (guest_send_op_req(op) != 0)
+            g_undo_router.mark_synced_gesture();
     }
 }
 
@@ -1161,31 +1273,41 @@ static void SK_THISCALL h_SetCaptainAsset(void* data, const uint32_t* key)
     op.key.v[2] = key[2];
     if (is_host()) {
         o_SetCaptainAsset(data, key);
-        host_commit_and_broadcast(0, 0, op, false);
+        if (host_commit_and_broadcast(0, 0, op, false))
+            g_undo_router.mark_synced_gesture();
     } else {
-        guest_send_op_req(op);
+        if (guest_send_op_req(op) != 0)
+            g_undo_router.mark_synced_gesture();
     }
 }
 
 static void SK_THISCALL h_CommitHistory(void* data)
 {
     o_CommitHistory(data);
-    if (hooks_active() && !g_dirty_xforms.empty())
-        flush_dirty_transforms(true);
+    if (hooks_active()) {
+        if (!g_dirty_xforms.empty())
+            flush_dirty_transforms(true);
+        release_all_drag_leases();
+        g_undo_router.on_commit_history();
+    }
 }
 
 static bool SK_THISCALL h_CanUndo(void* hist)
 {
     if (!hooks_active())
         return o_CanUndo(hist);
-    return is_host() ? (g_host.undo_depth(0) > 0) : (g_guest.my_undo_depth > 0);
+    uint8_t ud = is_host() ? g_host.undo_depth(0) : g_guest.my_undo_depth;
+    bool native_ok = o_CanUndo ? o_CanUndo(hist) : false;
+    return g_undo_router.peek_undo(ud, native_ok) != UndoRoute::None;
 }
 
 static bool SK_THISCALL h_CanRedo(void* hist)
 {
     if (!hooks_active())
         return o_CanRedo(hist);
-    return is_host() ? (g_host.redo_depth(0) > 0) : (g_guest.my_redo_depth > 0);
+    uint8_t rd = is_host() ? g_host.redo_depth(0) : g_guest.my_redo_depth;
+    bool native_ok = o_CanRedo ? o_CanRedo(hist) : false;
+    return g_undo_router.peek_redo(rd, native_ok) != UndoRoute::None;
 }
 
 static void SK_THISCALL h_Undo(void* hist)
@@ -1194,13 +1316,33 @@ static void SK_THISCALL h_Undo(void* hist)
         o_Undo(hist);
         return;
     }
-    flush_dirty_transforms(true);
+    bool flushed = flush_dirty_transforms(true);
+    uint8_t ud = is_host() ? g_host.undo_depth(0) : g_guest.my_undo_depth;
+    if (flushed && ud == 0)
+        ud = 1;
+    bool native_ok = o_CanUndo ? o_CanUndo(hist) : false;
+    UndoRoute route = g_undo_router.peek_undo(ud, native_ok);
+    if (route == UndoRoute::None)
+        return;
+    if (route == UndoRoute::Native) {
+        g_undo_router.consume_undo(UndoRoute::Native);
+        g_applying = true;
+        o_Undo(hist);
+        g_applying = false;
+        return;
+    }
     wire::adv_editor::OpData op;
     op.kind = wire::adv_editor::OP_UNDO;
-    if (is_host())
-        host_commit_and_broadcast(0, 0, op, true);
-    else
-        guest_send_op_req(op);
+    if (is_host()) {
+        if (host_commit_and_broadcast(0, 0, op, true))
+            g_undo_router.consume_undo(UndoRoute::Synced);
+    } else {
+        uint32_t cid = guest_send_op_req(op);
+        if (cid != 0) {
+            g_undo_router.consume_undo(UndoRoute::Synced);
+            g_pending_undo_ops[cid] = true;
+        }
+    }
 }
 
 static void SK_THISCALL h_Redo(void* hist)
@@ -1210,24 +1352,53 @@ static void SK_THISCALL h_Redo(void* hist)
         return;
     }
     flush_dirty_transforms(true);
+    uint8_t rd = is_host() ? g_host.redo_depth(0) : g_guest.my_redo_depth;
+    bool native_ok = o_CanRedo ? o_CanRedo(hist) : false;
+    UndoRoute route = g_undo_router.peek_redo(rd, native_ok);
+    if (route == UndoRoute::None)
+        return;
+    if (route == UndoRoute::Native) {
+        g_undo_router.consume_redo(UndoRoute::Native);
+        g_applying = true;
+        o_Redo(hist);
+        g_applying = false;
+        return;
+    }
     wire::adv_editor::OpData op;
     op.kind = wire::adv_editor::OP_REDO;
-    if (is_host())
-        host_commit_and_broadcast(0, 0, op, true);
-    else
-        guest_send_op_req(op);
+    if (is_host()) {
+        if (host_commit_and_broadcast(0, 0, op, true))
+            g_undo_router.consume_redo(UndoRoute::Synced);
+    } else {
+        uint32_t cid = guest_send_op_req(op);
+        if (cid != 0) {
+            g_undo_router.consume_redo(UndoRoute::Synced);
+            g_pending_undo_ops[cid] = false;
+        }
+    }
 }
 
 static void SK_THISCALL h_Save(void* data, bool save_as)
 {
     o_Save(data, save_as);
-    if (hooks_active()) {
-        uint32_t rev = is_host() ? g_host.state.rev : g_guest.state.rev;
-        H->log(M, SK_INFO, "adv_editor: local save triggered (save_as=%d rev=%u)", (int)save_as, rev);
-        if (C.feed) {
-            char buf[96];
-            snprintf(buf, sizeof buf, "Adventure Editor: saved draft at rev %u", rev);
-            C.feed(buf);
+    if (g_shared_editor_fix && connected() && in_edit_mode()) {
+        if (is_host()) {
+            // Saving an unsaved draft (or Save As) changes cScenarioResource's draft_key: mint a fresh session
+            // and broadcast a reset right away so guests adopt the new key and resync instead of dropping ops.
+            host_ensure_session(data);
+        } else if (is_guest() && g_guest.synced) {
+            wire::Key3 dk = current_draft_key();
+            g_guest.adopt_draft_key_if_needed(g_guest.state.draft_key, dk);
+            g_last_local_dk = dk;
+        }
+        if (hooks_active()) {
+            uint32_t rev = is_host() ? g_host.state.rev : g_guest.state.rev;
+            H->log(M, SK_INFO, "adv_editor: local save triggered (save_as=%d rev=%u)", (int)save_as, rev);
+            if (C.feed) {
+                char buf[96];
+                snprintf(buf, sizeof buf, "Adventure Editor: saved draft at rev %u", rev);
+                C.feed(buf);
+            }
         }
     }
 }
@@ -1250,9 +1421,17 @@ void on_message(uint8_t from, net::Reader& r)
     switch (kind) {
     case K_HELLO_SYNC: {
         HelloSync msg;
-        if (!is_host() || from == 0 || !msg.read(r) || msg.hdr.draft_key != dk)
+        if (!msg.read(r))
             return;
-        host_ensure_session(data);
+        if (is_guest() && from == 0) {
+            guest_handle_session_reset(msg.hdr, dk);
+            return;
+        }
+        if (!is_host() || from == 0)
+            return;
+        if (msg.hdr.draft_key != dk && !GuestEditor::is_empty_key(msg.hdr.draft_key))
+            return;
+        host_ensure_session(data, from);
         if (!g_host.active())
             return;
         std::vector<OpApplied> delta;
@@ -1267,10 +1446,23 @@ void on_message(uint8_t from, net::Reader& r)
     }
     case K_SNAPSHOT: {
         SnapshotChunk chunk;
-        if (!is_guest() || from != 0 || !chunk.read(r) || chunk.hdr.draft_key != dk)
+        if (!is_guest() || from != 0 || !chunk.read(r))
+            return;
+        if (!g_guest.accepts_draft_key(chunk.hdr.draft_key, dk))
             return;
         g_guest.my_id = my_id();
+        uint32_t prev_sid = g_guest.state.session_id;
         if (g_guest.on_snapshot_chunk(chunk)) {
+            if (prev_sid != 0 && prev_sid != g_guest.state.session_id) {
+                g_uid_to_slot.clear();
+                g_slot_to_uid.clear();
+                g_pending_local_creates.clear();
+                g_pending_undo_ops.clear();
+                g_dirty_xforms.clear();
+                g_drag_leases.clear();
+                g_undo_router.clear();
+            }
+            g_guest.adopt_draft_key_if_needed(chunk.hdr.draft_key, dk);
             g_snaps_rx++;
             H->log(M, SK_INFO, "adv_editor: guest received full snapshot (session=%08X rev=%u markers=%zu acts=%u)",
                    g_guest.state.session_id, g_guest.state.rev, g_guest.state.markers.size(), g_guest.state.num_acts);
@@ -1284,8 +1476,10 @@ void on_message(uint8_t from, net::Reader& r)
         OpReq req;
         if (!is_host() || from == 0 || !req.read(r) || !g_host.active())
             return;
-        if (req.hdr.draft_key != g_host.state.draft_key || req.hdr.session_id != g_host.state.session_id)
+        if (req.hdr.draft_key != g_host.state.draft_key || req.hdr.session_id != g_host.state.session_id) {
+            send_session_reset_to_peer(from, g_host.state.draft_key, g_host.state.session_id);
             return;
+        }
         g_ops_rx++;
         host_commit_and_broadcast(from, req.client_op_id, req.op, true);
         break;
@@ -1294,12 +1488,16 @@ void on_message(uint8_t from, net::Reader& r)
         OpApplied applied;
         if (!is_guest() || from != 0 || !applied.read(r) || !g_guest.synced)
             return;
-        if (applied.hdr.draft_key != g_guest.state.draft_key || applied.hdr.session_id != g_guest.state.session_id)
+        if (g_guest.session_mismatch(applied.hdr)) {
+            guest_handle_session_reset(applied.hdr, dk);
             return;
+        }
         g_ops_rx++;
         std::vector<OpApplied> ready;
         g_guest.on_op_applied(applied, ready);
         for (auto& a : ready) {
+            if (a.actor_id == my_id() && a.client_op_id != 0)
+                g_pending_undo_ops.erase(a.client_op_id);
             NativeJob job;
             job.kind = NativeJobKind::ApplyOp;
             job.applied = std::move(a);
@@ -1311,7 +1509,11 @@ void on_message(uint8_t from, net::Reader& r)
         LeaseMsg lm;
         if (!lm.read(r))
             return;
-        if (is_host() && from != 0 && g_host.active() && lm.hdr.session_id == g_host.state.session_id) {
+        if (is_host() && from != 0 && g_host.active()) {
+            if (lm.hdr.session_id != g_host.state.session_id || lm.hdr.draft_key != g_host.state.draft_key) {
+                send_session_reset_to_peer(from, g_host.state.draft_key, g_host.state.session_id);
+                return;
+            }
             if (lm.action == LEASE_ACQUIRE || lm.action == LEASE_RENEW) {
                 uint8_t holder = kNoOwner;
                 double ttl = lm.ttl_ms > 0 ? (double)lm.ttl_ms / 1000.0 : kLeaseTtlSec;
@@ -1319,7 +1521,8 @@ void on_message(uint8_t from, net::Reader& r)
                     LeaseMsg resp{lm.hdr, LEASE_GRANT, lm.uid, from, (uint32_t)(std::min(ttl, kLeaseTtlSec) * 1000.0)};
                     broadcast_editor(K_LEASE, resp, true);
                 } else {
-                    LeaseMsg resp{lm.hdr, LEASE_DENY, lm.uid, holder, 0};
+                    uint32_t rem_ms = g_host.leases.remaining_ttl_ms(lm.uid, g_now);
+                    LeaseMsg resp{lm.hdr, LEASE_DENY, lm.uid, holder, rem_ms};
                     send_to_peer(from, K_LEASE, resp, true);
                 }
             } else if (lm.action == LEASE_RELEASE) {
@@ -1328,10 +1531,21 @@ void on_message(uint8_t from, net::Reader& r)
                     broadcast_editor(K_LEASE, resp, true);
                 }
             }
-        } else if (is_guest() && from == 0 && g_guest.synced && lm.hdr.session_id == g_guest.state.session_id) {
+        } else if (is_guest() && from == 0 && g_guest.synced) {
+            if (g_guest.session_mismatch(lm.hdr)) {
+                guest_handle_session_reset(lm.hdr, dk);
+                return;
+            }
             g_guest.on_lease(lm, g_now);
-            if (lm.action == LEASE_DENY)
+            if (lm.action == LEASE_DENY) {
+                g_dirty_xforms.erase(lm.uid);
+                g_drag_leases.forget(lm.uid);
+                if (const MarkerRec* m = g_guest.find_marker(lm.uid))
+                    queue_snap_back_marker(*m);
                 throttled_feed("Adventure Editor: marker locked by " + player_label(lm.owner_id));
+            } else if (lm.action == LEASE_EXPIRED && lm.owner_id == my_id()) {
+                g_drag_leases.forget(lm.uid);
+            }
         }
         break;
     }
@@ -1364,8 +1578,12 @@ void on_message(uint8_t from, net::Reader& r)
         OpReject rej;
         if (!is_guest() || from != 0 || !rej.read(r) || !g_guest.synced)
             return;
+        if (g_guest.session_mismatch(rej.hdr)) {
+            guest_handle_session_reset(rej.hdr, dk);
+            return;
+        }
         g_rejects_rx++;
-        // Clean up any unapproved local UI create
+        // Clean up any unapproved local UI create or rollback rejected Undo/Redo router entry
         if (rej.client_op_id != 0) {
             auto pit = g_pending_local_creates.find(rej.client_op_id);
             if (pit != g_pending_local_creates.end()) {
@@ -1375,7 +1593,22 @@ void on_message(uint8_t from, net::Reader& r)
                 g_pending_local_creates.erase(pit);
                 queue_native_job(std::move(job));
             }
+            auto uit = g_pending_undo_ops.find(rej.client_op_id);
+            if (uit != g_pending_undo_ops.end()) {
+                if (uit->second)
+                    g_undo_router.rollback_undo();
+                else
+                    g_undo_router.rollback_redo();
+                g_pending_undo_ops.erase(uit);
+            }
         }
+        if (rej.uid != 0) {
+            g_dirty_xforms.erase(rej.uid);
+            g_drag_leases.forget(rej.uid);
+        }
+        MarkerRec snap;
+        if (g_guest.on_op_reject(rej, g_now, &snap))
+            queue_snap_back_marker(snap);
         std::string msg = std::string("Adventure Editor: ") + reject_name(rej.reason);
         if (rej.reason == REJECT_LEASE_HELD && rej.holder_id != kNoOwner)
             msg += " (" + player_label(rej.holder_id) + ")";
@@ -1387,7 +1620,7 @@ void on_message(uint8_t from, net::Reader& r)
     }
 }
 
-static void on_session_end() { reset_state("session end"); }
+static void on_session_end() { reset_state("session end", false); }
 LIFECYCLE_HOOK("adv_editor.session", lifecycle::kSessionEnd, -54, [](const lifecycle::Ctx&) { on_session_end(); }, false);
 
 static void on_player_leave(uint8_t id)
@@ -1410,7 +1643,8 @@ void tick(double now)
     g_now = now;
     if (!g_shared_editor_fix || !connected() || !in_edit_mode()) {
         if (g_host.active() || g_guest.synced || !g_uid_to_slot.empty())
-            reset_state(!connected() ? "disconnected" : (!g_shared_editor_fix ? "fix off" : "left edit mode"));
+            reset_state(!connected() ? "disconnected" : (!g_shared_editor_fix ? "fix off" : "left edit mode"),
+                        connected());
         return;
     }
 
@@ -1423,35 +1657,50 @@ void tick(double now)
         // Expire stale leases (> 5 s inactivity) and notify peers
         auto expired = g_host.leases.expire(now);
         for (const auto& e : expired) {
+            if (e.owner == 0)
+                g_drag_leases.forget(e.uid);
             wire::adv_editor::LeaseMsg lm{{g_host.state.draft_key, g_host.state.session_id},
                                           wire::adv_editor::LEASE_EXPIRED, e.uid, e.owner, 0};
             broadcast_editor(wire::adv_editor::K_LEASE, lm, true);
         }
         flush_dirty_transforms(false);
+        release_settled_drag_leases(now);
     } else if (is_guest()) {
         if (!host_reads_editor())
             return;
         wire::Key3 dk = current_draft_key();
-        if (g_last_data != data || (g_guest.synced && g_guest.state.draft_key != dk)) {
+        if (g_last_data != data) {
             g_guest.reset();
             g_uid_to_slot.clear();
             g_slot_to_uid.clear();
             g_pending_local_creates.clear();
+            g_pending_undo_ops.clear();
             g_dirty_xforms.clear();
+            g_drag_leases.clear();
+            g_undo_router.clear();
             g_last_data = data;
+            g_last_local_dk = dk;
             g_last_hello_sent = -1e9;
+        } else if (g_last_local_dk != dk) {
+            // Local draft_key changed on the same cScenarioData (e.g. guest pressed Save):
+            // keep synced session's draft_key adopted so guest stays in sync with host.
+            if (g_guest.synced)
+                g_guest.adopt_draft_key_if_needed(g_guest.state.draft_key, dk);
+            else
+                g_last_hello_sent = -1e9;
+            g_last_local_dk = dk;
         }
         g_guest.my_id = my_id();
-        g_guest.leases.expire(now);
-        if (!g_guest.synced && now - g_last_hello_sent >= kHelloPeriodSec) {
-            g_last_hello_sent = now;
-            wire::adv_editor::HelloSync hs;
-            hs.hdr = {dk, g_guest.state.session_id};
-            hs.last_rev = g_guest.state.rev;
-            send_to_peer(0, wire::adv_editor::K_HELLO_SYNC, hs, true);
-        }
-        if (g_guest.synced)
+        auto expired = g_guest.leases.expire(now);
+        for (const auto& e : expired)
+            if (e.owner == my_id())
+                g_drag_leases.forget(e.uid);
+        if (!g_guest.synced && now - g_last_hello_sent >= kHelloPeriodSec)
+            guest_send_hello_sync(dk);
+        if (g_guest.synced) {
             flush_dirty_transforms(false);
+            release_settled_drag_leases(now);
+        }
     }
 }
 
@@ -1587,7 +1836,7 @@ std::string command(const std::vector<std::string>& args)
                     send_snapshot_to_peer(p.id);
             return status_line() + "snapshot broadcast\n";
         }
-        wire::adv_editor::HelloSync hs{{current_draft_key(), 0}, 0};
+        wire::adv_editor::HelloSync hs{{g_guest.effective_draft_key(current_draft_key()), 0}, 0};
         send_to_peer(0, wire::adv_editor::K_HELLO_SYNC, hs, true);
         return status_line() + "snapshot requested\n";
     }
@@ -1662,6 +1911,7 @@ std::string command(const std::vector<std::string>& args)
             wire::adv_editor::OpApplied applied;
             if (!host_commit_and_broadcast(0, 0, op, false, &applied))
                 return status_line() + "create rejected\n";
+            g_undo_router.on_synced_op_committed_directly();
             g_applying = true;
             apply_op_native_now(data, applied);
             g_applying = false;
@@ -1671,6 +1921,8 @@ std::string command(const std::vector<std::string>& args)
             return status_line() + ln;
         }
         uint32_t req_id = guest_send_op_req(op);
+        if (req_id != 0)
+            g_undo_router.on_synced_op_committed_directly();
         char ln[96];
         snprintf(ln, sizeof ln, "create requested client_op=%u\n", req_id);
         return status_line() + ln;
@@ -1710,6 +1962,7 @@ std::string command(const std::vector<std::string>& args)
             wire::adv_editor::OpReject rej;
             if (!host_commit_and_broadcast(0, 0, op, false, &applied, &rej))
                 return status_line() + std::string("move rejected: ") + reject_name(rej.reason) + "\n";
+            g_undo_router.on_synced_op_committed_directly();
             g_applying = true;
             apply_op_native_now(data, applied);
             g_applying = false;
@@ -1718,6 +1971,8 @@ std::string command(const std::vector<std::string>& args)
             return status_line() + ln;
         }
         uint32_t req_id = guest_send_op_req(op);
+        if (req_id != 0)
+            g_undo_router.on_synced_op_committed_directly();
         char ln[96];
         snprintf(ln, sizeof ln, "move requested uid=%u client_op=%u\n", uid, req_id);
         return status_line() + ln;
@@ -1740,6 +1995,7 @@ std::string command(const std::vector<std::string>& args)
             wire::adv_editor::OpReject rej;
             if (!host_commit_and_broadcast(0, 0, op, false, &applied, &rej))
                 return status_line() + std::string("delete rejected: ") + reject_name(rej.reason) + "\n";
+            g_undo_router.on_synced_op_committed_directly();
             g_applying = true;
             apply_op_native_now(data, applied);
             g_applying = false;
@@ -1748,6 +2004,8 @@ std::string command(const std::vector<std::string>& args)
             return status_line() + ln;
         }
         uint32_t req_id = guest_send_op_req(op);
+        if (req_id != 0)
+            g_undo_router.on_synced_op_committed_directly();
         char ln[96];
         snprintf(ln, sizeof ln, "delete requested uid=%u client_op=%u\n", uid, req_id);
         return status_line() + ln;
@@ -1768,6 +2026,13 @@ std::string command(const std::vector<std::string>& args)
             wire::adv_editor::OpReject rej;
             if (!host_commit_and_broadcast(0, 0, op, false, &applied, &rej))
                 return status_line() + std::string(args[0]) + " rejected: " + reject_name(rej.reason) + "\n";
+            if (is_u) {
+                if (!g_undo_router.undo_stack.empty() && g_undo_router.undo_stack.back() == UndoRoute::Synced)
+                    g_undo_router.consume_undo(UndoRoute::Synced);
+            } else {
+                if (!g_undo_router.redo_stack.empty() && g_undo_router.redo_stack.back() == UndoRoute::Synced)
+                    g_undo_router.consume_redo(UndoRoute::Synced);
+            }
             g_applying = true;
             apply_op_native_now(data, applied);
             g_applying = false;
@@ -1777,6 +2042,19 @@ std::string command(const std::vector<std::string>& args)
             return status_line() + ln;
         }
         uint32_t req_id = guest_send_op_req(op);
+        if (req_id != 0) {
+            if (is_u) {
+                if (!g_undo_router.undo_stack.empty() && g_undo_router.undo_stack.back() == UndoRoute::Synced) {
+                    g_undo_router.consume_undo(UndoRoute::Synced);
+                    g_pending_undo_ops[req_id] = true;
+                }
+            } else {
+                if (!g_undo_router.redo_stack.empty() && g_undo_router.redo_stack.back() == UndoRoute::Synced) {
+                    g_undo_router.consume_redo(UndoRoute::Synced);
+                    g_pending_undo_ops[req_id] = false;
+                }
+            }
+        }
         char ln[96];
         snprintf(ln, sizeof ln, "%s requested client_op=%u\n", args[0].c_str(), req_id);
         return status_line() + ln;
@@ -1798,12 +2076,14 @@ std::string command(const std::vector<std::string>& args)
                 wire::adv_editor::OpApplied applied;
                 if (!host_commit_and_broadcast(0, 0, op, false, &applied))
                     return status_line() + "act add rejected\n";
+                g_undo_router.on_synced_op_committed_directly();
                 g_applying = true;
                 apply_op_native_now(data, applied);
                 g_applying = false;
                 return status_line() + "act added\n";
             }
-            guest_send_op_req(op);
+            if (guest_send_op_req(op) != 0)
+                g_undo_router.on_synced_op_committed_directly();
             return status_line() + "act add requested\n";
         }
         if (args[1] == "delete" && args.size() >= 3) {
@@ -1820,12 +2100,14 @@ std::string command(const std::vector<std::string>& args)
                 wire::adv_editor::OpApplied applied;
                 if (!host_commit_and_broadcast(0, 0, op, false, &applied))
                     return status_line() + "act delete rejected\n";
+                g_undo_router.on_synced_op_committed_directly();
                 g_applying = true;
                 apply_op_native_now(data, applied);
                 g_applying = false;
                 return status_line() + "act deleted\n";
             }
-            guest_send_op_req(op);
+            if (guest_send_op_req(op) != 0)
+                g_undo_router.on_synced_op_committed_directly();
             return status_line() + "act delete requested\n";
         }
     }
@@ -1847,12 +2129,14 @@ std::string command(const std::vector<std::string>& args)
             wire::adv_editor::OpApplied applied;
             if (!host_commit_and_broadcast(0, 0, op, false, &applied))
                 return status_line() + "captain set rejected\n";
+            g_undo_router.on_synced_op_committed_directly();
             g_applying = true;
             apply_op_native_now(data, applied);
             g_applying = false;
             return status_line() + "captain updated\n";
         }
-        guest_send_op_req(op);
+        if (guest_send_op_req(op) != 0)
+            g_undo_router.on_synced_op_committed_directly();
         return status_line() + "captain update requested\n";
     }
 

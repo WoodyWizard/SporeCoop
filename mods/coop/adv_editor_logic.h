@@ -18,10 +18,11 @@
 
 namespace adv_editor {
 
-constexpr double kLeaseTtlSec = 5.0;          // s: automatic lease expiry after inactivity
-constexpr double kDragPreviewPeriodSec = 0.1; // s: 10 Hz unreliable live drag preview rate
-constexpr size_t kMaxUndoPerPlayer = 128;     // gestures per player
-constexpr size_t kMaxOpHistory = 512;         // recent applied ops retained for delta catch-up
+constexpr double kLeaseTtlSec = 5.0;               // s: automatic lease expiry after inactivity
+constexpr double kDragLeaseReleaseSettleSec = 0.25; // s: release drag lease shortly after final flushed transform
+constexpr double kDragPreviewPeriodSec = 0.1;    // s: 10 Hz unreliable live drag preview rate
+constexpr size_t kMaxUndoPerPlayer = 128;        // gestures per player
+constexpr size_t kMaxOpHistory = 512;            // recent applied ops retained for delta catch-up
 constexpr uint8_t kNoOwner = 0xFF;
 
 inline bool peer_supports(const std::vector<net::FamilyRev>& fams, bool has)
@@ -148,6 +149,15 @@ struct LeaseTable {
         return h == kNoOwner || h == actor;
     }
 
+    uint32_t remaining_ttl_ms(uint32_t uid, double now) const
+    {
+        auto it = leases.find(uid);
+        if (it == leases.end() || it->second.expires_at <= now)
+            return 0;
+        double rem = (it->second.expires_at - now) * 1000.0;
+        return (uint32_t)std::clamp(rem, 250.0, (double)wire::adv_editor::kMaxLeaseTtlMs);
+    }
+
     // Attempts to acquire or renew lease on `uid` for `actor`. On conflict, writes current holder to `out_holder`.
     bool acquire_or_renew(uint32_t uid, uint8_t actor, double now, double ttl_sec = kLeaseTtlSec,
                           uint8_t* out_holder = nullptr)
@@ -211,6 +221,224 @@ struct LeaseTable {
             }
         }
         return out;
+    }
+};
+
+struct DragLeaseState {
+    bool dirty = true;
+    double last_touch = 0.0;
+    double flushed_at = 0.0;
+};
+
+// Tracks markers leased by local interactive drags so leases are released immediately on CommitHistory
+// or shortly after the final flushed transform goes quiet (instead of waiting for the 5 s TTL).
+struct DragLeaseTracker {
+    std::map<uint32_t, DragLeaseState> active;
+
+    void clear() { active.clear(); }
+    bool empty() const { return active.empty(); }
+    bool contains(uint32_t uid) const { return active.count(uid) != 0; }
+
+    void on_drag_acquire(uint32_t uid, double now)
+    {
+        if (uid == 0)
+            return;
+        auto& st = active[uid];
+        st.dirty = true;
+        st.last_touch = now;
+    }
+
+    void on_drag_touch(uint32_t uid, double now)
+    {
+        auto it = active.find(uid);
+        if (it == active.end())
+            return;
+        it->second.dirty = true;
+        it->second.last_touch = now;
+    }
+
+    void on_transform_flushed(uint32_t uid, double now)
+    {
+        auto it = active.find(uid);
+        if (it == active.end())
+            return;
+        it->second.dirty = false;
+        it->second.flushed_at = now;
+    }
+
+    void forget(uint32_t uid) { active.erase(uid); }
+
+    // Releases all tracked drag leases immediately (e.g. on CommitHistory after flushing dirty transforms).
+    std::vector<uint32_t> take_all()
+    {
+        std::vector<uint32_t> out;
+        out.reserve(active.size());
+        for (const auto& [uid, st] : active)
+            out.push_back(uid);
+        active.clear();
+        return out;
+    }
+
+    // Releases drag leases whose final transform has been flushed and stayed quiet for `settle_sec`.
+    std::vector<uint32_t> take_settled(double now, double settle_sec = kDragLeaseReleaseSettleSec)
+    {
+        std::vector<uint32_t> out;
+        for (auto it = active.begin(); it != active.end();) {
+            if (!it->second.dirty && (now - it->second.flushed_at >= settle_sec)) {
+                out.push_back(it->first);
+                it = active.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        return out;
+    }
+};
+
+enum class UndoRoute : uint8_t {
+    None = 0,
+    Native = 1,
+    Synced = 2,
+};
+
+// Routes Ctrl+Z / Ctrl+Y between the shared Adventure Editor op log and Spore's native ScenarioEditHistory
+// so native-only edits (terrain, atmosphere, goals, cast/marker properties) remain undoable with Ctrl+Z.
+struct UndoRouter {
+    static constexpr size_t kMaxEntries = 256;
+
+    std::vector<UndoRoute> undo_stack;
+    std::vector<UndoRoute> redo_stack;
+    bool pending_synced_gesture = false;
+
+    void clear()
+    {
+        undo_stack.clear();
+        redo_stack.clear();
+        pending_synced_gesture = false;
+    }
+
+    // Called when any synced edit hook fires (Create/Clone/Delete/Transform marker, Add/Delete Act, SetCaptain).
+    void mark_synced_gesture() { pending_synced_gesture = true; }
+
+    // Called from h_CommitHistory after flushing dirty transforms.
+    // Records whether this history commit belonged to a synced op or a native-only edit.
+    UndoRoute on_commit_history()
+    {
+        UndoRoute kind = pending_synced_gesture ? UndoRoute::Synced : UndoRoute::Native;
+        pending_synced_gesture = false;
+        push_undo(kind);
+        return kind;
+    }
+
+    // Called when a synced op is submitted outside CommitHistory (e.g. console command)
+    // so top-of-stack reflects the synced op without misclassifying a subsequent native CommitHistory.
+    void on_synced_op_committed_directly()
+    {
+        if (pending_synced_gesture)
+            return;
+        push_undo(UndoRoute::Synced);
+    }
+
+    // Decides which backend should handle CanUndo / Undo without mutating the stacks.
+    UndoRoute peek_undo(uint8_t shared_undo_depth, bool native_can_undo) const
+    {
+        if (pending_synced_gesture)
+            return shared_undo_depth > 0 ? UndoRoute::Synced : (native_can_undo ? UndoRoute::Native : UndoRoute::None);
+        for (auto it = undo_stack.rbegin(); it != undo_stack.rend(); ++it) {
+            if (*it == UndoRoute::Synced) {
+                if (shared_undo_depth > 0)
+                    return UndoRoute::Synced;
+                continue; // synced op already consumed (e.g. console undo or rejected); fall through
+            }
+            if (*it == UndoRoute::Native)
+                return native_can_undo ? UndoRoute::Native : UndoRoute::None;
+        }
+        if (shared_undo_depth > 0)
+            return UndoRoute::Synced;
+        return native_can_undo ? UndoRoute::Native : UndoRoute::None;
+    }
+
+    // Decides which backend should handle CanRedo / Redo without mutating the stacks.
+    UndoRoute peek_redo(uint8_t shared_redo_depth, bool native_can_redo) const
+    {
+        for (auto it = redo_stack.rbegin(); it != redo_stack.rend(); ++it) {
+            if (*it == UndoRoute::Synced) {
+                if (shared_redo_depth > 0)
+                    return UndoRoute::Synced;
+                continue;
+            }
+            if (*it == UndoRoute::Native)
+                return native_can_redo ? UndoRoute::Native : UndoRoute::None;
+        }
+        if (shared_redo_depth > 0)
+            return UndoRoute::Synced;
+        return native_can_redo ? UndoRoute::Native : UndoRoute::None;
+    }
+
+    // Commits an Undo transition on the router stack after deciding the route.
+    void consume_undo(UndoRoute route)
+    {
+        if (route == UndoRoute::None)
+            return;
+        if (route == UndoRoute::Synced && pending_synced_gesture) {
+            pending_synced_gesture = false;
+            push_redo(UndoRoute::Synced);
+            return;
+        }
+        while (!undo_stack.empty() && undo_stack.back() != route)
+            undo_stack.pop_back();
+        if (!undo_stack.empty())
+            undo_stack.pop_back();
+        push_redo(route);
+    }
+
+    // Commits a Redo transition on the router stack after deciding the route.
+    void consume_redo(UndoRoute route)
+    {
+        if (route == UndoRoute::None)
+            return;
+        while (!redo_stack.empty() && redo_stack.back() != route)
+            redo_stack.pop_back();
+        if (!redo_stack.empty())
+            redo_stack.pop_back();
+        if (undo_stack.size() >= kMaxEntries)
+            undo_stack.erase(undo_stack.begin());
+        undo_stack.push_back(route);
+    }
+
+    // Reverts a consumed Synced Undo/Redo if the host rejected the guest's OP_UNDO / OP_REDO.
+    void rollback_undo()
+    {
+        if (!redo_stack.empty() && redo_stack.back() == UndoRoute::Synced) {
+            redo_stack.pop_back();
+            if (undo_stack.size() >= kMaxEntries)
+                undo_stack.erase(undo_stack.begin());
+            undo_stack.push_back(UndoRoute::Synced);
+        }
+    }
+
+    void rollback_redo()
+    {
+        if (!undo_stack.empty() && undo_stack.back() == UndoRoute::Synced) {
+            undo_stack.pop_back();
+            push_redo(UndoRoute::Synced);
+        }
+    }
+
+  private:
+    void push_undo(UndoRoute r)
+    {
+        if (undo_stack.size() >= kMaxEntries)
+            undo_stack.erase(undo_stack.begin());
+        undo_stack.push_back(r);
+        redo_stack.clear();
+    }
+
+    void push_redo(UndoRoute r)
+    {
+        if (redo_stack.size() >= kMaxEntries)
+            redo_stack.erase(redo_stack.begin());
+        redo_stack.push_back(r);
     }
 };
 
@@ -541,6 +769,10 @@ struct GuestEditor {
     uint8_t my_redo_depth = 0;
     std::map<uint32_t, wire::adv_editor::OpApplied> pending_ops;
 
+    // Draft key adopted from host when host saves an unsaved draft or Save-As's a shared draft
+    wire::Key3 adopted_draft_key;
+    bool has_adopted_draft_key = false;
+
     // Chunked snapshot assembly buffer
     uint32_t snap_session_id = 0;
     uint32_t snap_rev = 0;
@@ -551,6 +783,43 @@ struct GuestEditor {
     uint8_t snap_total = 0;
     std::map<uint8_t, std::vector<wire::adv_editor::MarkerRec>> snap_chunks;
 
+    static bool is_empty_key(const wire::Key3& k) { return k.v[0] == 0 && k.v[1] == 0 && k.v[2] == 0; }
+
+    wire::Key3 effective_draft_key(const wire::Key3& local_dk) const
+    {
+        return has_adopted_draft_key ? adopted_draft_key : local_dk;
+    }
+
+    // Whether the guest should accept a host message carrying `host_dk` given the guest's local `local_dk`.
+    bool accepts_draft_key(const wire::Key3& host_dk, const wire::Key3& local_dk) const
+    {
+        if (host_dk == effective_draft_key(local_dk))
+            return true;
+        return is_empty_key(local_dk) || synced || has_adopted_draft_key;
+    }
+
+    void adopt_draft_key_if_needed(const wire::Key3& host_dk, const wire::Key3& local_dk)
+    {
+        if (!is_empty_key(host_dk) && host_dk != local_dk) {
+            adopted_draft_key = host_dk;
+            has_adopted_draft_key = true;
+        } else if (host_dk == local_dk) {
+            adopted_draft_key = {};
+            has_adopted_draft_key = false;
+        }
+    }
+
+    bool session_mismatch(const wire::adv_editor::DraftHeader& hdr) const
+    {
+        return synced && (hdr.session_id != state.session_id || hdr.draft_key != state.draft_key);
+    }
+
+    const wire::adv_editor::MarkerRec* find_marker(uint32_t uid) const
+    {
+        auto it = state.markers.find(uid);
+        return it == state.markers.end() ? nullptr : &it->second;
+    }
+
     void reset()
     {
         state.reset();
@@ -559,7 +828,29 @@ struct GuestEditor {
         my_undo_depth = 0;
         my_redo_depth = 0;
         pending_ops.clear();
+        adopted_draft_key = {};
+        has_adopted_draft_key = false;
         clear_snap();
+    }
+
+    // Handles a host session reset signal (session_id == 0 when host left edit mode, or a new session_id
+    // after Save / Play-test re-entry). Clears synced state and adopts the new draft_key if applicable.
+    // Returns true if accepted (caller should clear native bindings and re-send K_HELLO_SYNC when session_id != 0).
+    bool on_session_reset(const wire::adv_editor::DraftHeader& hdr, const wire::Key3& local_dk)
+    {
+        if (!accepts_draft_key(hdr.draft_key, local_dk))
+            return false;
+        bool had_adopted = has_adopted_draft_key;
+        wire::Key3 prev_adopted = adopted_draft_key;
+        reset();
+        if (!is_empty_key(hdr.draft_key) && hdr.draft_key != local_dk) {
+            adopted_draft_key = hdr.draft_key;
+            has_adopted_draft_key = true;
+        } else if (hdr.session_id == 0 && had_adopted && is_empty_key(hdr.draft_key)) {
+            adopted_draft_key = prev_adopted;
+            has_adopted_draft_key = true;
+        }
+        return true;
     }
 
     void clear_snap()
@@ -593,7 +884,14 @@ struct GuestEditor {
         if (snap_chunks.size() < snap_total)
             return false;
 
-        // Snapshot complete! Replace DraftState and prune older pending ops.
+        // Snapshot complete! If switching sessions, discard old leases, undo depths, and pending ops.
+        bool session_changed = (state.session_id != snap_session_id);
+        if (session_changed) {
+            leases.clear();
+            my_undo_depth = 0;
+            my_redo_depth = 0;
+            pending_ops.clear();
+        }
         state.draft_key = snap_draft_key;
         state.session_id = snap_session_id;
         state.rev = snap_rev;
@@ -606,9 +904,9 @@ struct GuestEditor {
                 state.markers[m.uid] = m;
         clear_snap();
         synced = true;
-        // Drop any pending ops already covered by the snapshot
+        // Drop any pending ops already covered by the snapshot or from a different session
         for (auto it = pending_ops.begin(); it != pending_ops.end();) {
-            if (it->first <= state.rev)
+            if (it->first <= state.rev || it->second.hdr.session_id != state.session_id)
                 it = pending_ops.erase(it);
             else
                 ++it;
@@ -648,10 +946,36 @@ struct GuestEditor {
         using namespace wire::adv_editor;
         if (!synced || l.hdr.session_id != state.session_id)
             return;
-        if (l.action == LEASE_GRANT)
+        if (l.action == LEASE_GRANT) {
             leases.force_grant(l.uid, l.owner_id, now, (double)l.ttl_ms / 1000.0);
-        else if (l.action == LEASE_RELEASE || l.action == LEASE_EXPIRED)
+        } else if (l.action == LEASE_DENY) {
+            if (l.owner_id != kNoOwner && l.owner_id != my_id) {
+                double ttl = l.ttl_ms > 0 ? (double)l.ttl_ms / 1000.0 : kLeaseTtlSec;
+                leases.force_grant(l.uid, l.owner_id, now, ttl);
+            }
+        } else if (l.action == LEASE_RELEASE || l.action == LEASE_EXPIRED) {
             leases.force_clear(l.uid);
+        }
+    }
+
+    // Handles K_OP_REJECT on the guest: records conflicting lease holder (if REJECT_LEASE_HELD) and writes
+    // the authoritative MarkerRec to `out_snap_back` when `rej.uid` exists so the caller snaps it back.
+    bool on_op_reject(const wire::adv_editor::OpReject& rej, double now,
+                      wire::adv_editor::MarkerRec* out_snap_back = nullptr)
+    {
+        using namespace wire::adv_editor;
+        if (!synced || rej.hdr.session_id != state.session_id)
+            return false;
+        if (rej.reason == REJECT_LEASE_HELD && rej.uid != 0 && rej.holder_id != kNoOwner && rej.holder_id != my_id)
+            leases.force_grant(rej.uid, rej.holder_id, now, kLeaseTtlSec);
+        if (rej.uid != 0) {
+            if (const MarkerRec* m = find_marker(rej.uid)) {
+                if (out_snap_back)
+                    *out_snap_back = *m;
+                return true;
+            }
+        }
+        return false;
     }
 };
 
