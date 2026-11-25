@@ -652,6 +652,82 @@ static void test_space_citizen_lead()
     CHECK(t_on.y == hp.y && t_on.z == hp.z);
 }
 
+static void test_tutorial_drive_sync()
+{
+    printf("space tutorial & drive sync (BUG-1559)\n");
+    using namespace spacelogic;
+
+    // Pack / unpack round-trip of all 5 bits
+    TutorialState full{true, true, true, true, true};
+    uint8_t m_full = tutorial_pack(full);
+    CHECK(m_full == kTutAllBits);
+    TutorialState u = tutorial_unpack(m_full);
+    CHECK(u.first_comm && u.flight_school && u.mission201 && u.has_interstellar && u.has_interplanetary);
+    CHECK(tutorial_pack({}) == 0);
+
+    // Synthetic mission_id sentinel never collides with real Spore mission IDs
+    uint8_t out_mask = 0xFF;
+    CHECK(!is_tutorial_sync_mission_id(0, out_mask));
+    CHECK(!is_tutorial_sync_mission_id(kColonizeTutorialId, out_mask));
+    CHECK(!is_tutorial_sync_mission_id(0x7BDBB97Du, out_mask)); // Story201
+    uint32_t sid = tutorial_sync_mission_id(kTutFlightSchool | kTutMission201 | kTutInterstellarDrive);
+    CHECK(is_tutorial_sync_mission_id(sid, out_mask));
+    CHECK(out_mask == (kTutFlightSchool | kTutMission201 | kTutInterstellarDrive));
+
+    // Guest missing unlocks + drives receives all host unlocks monotonically
+    TutorialState guest_empty{};
+    auto a = tutorial_sync_decide(true, false, true, true, false, false, false, true, true, m_full, guest_empty);
+    CHECK(a.set_first_comm && a.set_flight_school && a.set_mission201);
+    CHECK(a.grant_interstellar && a.grant_interplanetary);
+
+    // Fix OFF -> no flags, no drives
+    auto a_off = tutorial_sync_decide(false, false, true, true, false, false, false, true, true, m_full, guest_empty);
+    CHECK(!a_off.any());
+
+    // Host / outside Space / disconnected / elsewhere / space_other -> no-op
+    CHECK(!tutorial_sync_decide(true, true, true, true, false, false, false, true, true, m_full, guest_empty).any());
+    CHECK(!tutorial_sync_decide(true, false, false, true, false, false, false, true, true, m_full, guest_empty).any());
+    CHECK(!tutorial_sync_decide(true, false, true, false, false, false, false, true, true, m_full, guest_empty).any());
+    CHECK(!tutorial_sync_decide(true, false, true, true, true, false, false, true, true, m_full, guest_empty).any());
+    CHECK(!tutorial_sync_decide(true, false, true, true, false, true, false, true, true, m_full, guest_empty).any());
+
+    // Monotonicity: already-unlocked guest or host with fewer bits never downgrades or re-grants
+    TutorialState guest_done{true, true, true, true, true};
+    CHECK(!tutorial_sync_decide(true, false, true, true, false, false, false, true, true, m_full, guest_done).any());
+    CHECK(!tutorial_sync_decide(true, false, true, true, false, false, false, true, true, 0, guest_done).any());
+    // Guest already has flight_school & interplanetary, lacks m201 & interstellar -> grants only what is missing
+    TutorialState guest_mid{false, true, false, false, true};
+    auto a_mid = tutorial_sync_decide(true, false, true, true, false, false, false, true, true,
+                                      kTutFlightSchool | kTutMission201 | kTutInterstellarDrive | kTutInterplanetaryDrive,
+                                      guest_mid);
+    CHECK(!a_mid.set_first_comm && !a_mid.set_flight_school && a_mid.set_mission201);
+    CHECK(a_mid.grant_interstellar && !a_mid.grant_interplanetary);
+
+    // hold_grants (kept cargo hold restore window) delays drive grants while still allowing tutorial flags
+    auto a_hold = tutorial_sync_decide(true, false, true, true, false, false, true, true, true, m_full, guest_empty);
+    CHECK(a_hold.any_flag() && !a_hold.any_drive());
+
+    // Missing pointers only apply the available subsystem
+    auto a_no_inv = tutorial_sync_decide(true, false, true, true, false, false, false, true, false, m_full, guest_empty);
+    CHECK(a_no_inv.any_flag() && !a_no_inv.any_drive());
+    auto a_no_mm = tutorial_sync_decide(true, false, true, true, false, false, false, false, true, m_full, guest_empty);
+    CHECK(!a_no_mm.any_flag() && a_no_mm.any_drive());
+
+    // Host send trigger rules
+    CHECK(!tutorial_sync_should_send(false, true, true, true, m_full, 0, 1, 0, 2, 0));   // fix off
+    CHECK(!tutorial_sync_should_send(true, false, true, true, m_full, 0, 1, 0, 2, 0));   // guest
+    CHECK(!tutorial_sync_should_send(true, true, false, true, m_full, 0, 1, 0, 2, 0));   // not in space
+    CHECK(!tutorial_sync_should_send(true, true, true, false, m_full, 0, 1, 0, 2, 0));   // disconnected
+    CHECK(!tutorial_sync_should_send(true, true, true, true, 0, 0, 1, 0, 2, 0));         // zero mask
+    CHECK(!tutorial_sync_should_send(true, true, true, true, m_full, 0, 1, 0, 0, 0));    // no peers in space
+    CHECK(tutorial_sync_should_send(true, true, true, true, m_full, 0, 1, 0, 2, 0));     // initial send
+    CHECK(!tutorial_sync_should_send(true, true, true, true, m_full, m_full, 1, 1, 2, 2)); // steady state
+    CHECK(tutorial_sync_should_send(true, true, true, true, m_full, kTutFlightSchool, 1, 1, 2, 2)); // mask changed
+    CHECK(tutorial_sync_should_send(true, true, true, true, m_full, m_full, 2, 1, 2, 2));           // epoch changed
+    CHECK(tutorial_sync_should_send(true, true, true, true, m_full, m_full, 1, 1, 6, 2));           // new peer joined
+    CHECK(!tutorial_sync_should_send(true, true, true, true, m_full, m_full, 1, 1, 2, 6));          // peer left
+}
+
 int main()
 {
     test_jump_target();
@@ -668,6 +744,7 @@ int main()
     test_audit_0717();
     test_colonize_mission();
     test_space_citizen_lead();
+    test_tutorial_drive_sync();
     printf(g_fail ? "space_tests: %d FAILED\n" : "space_tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

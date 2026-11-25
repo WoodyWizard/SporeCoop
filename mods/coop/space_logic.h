@@ -254,4 +254,114 @@ inline bool colonize_mission_done_by_partner(bool fix, bool in_space, bool conne
     return target_colonized_by_partner || (mission_id == kColonizeTutorialId && partner_finished_tutorial);
 }
 
+// BUG-1559 (GitHub #221): Space tutorial unlock and starter drive synchronization.
+// When the host skips the Space tutorial (or completes Flight School / Story201 / scans the wreck),
+// Spore sets cMissionManager +0x16/+0x17/+0x18 and adds interstellardrive (0x2569FAE8) /
+// interplanetarydrive (0x4133FE05) directly without a synced cMission::SetState reward broadcast.
+// The host broadcasts its monotonic tutorial/drive mask via K_MISSION with a synthetic mission_id
+// sentinel (kTutorialSyncMagic | mask) so wire/space_core.h and the space wire lock stay unchanged
+// while older peers still receive the drive tools from K_MISSION's tool list.
+constexpr uint32_t kTutorialSyncMagic = 0x54555400u; // 'T','U','T',0
+constexpr uint32_t kTutorialSyncMask = 0xFFFFFF00u;
+constexpr uint32_t kToolInterstellarDrive = 0x2569FAE8u;
+constexpr uint32_t kToolInterplanetaryDrive = 0x4133FE05u;
+
+constexpr uint8_t kTutFirstComm = 1u << 0;           // cMissionManager +0x16 mbFirstCommunication
+constexpr uint8_t kTutFlightSchool = 1u << 1;        // cMissionManager +0x17 mbFlightSchoolFinished
+constexpr uint8_t kTutMission201 = 1u << 2;          // cMissionManager +0x18 mbMission201Finished
+constexpr uint8_t kTutInterstellarDrive = 1u << 3;   // tool 0x2569FAE8 (interstellardrive)
+constexpr uint8_t kTutInterplanetaryDrive = 1u << 4; // tool 0x4133FE05 (interplanetarydrive)
+constexpr uint8_t kTutAllBits = kTutFirstComm | kTutFlightSchool | kTutMission201 | kTutInterstellarDrive |
+                                kTutInterplanetaryDrive;
+
+struct TutorialState {
+    bool first_comm = false;
+    bool flight_school = false;
+    bool mission201 = false;
+    bool has_interstellar = false;
+    bool has_interplanetary = false;
+};
+
+struct TutorialApply {
+    bool set_first_comm = false;
+    bool set_flight_school = false;
+    bool set_mission201 = false;
+    bool grant_interstellar = false;
+    bool grant_interplanetary = false;
+    bool any_flag() const { return set_first_comm || set_flight_school || set_mission201; }
+    bool any_drive() const { return grant_interstellar || grant_interplanetary; }
+    bool any() const { return any_flag() || any_drive(); }
+};
+
+inline uint8_t tutorial_pack(const TutorialState& s)
+{
+    uint8_t m = 0;
+    if (s.first_comm)
+        m |= kTutFirstComm;
+    if (s.flight_school)
+        m |= kTutFlightSchool;
+    if (s.mission201)
+        m |= kTutMission201;
+    if (s.has_interstellar)
+        m |= kTutInterstellarDrive;
+    if (s.has_interplanetary)
+        m |= kTutInterplanetaryDrive;
+    return m;
+}
+
+inline TutorialState tutorial_unpack(uint8_t mask)
+{
+    return {(mask & kTutFirstComm) != 0, (mask & kTutFlightSchool) != 0, (mask & kTutMission201) != 0,
+            (mask & kTutInterstellarDrive) != 0, (mask & kTutInterplanetaryDrive) != 0};
+}
+
+inline uint32_t tutorial_sync_mission_id(uint8_t mask) { return kTutorialSyncMagic | (mask & kTutAllBits); }
+
+inline bool is_tutorial_sync_mission_id(uint32_t mission_id, uint8_t& out_mask)
+{
+    if ((mission_id & kTutorialSyncMask) != kTutorialSyncMagic)
+        return false;
+    out_mask = (uint8_t)(mission_id & kTutAllBits);
+    return true;
+}
+
+// Guest side: decide which monotonic tutorial unlocks and starter drives to apply.
+// Never downgrades flags (1 -> 0) and never removes drives. Respects elsewhere / space_other and
+// delays drive grants while space_trade is restoring a rejoined guest's kept cargo hold (hold_grants).
+inline TutorialApply tutorial_sync_decide(bool fix, bool is_host, bool in_space, bool connected, bool elsewhere,
+                                          bool space_other, bool hold_grants, bool has_mission_mgr, bool has_inventory,
+                                          uint8_t host_mask, const TutorialState& guest)
+{
+    TutorialApply out;
+    if (!fix || is_host || !in_space || !connected || elsewhere || space_other)
+        return out;
+    TutorialState host = tutorial_unpack(host_mask);
+    if (has_mission_mgr) {
+        out.set_first_comm = host.first_comm && !guest.first_comm;
+        out.set_flight_school = host.flight_school && !guest.flight_school;
+        out.set_mission201 = host.mission201 && !guest.mission201;
+    }
+    if (has_inventory && !hold_grants) {
+        out.grant_interstellar = host.has_interstellar && !guest.has_interstellar;
+        out.grant_interplanetary = host.has_interplanetary && !guest.has_interplanetary;
+    }
+    return out;
+}
+
+// Host side: decide whether to broadcast the current tutorial/drive mask now.
+inline bool tutorial_sync_should_send(bool fix, bool is_host, bool in_space, bool connected, uint8_t cur_mask,
+                                      uint8_t last_sent_mask, uint32_t cur_epoch, uint32_t last_sent_epoch,
+                                      uint64_t cur_peers_mask, uint64_t last_sent_peers_mask)
+{
+    if (!fix || !is_host || !in_space || !connected || cur_mask == 0 || cur_peers_mask == 0)
+        return false;
+    if (cur_epoch != last_sent_epoch)
+        return true;
+    if (cur_mask != last_sent_mask)
+        return true;
+    if ((cur_peers_mask & ~last_sent_peers_mask) != 0)
+        return true;
+    return false;
+}
+
 } // namespace spacelogic

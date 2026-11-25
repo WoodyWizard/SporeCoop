@@ -15,6 +15,7 @@
 #include "modes.h"
 #include "net/utf8.h"
 #include "net/validate.h"
+#include "own_world.h"
 #include "space_ext.h"
 #include "space_logic.h"
 #include "sporekit_game.hpp"
@@ -48,7 +49,7 @@ enum Kind : uint8_t { K_DOWN = 1, K_RAID = 2, K_MISSION = 3, K_TERRA = 4, K_GIFT
 static uintptr_t a_PlayerUFOGet, a_Context, a_ActivePlanet, a_StarMgr, a_GetStarRecord, a_ModeSpace, a_EnterSystem,
     a_LeavePlanet, a_TravelSystem, a_PlanetCleanup, a_PlanetCleanupMgr, a_AddHealth, a_SetHealth, a_Destroyed,
     a_SetState, a_TerraA, a_TerraW, a_TerraT, a_TerraMgr, a_SpaceGame, a_AddItemByKey, a_Trading, a_CreateTrading,
-    a_AddMoney, a_PlayerEmpire, a_CinematicMgr, a_MessageMgr;
+    a_AddMoney, a_PlayerEmpire, a_CinematicMgr, a_MessageMgr, a_MissionMgr, a_SetFlightSchool, a_SetMission201;
 
 struct Key {
     uint32_t v[3];
@@ -104,9 +105,16 @@ static uint32_t g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_m
     g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_respawns_forced;
 static uint32_t g_bad_origin; // MSG_SPACE dropped: a header that does not fit its sender
 static std::unordered_map<uint8_t, uint32_t> g_last_star; // partner -> last known StarID
+static uint64_t g_tut_last_peers; // BUG-1559: peers in Space already sent the host's tutorial mask
 // BUG-0422: a newcomer under a departed player's id: Jump-to went to the departed player's star, a down timer
 // of the departed player kept the newcomer out of rescues
-PLAYER_STATE("spacecoop", [](uint8_t id) { g_partner_down.erase(id); g_last_star.erase(id); },
+PLAYER_STATE("spacecoop",
+             [](uint8_t id) {
+                 g_partner_down.erase(id);
+                 g_last_star.erase(id);
+                 if (id < 64)
+                     g_tut_last_peers &= ~(1ull << id);
+             },
              [](uint8_t id) -> size_t { return g_partner_down.count(id) + g_last_star.count(id); });
 static bool g_applying;
 CALL_GUARD("spacecoop.applying", g_applying); // BUG-1047
@@ -1150,6 +1158,201 @@ static int SK_THISCALL h_ColonizeUpdate(void* m, float dt)
     return st;
 }
 
+// BUG-1559 (GitHub #221): Space tutorial unlock and starter drive synchronization.
+// Skipping the Space tutorial (or finishing Flight School / Story201 / scanning the wreck) sets
+// cMissionManager +0x16/+0x17/+0x18 and grants interstellardrive (0x2569FAE8) / interplanetarydrive
+// (0x4133FE05) directly without a synced cMission::SetState reward broadcast, leaving guests locked
+// in the home star system without a drive. Monotonically sync host tutorial unlock flags and starter
+// drives to guests in the host's Space world.
+static bool g_tut_drive_sync_fix = true;
+COOP_FIX("space.tutorial_drive_sync", "BUG-1559", g_tut_drive_sync_fix,
+         "space: sync host tutorial unlock flags and interstellar/interplanetary drives to guests");
+static uint32_t g_tut_sync_tx, g_tut_sync_rx, g_tut_flags_applied, g_tut_drive_granted;
+static uint8_t g_tut_last_mask, g_tut_host_mask;
+static uint32_t g_tut_last_epoch;
+static bool g_tut_host_valid;
+static double g_tut_last_poll, g_tut_guest_last_apply;
+
+static uint8_t* mission_mgr()
+{
+    uint8_t* mm = a_MissionMgr ? cdecl_call<uint8_t*>(a_MissionMgr) : nullptr;
+    return mm && skg::readable(mm, 0x20) ? mm : nullptr;
+}
+
+static Key tool_key_for(void* inv, uint32_t hash)
+{
+    Key tk{{hash, 0u, 0u}};
+    if (!inv || !skg::readable(inv, 0x10))
+        return tk;
+    int n = vcall<int>(inv, 0x5C / 4);
+    for (int i = 0; i < n && i < 256; i++) {
+        uint8_t* it = vcall<uint8_t*>(inv, 0x60 / 4, i);
+        if (!it || F<int>(it, 0x14) != 2)
+            continue;
+        const uint32_t* k = vcall<const uint32_t*>(it, 0x18 / 4);
+        if (k) {
+            tk.v[1] = k[1];
+            tk.v[2] = k[2];
+            break;
+        }
+    }
+    return tk;
+}
+
+static bool has_tool(void* inv, uint32_t hash)
+{
+    if (!inv || !skg::readable(inv, 0x10))
+        return false;
+    Key tk = tool_key_for(inv, hash);
+    return vcall<bool>(inv, 0x74 / 4, tk.v); // cPlayerInventory::HasTool
+}
+
+static bool grant_tool(void* inv, uint32_t hash)
+{
+    if (!inv || !a_AddItemByKey || !skg::readable(inv, 0x10))
+        return false;
+    Key tk = tool_key_for(inv, hash);
+    if (vcall<bool>(inv, 0x74 / 4, tk.v))
+        return false;
+    thiscall<void>(a_AddItemByKey, inv, tk.v);
+    return vcall<bool>(inv, 0x74 / 4, tk.v);
+}
+
+static void read_tutorial_state(spacelogic::TutorialState& out, bool& has_mm, bool& has_inv)
+{
+    out = {};
+    uint8_t* mm = mission_mgr();
+    has_mm = mm != nullptr;
+    if (mm) {
+        out.first_comm = mm[0x16] != 0;
+        out.flight_school = mm[0x17] != 0;
+        out.mission201 = mm[0x18] != 0;
+    }
+    void* inv = inventory();
+    has_inv = inv != nullptr && skg::readable(inv, 0x10);
+    if (has_inv) {
+        out.has_interstellar = has_tool(inv, spacelogic::kToolInterstellarDrive);
+        out.has_interplanetary = has_tool(inv, spacelogic::kToolInterplanetaryDrive);
+    }
+}
+
+static void tut_sync_apply_guest()
+{
+    if (!g_tut_host_valid)
+        return;
+    spacelogic::TutorialState st;
+    bool has_mm = false, has_inv = false;
+    read_tutorial_state(st, has_mm, has_inv);
+    auto a = spacelogic::tutorial_sync_decide(g_tut_drive_sync_fix, spaceext::is_host(), in_space(), connected(),
+                                              own_world::elsewhere(), own_world::space_other(), spaceext::hold_grants(),
+                                              has_mm, has_inv, g_tut_host_mask, st);
+    if (!a.any())
+        return;
+    uint32_t flags_now = 0, drives_now = 0;
+    if (a.any_flag()) {
+        if (uint8_t* mm = mission_mgr()) {
+            if (a.set_first_comm) {
+                mm[0x16] = 1;
+                flags_now++;
+            }
+            if (a.set_flight_school) {
+                if (a_SetFlightSchool)
+                    thiscall<void>(a_SetFlightSchool, mm, (uint32_t)1);
+                else
+                    mm[0x17] = 1;
+                flags_now++;
+            }
+            if (a.set_mission201) {
+                if (a_SetMission201)
+                    thiscall<void>(a_SetMission201, mm, (uint32_t)1);
+                else
+                    mm[0x18] = 1;
+                flags_now++;
+            }
+        }
+    }
+    if (a.any_drive()) {
+        if (void* inv = inventory()) {
+            if (a.grant_interplanetary && grant_tool(inv, spacelogic::kToolInterplanetaryDrive))
+                drives_now++;
+            if (a.grant_interstellar && grant_tool(inv, spacelogic::kToolInterstellarDrive))
+                drives_now++;
+        }
+    }
+    if (flags_now)
+        g_tut_flags_applied += flags_now;
+    if (drives_now)
+        g_tut_drive_granted += drives_now;
+    if (flags_now || drives_now) {
+        H->log(M, SK_INFO, "space: synced host tutorial state (mask=0x%02X flags+%u drives+%u, BUG-1559)",
+               (unsigned)g_tut_host_mask, flags_now, drives_now);
+        if (C.notice) {
+            if (a.grant_interstellar && drives_now)
+                C.notice("Host unlocked the Space tutorial: interstellar drive granted");
+            else if (a.set_mission201)
+                C.notice("Host unlocked the Space tutorial: galaxy travel unlocked");
+        }
+    }
+}
+
+static void tut_sync_tick(double now)
+{
+    if (!g_tut_drive_sync_fix || !in_space() || !connected())
+        return;
+    if (spaceext::is_host()) {
+        if (now - g_tut_last_poll < 0.25)
+            return;
+        g_tut_last_poll = now;
+        uint64_t peers = 0;
+        if (C.partners)
+            for (auto& p : C.partners())
+                if (p.id < 64)
+                    peers |= 1ull << p.id;
+        spacelogic::TutorialState st;
+        bool has_mm = false, has_inv = false;
+        read_tutorial_state(st, has_mm, has_inv);
+        if (!has_mm && !has_inv)
+            return;
+        uint8_t cur_mask = spacelogic::tutorial_pack(st);
+        uint32_t cur_epoch = spaceext::world_epoch();
+        if (spacelogic::tutorial_sync_should_send(g_tut_drive_sync_fix, true, in_space(), connected(), cur_mask,
+                                                  g_tut_last_mask, cur_epoch, g_tut_last_epoch, peers,
+                                                  g_tut_last_peers)) {
+            wire::space_core::Mission msg;
+            msg.reward = 0.f;
+            msg.mission_id = spacelogic::tutorial_sync_mission_id(cur_mask);
+            void* inv = inventory();
+            auto push_drive = [&](uint32_t hash) {
+                Key tk = tool_key_for(inv, hash);
+                wire::Key3 k3;
+                memcpy(k3.v, tk.v, sizeof k3.v);
+                msg.tools.push_back(k3);
+            };
+            if (st.has_interplanetary)
+                push_drive(spacelogic::kToolInterplanetaryDrive);
+            if (st.has_interstellar)
+                push_drive(spacelogic::kToolInterstellarDrive);
+            net::Writer w;
+            msg.write(w);
+            send(K_MISSION, w);
+            g_tut_sync_tx++;
+            g_tut_last_mask = cur_mask;
+            g_tut_last_epoch = cur_epoch;
+            g_tut_last_peers = peers;
+            H->log(M, SK_INFO, "space: broadcast tutorial sync mask=0x%02X peers=0x%llX (#%u, BUG-1559)",
+                   (unsigned)cur_mask, (unsigned long long)peers, g_tut_sync_tx);
+        } else {
+            // Drop bits for partners who left Space so re-entry triggers a fresh sync.
+            g_tut_last_peers &= peers;
+        }
+        return;
+    }
+    if (g_tut_host_valid && now - g_tut_guest_last_apply >= 0.5) {
+        g_tut_guest_last_apply = now;
+        tut_sync_apply_guest();
+    }
+}
+
 // ---------------- terraforming ----------------
 using Terra_t = void(SK_THISCALL*)(void*, void*, float);
 static Terra_t o_Terra[3];
@@ -1876,6 +2079,16 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         wire::space_core::Mission msg;
         if (!msg.read(r))
             break; // cut: no notice, no tools
+        uint8_t tut_mask = 0;
+        if (spacelogic::is_tutorial_sync_mission_id(msg.mission_id, tut_mask)) {
+            if (origin == 0 && !spaceext::is_host()) { // BUG-1559: host-authoritative tutorial & drive sync
+                g_tut_sync_rx++;
+                g_tut_host_mask = tut_mask;
+                g_tut_host_valid = true;
+                tut_sync_apply_guest();
+            }
+            break;
+        }
         if (spaceext::relation(C.sess->my_id(), origin) != spaceext::Relation::Ally)
             break; // rivals mode: mission rewards are shared between allies only
         if (msg.mission_id == spacelogic::kColonizeTutorialId && !spaceext::rivals())
@@ -2076,6 +2289,7 @@ void tick(double now)
     respawn_tick(now);
     terra_tick(now);
     terrain_hold_tick(now); // BUG-0900
+    tut_sync_tick(now);     // BUG-1559
     for (auto it = g_partner_down.begin(); it != g_partner_down.end();)
         it = now > it->second + 2 ? g_partner_down.erase(it) : std::next(it);
     // a disabled partner here: a beacon on its ship
@@ -2127,6 +2341,13 @@ void on_session_end()
     g_gifts_held.clear();
     g_gift_hold = g_gift_noroom = false;
     g_partner_colonize_tut_epoch = 0; // BUG-1539
+    g_tut_last_mask = 0;              // BUG-1559
+    g_tut_host_mask = 0;
+    g_tut_last_epoch = 0;
+    g_tut_last_peers = 0;
+    g_tut_host_valid = false;
+    g_tut_last_poll = 0;
+    g_tut_guest_last_apply = 0;
     spaceext::session_end_all();
 }
 LIFECYCLE_HOOK("spacecoop.session", lifecycle::kSessionEnd, -40, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session (the Space features: spaceext::session_end_all)
@@ -2165,6 +2386,9 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_PlayerEmpire = S("Simulator::GetPlayerEmpire");
     a_CinematicMgr = S("Simulator::cCinematicManager::Get");
     a_MessageMgr = S("App::IMessageManager::Get");
+    a_MissionMgr = S("Simulator::cMissionManager::Get");
+    a_SetFlightSchool = S("SporeCoop::MissionManager_SetFlightSchoolFinished");
+    a_SetMission201 = S("SporeCoop::MissionManager_SetMission201Finished");
     g_ok = a_PlayerUFOGet && a_Context && a_ActivePlanet;
     if (a_SetState)
         H->hook_create(M, (void*)a_SetState, (void*)h_SetState, (void**)&o_SetState);
@@ -2295,16 +2519,17 @@ std::vector<syncdbg::Entry> nav_entries()
 
 std::string status()
 {
-    char b[960];
+    char b[1152];
     snprintf(b, sizeof b,
              "space co-op: down=%d rescues=%u lost=%u raids=%u raids_told=%u raid_bonus=%u missions_sent=%u "
              "tools_got=%u terra_sent=%u terra_got=%u terra_enabled=%u terra_rec_sent=%u terra_rec_got=%u terra_rec_set=%u terra_rec_skipped=%u terra_pending=%u terra_pended=%u terra_pend_applied=%u terra_kept=%u terra_resent=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u stores_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
              "partners_here=%u partners_down=%u bad_origin=%u disable_off=%u own_mirror_raids=%u terra_refused=%u "
-             "down_jumps_refused=%u\n",
+             "down_jumps_refused=%u tut_sync_tx=%u tut_sync_rx=%u tut_flags_applied=%u tut_drive_granted=%u\n",
              (int)g_down, g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
              g_terra_sent, g_terra_got, g_terra_enabled, g_terra_rec_sent, g_terra_rec_got, g_terra_rec_set, g_terra_rec_skipped, (unsigned)g_terra_pending.size(), g_terra_pended, g_terra_pend_applied, (unsigned)g_terra_kept.size(), g_terra_resent, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_stores_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
              (unsigned)partners_here().size(), (unsigned)g_partner_down.size(), g_bad_origin, g_disable_off, g_own_mirror_raids,
-             g_terra_refused, g_down_jumps_refused);
+             g_terra_refused, g_down_jumps_refused, g_tut_sync_tx, g_tut_sync_rx, g_tut_flags_applied,
+             g_tut_drive_granted);
     return b + spaceext::status_all();
 }
 
@@ -2836,6 +3061,19 @@ std::string debug(const std::vector<std::string>& a)
         void* m201 = by_id ? skg::thiscall<void*>(by_id, mm, 0x7BDBB97Du) : nullptr;
         if (a.size() > 1 && a[1] == "done" && m201 && set_state)
             skg::thiscall<void>(set_state, m201, 5); // completed: the mission's own OnCompleted ends the lock
+        if (a.size() >= 5 && a[1] == "set") { // tests (BUG-1559): set tutorial flags <first_comm> <flight_school> <m201>
+            mm[0x16] = atoi(a[2].c_str()) ? 1 : 0;
+            uint32_t fs = atoi(a[3].c_str()) ? 1u : 0u;
+            uint32_t m2 = atoi(a[4].c_str()) ? 1u : 0u;
+            if (a_SetFlightSchool)
+                thiscall<void>(a_SetFlightSchool, mm, fs);
+            else
+                mm[0x17] = (uint8_t)fs;
+            if (a_SetMission201)
+                thiscall<void>(a_SetMission201, mm, m2);
+            else
+                mm[0x18] = (uint8_t)m2;
+        }
         snprintf(b, sizeof b, "tutorial first_comm=%d flight_school=%d m201=%d mission201=%p state=%d", mm[0x16], mm[0x17],
                  mm[0x18], m201, m201 && skg::readable((uint8_t*)m201 + 0x84, 4) ? *(int*)((uint8_t*)m201 + 0x84) : -1);
         return b;
