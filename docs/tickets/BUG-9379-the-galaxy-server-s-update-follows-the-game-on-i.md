@@ -11,7 +11,7 @@ versions: 0.7.14.1-lineages71-dev
 fixed_in: unreleased
 branch: feat/lineages-alpha
 commits: 155a04d4
-tests: by hand: Start-Galaxy-Server.cmd and galaxy_update.exe against a stand-in release on 127.0.0.1 (scratchpad make_web.py, run_start.ps1, run_timer.ps1)
+tests: tools/qa_win (manual): Start-Galaxy-Server.cmd and galaxy_update.exe against a stand-in release on 127.0.0.1 (docs/06-testing.md#testing-server-update-check; scratchpad make_web.py, run_start.ps1, run_timer.ps1)
 signature:
 docs: docs/12-server-and-players.md#server-update-follows-game
 related: BUG-9378
