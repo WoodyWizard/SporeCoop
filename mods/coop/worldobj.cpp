@@ -578,7 +578,7 @@ static void tool_buy(uint8_t from, const net::Vec3& pos, uint32_t st)
     g_tool_buys_rx++;
     if (!(st & kToolPlayer))
         return;
-    if (tribe::buy_player_tool((int)(st & 0xFF), pos)) {
+    if (tribe::buy_player_tool_for(from, (int)(st & 0xFF), pos)) {
         g_tool_buys_done++;
         H->log(M, SK_INFO, "wobj: player %u bought a tribe tool type %u at (%.1f %.1f %.1f): placed here too", from, st & 0xFF, pos.x, pos.y, pos.z);
     }

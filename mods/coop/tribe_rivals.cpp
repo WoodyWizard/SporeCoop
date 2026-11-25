@@ -250,6 +250,7 @@ static NpcRelations g_npc_rels;
 static bool g_stage_won_reported = false;
 static bool g_race_end_handled = false;
 static double g_last_eval_at = 0.0;
+static double g_last_guest_pvp_rel = 0.0;
 static double g_last_assign_tx = 0.0;
 static double g_last_food_tx = 0.0;
 static double g_last_rel_tx = 0.0;
@@ -283,6 +284,7 @@ static uint32_t g_gifts_done = 0;
 static uint32_t g_raids_done = 0;
 static uint32_t g_inf_earned = 0;
 static uint32_t g_draft_unlocked = 0;
+static uint32_t g_draft_payouts_applied = 0;
 static uint32_t g_species_swaps = 0;
 static uint32_t g_last_npc_count = 0;
 static int g_last_win_needed = 1;
@@ -1040,6 +1042,44 @@ static std::vector<rivals::UiRow> on_extra_ui_rows()
     return rows;
 }
 
+static std::vector<rivals::NpcUiEntry> on_npc_ui_list(uint8_t viewer)
+{
+    std::vector<rivals::NpcUiEntry> out;
+    if (!active() || !rivals::valid_player(viewer))
+        return out;
+    std::vector<NpcUiSource> src;
+    if (is_host()) {
+        for (void* t : tribe::all_tribes()) {
+            if (is_player_owned_tribe(t))
+                continue;
+            uint32_t np = tribe_pol(t);
+            if (!np)
+                continue;
+            src.push_back({np, g_npc_rels.get(viewer, np), tribe_conquered(t), ""});
+        }
+    } else if (is_guest()) {
+        for (const auto& e : g_guest_npc_rels) {
+            if (!e.npc_pol)
+                continue;
+            src.push_back({e.npc_pol, e.rel, e.rel == NpcRel::Conquered, ""});
+        }
+    }
+    auto specs = build_npc_ui_list(src);
+    out.reserve(specs.size());
+    for (auto& s : specs) {
+        rivals::NpcUiEntry ne;
+        ne.npc_id = s.npc_id;
+        ne.label = std::move(s.label);
+        ne.allied = s.allied;
+        ne.hostile = s.hostile;
+        ne.can_turn = s.can_turn;
+        ne.can_protect = s.can_protect;
+        ne.can_smooth = s.can_smooth;
+        out.push_back(std::move(ne));
+    }
+    return out;
+}
+
 static void on_faction_message(uint8_t from, uint8_t subkind, net::Reader& r)
 {
     if (!g_rivals_tribe_fix)
@@ -1103,6 +1143,12 @@ static void on_faction_message(uint8_t from, uint8_t subkind, net::Reader& r)
         if (m.kind == DraftApplyKind::ToolUnlock) {
             unlock_tool_local((int)m.value, tribe_of_player(my_id()));
             g_draft_unlocked++;
+        } else if (m.kind == DraftApplyKind::Payout && m.value > 0) {
+            g_draft_payouts_applied++;
+            if (tribe::C.notice)
+                tribe::C.notice("Creature draft payout: +" + std::to_string(m.value) + " food!");
+            if (H && M)
+                H->log(M, SK_INFO, "tribe_rivals: received +%u Tribe food Creature draft payout", (unsigned)m.value);
         }
         return;
     }
@@ -1145,6 +1191,86 @@ bool handle_guest_baby(uint8_t from, float /*x*/, float /*y*/, float /*z*/)
                    tribe_food(gt));
     }
     return true;
+}
+
+int32_t player_food(uint8_t pid)
+{
+    void* t = tribe_of_player(pid);
+    return t ? tribe_food(t) : 0;
+}
+
+bool spend_player_food(uint8_t pid, int32_t cost)
+{
+    if (!active() || !is_host() || cost <= 0)
+        return true;
+    void* t = tribe_of_player(pid);
+    if (!t || tribe_food(t) < cost)
+        return false;
+    tribe_add_food(t, -cost);
+    if (pid != 0)
+        host_send_food(pid, true);
+    return true;
+}
+
+void sync_player_food(uint8_t pid)
+{
+    if (!active() || !is_host() || pid == 0)
+        return;
+    host_send_food(pid, true);
+}
+
+// ---- BUG-1554: Native cRelationshipManager PvP War/Ally sync & Creature draft payout delivery ----
+static void sync_pvp_native_relations()
+{
+    void* mgr = rel_mgr();
+    if (!mgr || !o_ApplyRel)
+        return;
+    uint32_t pols[rivals::kMaxPlayers] = {};
+    for (int p = 0; p < rivals::kMaxPlayers; p++) {
+        void* pt = tribe_of_player((uint8_t)p);
+        if (pt)
+            pols[p] = tribe_pol(pt);
+    }
+    for (int i = 0; i < rivals::kMaxPlayers; i++) {
+        if (!pols[i])
+            continue;
+        for (int j = i + 1; j < rivals::kMaxPlayers; j++) {
+            if (!pols[j] || pols[i] == pols[j])
+                continue;
+            NpcRel want = pvp_npc_rel_for(rivals::relation((uint8_t)i, (uint8_t)j));
+            apply_rel_internal(mgr, pols[i], pols[j], want);
+            apply_rel_internal(mgr, pols[j], pols[i], want);
+        }
+    }
+}
+
+static void host_deliver_creature_payouts()
+{
+    if (!is_host() || !active() || rivals::draft_state().active || world::cinematic_playing())
+        return;
+    for (uint8_t pid = 0; pid < rivals::kMaxPlayers; pid++) {
+        void* pt = tribe_of_player(pid);
+        if (!pt)
+            continue;
+        int32_t raw = rivals::take_pending_draft_payout_for(rivals::Stage::Creature, pid);
+        int32_t food = creature_draft_payout_food(raw);
+        if (food <= 0)
+            continue;
+        tribe_add_food(pt, food);
+        g_draft_payouts_applied++;
+        if (pid == 0) {
+            if (tribe::C.notice)
+                tribe::C.notice("Creature draft payout: +" + std::to_string(food) + " food!");
+        } else {
+            host_send_food(pid, true);
+            net::Writer w;
+            write_draft_apply(w, {pid, DraftApplyKind::Payout, (uint32_t)food});
+            rivals::send_faction_to(pid, rivals::Stage::Tribe, wire::rivals_faction::SK_DRAFT_APPLY, w);
+        }
+        if (H && M)
+            H->log(M, SK_INFO, "tribe_rivals: delivered +%d Tribe food Creature draft payout to player %u (food now %d)",
+                   (int)food, (unsigned)pid, tribe_food(pt));
+    }
 }
 
 // ---- Host tick: R2 takeover, species swap, R4 NPC relations, 11.5 stage end ----
@@ -1238,6 +1364,7 @@ static void host_eval_tick(double now)
     g_last_eval_at = now;
     if (!S)
         return;
+    sync_pvp_native_relations();
     void* mgr = rel_mgr();
     auto ts = tribe::all_tribes();
     std::vector<uint32_t> npc_pols;
@@ -1417,6 +1544,7 @@ static void reset_runtime(bool restore_game)
     g_stage_won_reported = false;
     g_race_end_handled = false;
     g_was_active = false;
+    g_last_guest_pvp_rel = 0.0;
     g_last_npc_count = 0;
     g_last_win_needed = 1;
 }
@@ -1437,6 +1565,7 @@ void tick(double now)
 
     if (is_host()) {
         host_ensure_assignments(now);
+        host_deliver_creature_payouts();
         host_eval_tick(now);
         if (now - g_last_food_tx >= 0.5) {
             g_last_food_tx = now;
@@ -1449,6 +1578,10 @@ void tick(double now)
         }
     } else if (is_guest()) {
         apply_guest_perspective();
+        if (g_swapped && now - g_last_guest_pvp_rel >= 1.0) {
+            g_last_guest_pvp_rel = now;
+            sync_pvp_native_relations();
+        }
     }
 }
 
@@ -1502,6 +1635,7 @@ void init(const SkHost* host, SkMod* mod, net::Session* sess)
     hk.on_draft_pick = on_draft_pick;
     hk.on_stage_race_end = on_stage_race_end;
     hk.on_extra_ui_rows = on_extra_ui_rows;
+    hk.on_npc_ui_list = on_npc_ui_list;
     rivals::register_stage_hooks(rivals::Stage::Tribe, std::move(hk));
 
     savestrip::add_save_hooks(save_start, save_end);
@@ -1519,11 +1653,11 @@ std::string status_summary()
     snprintf(b, sizeof b,
              "tribe_rivals: fix=%d active=%d swapped=%d orig_pt=%p my_tribe=%p my_pol=%08X my_food=%d "
              "planner_skipped=%u pvp_hits=%u pvp_blocked=%u hut_clamped=%u tool_pvp=%u conquer_blocked=%u "
-             "gifts=%u raids=%u inf_earned=%u draft_unlocked=%u species_swaps=%u npcs=%u win_needed=%d\n",
+             "gifts=%u raids=%u inf_earned=%u draft_unlocked=%u draft_payouts=%u species_swaps=%u npcs=%u win_needed=%d\n",
              (int)g_rivals_tribe_fix, (int)active(), (int)g_swapped, g_orig_pt, mt, tribe_pol(mt),
              mt ? tribe_food(mt) : 0, g_planner_skipped, g_pvp_hits, g_pvp_blocked, g_hut_clamped, g_tool_pvp_hits,
-             g_conquer_blocked, g_gifts_done, g_raids_done, g_inf_earned, g_draft_unlocked, g_species_swaps,
-             g_last_npc_count, g_last_win_needed);
+             g_conquer_blocked, g_gifts_done, g_raids_done, g_inf_earned, g_draft_unlocked, g_draft_payouts_applied,
+             g_species_swaps, g_last_npc_count, g_last_win_needed);
     std::string out = b;
     if (is_host() && active()) {
         for (int p = 0; p < rivals::kMaxPlayers; p++) {

@@ -310,6 +310,180 @@ inline bool can_conquer_tribe(bool rivals_active, uint8_t tribe_owner)
     return true;
 }
 
+// ---------------- BUG-1554: Host order routing (War PvP vs Together friendly fire) ----------------
+enum class OrderDecision : uint8_t {
+    AllowNative = 0,     // pass through to cCreatureCitizen::DoAction
+    RunFriendlyFire = 1, // Together mode: delegate to ff_try_order for same-tribe cross-player hits
+    BlockHostile = 2,    // Tribe Rivals: hostile order against a rival player while not at War
+};
+
+inline bool is_hostile_citizen_action(int action)
+{
+    // CitizenAction 7 = attack citizen/creature, 15 = raid hut/tool/village
+    return action == 7 || action == 15;
+}
+
+inline OrderDecision decide_host_order(bool rivals_active, int action, uint8_t sender_pid, uint8_t target_owner_pid,
+                                       bool at_war)
+{
+    if (!rivals_active)
+        return OrderDecision::RunFriendlyFire;
+    if (is_hostile_citizen_action(action) && rivals::valid_player(sender_pid) &&
+        rivals::valid_player(target_owner_pid) && sender_pid != target_owner_pid) {
+        return at_war ? OrderDecision::AllowNative : OrderDecision::BlockHostile;
+    }
+    return OrderDecision::AllowNative;
+}
+
+// ---------------- BUG-1554: Guest tool/hut purchase routing & food cost ----------------
+inline int32_t tool_buy_cost(int tool_type, bool replacing)
+{
+    if (replacing)
+        return 0; // moving an existing tool hut is free
+    switch (tool_type) {
+    case 1: return 15; // Stone Axe Hut
+    case 2: return 20; // Throwing Spears Hut
+    case 3: return 25; // Torch Hut
+    case 4: return 15; // Wooden Horn Hut
+    case 5: return 20; // Maracas Hut
+    case 6: return 25; // Didgeridoo Hut
+    case 7: return 15; // Fishing Spear Hut
+    case 8: return 15; // Gathering Cane Hut
+    case 9: return 20; // Healing Staff Hut
+    case 10: return 0; // Fire Pit
+    default: return -1;
+    }
+}
+
+struct ToolBuyPlan {
+    bool ok = false;
+    uint8_t target_owner = 0;
+    int32_t food_cost = 0;
+    const char* err = "";
+};
+
+inline ToolBuyPlan plan_tool_buy(bool rivals_active, uint8_t from_pid, int tool_type, float dist_from_target_hut,
+                                 bool replacing, int32_t target_tribe_food, bool target_tribe_found)
+{
+    if (tool_type < kMinToolKind || tool_type > 10)
+        return {false, 0, 0, "invalid tool type"};
+    if (!target_tribe_found)
+        return {false, 0, 0, "target tribe not found"};
+    if (!std::isfinite(dist_from_target_hut) || dist_from_target_hut > 150.0f)
+        return {false, 0, 0, "tool too far from target tribe"};
+    if (!rivals_active)
+        return {true, 0, 0, ""}; // Together mode: host player_tribe(), food synced via shared ledger
+    if (!rivals::valid_player(from_pid))
+        return {false, 0, 0, "invalid sender"};
+    int32_t cost = (from_pid == 0) ? 0 : tool_buy_cost(tool_type, replacing);
+    if (cost < 0)
+        return {false, from_pid, 0, "invalid tool cost"};
+    if (cost > 0 && target_tribe_food < cost)
+        return {false, from_pid, cost, "not enough food"};
+    return {true, from_pid, cost, ""};
+}
+
+// ---------------- BUG-1554: wsync isolation policy ----------------
+struct WsyncPolicy {
+    bool apply_tribe_level = true;
+    bool apply_tribe_goal = true;
+    bool push_guest_goal_target = true;
+    bool include_host_tribe_food = false;
+    bool apply_creature_nest = true;
+};
+
+inline WsyncPolicy wsync_policy(bool tribe_rivals_active, bool creature_rivals_active)
+{
+    WsyncPolicy p;
+    p.apply_tribe_level = !tribe_rivals_active;
+    p.apply_tribe_goal = !tribe_rivals_active;
+    p.push_guest_goal_target = !tribe_rivals_active;
+    p.include_host_tribe_food = tribe_rivals_active;
+    p.apply_creature_nest = !creature_rivals_active;
+    return p;
+}
+
+inline bool should_sync_tribe_food(bool tribe_rivals_active, bool is_local_player_tribe,
+                                   bool is_guest_own_rivals_tribe)
+{
+    if (!tribe_rivals_active)
+        return !is_local_player_tribe;
+    return !is_guest_own_rivals_tribe;
+}
+
+// ---------------- BUG-1554: PvP native diplomacy & Creature -> Tribe draft payout ----------------
+inline NpcRel pvp_npc_rel_for(rivals::Relation r)
+{
+    if (r == rivals::Relation::War)
+        return NpcRel::Hostile;
+    if (r == rivals::Relation::Ally)
+        return NpcRel::Allied;
+    return NpcRel::Neutral;
+}
+
+constexpr int32_t kMaxDraftFoodPayout = 2000;
+
+inline int32_t creature_draft_payout_food(int32_t raw_payout)
+{
+    if (raw_payout <= 0)
+        return 0;
+    return std::min(raw_payout, kMaxDraftFoodPayout);
+}
+
+inline int32_t deliver_creature_payout_for(rivals::Draft& draft, bool rivals_active, bool tribe_assigned, uint8_t pid)
+{
+    if (!rivals_active || draft.active || !tribe_assigned || !rivals::valid_player(pid))
+        return 0;
+    int32_t raw = draft.take_pending_payout_for(rivals::Stage::Creature, pid);
+    return creature_draft_payout_food(raw);
+}
+
+// ---------------- BUG-1554: F9 Influence UI NPC tribe list ----------------
+struct NpcUiSource {
+    uint32_t npc_pol = 0;
+    NpcRel rel = NpcRel::Neutral;
+    bool conquered = false;
+    std::string name;
+};
+
+struct NpcUiSpec {
+    uint32_t npc_id = 0;
+    std::string label;
+    bool allied = false;
+    bool hostile = false;
+    bool can_turn = false;
+    bool can_protect = false;
+    bool can_smooth = false;
+};
+
+inline std::vector<NpcUiSpec> build_npc_ui_list(const std::vector<NpcUiSource>& npcs)
+{
+    std::vector<NpcUiSpec> out;
+    out.reserve(npcs.size());
+    int idx = 0;
+    for (const auto& src : npcs) {
+        if (src.npc_pol == 0 || src.conquered || src.rel == NpcRel::Conquered)
+            continue;
+        idx++;
+        NpcUiSpec e;
+        e.npc_id = src.npc_pol;
+        e.allied = (src.rel == NpcRel::Allied);
+        e.hostile = (src.rel == NpcRel::Hostile || src.rel == NpcRel::Annoyed);
+        e.can_turn = true;
+        e.can_protect = e.allied;
+        e.can_smooth = e.hostile;
+        char buf[128];
+        if (!src.name.empty()) {
+            snprintf(buf, sizeof buf, "%s (%s)", src.name.c_str(), npc_rel_name(src.rel));
+        } else {
+            snprintf(buf, sizeof buf, "NPC Tribe #%d (%s)", idx, npc_rel_name(src.rel));
+        }
+        e.label = buf;
+        out.push_back(std::move(e));
+    }
+    return out;
+}
+
 // ---------------- 11.3.3: Alliance food / tool gifts ----------------
 enum class GiftKind : uint8_t {
     Food = 1,
