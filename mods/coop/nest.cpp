@@ -1,4 +1,5 @@
 #include "nest.h"
+#include "creature_rivals.h"
 #include "lifecycle.h"
 
 #include <windows.h>
@@ -208,11 +209,13 @@ static void* local_herd(const net::Vec3& home, bool family = false)
         net::Vec3 home;
         void* found;
         bool family;
-    } f{home, nullptr, family};
+        bool bypass_family;
+    } f{home, nullptr, family, creature_rivals::bypass_nest_family_match()};
     game::for_each_object(
         [](void* o, uint32_t noun, void* p) {
             auto* f = (F*)p;
-            if (noun != game::kHerdNoun || !game::object_alive(o) || IsBadReadPtr(o, 0x220) || (field<uint8_t>(o, 0x84) != 0) != f->family)
+            if (noun != game::kHerdNoun || !game::object_alive(o) || IsBadReadPtr(o, 0x220) ||
+                (!f->bypass_family && (field<uint8_t>(o, 0x84) != 0) != f->family))
                 return true;
             const float* hp = &field<float>(o, 0x34);
             if (net::dist(net::Vec3{hp[0], hp[1], hp[2]}, f->home) > 1.f)

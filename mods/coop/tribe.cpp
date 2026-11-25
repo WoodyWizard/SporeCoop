@@ -22,6 +22,7 @@
 #include "civ.h"
 #include "coop_ui.h"
 #include "creations.h"
+#include "creature_rivals.h"
 #include "driver.h"
 #include "effects.h"
 #include "game.h"
@@ -3614,6 +3615,9 @@ static int SK_THISCALL h_SpecRelGet(void* mgr, const void* key, void* a, void* b
 {
     if (g_fix_epic_hostile && g_epic && game::mode_id() == modes::kTribe && (a == g_epic || b == g_epic))
         return 5; // hostile: the co-op epic is always hostile to the player tribe (BUG-1542)
+    int cr_rel = 0;
+    if (creature_rivals::override_relationship(a, b, cr_rel))
+        return cr_rel;
     return o_SpecRelGet(mgr, key, a, b);
 }
 static uint32_t g_epic_herd_reused, g_epic_saved_out;

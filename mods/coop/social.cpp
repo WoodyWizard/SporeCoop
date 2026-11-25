@@ -1,4 +1,5 @@
 #include "social.h"
+#include "creature_rivals.h"
 #include "own_progress.h"
 #include "lifecycle.h"
 #include "mouse.h"
@@ -76,16 +77,7 @@ static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
 
 // ------------------------------------------------------------------ species relationship table
-struct SpeciesRec {
-    uint32_t key[3];
-    int32_t relation;
-    uint32_t x, impressed, killed;
-    bool operator==(const SpeciesRec& o) const
-    {
-        return !memcmp(key, o.key, sizeof key) && relation == o.relation && x == o.x && impressed == o.impressed &&
-               killed == o.killed;
-    }
-};
+// SpeciesRec is declared in social.h (WP-R3 BUG-1547)
 
 static void* rel_mgr() { return a_RelMgrGet ? cdecl_call<void*>(a_RelMgrGet) : nullptr; }
 
@@ -271,6 +263,68 @@ static void enforce_table()
         H->run_outside_frame(refresh_cards, nullptr);
 }
 
+std::vector<SpeciesRec> read_native_table() { return read_table(); }
+
+void apply_external_table(const std::vector<SpeciesRec>& t)
+{
+    std::vector<SpeciesRec> expanded;
+    expanded.reserve(t.size());
+    for (auto s : t) {
+        expanded.push_back(s);
+        creations::Key lk = creations::local_species({s.key[0], s.key[1], s.key[2]});
+        if (lk.instance != s.key[0]) {
+            s.key[0] = lk.instance;
+            expanded.push_back(s);
+        }
+    }
+    bool news = !g_have_table || !(expanded == g_host_table);
+    g_host_table = std::move(expanded);
+    g_have_table = true;
+    g_table_rx++;
+    g_table_rx_at = H ? H->time_seconds() : 0.0;
+    if (game::in_creature_stage() && game::avatar()) {
+        enforce_table();
+        herds_follow_table();
+        if (news && H)
+            H->run_outside_frame(refresh_cards, nullptr);
+    }
+}
+
+void write_native_record(const uint32_t key[3], int32_t relation, uint32_t x, uint32_t impressed, uint32_t killed)
+{
+    void* mgr = rel_mgr();
+    if (!mgr || !a_RelRecord || !key || key[0] == 0)
+        return;
+    ResourceKey k{key[0], key[1], key[2]};
+    if (uint32_t* rec = thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, &k)) {
+        rec[0] = (uint32_t)relation;
+        rec[1] = x;
+        rec[2] = impressed;
+        rec[3] = killed;
+        if (uintptr_t set = H ? H->sym("SporeCoop::cHerd_SetBestFriends") : 0) {
+            if (void* sp = game::species_by_key({key[0], key[1], key[2]})) {
+                struct Q {
+                    void* sp;
+                    bool allied;
+                    uintptr_t set;
+                } q{sp, relation == 6, set};
+                game::for_each_object(
+                    [](void* o, uint32_t noun, void* u) {
+                        if (noun != game::kHerdNoun || !skg::readable(o, 0x194))
+                            return true;
+                        auto* q = (Q*)u;
+                        if (game::herd_species(o) == q->sp && (field<uint8_t>(o, 0x191) != 0) != q->allied)
+                            thiscall<void>(q->set, o, (int)q->allied);
+                        return true;
+                    },
+                    &q);
+            }
+        }
+        if (H)
+            H->run_outside_frame(refresh_cards, nullptr);
+    }
+}
+
 // ------------------------------------------------------------------ guest: actions on mirrors
 static int g_engaged = -1;            // proxy id the avatar engaged socially
 static double g_engaged_at = 0;
@@ -372,6 +426,8 @@ static void SK_THISCALL h_RelEvent(void* mgr, int event, void* key, void* creatu
         g_events_dropped++;
         return;
     }
+    if (is_host() && key && creature_rivals::handle_host_rel_event(event, (const uint32_t*)key, creature, actor::current()))
+        return; // WP-R3 (BUG-1547): Creature Rivals per-player relation table & R7 home species guard
     // BUG-0021 diagnostics: every species relationship event of the host's game (the Kooks' impressed count
     // went from 2 back to 1 between two impressions with no Kook killed: coop_creature_social_ally.py)
     uint32_t* rec = (a_RelRecord && key && mgr) ? thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, key) : nullptr;
@@ -390,6 +446,9 @@ static void SK_THISCALL h_RelEvent(void* mgr, int event, void* key, void* creatu
     if (key && social_logic::keep_own(g_solo_fix, is_guest(), host_away(), false) && g_solo.add((const uint32_t*)key, event))
         g_solo_kept++;
     rec = (a_RelRecord && key && mgr) ? thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, key) : nullptr;
+    if (is_host() && key && event == 3 && rec && rec[2] != i0 &&
+        (actor::current() == actor::kNone || actor::current() == 0))
+        creature_rivals::on_host_impress((const uint32_t*)key, r0 != 6 && (int32_t)rec[0] == 6); // WP-R3 (BUG-1547)
     if (rec && ((int32_t)rec[0] != r0 || rec[2] != i0 || rec[3] != k0))
         H->log(M, SK_INFO, "social: relationship event %d species %08X by %p (npc %d%s): relation %d -> %d, impressed %u -> %u, "
                "killed %u -> %u", event, *(uint32_t*)key, creature, creature ? npc::host_id(creature) : -1,
@@ -1021,7 +1080,8 @@ static void apply_success(uint8_t player, uint16_t id, bool recruit)
     int rel = a_RelGet ? thiscall<int>(a_RelGet, mgr, key, c, av) : 0;
     int mode = social_mode(c);
     uint32_t anim = reaction_anim(rel);
-    {
+    bool rivals_handled = creature_rivals::active() && creature_rivals::on_guest_impress(player, (const uint32_t*)key, c, 0.f);
+    if (!rivals_handled) {
         // WP-H1 (BUG-1471): the impress event's species goal (its trait progress, the alliance) is this guest's act
         actor::Scope act(player);
         thiscall<void>(a_RelEvent, mgr, 3, key, c);
@@ -1313,7 +1373,7 @@ void tick(double now)
                 still |= (((uint64_t)r.key[2] << 32) | r.key[0]) == it->first.first && r.relation == it->first.second;
             it = still ? std::next(it) : g_goal_paid.erase(it);
         }
-        if (!(t == g_sent) || now - g_table_sent > 10.0) { // changes at once, the whole table every 10 s
+        if (!creature_rivals::active() && (!(t == g_sent) || now - g_table_sent > 10.0)) { // changes at once, the whole table every 10 s
             g_sent = t;
             g_table_sent = now;
             send_table(t, -1);
@@ -1471,7 +1531,7 @@ static void host_solo(uint8_t from, net::Reader& r)
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
     if (type == net::MSG_SPECIES) {
-        if (!is_guest() || from != 0)
+        if (!is_guest() || from != 0 || creature_rivals::active())
             return;
         uint16_t n = r.u16();
         std::vector<SpeciesRec> t;
