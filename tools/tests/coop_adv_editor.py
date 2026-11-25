@@ -222,8 +222,21 @@ def main():
     print(f'  after guest undo: host_m={hm3} guest_m={gm3}', flush=True)
     ck(bool(both_reverted), f'4. guest Undo reverted marker to {p1} on both host and guest (host={hm3}, guest={gm3})')
 
-    # 5. Host deletes marker -> removed natively on BOTH host and guest
+    # 5a. While guest holds lease on uid, host delete is rejected (lease protection)
     del_uid = uid if uid > 0 else (hm3['slot'] if hm3 else 0)
+    if uid > 0:
+        locked_out = safe_call(h, f'coop.adveditor delete {del_uid}')
+        print('  host delete while leased: ' + locked_out.replace('\n', ' | '), flush=True)
+        ck('locked by another player' in locked_out and find_marker_uid(list_markers(h), uid) is not None,
+           f'5a. host delete rejected while guest holds lease on uid={uid}')
+        rel_out = safe_call(g, f'coop.adveditor lease {uid} release')
+        print('  guest release lease: ' + rel_out.replace('\n', ' | '), flush=True)
+        wait_until(
+            lambda: (find_marker_uid(list_markers(h), uid) or {}).get('lease', 0) == -1,
+            10, step=0.5, what='host lease cleared after guest release',
+        )
+
+    # 5b. Host deletes marker -> removed natively on BOTH host and guest
     del_out = safe_call(h, f'coop.adveditor delete {del_uid}')
     print('  host delete: ' + del_out.replace('\n', ' | '), flush=True)
     both_deleted = wait_until(
@@ -235,7 +248,7 @@ def main():
     g_after = list_markers(g)
     print(f'  after delete: host={len(h_after)} guest={len(g_after)}', flush=True)
     ck(bool(both_deleted) and len(h_after) == len(h_before) and len(g_after) == len(g_before),
-       f'5. host DeleteMarker removed marker natively on both games (host {len(h_before)}->{len(h_after)}, guest {len(g_before)}->{len(g_after)})')
+       f'5b. host DeleteMarker removed marker natively on both games (host {len(h_before)}->{len(h_after)}, guest {len(g_before)}->{len(g_after)})')
 
     # 6. Both games alive, 0 faults
     alive = {k: c for k, c in (('host', h), ('guest', g)) if mode_name(c) != 'gone'}

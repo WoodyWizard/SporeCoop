@@ -449,6 +449,12 @@ COOP_FIX("adventure.puppet_captain", "BUG-1254", g_adventure_puppet_fix,
 static bool g_captain_scale_fix = true;
 COOP_FIX("adventure.captain_scale", "BUG-0793", g_captain_scale_fix,
          "adventure: partner captain puppets render at their true per-captain scale (1.0x) instead of the 1.15x Creature puppet factor");
+static void* scenario_local()
+{
+    if (adventure_sub_mode() == 1)
+        return nullptr; // BUG-0863: Adventure Editor has no playable avatar or partner puppets
+    return creature_local();
+}
 static void* scenario_spawn(const net::PlayerState& s, void* av)
 {
     if (adventure_sub_mode() == 1)
@@ -1781,7 +1787,7 @@ static const Adapter kAdapters[] = {
     {"Cell", kCell, nullptr, false, cell_local, cell_fill, cell_spawn, cell_drive, cell_despawn, cell_tag, cell_alive, true},
     {"Creature", kCreature, nullptr, false, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag, creature_alive},
     // adventures are not saves: every player starts the same adventure, puppets meet inside it
-    {"Adventure", kScenario, adventure_place, true, creature_local, creature_fill, scenario_spawn, scenario_drive, creature_despawn, creature_tag, creature_alive},
+    {"Adventure", kScenario, adventure_place, true, scenario_local, creature_fill, scenario_spawn, scenario_drive, creature_despawn, creature_tag, creature_alive},
     {"Space", kSpace, space_place, false, space_local, space_fill, space_spawn, space_drive, space_despawn, space_tag, space_alive},
 };
 
