@@ -2094,4 +2094,10 @@ The release check: direct sessions (no galaxy server) on the release build with 
 * Not run for the release: a direct session of three or four, a stage end in a direct session on this build (the
   deep playtest ran Cell to Creature directly, #server-deep-playtest), the installer's own update from 69-dev on a
   player's PC.
+* Published 2026-11-24 about 19:03 (b8aa78d3, tag v0.7.14.1-lineages70-dev, "Lineages 70-dev", a prerelease as every
+  dev build): the four files' SHA-256 on GitHub equal SHA256SUMS.txt. The stripped build started, hosted and loaded a
+  Cell save in the QA copy. A QA game on the 69-dev build answered `coop.update`: `available
+  running=0.7.14.1-lineages69-dev latest=0.7.14.1-lineages70-dev` (the update itself was not applied there).
+* The owner's own alpha copy (#server-owner-alpha-copy) carries the 70-dev build since then (coop.dll, sporekit.dll,
+  the symbols, SporeCoop.package); not started after the copy.
 
