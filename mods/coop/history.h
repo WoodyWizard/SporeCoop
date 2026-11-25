@@ -32,4 +32,13 @@ bool guest_owns();
 // an actor::Scope naming the guest
 void social_win(uint8_t player, float worth);
 
+// BUG-1557: Rivals per-player Tribe/Civ consequence tracking and Space philosophy (host only)
+bool rivals_own_history_enabled();
+void record_tribe_outcome(uint8_t player, bool allied);
+void set_civ_start_specialty(uint8_t player, uint8_t spec_1_based); // 1=military, 2=economic, 3=religious
+void record_civ_outcome(uint8_t player, uint8_t spec_1_based);      // 1=military, 2=economic, 3=religious
+uint32_t player_card(uint8_t player, int stage);                    // player 0: live cPlayer card; guest: recorded card
+bool player_has_own_tribe(uint8_t player);
+void host_sync_now();
+
 } // namespace history

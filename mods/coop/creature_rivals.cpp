@@ -18,6 +18,7 @@
 #include "creations.h"
 #include "fixes.h"
 #include "game.h"
+#include "history.h"
 #include "lifecycle.h"
 #include "modes.h"
 #include "npc.h"
@@ -956,11 +957,15 @@ bool on_guest_impress(uint8_t player, const uint32_t key[3], void* npc, float dn
         int32_t inf = kInfPerImpress + (res.became_allied ? kInfPerAlly : 0);
         rivals::grant_influence(player, inf, res.became_allied ? "species allied" : "species impressed");
         g_inf_earned += (uint32_t)inf;
-        if (res.became_allied)
+        if (res.became_allied) {
             rivals::add_chronicle_points(player, rivals::kPtsNpcFaction, "species allied");
+            // BUG-1557: social.cpp skips a_RelEvent(3) in Creature Rivals so credit the species-ally social bonus here
+            history::social_win(player, 25.0f);
+        }
         host_send_rels_to(player);
     }
-    (void)dna;
+    if (dna > 0.0f)
+        history::social_win(player, dna);
     return true;
 }
 
@@ -1341,8 +1346,10 @@ static void native_transition_task(void*)
         uint32_t trait = cdecl_call<uint32_t>(a_ConsequenceTrait);
         if (void* nm = game::noun_manager(); nm && readable((uint8_t*)nm + 0x74, 4)) {
             void* pl = field<void*>(nm, 0x74);
-            if (pl && readable((uint8_t*)pl + 0x1100, 4))
+            if (pl && readable((uint8_t*)pl + 0x1100, 4)) {
                 field<uint32_t>(pl, 0x1100) = trait;
+                history::host_sync_now(); // BUG-1557: decide guests' own Creature cards before Tribe loads
+            }
         }
     }
     if (a_StageEndAdvance)

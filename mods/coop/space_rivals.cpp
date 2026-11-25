@@ -138,6 +138,19 @@ bool enabled() { return g_space_rivals_fix; }
 bool stage_rivals_wanted() { return g_space_rivals_fix && rivals::enabled() && rivals::stage_is_rivals(rivals::Stage::Space); }
 bool active() { return stage_rivals_wanted() && spaceext::in_space(); }
 
+// BUG-1557: true while a Space Rivals guest is still waiting for or running Phase 1 homeworld emigration,
+// so history::guest_space waits to call SpaceGame_SetArchetype until the emigrated homeworld is established.
+bool emigration_in_progress()
+{
+    if (!active() || spaceext::is_host())
+        return false;
+    if (g_my_emig_pending || g_emigrating_guard)
+        return true;
+    if (g_my_emig.valid() && !g_emig_sm.home_created)
+        return true;
+    return false;
+}
+
 bool is_relinquished_host_home(uint32_t planet_id)
 {
     return active() && !spaceext::is_host() && g_relinquished_host_home_planet != 0 &&

@@ -14,6 +14,7 @@
 #include "creations.h"
 #include "fixes.h"
 #include "game.h"
+#include "history.h"
 #include "lifecycle.h"
 #include "modes.h"
 #include "rivals.h"
@@ -516,8 +517,12 @@ static void SK_THISCALL h_SetConquered(void* t, bool conquered)
                     }
                 }
             }
-            if (np)
+            if (np) {
+                bool already = g_npc_rels.get(best_p, np) == NpcRel::Conquered;
                 g_npc_rels.mark_conquered(best_p, np);
+                if (!already && best_p != 0)
+                    history::record_tribe_outcome(best_p, false);
+            }
         }
     }
     o_SetConquered(t, conquered);
@@ -557,7 +562,11 @@ static float SK_THISCALL h_ApplyRel(void* mgr, uint32_t polA, uint32_t polB, uin
             rivals::grant_influence(actor, gain, eventId == kRelEventSocial ? "tribe music" : "tribe gift");
             g_inf_earned++;
             int lvl = rel_level_of(mgr, rel_value(mgr, polA, polB));
-            g_npc_rels.set(actor, polA, rel_from_game_level(lvl, false));
+            NpcRel prev = g_npc_rels.get(actor, polA);
+            NpcRel next = rel_from_game_level(lvl, false);
+            g_npc_rels.set(actor, polA, next);
+            if (actor != 0 && prev != NpcRel::Allied && next == NpcRel::Allied)
+                history::record_tribe_outcome(actor, true);
         }
     }
     return res;
@@ -962,8 +971,11 @@ static bool on_npc_influence(rivals::Stage stage, rivals::InfluenceAction action
         return true;
     }
     if (action == rivals::InfluenceAction::SmoothOver) {
+        NpcRel prev = g_npc_rels.get(actor, np);
         if (!g_npc_rels.step_up(actor, np))
             return false;
+        if (actor != 0 && prev != NpcRel::Allied && g_npc_rels.get(actor, np) == NpcRel::Allied)
+            history::record_tribe_outcome(actor, true);
         void* at = tribe_of_player(actor);
         if (at && mgr)
             apply_rel_internal(mgr, np, tribe_pol(at), g_npc_rels.get(actor, np));
@@ -1798,7 +1810,15 @@ std::string debug_cmd(const std::vector<std::string>& a)
         int rv = atoi(a[4].c_str());
         if (!rivals::valid_player(pid) || rv < 0 || rv > (int)NpcRel::Conquered)
             return "error: bad args\n";
-        g_npc_rels.set(pid, np, (NpcRel)rv);
+        NpcRel prev = g_npc_rels.get(pid, np);
+        NpcRel next = (NpcRel)rv;
+        g_npc_rels.set(pid, np, next);
+        if (pid != 0 && next != prev) {
+            if (next == NpcRel::Allied)
+                history::record_tribe_outcome(pid, true);
+            else if (next == NpcRel::Conquered)
+                history::record_tribe_outcome(pid, false);
+        }
         void* pt = tribe_of_player(pid);
         if (pt && rel_mgr())
             apply_rel_internal(rel_mgr(), np, tribe_pol(pt), (NpcRel)rv);
