@@ -21,6 +21,7 @@
 // Portable (no Windows, no game): tests/validate_tests.cpp test_history.
 #pragma once
 
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <map>
@@ -48,19 +49,201 @@ constexpr float kMaxCredit = 1.0e6f;   // one credit beyond this is no game amou
 
 // the trait ids of each stage (the release cheat setConsequenceTrait's table .data 0x156ACD0,
 // docs/re/creations.md#creations-own-history)
-constexpr uint32_t kTribeAggressive  = 0x0CAC124Du;
-constexpr uint32_t kTribeFriendly    = 0x60A78928u; // social
-constexpr uint32_t kTribeIndustrious = 0xC2CA9495u; // mixed
+constexpr uint32_t kCellCarnivore = 0xCFB01B93u; // Red
+constexpr uint32_t kCellHerbivore = 0xA8EC6F99u; // Green
+constexpr uint32_t kCellOmnivore  = 0x5ECE4770u; // Blue
 
-constexpr uint32_t kCivMilitary  = 0x0A35D0F5u;
-constexpr uint32_t kCivEconomic  = 0x3360727Fu;
-constexpr uint32_t kCivReligious = 0x6AEB96A1u;
+constexpr uint32_t kCreatureAggressive = 0x17E5EF84u; // Red (Predator)
+constexpr uint32_t kCreatureSocial     = 0xFD159D91u; // Green (Social)
+constexpr uint32_t kCreatureMixed      = 0xB9DE15F2u; // Blue (Adaptable)
+
+constexpr uint32_t kTribeAggressive  = 0x0CAC124Du; // Red
+constexpr uint32_t kTribeFriendly    = 0x60A78928u; // Green (Social)
+constexpr uint32_t kTribeIndustrious = 0xC2CA9495u; // Blue (Mixed)
+
+constexpr uint32_t kCivMilitary  = 0x0A35D0F5u; // Red
+constexpr uint32_t kCivEconomic  = 0x3360727Fu; // Blue
+constexpr uint32_t kCivReligious = 0x6AEB96A1u; // Green
+
+constexpr uint32_t kSpaceWarrior   = 0xD9C806E4u; // archetype index 9
+constexpr uint32_t kSpaceTrader    = 0xB7CB9F7Au; // archetype index 10
+constexpr uint32_t kSpaceScientist = 0x9CE4639Cu; // archetype index 11
+constexpr uint32_t kSpaceShaman    = 0xCF6C2AB4u; // archetype index 12
+constexpr uint32_t kSpaceBard      = 0x50FEE6BFu; // archetype index 13
+constexpr uint32_t kSpaceZealot    = 0x2B35F523u; // archetype index 14
+constexpr uint32_t kSpaceDiplomat  = 0xB436C0BCu; // archetype index 15
+constexpr uint32_t kSpaceEcologist = 0xB40D2187u; // archetype index 16
+constexpr uint32_t kSpaceWanderer  = 0xA5656E84u; // archetype index 17
+constexpr uint32_t kSpaceKnight    = 0xF966D429u; // archetype index 18
 
 // 1-based Civ specialty codes stored in Record::civ_start_spec and host history API
 constexpr uint8_t kCivSpecNone      = 0;
 constexpr uint8_t kCivSpecMilitary  = 1;
 constexpr uint8_t kCivSpecEconomic  = 2;
 constexpr uint8_t kCivSpecReligious = 3;
+
+// BUG-1565: canonical Space philosophy presets. Each 4-card (Cell, Creature, Tribe, Civ) tuple matches
+// Spore's native 4x4x4x4 SpaceArchetype_FromTraits lookup table (.rdata 0x013F3E00 in GOG 2024 SporeApp.exe).
+// Wanderer is the unique blank-history entry (0, 0, 0, 0) -> 0xA5656E84.
+struct PhilosophyPreset {
+    const char* key;      // lowercase CLI name
+    const char* label_en; // UI label (EN)
+    const char* label_ru; // UI label (RU)
+    uint32_t space_card;  // expected SpaceArchetype_FromTraits(cards[0..3])
+    uint32_t cards[4];    // {Cell, Creature, Tribe, Civ}
+};
+
+constexpr int kPhilosophyCount = 10;
+inline constexpr PhilosophyPreset kPhilosophies[kPhilosophyCount] = {
+    {"warrior",   "Warrior",   "Воин",      kSpaceWarrior,   {kCellCarnivore, kCreatureAggressive, kTribeAggressive,  kCivMilitary}},
+    {"trader",    "Trader",    "Торговец",  kSpaceTrader,    {kCellOmnivore,  kCreatureMixed,      kTribeIndustrious, kCivEconomic}},
+    {"scientist", "Scientist", "Учёный",    kSpaceScientist, {kCellCarnivore, kCreatureAggressive, kTribeIndustrious, kCivEconomic}},
+    {"shaman",    "Shaman",    "Шаман",     kSpaceShaman,    {kCellHerbivore, kCreatureSocial,     kTribeFriendly,    kCivReligious}},
+    {"bard",      "Bard",      "Бард",      kSpaceBard,      {kCellCarnivore, kCreatureSocial,     kTribeIndustrious, kCivEconomic}},
+    {"zealot",    "Zealot",    "Фанатик",   kSpaceZealot,    {kCellCarnivore, kCreatureAggressive, kTribeFriendly,    kCivReligious}},
+    {"diplomat",  "Diplomat",  "Дипломат",  kSpaceDiplomat,  {kCellHerbivore, kCreatureSocial,     kTribeIndustrious, kCivEconomic}},
+    {"ecologist", "Ecologist", "Эколог",    kSpaceEcologist, {kCellCarnivore, kCreatureSocial,     kTribeFriendly,    kCivEconomic}},
+    {"knight",    "Knight",    "Рыцарь",    kSpaceKnight,    {kCellCarnivore, kCreatureAggressive, kTribeFriendly,    kCivEconomic}},
+    {"wanderer",  "Wanderer",  "Странник",  kSpaceWanderer,  {0,              0,                   0,                 0}},
+};
+
+inline std::string ascii_lower(const std::string& s)
+{
+    std::string out;
+    out.reserve(s.size());
+    for (unsigned char ch : s)
+        out.push_back((char)std::tolower(ch));
+    return out;
+}
+
+inline const PhilosophyPreset* find_philosophy(const std::string& name)
+{
+    const std::string lo = ascii_lower(name);
+    for (const auto& p : kPhilosophies)
+        if (lo == p.key)
+            return &p;
+    return nullptr;
+}
+
+inline const PhilosophyPreset* find_philosophy_by_card(uint32_t space_card)
+{
+    for (const auto& p : kPhilosophies)
+        if (p.space_card == space_card)
+            return &p;
+    return nullptr;
+}
+
+inline int philosophy_index_of(uint32_t space_card)
+{
+    for (int i = 0; i < kPhilosophyCount; i++)
+        if (kPhilosophies[i].space_card == space_card)
+            return i;
+    return -1;
+}
+
+inline int parse_stage_name(const std::string& s)
+{
+    const std::string lo = ascii_lower(s);
+    if (lo == "cell" || lo == "0")
+        return kCell;
+    if (lo == "creature" || lo == "1")
+        return kCreature;
+    if (lo == "tribe" || lo == "tribal" || lo == "2")
+        return kTribe;
+    if (lo == "civ" || lo == "civilization" || lo == "3")
+        return kCiv;
+    return -1;
+}
+
+inline uint32_t parse_card_name(int stage, const std::string& s)
+{
+    const std::string lo = ascii_lower(s);
+    if (stage == kCell) {
+        if (lo == "carnivore" || lo == "carn" || lo == "red")
+            return kCellCarnivore;
+        if (lo == "herbivore" || lo == "herb" || lo == "green")
+            return kCellHerbivore;
+        if (lo == "omnivore" || lo == "omni" || lo == "blue")
+            return kCellOmnivore;
+    } else if (stage == kCreature) {
+        if (lo == "predator" || lo == "aggressive" || lo == "aggr" || lo == "red")
+            return kCreatureAggressive;
+        if (lo == "social" || lo == "soc" || lo == "green")
+            return kCreatureSocial;
+        if (lo == "adaptable" || lo == "mixed" || lo == "mix" || lo == "blue")
+            return kCreatureMixed;
+    } else if (stage == kTribe) {
+        if (lo == "aggressive" || lo == "aggr" || lo == "conquer" || lo == "red")
+            return kTribeAggressive;
+        if (lo == "friendly" || lo == "social" || lo == "ally" || lo == "green")
+            return kTribeFriendly;
+        if (lo == "industrious" || lo == "indus" || lo == "mixed" || lo == "blue")
+            return kTribeIndustrious;
+    } else if (stage == kCiv) {
+        if (lo == "military" || lo == "mil" || lo == "red")
+            return kCivMilitary;
+        if (lo == "economic" || lo == "eco" || lo == "blue")
+            return kCivEconomic;
+        if (lo == "religious" || lo == "rel" || lo == "green")
+            return kCivReligious;
+    }
+    return 0;
+}
+
+inline const char* card_label(int stage, uint32_t card, bool ru = false)
+{
+    if (!card)
+        return ru ? "Нет" : "None";
+    if (stage == kCell) {
+        if (card == kCellCarnivore)
+            return ru ? "Плотоядный" : "Carnivore";
+        if (card == kCellHerbivore)
+            return ru ? "Травоядный" : "Herbivore";
+        if (card == kCellOmnivore)
+            return ru ? "Всеядный" : "Omnivore";
+    } else if (stage == kCreature) {
+        if (card == kCreatureAggressive)
+            return ru ? "Хищник" : "Predator";
+        if (card == kCreatureSocial)
+            return ru ? "Дружелюбный" : "Social";
+        if (card == kCreatureMixed)
+            return ru ? "Адаптивный" : "Adaptable";
+    } else if (stage == kTribe) {
+        if (card == kTribeAggressive)
+            return ru ? "Агрессивный" : "Aggressive";
+        if (card == kTribeFriendly)
+            return ru ? "Дружелюбный" : "Friendly";
+        if (card == kTribeIndustrious)
+            return ru ? "Трудолюбивый" : "Industrious";
+    } else if (stage == kCiv) {
+        if (card == kCivMilitary)
+            return ru ? "Военная" : "Military";
+        if (card == kCivEconomic)
+            return ru ? "Торговая" : "Economic";
+        if (card == kCivReligious)
+            return ru ? "Религиозная" : "Religious";
+    } else if (stage == kSpace) {
+        if (const PhilosophyPreset* p = find_philosophy_by_card(card))
+            return ru ? p->label_ru : p->label_en;
+    }
+    return ru ? "Нет" : "None";
+}
+
+inline uint32_t next_stage_card(int stage, uint32_t cur)
+{
+    static const uint32_t order[4][3] = {
+        {kCellCarnivore, kCellOmnivore, kCellHerbivore},
+        {kCreatureAggressive, kCreatureMixed, kCreatureSocial},
+        {kTribeAggressive, kTribeIndustrious, kTribeFriendly},
+        {kCivMilitary, kCivEconomic, kCivReligious},
+    };
+    if (stage < 0 || stage >= 4)
+        return 0;
+    for (int i = 0; i < 3; i++)
+        if (order[stage][i] == cur)
+            return order[stage][(i + 1) % 3];
+    return order[stage][0];
+}
 
 inline bool valid_card(int stage, uint32_t v)
 {
@@ -197,6 +380,9 @@ struct Record {
     uint16_t tribe_allied = 0, tribe_conquered = 0;
     uint16_t civ_military = 0, civ_economic = 0, civ_religious = 0;
     uint8_t civ_start_spec = 0; // 0 = none, 1 = military, 2 = economic, 3 = religious
+    // BUG-1565: bitmask of prior stages (bits 0..3 = Cell..Civ) explicitly picked by the guest in a world started
+    // past Cell; packed into the upper nibble of the extended v1 spec byte so the record keeps its 43-byte layout.
+    uint8_t picked_mask = 0;
 
     bool has_tribe_own() const { return tribe_allied != 0 || tribe_conquered != 0; }
     bool has_civ_own() const
@@ -205,6 +391,8 @@ struct Record {
                (civ_start_spec >= kCivSpecMilitary && civ_start_spec <= kCivSpecReligious);
     }
     bool has_rivals_ext() const { return has_tribe_own() || has_civ_own(); }
+    bool has_picked_custom() const { return (picked_mask & 0x0Fu) != 0; }
+    bool has_ext() const { return has_rivals_ext() || has_picked_custom(); }
 
     bool operator==(const Record& o) const
     {
@@ -214,7 +402,8 @@ struct Record {
         return social == o.social && combat == o.combat && cell_own == o.cell_own &&
                tribe_allied == o.tribe_allied && tribe_conquered == o.tribe_conquered &&
                civ_military == o.civ_military && civ_economic == o.civ_economic &&
-               civ_religious == o.civ_religious && civ_start_spec == o.civ_start_spec;
+               civ_religious == o.civ_religious && civ_start_spec == o.civ_start_spec &&
+               (picked_mask & 0x0Fu) == (o.picked_mask & 0x0Fu);
     }
     bool operator!=(const Record& o) const { return !(*this == o); }
 };
@@ -224,6 +413,7 @@ inline bool add_tribe_outcome(Record& r, bool allied)
     uint16_t& slot = allied ? r.tribe_allied : r.tribe_conquered;
     if (slot < 0xFFFFu)
         slot++;
+    r.picked_mask &= (uint8_t)~(1u << kTribe);
     return true;
 }
 
@@ -232,6 +422,7 @@ inline bool set_civ_start(Record& r, uint8_t spec_1_based)
     if (spec_1_based < kCivSpecMilitary || spec_1_based > kCivSpecReligious)
         return false;
     r.civ_start_spec = spec_1_based;
+    r.picked_mask &= (uint8_t)~(1u << kCiv);
     return true;
 }
 
@@ -245,7 +436,83 @@ inline bool add_civ_outcome(Record& r, uint8_t spec_1_based)
         return false;
     if (*slot < 0xFFFFu)
         (*slot)++;
+    r.picked_mask &= (uint8_t)~(1u << kCiv);
     return true;
+}
+
+// BUG-1565: stage `i` (0..3) is already completed/past in the world when the host has a valid card for it, when the
+// world is already in Space (valid Space card or current_stage == kSpace), or when current_stage is strictly past `i`.
+inline bool stage_completed_for_pick(int stage, const uint32_t host_cards[kStages], int current_stage = -1)
+{
+    if (stage < 0 || stage >= 4)
+        return false;
+    if (valid_card(stage, host_cards[stage]))
+        return true;
+    if (valid_card(kSpace, host_cards[kSpace]))
+        return true;
+    return current_stage > stage;
+}
+
+// BUG-1565: apply a guest's starting-path pick (`picked[0..3]`).
+// - Validates every non-zero entry with valid_card(i, picked[i]); an invalid entry rejects the entire pick.
+// - An all-zero pick selects Wanderer (blank prior path) when Space is active.
+// - Never overwrites stages not yet completed/past in the world (no forging future cards).
+// - Clears r.cards[kSpace] whenever any prior card (0..3) changed and Space is active, so host recomputes Space.
+// - Marks applied stages in r.picked_mask so update() preserves them across ticks and reloads.
+// Returns the bitmask of changed stages (0..4). Optional `*accepted` reports whether at least one stage was eligible.
+inline unsigned apply_midgame_pick(Record& r, const uint32_t host_cards[kStages], const uint32_t picked[4],
+                                   int current_stage = -1, bool* accepted = nullptr)
+{
+    if (accepted)
+        *accepted = false;
+    bool all_zero = true;
+    for (int i = 0; i < 4; i++) {
+        if (picked[i] != 0) {
+            all_zero = false;
+            if (!valid_card(i, picked[i]))
+                return 0;
+        }
+    }
+    const bool space_done = valid_card(kSpace, host_cards[kSpace]) || current_stage == kSpace;
+    unsigned changed = 0;
+    if (all_zero) {
+        if (!space_done)
+            return 0;
+        if (accepted)
+            *accepted = true;
+        for (int i = 0; i < 4; i++) {
+            if (r.cards[i] != 0) {
+                r.cards[i] = 0;
+                changed |= 1u << i;
+            }
+            r.picked_mask |= (uint8_t)(1u << i);
+        }
+        if (r.cards[kSpace] != kSpaceWanderer) {
+            r.cards[kSpace] = 0;
+            changed |= 1u << kSpace;
+        }
+        return changed;
+    }
+    bool any_eligible = false;
+    for (int i = 0; i < 4; i++) {
+        if (picked[i] == 0)
+            continue;
+        if (!stage_completed_for_pick(i, host_cards, current_stage))
+            continue;
+        any_eligible = true;
+        r.picked_mask |= (uint8_t)(1u << i);
+        if (r.cards[i] != picked[i]) {
+            r.cards[i] = picked[i];
+            changed |= 1u << i;
+        }
+    }
+    if (accepted)
+        *accepted = any_eligible;
+    if ((changed & 0x0Fu) != 0 && space_done) {
+        r.cards[kSpace] = 0;
+        changed |= 1u << kSpace;
+    }
+    return changed;
 }
 
 // first sight of a guest in a world: the history so far was the party's one (every game showed the host's)
@@ -281,12 +548,20 @@ inline bool credit(Record& r, bool social, float amount)
 // recomputed via decide(kSpace, r). Returns the bits of the stages whose card changed.
 template <class Decide>
 inline unsigned update(Record& r, const uint32_t host[kStages], Decide&& decide,
-                       bool own_tribe = false, bool own_civ = false)
+                       bool own_tribe = false, bool own_civ = false,
+                       int current_stage = -1, bool honor_picked = true)
 {
     unsigned changed = 0;
     for (int i = 0; i < kStages; i++) {
         uint32_t v = r.cards[i];
-        if (!valid_card(i, host[i])) {
+        const bool is_picked = honor_picked && i < kSpace && ((r.picked_mask & (1u << i)) != 0);
+        if (is_picked) {
+            if (!stage_completed_for_pick(i, host, current_stage)) {
+                v = 0; // reloaded an earlier save where this stage is no longer past
+                r.picked_mask &= (uint8_t)~(1u << i);
+            }
+            // Otherwise keep the guest's explicitly picked prior-stage card (including 0 for Wanderer)
+        } else if (!valid_card(i, host[i])) {
             v = 0; // not done in this world (an earlier save, a game started later): nobody's
         } else if (i == kTribe) {
             if (own_tribe) {
@@ -310,7 +585,7 @@ inline unsigned update(Record& r, const uint32_t host[kStages], Decide&& decide,
             }
         } else if (i == kSpace) {
             const bool prereq_changed = (changed & ((1u << kCell) | (1u << kCreature) | (1u << kTribe) | (1u << kCiv))) != 0;
-            if (!valid_card(i, v) || ((own_tribe || own_civ) && prereq_changed)) {
+            if (!valid_card(i, v) || ((own_tribe || own_civ || honor_picked) && prereq_changed)) {
                 uint32_t d = decide(i, (const Record&)r);
                 v = valid_card(i, d) ? d : host[i];
             }
@@ -360,8 +635,9 @@ inline bool peer_reads(bool has_families, bool found, uint16_t rev, uint16_t min
 }
 
 // ---- the store record `history` v1 (per player, under its stable key): 5 x u32 cards, f32 social, f32 combat,
-// u32 the own Cell card (32 bytes). When any Rivals Tribe/Civ field is non-zero (BUG-1557), 11 bytes follow:
-// u16 tribe_allied, u16 tribe_conquered, u16 civ_military, u16 civ_economic, u16 civ_religious, u8 civ_start_spec (43 bytes).
+// u32 the own Cell card (32 bytes). When any Rivals Tribe/Civ field or mid-game picked_mask is non-zero
+// (BUG-1557, BUG-1565), 11 bytes follow: u16 tribe_allied, u16 tribe_conquered, u16 civ_military, u16 civ_economic,
+// u16 civ_religious, u8 (civ_start_spec [bits 0..3] | picked_mask [bits 4..7]) (43 bytes).
 inline std::vector<uint8_t> encode(const Record& r)
 {
     pstore::Out o;
@@ -370,13 +646,13 @@ inline std::vector<uint8_t> encode(const Record& r)
     o.f32(r.social);
     o.f32(r.combat);
     o.u32(r.cell_own);
-    if (r.has_rivals_ext()) {
+    if (r.has_ext()) {
         o.u16(r.tribe_allied);
         o.u16(r.tribe_conquered);
         o.u16(r.civ_military);
         o.u16(r.civ_economic);
         o.u16(r.civ_religious);
-        o.u8(r.civ_start_spec);
+        o.u8((uint8_t)((r.civ_start_spec & 0x0Fu) | ((r.picked_mask & 0x0Fu) << 4)));
     }
     return o.d;
 }
@@ -397,9 +673,13 @@ inline bool decode(const std::vector<uint8_t>& d, Record& out)
         r.civ_military = in.u16();
         r.civ_economic = in.u16();
         r.civ_religious = in.u16();
-        r.civ_start_spec = in.u8();
-        if (!in.ok || !in.end() || r.civ_start_spec > kCivSpecReligious)
+        uint8_t spec_byte = in.u8();
+        uint8_t spec = spec_byte & 0x0Fu;
+        uint8_t pmask = (uint8_t)((spec_byte >> 4) & 0x0Fu);
+        if (!in.ok || !in.end() || spec > kCivSpecReligious)
             return false;
+        r.civ_start_spec = spec;
+        r.picked_mask = pmask;
     }
     if (!sane(r.social) || !sane(r.combat) || !card_ok(kCell, r.cell_own))
         return false;

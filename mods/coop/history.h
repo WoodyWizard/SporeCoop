@@ -15,6 +15,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #include "net/buffer.h"
 #include "net/session.h"
@@ -40,5 +41,14 @@ void record_civ_outcome(uint8_t player, uint8_t spec_1_based);      // 1=militar
 uint32_t player_card(uint8_t player, int stage);                    // player 0: live cPlayer card; guest: recorded card
 bool player_has_own_tribe(uint8_t player);
 void host_sync_now();
+
+// BUG-1565: per-player starting evolutionary path / Space philosophy picker for worlds started past Cell
+bool midgame_pick_enabled();
+bool can_pick_ui();
+uint32_t guest_card(int stage);
+bool pick_cards(const uint32_t cards[4]);
+bool pick_philosophy(const std::string& name);
+bool cycle_philosophy();
+bool cycle_stage_card(int stage);
 
 } // namespace history
