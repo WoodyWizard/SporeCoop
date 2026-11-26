@@ -7,9 +7,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/WoodyWizard/SporeCoop/releases/latest"><img src="https://img.shields.io/github/v/release/WoodyWizard/SporeCoop?style=for-the-badge&label=Download%20SporeCoop&color=2fd6b5&labelColor=1a1240&logo=github&logoColor=white" alt="Download SporeCoop (latest release)" height="40"></a>
+  <!-- support:top:start -->
+  <a href="https://buymeacoffee.com/chamomilewoods"><img src="https://img.shields.io/badge/Support%20the%20author-Coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=FFDD00&labelColor=1a1240" alt="Support the author - Buy me a coffee" height="35"></a>
+  <!-- support:top:end -->
   &nbsp;
-  <a href="https://discord.gg/7Yre7u4b8x"><img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white&labelColor=1a1240" alt="Join SporeCoop Discord" height="40"></a>
+  <a href="https://github.com/WoodyWizard/SporeCoop/releases/latest"><img src="https://img.shields.io/github/v/release/WoodyWizard/SporeCoop?style=for-the-badge&label=Download&color=2fd6b5&labelColor=1a1240&logo=github&logoColor=white" alt="Download SporeCoop (latest release)" height="35"></a>
+  &nbsp;
+  <a href="https://discord.gg/7Yre7u4b8x"><img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white&labelColor=1a1240" alt="Join SporeCoop Discord" height="35"></a>
 </p>
 
 <p align="center">
@@ -20,12 +24,6 @@
   <img src="https://img.shields.io/badge/players-2--4-ff9a3c?labelColor=1a1240" alt="2-4 players">
   <img src="https://img.shields.io/badge/modes-Together%20%7C%20Rivals%20%7C%20GA-2fd6b5?labelColor=1a1240" alt="Together, Rivals, and Galactic Adventures">
 </p>
-
-<!-- support:top:start -->
-<p align="center">
-  <a href="https://buymeacoffee.com/chamomilewoods"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-chamomilewoods-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy me a coffee"></a>
-</p>
-<!-- support:top:end -->
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
