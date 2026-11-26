@@ -108,6 +108,9 @@ bool owe_tool_key(const uint32_t key[3], const std::string& what);
 // Grants (gift spice, reward tools, Steve's gift) wait (owed or queued) while it is true. False with
 // `coop.fix space.grant_wait_restore off`, on the host and outside that window.
 bool hold_grants();
+// BUG-1570 (spacecoop.cpp / space_trade.cpp): `space.starter_tools_sync` switch: sync Flight School starter tools
+// (scan, laserlevel1, abduct, dropcargo, healthupgrade1, energyupgrade1) and never strip starter tools during kept-hold restore.
+bool starter_tools_sync();
 // the game's saves made while the mod runs (space_allies' save hook counts them; 0 without it).
 // Only the 0.7.3.0 refund rule (`coop.fix space.owed_id off`) still reads it (BUG-0225).
 void note_save();

@@ -1188,16 +1188,22 @@ static int SK_THISCALL h_ColonizeUpdate(void* m, float dt)
     return st;
 }
 
-// BUG-1559 (GitHub #221): Space tutorial unlock and starter drive synchronization.
+// BUG-1559 (GitHub #221) & BUG-1570 (Discord Doctor): Space tutorial unlock, starter drives, and
+// Flight School starter tools synchronization.
 // Skipping the Space tutorial (or finishing Flight School / Story201 / scanning the wreck) sets
-// cMissionManager +0x16/+0x17/+0x18 and grants interstellardrive (0x2569FAE8) / interplanetarydrive
-// (0x4133FE05) directly without a synced cMission::SetState reward broadcast, leaving guests locked
-// in the home star system without a drive. Monotonically sync host tutorial unlock flags and starter
-// drives to guests in the host's Space world.
+// cMissionManager +0x16/+0x17/+0x18, grants the 6 Flight School starter tools via
+// cPlayerInventory::AddDefaultTools (0x00FF4590, prop 0xF0609EC3: scan, laserlevel1, abduct,
+// dropcargo, healthupgrade1, energyupgrade1), and grants interstellardrive (0x2569FAE8) /
+// interplanetarydrive (0x4133FE05) directly without a synced cMission::SetState reward broadcast.
+// Monotonically sync host tutorial unlock flags, starter drives, and Flight School starter tools
+// to guests in the host's Space world.
 static bool g_tut_drive_sync_fix = true;
 COOP_FIX("space.tutorial_drive_sync", "BUG-1559", g_tut_drive_sync_fix,
          "space: sync host tutorial unlock flags and interstellar/interplanetary drives to guests");
-static uint32_t g_tut_sync_tx, g_tut_sync_rx, g_tut_flags_applied, g_tut_drive_granted;
+static bool g_starter_tools_fix = true;
+COOP_FIX("space.starter_tools_sync", "BUG-1570", g_starter_tools_fix,
+         "space: sync Flight School starter tools (scan, laser, abduct, dropcargo, health/energy) and never strip starter tools on kept-hold restore");
+static uint32_t g_tut_sync_tx, g_tut_sync_rx, g_tut_flags_applied, g_tut_drive_granted, g_tut_starter_granted;
 static uint8_t g_tut_last_mask, g_tut_host_mask;
 static uint32_t g_tut_last_epoch;
 static bool g_tut_host_valid;
@@ -1237,6 +1243,23 @@ static bool has_tool(void* inv, uint32_t hash)
     return vcall<bool>(inv, 0x74 / 4, tk.v); // cPlayerInventory::HasTool
 }
 
+template <class Pred>
+static bool has_tool_matching(void* inv, Pred pred)
+{
+    if (!inv || !skg::readable(inv, 0x10))
+        return false;
+    int n = vcall<int>(inv, 0x5C / 4);
+    for (int i = 0; i < n && i < 256; i++) {
+        uint8_t* it = vcall<uint8_t*>(inv, 0x60 / 4, i);
+        if (!it || F<int>(it, 0x14) != 2)
+            continue;
+        const uint32_t* k = vcall<const uint32_t*>(it, 0x18 / 4);
+        if (k && pred(k[0]))
+            return true;
+    }
+    return false;
+}
+
 static bool grant_tool(void* inv, uint32_t hash)
 {
     if (!inv || !a_AddItemByKey || !skg::readable(inv, 0x10))
@@ -1261,8 +1284,17 @@ static void read_tutorial_state(spacelogic::TutorialState& out, bool& has_mm, bo
     void* inv = inventory();
     has_inv = inv != nullptr && skg::readable(inv, 0x10);
     if (has_inv) {
-        out.has_interstellar = has_tool(inv, spacelogic::kToolInterstellarDrive);
+        out.has_interstellar = has_tool_matching(inv, spacelogic::is_interstellar_tool);
         out.has_interplanetary = has_tool(inv, spacelogic::kToolInterplanetaryDrive);
+        out.has_scan = has_tool(inv, spacelogic::kToolScan);
+        out.has_laser = has_tool_matching(inv, spacelogic::is_laser_tool);
+        out.has_abduct = has_tool(inv, spacelogic::kToolAbduct);
+        out.has_drop_cargo = has_tool(inv, spacelogic::kToolDropCargo);
+        out.has_health = has_tool_matching(inv, spacelogic::is_health_tool);
+        out.has_energy = has_tool_matching(inv, spacelogic::is_energy_tool);
+        out.has_starter_kit = out.flight_school || (out.has_scan && out.has_laser && out.has_abduct);
+    } else {
+        out.has_starter_kit = out.flight_school;
     }
 }
 
@@ -1275,10 +1307,10 @@ static void tut_sync_apply_guest()
     read_tutorial_state(st, has_mm, has_inv);
     auto a = spacelogic::tutorial_sync_decide(g_tut_drive_sync_fix, spaceext::is_host(), in_space(), connected(),
                                               own_world::elsewhere(), own_world::space_other(), spaceext::hold_grants(),
-                                              has_mm, has_inv, g_tut_host_mask, st);
+                                              has_mm, has_inv, g_tut_host_mask, st, g_starter_tools_fix);
     if (!a.any())
         return;
-    uint32_t flags_now = 0, drives_now = 0;
+    uint32_t flags_now = 0, drives_now = 0, starters_now = 0;
     if (a.any_flag()) {
         if (uint8_t* mm = mission_mgr()) {
             if (a.set_first_comm) {
@@ -1301,24 +1333,40 @@ static void tut_sync_apply_guest()
             }
         }
     }
-    if (a.any_drive()) {
+    if (a.any_drive() || a.any_starter()) {
         if (void* inv = inventory()) {
             if (a.grant_interplanetary && grant_tool(inv, spacelogic::kToolInterplanetaryDrive))
                 drives_now++;
             if (a.grant_interstellar && grant_tool(inv, spacelogic::kToolInterstellarDrive))
                 drives_now++;
+            if (a.grant_scan && grant_tool(inv, spacelogic::kToolScan))
+                starters_now++;
+            if (a.grant_laser && grant_tool(inv, spacelogic::kToolLaser1))
+                starters_now++;
+            if (a.grant_abduct && grant_tool(inv, spacelogic::kToolAbduct))
+                starters_now++;
+            if (a.grant_drop_cargo && grant_tool(inv, spacelogic::kToolDropCargo))
+                starters_now++;
+            if (a.grant_health && grant_tool(inv, spacelogic::kToolHealth1))
+                starters_now++;
+            if (a.grant_energy && grant_tool(inv, spacelogic::kToolEnergy1))
+                starters_now++;
         }
     }
     if (flags_now)
         g_tut_flags_applied += flags_now;
     if (drives_now)
         g_tut_drive_granted += drives_now;
-    if (flags_now || drives_now) {
-        H->log(M, SK_INFO, "space: synced host tutorial state (mask=0x%02X flags+%u drives+%u, BUG-1559)",
-               (unsigned)g_tut_host_mask, flags_now, drives_now);
+    if (starters_now)
+        g_tut_starter_granted += starters_now;
+    if (flags_now || drives_now || starters_now) {
+        H->log(M, SK_INFO, "space: synced host tutorial state (mask=0x%02X flags+%u drives+%u starters+%u, BUG-1559/BUG-1570)",
+               (unsigned)g_tut_host_mask, flags_now, drives_now, starters_now);
         if (C.notice) {
             if (a.grant_interstellar && drives_now)
                 C.notice("Host unlocked the Space tutorial: interstellar drive granted");
+            else if (starters_now)
+                C.notice("Host unlocked the Space tutorial: basic ship tools granted");
             else if (a.set_mission201)
                 C.notice("Host unlocked the Space tutorial: galaxy travel unlocked");
         }
@@ -2554,12 +2602,12 @@ std::string status()
              "space co-op: down=%d rescues=%u lost=%u raids=%u raids_told=%u raid_bonus=%u missions_sent=%u "
              "tools_got=%u terra_sent=%u terra_got=%u terra_enabled=%u terra_rec_sent=%u terra_rec_got=%u terra_rec_set=%u terra_rec_skipped=%u terra_pending=%u terra_pended=%u terra_pend_applied=%u terra_kept=%u terra_resent=%u gifts_sent=%u gifts_got=%u jumps=%u jump_rivals_blocked=%u planets_seeded=%u stores_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
              "partners_here=%u partners_down=%u bad_origin=%u disable_off=%u own_mirror_raids=%u terra_refused=%u "
-             "down_jumps_refused=%u tut_sync_tx=%u tut_sync_rx=%u tut_flags_applied=%u tut_drive_granted=%u\n",
+             "down_jumps_refused=%u tut_sync_tx=%u tut_sync_rx=%u tut_flags_applied=%u tut_drive_granted=%u tut_starter_granted=%u\n",
              (int)g_down, g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
              g_terra_sent, g_terra_got, g_terra_enabled, g_terra_rec_sent, g_terra_rec_got, g_terra_rec_set, g_terra_rec_skipped, (unsigned)g_terra_pending.size(), g_terra_pended, g_terra_pend_applied, (unsigned)g_terra_kept.size(), g_terra_resent, g_gifts_sent, g_gifts_got, g_jumps, g_jump_rivals_blocked, g_planets_seeded, g_stores_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
              (unsigned)partners_here().size(), (unsigned)g_partner_down.size(), g_bad_origin, g_disable_off, g_own_mirror_raids,
              g_terra_refused, g_down_jumps_refused, g_tut_sync_tx, g_tut_sync_rx, g_tut_flags_applied,
-             g_tut_drive_granted);
+             g_tut_drive_granted, g_tut_starter_granted);
     return b + spaceext::status_all();
 }
 
@@ -3221,10 +3269,10 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "mission sent: tool %08X %08X %08X", tk.v[0], tk.v[1], tk.v[2]);
         return b;
     }
-    if (a[0] == "tools" || (a[0] == "tool" && a.size() > 2 && a[1] == "add")) {
+    if (a[0] == "tools" || (a[0] == "tool" && a.size() > 2 && (a[1] == "add" || a[1] == "remove"))) {
         // tests: the tools in the inventory (instance hash = FNV-1 of the tool file name, e.g. scan,
-        // abduct, interplanetarydrive, interstellardrive) and adding one by name (setup: the fixture's
-        // ship has no interstellar drive yet, docs/re/space.md 7.7)
+        // abduct, interplanetarydrive, interstellardrive) and adding/removing one by name (setup: the
+        // fixture's ship has no interstellar drive yet, docs/re/space.md 7.7; BUG-1570 removes starter tools)
         void* inv = inventory();
         if (!inv)
             return "no inventory";
@@ -3244,8 +3292,6 @@ std::string debug(const std::vector<std::string>& a)
         }
         if (a[0] == "tools")
             return s.empty() ? "no tools" : s;
-        if (!tk.v[0] || !a_AddItemByKey) // tool keys are {instance, 0, 0} in this build
-            return "no tool to copy the key type/group from";
         const std::string& nm = a[2];
         uint32_t h = 0x811C9DC5u;
         if (nm.size() > 2 && nm[0] == '0' && nm[1] == 'x')
@@ -3253,6 +3299,27 @@ std::string debug(const std::vector<std::string>& a)
         else
             for (char c : nm)
                 h = (h * 0x01000193u) ^ (uint8_t)tolower((unsigned char)c);
+        if (a[1] == "remove") {
+            int idx = -1;
+            for (int i = 0; i < n && i < 256 && idx < 0; i++) {
+                uint8_t* it = vcall<uint8_t*>(inv, 0x60 / 4, i);
+                if (!it || F<int>(it, 0x14) != 2)
+                    continue;
+                const uint32_t* k = vcall<const uint32_t*>(it, 0x18 / 4);
+                if (k && k[0] == h)
+                    idx = i;
+            }
+            if (idx < 0)
+                return "not there";
+            void* out = nullptr;
+            bool ok = vcall<bool>(inv, 0x7C / 4, idx, &out, -1); // TakeItem
+            if (out)
+                vcall<void>(out, 0x08 / 4); // Release
+            snprintf(b, sizeof b, "removed %08X: %s", h, ok ? "ok" : "failed");
+            return b;
+        }
+        if (!a_AddItemByKey) // tool keys are {instance, 0, 0} in this build
+            return "no AddItemByKey";
         tk.v[0] = h;
         if (vcall<bool>(inv, 0x74 / 4, tk.v)) // HasTool
             return "already there";
@@ -3396,3 +3463,7 @@ static std::vector<spaceext::Row> squad_rows()
 }
 static bool squad_reg = spaceext::add({.name = "squad", .rows = squad_rows});
 } // namespace spacecoop
+
+namespace spaceext {
+bool starter_tools_sync() { return spacecoop::g_starter_tools_fix; }
+} // namespace spaceext

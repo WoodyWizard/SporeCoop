@@ -25,6 +25,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -1243,12 +1244,17 @@ static std::vector<InvItem> g_inv_missed;
 static uint32_t g_inv_missed_epoch, g_inv_missed_kept;
 
 // make the game's hold `want`; returns how many items could not be made as they were (logged); `missed` gets them
-static uint32_t g_inv_restored, g_inv_failed, g_inv_removed;
+static uint32_t g_inv_restored, g_inv_failed, g_inv_removed, g_inv_starters_kept;
 static int apply_inv(const Inv& want, std::vector<InvItem>* missed = nullptr)
 {
     void* inv = inventory();
     if (!inv)
         return -1;
+    std::vector<uint32_t> want_tools;
+    for (auto& x : want.items)
+        if (x.type == 2)
+            want_tools.push_back(x.key.v[0]);
+    std::set<uint32_t> starters_kept_now;
     int failed = 0, removed = 0;
     // 1. what is not mine leaves (the host's items), what is more than mine shrinks: the game's TakeItem
     for (int guard = 0; guard < 256; guard++) {
@@ -1261,9 +1267,14 @@ static int apply_inv(const Inv& want, std::vector<InvItem>* missed = nullptr)
             memcpy(k.v, vcall<const uint32_t*>(it, 0x18 / 4), 12);
             uint8_t type = (uint8_t)F<int>(it, 0x14);
             const InvItem* w = find_item(want, type, k);
-            if (!w)
+            if (!w) {
+                if (type == 2 &&
+                    spacelogic::keep_starter_in_restore(spaceext::starter_tools_sync(), k.v[0], want_tools)) {
+                    starters_kept_now.insert(k.v[0]); // BUG-1570: never strip Flight School starter tools / drives
+                    continue;
+                }
                 hit = i, take = -1; // the whole item
-            else if (type != 2 && F<int>(it, 0x10) > w->count && w->count > 0)
+            } else if (type != 2 && F<int>(it, 0x10) > w->count && w->count > 0)
                 hit = i, take = F<int>(it, 0x10) - w->count;
         }
         if (hit < 0)
@@ -1277,6 +1288,11 @@ static int apply_inv(const Inv& want, std::vector<InvItem>* missed = nullptr)
         if (out)
             vcall<void>(out, 0x08 / 4); // Release
         removed++;
+    }
+    if (!starters_kept_now.empty()) {
+        g_inv_starters_kept += (uint32_t)starters_kept_now.size();
+        H->log(M, SK_INFO, "trade: own hold: preserved %u starter tools from host save (BUG-1570)",
+               (unsigned)starters_kept_now.size());
     }
     // 2. my cargo slots (bought upgrades): AddCargoSlots(n) vt+0x94 (0xFF39E0, ret 4); never fewer
     int slots = vcall<int>(inv, 0x88 / 4);
@@ -1721,10 +1737,10 @@ static std::string inv_status()
     char b[480];
     snprintf(b, sizeof b,
              "keep_items: fix=%d kept=%u holds=%u sent_back=%u done=%u restored=%u failed=%u removed=%u join_epoch=%u "
-             "applied_epoch=%u world=%u slots_removed=%u cargo_made=%u record_written=%u record_used=%u record_world=%u own_save_held=%u\n",
+             "applied_epoch=%u world=%u slots_removed=%u cargo_made=%u record_written=%u record_used=%u record_world=%u own_save_held=%u starters_kept=%u\n",
              (int)g_keep_items_fix, (unsigned)g_store.size(), g_inv_holds, g_inv_sent_back, g_inv_done, g_inv_restored,
              g_inv_failed, g_inv_removed, g_win.join, g_win.applied, spaceext::world_epoch(), g_inv_slots_removed,
-             g_inv_cargo_made, g_rec_written, g_rec_used, g_rec_epoch, g_inv_own_held);
+             g_inv_cargo_made, g_rec_written, g_rec_used, g_rec_epoch, g_inv_own_held, g_inv_starters_kept);
     s += b;
     for (auto& [n, k] : g_store.entries()) {
         snprintf(b, sizeof b, "  kept '%s' id=%d have=%d restoring=%d items=%u slots=%d\n", k.name.c_str(),

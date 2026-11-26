@@ -708,15 +708,15 @@ static void test_space_citizen_lead()
 
 static void test_tutorial_drive_sync()
 {
-    printf("space tutorial & drive sync (BUG-1559)\n");
+    printf("space tutorial & drive sync (BUG-1559, BUG-1570)\n");
     using namespace spacelogic;
 
-    // Pack / unpack round-trip of all 5 bits
-    TutorialState full{true, true, true, true, true};
+    // Pack / unpack round-trip of all 6 bits
+    TutorialState full{true, true, true, true, true, true};
     uint8_t m_full = tutorial_pack(full);
     CHECK(m_full == kTutAllBits);
     TutorialState u = tutorial_unpack(m_full);
-    CHECK(u.first_comm && u.flight_school && u.mission201 && u.has_interstellar && u.has_interplanetary);
+    CHECK(u.first_comm && u.flight_school && u.mission201 && u.has_interstellar && u.has_interplanetary && u.has_starter_kit);
     CHECK(tutorial_pack({}) == 0);
 
     // Synthetic mission_id sentinel never collides with real Spore mission IDs
@@ -724,17 +724,29 @@ static void test_tutorial_drive_sync()
     CHECK(!is_tutorial_sync_mission_id(0, out_mask));
     CHECK(!is_tutorial_sync_mission_id(kColonizeTutorialId, out_mask));
     CHECK(!is_tutorial_sync_mission_id(0x7BDBB97Du, out_mask)); // Story201
-    uint32_t sid = tutorial_sync_mission_id(kTutFlightSchool | kTutMission201 | kTutInterstellarDrive);
+    uint32_t sid = tutorial_sync_mission_id(kTutFlightSchool | kTutMission201 | kTutInterstellarDrive | kTutStarterKit);
     CHECK(is_tutorial_sync_mission_id(sid, out_mask));
-    CHECK(out_mask == (kTutFlightSchool | kTutMission201 | kTutInterstellarDrive));
+    CHECK(out_mask == (kTutFlightSchool | kTutMission201 | kTutInterstellarDrive | kTutStarterKit));
 
-    // Guest missing unlocks + drives receives all host unlocks monotonically
+    // Guest missing unlocks + drives + starter tools receives all host unlocks monotonically
     TutorialState guest_empty{};
     auto a = tutorial_sync_decide(true, false, true, true, false, false, false, true, true, m_full, guest_empty);
     CHECK(a.set_first_comm && a.set_flight_school && a.set_mission201);
     CHECK(a.grant_interstellar && a.grant_interplanetary);
+    CHECK(a.grant_scan && a.grant_laser && a.grant_abduct && a.grant_drop_cargo && a.grant_health && a.grant_energy);
 
-    // Fix OFF -> no flags, no drives
+    // BUG-1570: starter_fix OFF leaves starter tools ungranted while keeping BUG-1559 flags + drives
+    auto a_no_starter =
+        tutorial_sync_decide(true, false, true, true, false, false, false, true, true, m_full, guest_empty, false);
+    CHECK(a_no_starter.any_flag() && a_no_starter.any_drive() && !a_no_starter.any_starter());
+
+    // BUG-1570 backward compat: old host sending only kTutFlightSchool (no bit 5) still grants starter tools
+    auto a_old_host =
+        tutorial_sync_decide(true, false, true, true, false, false, false, true, true, kTutFlightSchool, guest_empty, true);
+    CHECK(a_old_host.set_flight_school && a_old_host.grant_scan && a_old_host.grant_laser && a_old_host.grant_abduct &&
+          a_old_host.grant_drop_cargo && a_old_host.grant_health && a_old_host.grant_energy);
+
+    // Fix OFF -> no flags, no drives, no starters
     auto a_off = tutorial_sync_decide(false, false, true, true, false, false, false, true, true, m_full, guest_empty);
     CHECK(!a_off.any());
 
@@ -745,27 +757,54 @@ static void test_tutorial_drive_sync()
     CHECK(!tutorial_sync_decide(true, false, true, true, true, false, false, true, true, m_full, guest_empty).any());
     CHECK(!tutorial_sync_decide(true, false, true, true, false, true, false, true, true, m_full, guest_empty).any());
 
-    // Monotonicity: already-unlocked guest or host with fewer bits never downgrades or re-grants
-    TutorialState guest_done{true, true, true, true, true};
+    // Monotonicity: already-unlocked guest with all tools never downgrades or re-grants
+    TutorialState guest_done{true, true, true, true, true, true, true, true, true, true, true, true};
     CHECK(!tutorial_sync_decide(true, false, true, true, false, false, false, true, true, m_full, guest_done).any());
     CHECK(!tutorial_sync_decide(true, false, true, true, false, false, false, true, true, 0, guest_done).any());
-    // Guest already has flight_school & interplanetary, lacks m201 & interstellar -> grants only what is missing
-    TutorialState guest_mid{false, true, false, false, true};
+    // Guest already has flight_school, interplanetary, and starter tools, lacks m201 & interstellar -> grants only what is missing
+    TutorialState guest_mid{false, true, false, false, true, true, true, true, true, true, true, true};
     auto a_mid = tutorial_sync_decide(true, false, true, true, false, false, false, true, true,
                                       kTutFlightSchool | kTutMission201 | kTutInterstellarDrive | kTutInterplanetaryDrive,
                                       guest_mid);
     CHECK(!a_mid.set_first_comm && !a_mid.set_flight_school && a_mid.set_mission201);
-    CHECK(a_mid.grant_interstellar && !a_mid.grant_interplanetary);
+    CHECK(a_mid.grant_interstellar && !a_mid.grant_interplanetary && !a_mid.any_starter());
 
-    // hold_grants (kept cargo hold restore window) delays drive grants while still allowing tutorial flags
+    // hold_grants (kept cargo hold restore window) delays drive & starter grants while still allowing tutorial flags
     auto a_hold = tutorial_sync_decide(true, false, true, true, false, false, true, true, true, m_full, guest_empty);
-    CHECK(a_hold.any_flag() && !a_hold.any_drive());
+    CHECK(a_hold.any_flag() && !a_hold.any_drive() && !a_hold.any_starter());
 
     // Missing pointers only apply the available subsystem
     auto a_no_inv = tutorial_sync_decide(true, false, true, true, false, false, false, true, false, m_full, guest_empty);
-    CHECK(a_no_inv.any_flag() && !a_no_inv.any_drive());
+    CHECK(a_no_inv.any_flag() && !a_no_inv.any_drive() && !a_no_inv.any_starter());
     auto a_no_mm = tutorial_sync_decide(true, false, true, true, false, false, false, false, true, m_full, guest_empty);
-    CHECK(!a_no_mm.any_flag() && a_no_mm.any_drive());
+    CHECK(!a_no_mm.any_flag() && a_no_mm.any_drive() && a_no_mm.any_starter());
+
+    // BUG-1570: kept-hold restore protection (`keep_starter_in_restore`)
+    std::vector<uint32_t> empty_want;
+    CHECK(keep_starter_in_restore(true, kToolScan, empty_want));
+    CHECK(keep_starter_in_restore(true, kToolLaser1, empty_want));
+    CHECK(keep_starter_in_restore(true, kToolAbduct, empty_want));
+    CHECK(keep_starter_in_restore(true, kToolDropCargo, empty_want));
+    CHECK(keep_starter_in_restore(true, kToolHealth1, empty_want));
+    CHECK(keep_starter_in_restore(true, kToolEnergy1, empty_want));
+    CHECK(keep_starter_in_restore(true, kToolInterplanetaryDrive, empty_want));
+    CHECK(keep_starter_in_restore(true, kToolInterstellarDrive, empty_want));
+    // Non-starter tools (e.g., Antimatter Bomb, Laser tier 2) are NOT protected
+    CHECK(!keep_starter_in_restore(true, 0x144DF50Au, empty_want));
+    CHECK(!keep_starter_in_restore(true, kToolLaser2, empty_want));
+    CHECK(!keep_starter_in_restore(true, kToolHealth2, empty_want));
+    // Starter fix OFF disables protection
+    CHECK(!keep_starter_in_restore(false, kToolScan, empty_want));
+    CHECK(!keep_starter_in_restore(false, kToolLaser1, empty_want));
+    CHECK(!keep_starter_in_restore(false, kToolAbduct, empty_want));
+    // Upgraded guest keeps its upgrade without forcing tier-1 base tools to stay
+    std::vector<uint32_t> upgraded_want = {kToolLaser2, kToolHealth3, kToolEnergy2, kToolInterstellarUp4};
+    CHECK(!keep_starter_in_restore(true, kToolLaser1, upgraded_want));
+    CHECK(!keep_starter_in_restore(true, kToolHealth1, upgraded_want));
+    CHECK(!keep_starter_in_restore(true, kToolEnergy1, upgraded_want));
+    CHECK(!keep_starter_in_restore(true, kToolInterstellarDrive, upgraded_want));
+    CHECK(keep_starter_in_restore(true, kToolScan, upgraded_want));
+    CHECK(keep_starter_in_restore(true, kToolAbduct, upgraded_want));
 
     // Host send trigger rules
     CHECK(!tutorial_sync_should_send(false, true, true, true, m_full, 0, 1, 0, 2, 0));   // fix off

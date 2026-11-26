@@ -268,25 +268,87 @@ inline bool colonize_mission_done_by_partner(bool fix, bool in_space, bool conne
     return target_colonized_by_partner || (mission_id == kColonizeTutorialId && partner_finished_tutorial);
 }
 
-// BUG-1559 (GitHub #221): Space tutorial unlock and starter drive synchronization.
+// BUG-1559 (GitHub #221) & BUG-1570 (Discord Doctor): Space tutorial unlock, starter drives, and
+// Flight School starter tools synchronization.
 // When the host skips the Space tutorial (or completes Flight School / Story201 / scans the wreck),
-// Spore sets cMissionManager +0x16/+0x17/+0x18 and adds interstellardrive (0x2569FAE8) /
-// interplanetarydrive (0x4133FE05) directly without a synced cMission::SetState reward broadcast.
-// The host broadcasts its monotonic tutorial/drive mask via K_MISSION with a synthetic mission_id
-// sentinel (kTutorialSyncMagic | mask) so wire/space_core.h and the space wire lock stay unchanged
-// while older peers still receive the drive tools from K_MISSION's tool list.
+// Spore sets cMissionManager +0x16/+0x17/+0x18, adds Flight School starter tools via
+// cPlayerInventory::AddDefaultTools (0x00FF4590, prop 0xF0609EC3: scan, laserlevel1, abduct,
+// dropcargo, healthupgrade1, energyupgrade1), and adds interplanetarydrive (0x4133FE05) /
+// interstellardrive (0x2569FAE8) directly without a synced cMission::SetState reward broadcast.
+// The host broadcasts its monotonic tutorial/drive/starter mask via K_MISSION with a synthetic
+// mission_id sentinel (kTutorialSyncMagic | mask) so wire/space_core.h and the space wire lock stay
+// unchanged while older peers still receive the drive tools from K_MISSION's tool list.
 constexpr uint32_t kTutorialSyncMagic = 0x54555400u; // 'T','U','T',0
 constexpr uint32_t kTutorialSyncMask = 0xFFFFFF00u;
 constexpr uint32_t kToolInterstellarDrive = 0x2569FAE8u;
 constexpr uint32_t kToolInterplanetaryDrive = 0x4133FE05u;
+constexpr uint32_t kToolScan = 0x08EF6A62u;            // scan (prop 0xF0609EC3)
+constexpr uint32_t kToolLaser1 = 0x6DB01899u;          // laserlevel1 (prop 0xF0609EC3)
+constexpr uint32_t kToolLaser2 = 0x6DB0189Au;          // laserlevel2
+constexpr uint32_t kToolLaser3 = 0x6DB0189Bu;          // laserlevel3
+constexpr uint32_t kToolAbduct = 0xF58C1654u;          // abduct (prop 0xF0609EC3)
+constexpr uint32_t kToolDropCargo = 0xD001F5E2u;       // dropcargo (prop 0xF0609EC3)
+constexpr uint32_t kToolHealth1 = 0x88914EF2u;         // healthupgrade1 (prop 0xF0609EC3)
+constexpr uint32_t kToolHealth2 = 0x88914EF1u;         // healthupgrade2
+constexpr uint32_t kToolHealth3 = 0x88914EF0u;         // healthupgrade3
+constexpr uint32_t kToolHealth4 = 0x88914EF7u;         // healthupgrade4
+constexpr uint32_t kToolHealth5 = 0x88914EF6u;         // healthupgrade5
+constexpr uint32_t kToolEnergy1 = 0x33E11760u;         // energyupgrade1 (prop 0xF0609EC3)
+constexpr uint32_t kToolEnergy2 = 0x33E11763u;         // energyupgrade2
+constexpr uint32_t kToolEnergy3 = 0x33E11762u;         // energyupgrade3
+constexpr uint32_t kToolEnergy4 = 0x33E11765u;         // energyupgrade4
+constexpr uint32_t kToolEnergy5 = 0x33E11764u;         // energyupgrade5
+constexpr uint32_t kToolInterstellarUp1 = 0x4F320866u; // interstellardrive_upgrade1
+constexpr uint32_t kToolInterstellarUp2 = 0x4F320865u; // interstellardrive_upgrade2
+constexpr uint32_t kToolInterstellarUp3 = 0x4F320864u; // interstellardrive_upgrade3
+constexpr uint32_t kToolInterstellarUp4 = 0x4F320863u; // interstellardrive_upgrade4
+constexpr uint32_t kToolInterstellarUp5 = 0x4F320862u; // interstellardrive_upgrade5
+
+inline bool is_laser_tool(uint32_t h) { return h == kToolLaser1 || h == kToolLaser2 || h == kToolLaser3; }
+inline bool is_health_tool(uint32_t h)
+{
+    return h == kToolHealth1 || h == kToolHealth2 || h == kToolHealth3 || h == kToolHealth4 || h == kToolHealth5;
+}
+inline bool is_energy_tool(uint32_t h)
+{
+    return h == kToolEnergy1 || h == kToolEnergy2 || h == kToolEnergy3 || h == kToolEnergy4 || h == kToolEnergy5;
+}
+inline bool is_interstellar_tool(uint32_t h)
+{
+    return h == kToolInterstellarDrive || h == kToolInterstellarUp1 || h == kToolInterstellarUp2 ||
+           h == kToolInterstellarUp3 || h == kToolInterstellarUp4 || h == kToolInterstellarUp5;
+}
+
+// BUG-1570: When restoring a guest's kept cargo hold (`apply_inv` in space_trade.cpp), never strip
+// permanent Flight School starter tools or starter drives that already exist in the loaded host save
+// just because an older kept-hold record (saved pre-Flight-School) lacked them. For upgraded tool lines,
+// protect the base tier only when the kept hold has no higher-tier replacement in that same line.
+inline bool keep_starter_in_restore(bool starter_fix, uint32_t tool_hash, const std::vector<uint32_t>& want_tools)
+{
+    if (!starter_fix)
+        return false;
+    if (tool_hash == kToolScan || tool_hash == kToolAbduct || tool_hash == kToolDropCargo ||
+        tool_hash == kToolInterplanetaryDrive)
+        return true;
+    if (tool_hash == kToolLaser1)
+        return std::none_of(want_tools.begin(), want_tools.end(), is_laser_tool);
+    if (tool_hash == kToolHealth1)
+        return std::none_of(want_tools.begin(), want_tools.end(), is_health_tool);
+    if (tool_hash == kToolEnergy1)
+        return std::none_of(want_tools.begin(), want_tools.end(), is_energy_tool);
+    if (tool_hash == kToolInterstellarDrive)
+        return std::none_of(want_tools.begin(), want_tools.end(), is_interstellar_tool);
+    return false;
+}
 
 constexpr uint8_t kTutFirstComm = 1u << 0;           // cMissionManager +0x16 mbFirstCommunication
 constexpr uint8_t kTutFlightSchool = 1u << 1;        // cMissionManager +0x17 mbFlightSchoolFinished
 constexpr uint8_t kTutMission201 = 1u << 2;          // cMissionManager +0x18 mbMission201Finished
-constexpr uint8_t kTutInterstellarDrive = 1u << 3;   // tool 0x2569FAE8 (interstellardrive)
+constexpr uint8_t kTutInterstellarDrive = 1u << 3;   // tool 0x2569FAE8 (interstellardrive or upgrade1..5)
 constexpr uint8_t kTutInterplanetaryDrive = 1u << 4; // tool 0x4133FE05 (interplanetarydrive)
+constexpr uint8_t kTutStarterKit = 1u << 5;          // BUG-1570: Flight School starter tools (0xF0609EC3)
 constexpr uint8_t kTutAllBits = kTutFirstComm | kTutFlightSchool | kTutMission201 | kTutInterstellarDrive |
-                                kTutInterplanetaryDrive;
+                                kTutInterplanetaryDrive | kTutStarterKit;
 
 struct TutorialState {
     bool first_comm = false;
@@ -294,6 +356,13 @@ struct TutorialState {
     bool mission201 = false;
     bool has_interstellar = false;
     bool has_interplanetary = false;
+    bool has_starter_kit = false; // host mask bit 5
+    bool has_scan = false;
+    bool has_laser = false;       // laserlevel1..3
+    bool has_abduct = false;
+    bool has_drop_cargo = false;
+    bool has_health = false;      // healthupgrade1..5
+    bool has_energy = false;      // energyupgrade1..5
 };
 
 struct TutorialApply {
@@ -302,9 +371,19 @@ struct TutorialApply {
     bool set_mission201 = false;
     bool grant_interstellar = false;
     bool grant_interplanetary = false;
+    bool grant_scan = false;
+    bool grant_laser = false;
+    bool grant_abduct = false;
+    bool grant_drop_cargo = false;
+    bool grant_health = false;
+    bool grant_energy = false;
     bool any_flag() const { return set_first_comm || set_flight_school || set_mission201; }
     bool any_drive() const { return grant_interstellar || grant_interplanetary; }
-    bool any() const { return any_flag() || any_drive(); }
+    bool any_starter() const
+    {
+        return grant_scan || grant_laser || grant_abduct || grant_drop_cargo || grant_health || grant_energy;
+    }
+    bool any() const { return any_flag() || any_drive() || any_starter(); }
 };
 
 inline uint8_t tutorial_pack(const TutorialState& s)
@@ -320,13 +399,21 @@ inline uint8_t tutorial_pack(const TutorialState& s)
         m |= kTutInterstellarDrive;
     if (s.has_interplanetary)
         m |= kTutInterplanetaryDrive;
+    if (s.has_starter_kit)
+        m |= kTutStarterKit;
     return m;
 }
 
 inline TutorialState tutorial_unpack(uint8_t mask)
 {
-    return {(mask & kTutFirstComm) != 0, (mask & kTutFlightSchool) != 0, (mask & kTutMission201) != 0,
-            (mask & kTutInterstellarDrive) != 0, (mask & kTutInterplanetaryDrive) != 0};
+    TutorialState s;
+    s.first_comm = (mask & kTutFirstComm) != 0;
+    s.flight_school = (mask & kTutFlightSchool) != 0;
+    s.mission201 = (mask & kTutMission201) != 0;
+    s.has_interstellar = (mask & kTutInterstellarDrive) != 0;
+    s.has_interplanetary = (mask & kTutInterplanetaryDrive) != 0;
+    s.has_starter_kit = (mask & kTutStarterKit) != 0;
+    return s;
 }
 
 inline uint32_t tutorial_sync_mission_id(uint8_t mask) { return kTutorialSyncMagic | (mask & kTutAllBits); }
@@ -339,12 +426,12 @@ inline bool is_tutorial_sync_mission_id(uint32_t mission_id, uint8_t& out_mask)
     return true;
 }
 
-// Guest side: decide which monotonic tutorial unlocks and starter drives to apply.
-// Never downgrades flags (1 -> 0) and never removes drives. Respects elsewhere / space_other and
-// delays drive grants while space_trade is restoring a rejoined guest's kept cargo hold (hold_grants).
+// Guest side: decide which monotonic tutorial unlocks, starter drives, and Flight School starter tools
+// to apply. Never downgrades flags (1 -> 0) and never removes tools. Respects elsewhere / space_other
+// and delays tool grants while space_trade is restoring a rejoined guest's kept cargo hold (hold_grants).
 inline TutorialApply tutorial_sync_decide(bool fix, bool is_host, bool in_space, bool connected, bool elsewhere,
                                           bool space_other, bool hold_grants, bool has_mission_mgr, bool has_inventory,
-                                          uint8_t host_mask, const TutorialState& guest)
+                                          uint8_t host_mask, const TutorialState& guest, bool starter_fix = true)
 {
     TutorialApply out;
     if (!fix || is_host || !in_space || !connected || elsewhere || space_other)
@@ -358,6 +445,14 @@ inline TutorialApply tutorial_sync_decide(bool fix, bool is_host, bool in_space,
     if (has_inventory && !hold_grants) {
         out.grant_interstellar = host.has_interstellar && !guest.has_interstellar;
         out.grant_interplanetary = host.has_interplanetary && !guest.has_interplanetary;
+        if (starter_fix && (host.flight_school || host.has_starter_kit)) {
+            out.grant_scan = !guest.has_scan;
+            out.grant_laser = !guest.has_laser;
+            out.grant_abduct = !guest.has_abduct;
+            out.grant_drop_cargo = !guest.has_drop_cargo;
+            out.grant_health = !guest.has_health;
+            out.grant_energy = !guest.has_energy;
+        }
     }
     return out;
 }
