@@ -2083,6 +2083,7 @@ void register_commands_editor()
                            "switch votes %u (host clicks held %u, guest clicks held %u, arrivals ready %u)\n"
                            "evolve offers sent %u got %u taken %u expired %u, offer now %d\n"
                            "editor-pending flag %d, cleared %u (BUG-0920)\n"
+                           "stage-end flag %d, cleared %u (BUG-1569)\n"
                            "stage-end votes %u, guest stage-end requests refused %u (BUG-1085)\n"
                            "own editors kept for an arrival %u, arriving now %d (BUG-1240)\n"
                            "votes that stopped waiting for a guest in its editor %u (BUG-1239)\n"
@@ -2101,7 +2102,8 @@ void register_commands_editor()
                            g_vote_action_due ? 1 : 0, g_submits_own_pause, busy::names(g_req_own_busy).c_str(),
                            editor_pause_count(), g_vote_elsewhere, g_switch_votes, g_switch_held, g_switch_guest_held,
                            g_switch_arrivals, g_offers_sent, g_offers_got, g_offers_taken, g_offers_expired,
-                           g_offer_editor ? 1 : 0, evo_flag_now(), g_evo_flags_cleared, g_stage_end_votes,
+                           g_offer_editor ? 1 : 0, evo_flag_now(), g_evo_flags_cleared, stage_end_flag_now(),
+                           g_stage_end_flags_cleared, g_stage_end_votes,
                            g_stage_end_guest_refused, g_own_editor_arrivals, g_own_editor_arriving ? 1 : 0,
                            vote_in_editor_count(), vote_mates_held(), arrival_not_waited(), own_no_replace_count(),
                            cell_editor_now_count(), refused_mates_count(), switch_end_held_count(), arrival_waited(),

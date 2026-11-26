@@ -343,6 +343,71 @@ def rejoin_part(host, guest, ck):
     return host, guest
 
 
+def stage_end_flag_part(host, guest, ck):
+    """BUG-1569 (Discord Kundir, 2026-11-25): after own_progress refuses the host's Creature -> Tribe stage-end
+    request (History's check sets cCreatureModeStrategy +0xDE = 1 before SubmitEditorRequest), opening and finishing a
+    normal in-stage mating Creature editor must keep both players in Creature instead of jumping to Tribe."""
+    from coop_stage_end_vote import EDITOR_DONE, caption_ok, history, in_creature
+    for con in (host, guest):
+        con.call('coop.dna pace 0')
+    turn_on(host, guest, ck)
+    time.sleep(2)
+    host.call('coop.dna add 3000')
+    t0 = time.time()
+    while time.time() - t0 < 60 and int(progress(host)[0].get('level', -1)) < 4:
+        if 'movie=1' in host.call('coop.status')['out']:
+            caption_ok(host)
+        time.sleep(3)
+    lh, lg = int(progress(host)[0].get('level', -1)), int(progress(guest)[0].get('level', -1))
+    print(f'  brain levels: host {lh}, guest {lg}', flush=True)
+    ck(lh >= 4 and 0 <= lg < 4, f"host brain full, guest not (host {lh}, guest {lg})")
+    holds0 = int(progress(host)[0].get('holds', 0))
+    for _ in range(4):
+        if 'movie=1' in host.call('coop.status')['out']:
+            caption_ok(host)
+            time.sleep(3)
+        history(host)
+        time.sleep(4)
+        if int(progress(host)[0].get('holds', 0)) > holds0:
+            break
+    ck(int(progress(host)[0].get('holds', 0)) > holds0, 'own_progress refused the host stage-end request')
+    # Close History if still open, dismiss any caption, then open a normal in-stage mating Creature editor.
+    host.call('key Escape')
+    time.sleep(1.5)
+    v_before = host.call('coop.vote')['out'] or ''
+    m_flag = re.search(r'stage-end flag (-?\d+), cleared (\d+)', v_before)
+    print(f'  after refusal: flag={m_flag.group(1) if m_flag else "?"} cleared={m_flag.group(2) if m_flag else "?"}',
+          flush=True)
+    host.call('coop.vote evolve')
+    ck(wait(lambda: 'Editor' in mode(host), 45), f'normal in-stage Creature editor opened ({mode(host)})')
+    time.sleep(4)
+    for _ in range(3):
+        if 'Editor' not in mode(host):
+            break
+        host.call(f'click {EDITOR_DONE[0]} {EDITOR_DONE[1]}')
+        time.sleep(4)
+    ck(wait(lambda: in_creature(host), 60), f'host returned from normal editor to Creature ({mode(host)})')
+    # Wait past the post-editor hatching cinematic (~5-8 s) where 0x00D4525C checks +0xDE and switches to Tribe.
+    t1, left_for = time.time(), None
+    while time.time() - t1 < 25:
+        hm = mode(host)
+        if not in_creature(host):
+            left_for = hm
+            break
+        if 'movie=1' in host.call('coop.status')['out']:
+            caption_ok(host)
+        time.sleep(1.5)
+    v_after = host.call('coop.vote')['out'] or ''
+    m_after = re.search(r'stage-end flag (-?\d+), cleared (\d+)', v_after)
+    flag_after = int(m_after.group(1)) if m_after else -1
+    print(f'  25 s after normal editor: host={mode(host)} (left={left_for}) guest={mode(guest)} flag={flag_after}',
+          flush=True)
+    ck(left_for is None and in_creature(host),
+       f'host stayed in Creature after normal mating editor (no premature Tribe transition: {left_for or mode(host)})')
+    ck(in_creature(guest), f'guest stayed in Creature ({mode(guest)})')
+    ck(flag_after == 0, f'Creature stage-end flag (+0xDE) is 0 (got {flag_after})')
+
+
 def main():
     fixture = 'cell' if PART in ('cell', 'afk', 'levels') else 'creature'
     host, guest = start(fixture)
@@ -350,7 +415,7 @@ def main():
     time.sleep(4)
     try:
         r = {'cell': cell_part, 'afk': afk_part, 'levels': levels_part, 'creature': creature_part, 'deeds': deeds_part,
-             'rejoin': rejoin_part, 'store': rejoin_part}[PART](host, guest, ck)
+             'rejoin': rejoin_part, 'store': rejoin_part, 'stage_end_flag': stage_end_flag_part}[PART](host, guest, ck)
         if isinstance(r, tuple):
             host, guest = r
     finally:

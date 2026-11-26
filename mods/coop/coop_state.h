@@ -460,6 +460,7 @@ extern unsigned g_outfit_part_waivers; // BUG-1308
 extern unsigned g_quits_delayed;
 extern unsigned g_req_own_busy;
 extern unsigned g_select_guards;
+extern unsigned g_stage_end_flags_cleared; // BUG-1569
 extern unsigned g_stage_end_guest_refused;
 extern unsigned g_stage_end_votes;
 extern unsigned g_stage_msg_guards;
@@ -493,6 +494,7 @@ const char* save_blocker();
 int SK_THISCALL h_SimMsg(void* self, uint32_t id, void* data);
 int editor_pause_count();
 int evo_flag_now();
+int stage_end_flag_now(); // BUG-1569
 uint32_t* SK_THISCALL h_BlockingErrors(void* ed, uint32_t* out, void* res, void* model, int flag);
 unsigned game_busy();
 bool editor_coming(double now); // C3 (BUG-1142)

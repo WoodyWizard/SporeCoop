@@ -113,6 +113,63 @@ COOP_FIX("core.editor_now", "BUG-0516", g_editor_now_fix, "core: the host's Crea
 static bool g_editor_tag_fix = true;
 COOP_FIX("core.editor_now_tag", "BUG-1085", g_editor_tag_fix, "core: Creature: the mating evolution opens at once with offers, the stage-end editor (Creature -> Tribe) waits for the vote and a guest cannot start it alone");
 unsigned g_stage_end_votes, g_stage_end_guest_refused; // tests (coop.vote)
+// BUG-1569 (Discord Kundir, 2026-11-25): the stage-end button sets a native stage-end flag before SubmitEditorRequest:
+//   * Creature: cCreatureModeStrategy +0xDE = 1 (0x00D2C709, before tag 0x64AA168); checked on exit from ANY Creature
+//     editor at 0x00D4525C -> switches straight to Tribe even after a normal mating editor (tag 0x12191CA).
+//   * Tribe:    cTribeUI +0x28 = 1 (0x00CD2202, before City Hall editor 0x99E92F05).
+//   * Civ:      GameCiv +0x28 = 1 (0x00CF5A56, before Spaceship editor 0x96B24187).
+// When h_Submit refuses a stage-end request (own progress hold, guest refusal, creature.mode host), drop_vote cancels a
+// stage-end vote, or an ordinary in-stage editor is submitted, clear the stuck stage-end flag so a later normal editor
+// cannot advance the stage unexpectedly. Off (`coop.fix core.stage_end_flag_clear off`): flag stays set (0.8.1).
+static bool g_stage_end_flag_fix = true;
+COOP_FIX("core.stage_end_flag_clear", "BUG-1569", g_stage_end_flag_fix,
+         "core: clear stuck Creature/Tribe/Civ stage-end transition flags (+0xDE / +0x28) when a stage-end request is refused, dropped, or followed by an in-stage editor");
+unsigned g_stage_end_flags_cleared = 0;
+static bool g_vote_stage_end = false;
+
+static uint8_t* stage_end_flag_ptr(uint32_t mode)
+{
+    const char* sym = nullptr;
+    uintptr_t off = 0;
+    if (mode == modes::kCreature) {
+        sym = "App::cCreatureModeStrategy::Get";
+        off = 0xDE;
+    } else if (mode == modes::kTribe) {
+        sym = "SporeCoop::cTribeUI_Get";
+        off = 0x28;
+    } else if (mode == modes::kCiv) {
+        sym = "SporeCoop::GameCiv_Get";
+        off = 0x28;
+    } else {
+        return nullptr;
+    }
+    uintptr_t get = H->sym(sym);
+    if (!get)
+        return nullptr;
+    void* obj = skg::cdecl_call<void*>(get);
+    if (!obj || !skg::readable((uint8_t*)obj + off, 1))
+        return nullptr;
+    return (uint8_t*)obj + off;
+}
+
+int stage_end_flag_now()
+{
+    uint8_t* p = stage_end_flag_ptr(game::mode_id());
+    return p ? (int)*p : -1;
+}
+
+static void clear_stage_end_flag(uint32_t mode, const char* why)
+{
+    if (!g_stage_end_flag_fix)
+        return;
+    uint8_t* p = stage_end_flag_ptr(mode);
+    if (!p || !*p)
+        return;
+    *p = 0;
+    g_stage_end_flags_cleared++;
+    LOG("evolution: cleared stuck %s stage-end flag (%s, BUG-1569, %u)", modes::mode_name(mode), why,
+        g_stage_end_flags_cleared);
+}
 // BUG-1245 (players' video: the host's mating call, then a black screen for 25+ s on which the mating scene and the egg
 // laying came again and again, 6 eggs): the Cell game asks for its editor after the mating scene; while the vote holds
 // that request the avatar and the mate stay within the meeting distance, so the cell step's meeting 0xE78D10 played the
@@ -232,6 +289,12 @@ void start_vote(void* req, const std::string& text)
         skg::vcall<int>(req, 1); // AddRef: kept until the vote ends
     g_vote = Vote{true, req, H->time_seconds(), text, 60, req ? skg::field<uint32_t>(req, 0xC) : 0u,
                   game::mode_id(), modes::current_world()};
+    {
+        uint32_t vtag = req && skg::readable(req, 0x94) ? skg::field<uint32_t>(req, 0x90) : 0u;
+        g_vote_stage_end = (g_vote.mode == modes::kCreature && vtag == kTagStageEnd) ||
+                           (g_vote.mode == modes::kTribe && tribe_civ_editor(g_vote.editor)) ||
+                           (g_vote.mode == modes::kCiv && g_vote.editor == designs::kShipEditor);
+    }
     // BUG-0315: the first Creature editor right after a passed switch vote: everybody voted for it already
     g_vote.arrival = g_switch_vote_fix && settings::on(settings::kSwitchVote) && req && g_vote.mode == modes::kCreature &&
                      H->time_seconds() - g_switch_passed_at < 300.0;
@@ -866,8 +929,13 @@ bool SK_CDECL h_Submit(void* req)
         return false;
     }
     uint32_t mode = game::mode_id();
+    uint32_t req_editor = req && skg::readable(req, 0x10) ? skg::field<uint32_t>(req, 0xC) : 0u;
+    uint32_t req_tag = req && skg::readable(req, 0x94) ? skg::field<uint32_t>(req, 0x90) : 0u;
+    bool req_stage_end = (mode == modes::kCreature && req_tag == kTagStageEnd) ||
+                         (mode == modes::kTribe && tribe_civ_editor(req_editor)) ||
+                         (mode == modes::kCiv && req_editor == designs::kShipEditor);
     if (req && skg::readable(req, 0x10))
-        g_last_editor_req = skg::field<uint32_t>(req, 0xC);
+        g_last_editor_req = req_editor;
     // The cell stage asks for its editor again while the mate is still next to the avatar
     // (0xE78D10 -> mating -> event 0x1E -> 0xE59800 -> Submit): one more request came 13 ms after
     // the vote had ended, before the held one reached the game, and started a second vote that
@@ -916,6 +984,8 @@ bool SK_CDECL h_Submit(void* req)
             feed("the host evolves the creature for everybody (session setting: one creature for everyone)");
             g_evo_flag_refused = true; // BUG-0920: the game sets its "editor pending" flag after this call
             g_refused_mate_due = g_refused_mate_fix && mode == modes::kCell; // BUG-1265
+            if (req_stage_end)
+                clear_stage_end_flag(mode, "creature.mode host refused guest stage end");
             return false;
         } else if (cell_now) {
             g_cell_now++;
@@ -931,6 +1001,7 @@ bool SK_CDECL h_Submit(void* req)
                 if (stage_end && own_progress::hold_stage_end(false, false)) { // BUG-1469: every player's own bar first
                     LOG("evolution: the end of the Creature stage waits until every player's own bar is full (BUG-1469)");
                     g_evo_flag_refused = true; // BUG-0920: the game sets its "editor pending" flag after this call
+                    clear_stage_end_flag(mode, "own progress held Creature stage end");
                     return false;
                 }
                 if (stage_end) { // BUG-1085: a stage start keeps the vote
@@ -952,6 +1023,7 @@ bool SK_CDECL h_Submit(void* req)
             // BUG-1085 (docs/09-coop-design.md 9.3): a guest cannot change the stage alone; its press is its I'm ready
             g_stage_end_guest_refused++;
             g_evo_flag_refused = true; // BUG-0920: the game sets its "editor pending" flag after this call
+            clear_stage_end_flag(mode, "guest stage-end request refused");
             if (g_vote.active) {
                 LOG("evolution: this guest's stage-end request is its I'm ready (BUG-1085)");
                 set_ready(true);
@@ -974,6 +1046,9 @@ bool SK_CDECL h_Submit(void* req)
             // shared tribe's outfit and civilization's designs are the host's, designs.h): refused, told why
             LOG("evolution: this guest's own editor %08X is refused: %s (BUG-1158)", editor, why.c_str());
             feed(why);
+            g_evo_flag_refused = true; // BUG-0920
+            if (req_stage_end)
+                clear_stage_end_flag(mode, "guest stage-end design editor refused");
             return false;
         } else if (g_own_mating_fix && mode == modes::kCreature && in_stage && host_world_now() == host_world::HostWorld::Same &&
                    guest_plays_own_creation()) {
@@ -1006,6 +1081,8 @@ bool SK_CDECL h_Submit(void* req)
         hold_submit(req); // the game's own request (alone in the session): after the save
         return false;
     }
+    if (req && !req_stage_end && (mode == modes::kCreature || mode == modes::kTribe || mode == modes::kCiv))
+        clear_stage_end_flag(mode, "in-stage editor submitted");
     if (req)
         host_busy_long_wait("an editor request goes to the game"); // BUG-1419 (the host's own, not held)
     bool r = o_Submit(req);
@@ -1261,6 +1338,7 @@ void finish_vote(const char* why)
         return;
     void* req = g_vote.request;
     g_vote.active = false;
+    g_vote_stage_end = false;
     g_held_mate = 0; // BUG-1245: the editor follows (its return rebuilds the pool)
     {
         int ready = 0, n = 0;
@@ -1372,8 +1450,13 @@ void drop_vote(const char* why)
         LOG("cell: the mate %08X is the mate again (the vote was dropped)", g_held_mate);
     g_held_mate = 0;
     void* req = g_vote.request;
+    uint32_t dropped_mode = g_vote.mode;
+    bool dropped_stage_end = g_vote_stage_end;
     g_vote = Vote{};
+    g_vote_stage_end = false;
     g_vote_action = nullptr;
+    if (dropped_stage_end)
+        clear_stage_end_flag(dropped_mode, "stage-end vote dropped");
     // on purpose with editor = 0 (g_vote was reset): the guests open no own editor for a cancelled
     // vote (BUG-0234); finish_vote broadcasts with the id. Do not keep the id here.
     broadcast_vote();
