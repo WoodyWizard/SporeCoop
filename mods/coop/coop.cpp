@@ -86,6 +86,8 @@
 #include "history.h"
 #include "rivals.h"
 #include "creature_rivals.h"
+#include "tribe_rivals.h"
+#include "civ_rivals.h"
 #include "own_captain.h"
 #include "designs.h"
 #include "notify.h"
@@ -2219,9 +2221,13 @@ void init_ui()
         to = g_sess.name_of(t);
         int n = 0;
         if (g_mode == modes::kTribe) {
+            if (tribe_rivals::active()) // BUG-1573: no unit transfer between rival tribes
+                return 0;
             n = tribe::own_selected();
             what = "member";
         } else if (g_mode == modes::kCiv) {
+            if (civ_rivals::active()) // BUG-1573: no city/vehicle transfer between rival nations
+                return 0;
             bool city = false;
             n = civ::own_selected(&city);
             what = city ? "city" : "vehicle";

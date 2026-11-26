@@ -536,6 +536,28 @@ static void test_wipe_recovery_and_immunity()
     CHECK(read_food_sync(r, m) && m.op == CustomOp::Immunity && m.player_id == 1 && m.value == 300 && m.tools_mask == 1);
 }
 
+static void test_tribe_polish_food_and_raid()
+{
+    printf("tribe_rivals: starting food clamp & food-mat raid action 8 gating (BUG-1573)\n");
+    // Starting food clamp (fix ON matches host food with >=15 floor, fallback 25 if host<=0)
+    CHECK(starting_rival_food(154, 25, true) == 25);
+    CHECK(starting_rival_food(130, 35, true) == 35);
+    CHECK(starting_rival_food(10, 20, true) == 20);
+    CHECK(starting_rival_food(150, 8, true) == 15);
+    CHECK(starting_rival_food(150, 0, true) == 25);
+    // Fix OFF keeps vanilla high NPC food (154) and only raises <25 to 25
+    CHECK(starting_rival_food(154, 25, false) == 154);
+    CHECK(starting_rival_food(10, 25, false) == 25);
+
+    // CitizenAction 8 (RaidFood / food-mat steal) is hostile: blocked on Neutral/Ally/Immune, allowed at War
+    CHECK(is_hostile_citizen_action(8));
+    CHECK(decide_host_order(true, 8, 1, 0, false, false) == OrderDecision::BlockHostile);
+    CHECK(decide_host_order(true, 8, 0, 1, false, false) == OrderDecision::BlockHostile);
+    CHECK(decide_host_order(true, 8, 1, 0, true, true) == OrderDecision::BlockHostile);
+    CHECK(decide_host_order(true, 8, 1, 0, true, false) == OrderDecision::AllowNative);
+    CHECK(decide_host_order(true, 8, 1, kNoOwner, false, false) == OrderDecision::AllowNative);
+}
+
 int main()
 {
     test_pick_rival_tribe();
@@ -552,6 +574,7 @@ int main()
     test_consequence_abilities_and_cooldowns();
     test_pack_pet_handoff();
     test_wipe_recovery_and_immunity();
+    test_tribe_polish_food_and_raid();
     if (g_fail) {
         printf("tribe_rivals_tests: %d FAILED\n", g_fail);
         return 1;

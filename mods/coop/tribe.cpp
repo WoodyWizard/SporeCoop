@@ -2656,8 +2656,8 @@ static void SK_THISCALL h_BabyBorn(void* stage, float x, float y, float z)
             g_buys_other++;
             return;
         }
-        if (tribe_rivals::wipe_recovery_active() && skg::readable(stage, 0x3A4))
-            F<uint8_t>(stage, 0x3A3) = 1; // BUG-1571: keep Add Baby enabled when guest skips local o_BabyBorn
+        if (skg::readable(stage, 0x3A4))
+            F<uint8_t>(stage, 0x3A3) = 1; // BUG-1571 / BUG-1573: keep Add Baby enabled when guest skips local o_BabyBorn
         net::Writer w;
         w.u8(CMD_BABY); w.u8(0); w.u32(0);
         write_target(w, Target{});

@@ -406,6 +406,7 @@ std::string species_status();
 // the tribe. birth_end notes the new members as changed by the mod (they go back to the slot like the others)
 void birth_begin(void* t, uint8_t owner);
 void birth_end(const std::vector<void*>& made);
+void rebuild_member_hand(void* c); // BUG-1573: re-attach held staff/tool to new species' hand bone
 std::string species_list();
 extern uint32_t g_item_holds_ended;
 uint32_t hold_modifier(void* c, bool end);

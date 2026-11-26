@@ -414,10 +414,20 @@ enum class OrderDecision : uint8_t {
     BlockHostile = 2,    // Tribe Rivals: hostile order against a rival player while not at War or victim is immune
 };
 
+// BUG-1573: Clamp a freshly taken-over NPC tribe's starting food to match the host's food
+// (vanilla NPC villages spawn with 100-150 food, giving guests an unfair 130+ food head start).
+inline int32_t starting_rival_food(int32_t npc_food, int32_t host_food, bool fix_on)
+{
+    if (!fix_on)
+        return npc_food < 25 ? 25 : npc_food;
+    int32_t want = host_food > 0 ? std::max<int32_t>(15, host_food) : 25;
+    return want;
+}
+
 inline bool is_hostile_citizen_action(int action)
 {
-    // CitizenAction 7 = attack citizen/creature, 15 = raid hut/tool/village
-    return action == 7 || action == 15;
+    // CitizenAction 7 = attack citizen/creature, 8 = steal/raid food (0x21), 15 = raid hut/tool/village
+    return action == 7 || action == 8 || action == 15;
 }
 
 inline OrderDecision decide_host_order(bool rivals_active, int action, uint8_t sender_pid, uint8_t target_owner_pid,

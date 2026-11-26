@@ -154,6 +154,13 @@ static void after_rebuild(void* c)
             thiscall<void>(a_SpAnimSet, c, a);
 }
 
+// BUG-1573: exported so tribe_rivals::swap_tribe_species re-attaches chieftain staff / tools to the new species' hand bone
+void rebuild_member_hand(void* c)
+{
+    if (c && game::listed(c, 0x18EB4B7u))
+        after_rebuild(c);
+}
+
 static void set_species(void* c, void* prof, bool revert)
 {
     float hp0 = game::health(c), max0 = game::max_health(c);

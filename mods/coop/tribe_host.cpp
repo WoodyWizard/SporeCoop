@@ -614,12 +614,19 @@ static bool g_guest_mission_fix = true;
 COOP_FIX("tribe.guest_mission", "BUG-1068", g_guest_mission_fix,
          "tribe: a village the guests raid or give gifts to counts for the stage's goal, as one the host acts on");
 uint32_t g_guest_missions;
-// the village (cTribe) of an order's target: the tribe itself, a hut (+0x230), a tool (+0x1F8), a member (+0x1014)
+// the village (cTribe) of an order's target: the tribe itself, a hut (+0x230), a tool (+0x1F8), a member (+0x1014),
+// or a food mat (0x629BAFE, matched via cTribe +0x260 mpFoodMat, BUG-1573)
 static void* tribe_of_target_obj(void* o)
 {
     if (!o || !game::object_alive(o))
         return nullptr;
     uint32_t noun = game::noun_id(o);
+    if (noun == 0x629BAFEu) { // kFoodMatNoun: find owning tribe via mpFoodMat (+0x260)
+        for (void* t : all_tribes())
+            if (t && skg::readable((uint8_t*)t + 0x260, 4) && F<void*>(t, 0x260) == o)
+                return t;
+        return nullptr;
+    }
     void* t = noun == kTribeNoun        ? o
               : noun == 0x1E4DAAEu      ? F<void*>(o, 0x230)          // cTribeHut (docs/re/tribe.md "Raids on buildings")
               : noun == 0x18C8F0Cu      ? F<void*>(o, 0x1F8)          // cTribeTool
