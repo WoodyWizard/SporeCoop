@@ -8,7 +8,7 @@ reported: 2026-11-26
 source: Discord (Doctor)
 role: guest
 versions: 0.8.0.2, 0.8.1, 0.8.1.1
-fixed_in: unreleased
+fixed_in: 0.8.1.2
 branch: main
 commits: 21177330
 tests: space_starter_tools, space_starter_tools_off, space_tests

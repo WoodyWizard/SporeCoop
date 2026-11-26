@@ -8,7 +8,7 @@ reported: 2026-11-26
 source: User report
 role: both
 versions: 0.8.1.1
-fixed_in: unreleased
+fixed_in: 0.8.1.2
 branch: main
 commits: f3479560
 tests: rivals_tribe_wipe

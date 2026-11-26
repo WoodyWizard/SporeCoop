@@ -8,7 +8,7 @@ reported: 2026-11-26
 source: YouTube 0.8.0 stream audit
 role: both
 versions: 0.8.0
-fixed_in: unreleased
+fixed_in: 0.8.1.2
 branch: main
 commits: fa4b4d07, 1e808fcb
 tests: ui_privacy_i18n

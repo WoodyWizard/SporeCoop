@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.8.1.2] - 2026-11-26
+
+Community-reported Space & Tribe Rivals fixes, streamer IP privacy, Cell knockout visibility, Tribe Rivals polish, and 5-language localization (English, Russian, Hungarian, Spanish, and Simplified Chinese).
+
+### Added
+- **5-Language Localization & Live Language Switcher** (`mods/coop/i18n.h`): added full interface localization for **English**, **Russian**, **Hungarian**, **Spanish**, and **Simplified Chinese** covering all 38 session settings (labels, groups, values, and hover tooltips), lobby/connect/Rivals/Space screens, and gameplay notices, with Windows locale auto-detection, a live **Language** selector in Settings -> Display (this PC) (`coop.ini [ui] lang`), a lazy CJK fallback font (`Microsoft YaHei` / `SimSun`) in SporeKit's D3D9 overlay, human-readable per-stage Rivals Race Progress, and dynamic non-English button sizing on `Report a problem` and Rivals action buttons. (BUG-1575)
+- **IP Privacy / Streamer Mode & Automatic Vote Masking** (`ui.hide_ip`): added a persistent **Hide IP (streamer mode)** toggle (`coop.ini [ui] hide_ip`) that masks IP addresses in the lobby, host hint, LAN list, and recent servers (`***.***.***.***:<port>`), and automatically masks host/peer IP addresses on both host and guest screens whenever F9 pops open for an evolution/action vote or editor offer. (BUG-1572)
+
+### Fixed
+- **Space Guest Missing Flight School Starter Tools** (`space.starter_tools_sync`): monotonically synced the 6 Flight School starter tools (`scan`, `laserlevel1`, `abduct`, `dropcargo`, `healthupgrade1`, `energyupgrade1`) alongside tutorial flags from host to guests and prevented kept-hold restore on rejoin from stripping starter tools. (BUG-1570)
+- **Tribe Rivals Full-Tribe Wipe Game Over, Recovery & 5-Minute PvP Shield** (`rivals.tribe_wipe_recovery`): blocked native `TRG_PRE_PopDestroyed` / `TRG_PRE_HutDestroyed` Game Over in Tribe Rivals, automatically respawned wiped player tribes (clearing stale `cTribe +0x2C8` chieftain knockout timers and placing 2 adults on the village surface with >= 15 food), kept Add Baby usable after wipes (and enforced a 10-food war-raid floor), and granted a 5-minute PvP immunity shield synced to guests with early anti-exploit drop if the shielded player attacks a rival. (BUG-1571)
+- **Tribe Rivals & Together Polish** (`rivals.tribe_polish`): blocked Neutral/Allied/shielded rival food-mat stealing (`kFoodMatNoun 0x0629BAFE` / `CitizenAction 8` `RaidFood`) while keeping War raids working, clamped a guest's newly taken-over NPC tribe starting food to match the host instead of inheriting 100-154 NPC food, rebuilt held chieftain staff/tool bone attachments after `swap_tribe_species()`, hid F9 `Give` in Tribe/Civ Rivals, unlocked guest Add Baby (`TribeUI +0x3A3`) in Tribe Together as well, and added a throttled notice explaining the rival main hut's 10% inviolability floor. (BUG-1573)
+- **Cell Knockout Visibility** (`cell.ko_visibility`): raised knocked-out cell opacity from `0.35` to `0.65` so knocked-out cells remain clearly visible against the tidepool background, and localized Cell KO/revive/respawn notices. (BUG-1574)
+
 ## [0.8.1.1] - 2026-11-25
 
 Hotfix for premature stage transitions after a refused or cancelled stage-end attempt across Creature, Tribe, and Civilization stages.

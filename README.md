@@ -66,7 +66,7 @@
 
 ## What's new in 0.8
 
-**SporeCoop 0.8 (`v0.8.1.1`)** is the biggest leap since launch: full **Rivals mode** across all five stages,
+**SporeCoop 0.8 (`v0.8.1.2`)** is the biggest leap since launch: full **Rivals mode** across all five stages,
 **co-op Galactic Adventures** with a **Shared Adventure Editor**, independent per-player evolution paths, and major
 lobby, camera, and editor upgrades.
 
@@ -382,7 +382,7 @@ per-connection SHA-256 challenge, and downloads updates exclusively from this re
 
 ## Status and roadmap
 
-**Current release: `v0.8.1.1`** ([latest release](https://github.com/WoodyWizard/SporeCoop/releases/latest)) - full
+**Current release: `v0.8.1.2`** ([latest release](https://github.com/WoodyWizard/SporeCoop/releases/latest)) - full
 2-4 player co-op **and** Rivals mode across Cell, Creature, Tribe, Civilization, Space, and Galactic Adventures (plus
 the Shared Adventure Editor).
 
