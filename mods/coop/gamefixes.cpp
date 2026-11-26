@@ -2399,6 +2399,100 @@ static int c_empirecontact(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// BUG-1576: cCreatureBase::GetBoneTransform (0x00C11CB0, thiscall(creature, outPos, outQuat, boneIdx, worldSpace)
+// ret 0x10) and cCreatureBase::AttachToBone (0x00C120B0, thiscall(creature, boneIdx, obj, a3, a4) ret 0x10) only check
+// boneIdx == -1 before dereferencing [creature+0xB54] (mpAnimatedCreature), [ac+0x17C] (mpModel), and [mdl+0x2E4] +
+// boneIdx*0x2BC. Caller cCreatureBase::cCombatant::GetHitPosition (0x00C199D0) skips its own +0xB54 null check when
+// boneIdx != -1 (e.g. bone 25 on a cleaned-up/unbaked creature in Civ stage), crashing at 0x00C11CEF reading 0x17C
+// (3 player crash reports in Civ Together & Civ Rivals). Return false cleanly when any pointer or bone slot is null.
+using BoneXfFn = bool(__thiscall*)(void*, void*, void*, int, uint8_t);
+using BoneAttachFn = bool(__thiscall*)(void*, int, void*, void*, void*);
+static BoneXfFn g_bone_xf_orig;
+static BoneAttachFn g_bone_attach_orig;
+static uintptr_t g_bone_xf_addr;
+static std::atomic<unsigned> g_bone_xf_guarded{0};
+static std::atomic<unsigned> g_bone_attach_guarded{0};
+static bool g_creature_bone_fix = true;
+COOP_FIX_UNSAFE("game.creature_bone_null", "BUG-1576", g_creature_bone_fix,
+                "gamefixes: cCreatureBase::GetBoneTransform (0xC11CB0) and AttachToBone (0xC120B0) return false when mpAnimatedCreature (+0xB54), mpModel (+0x17C), or bone entry is null");
+
+static bool creature_bone_slot_ok(const void* creature, int bone_idx, bool check_entry_ptr)
+{
+    if (bone_idx == -1)
+        return true; // original returns false cleanly without reading +0xB54
+    if (bone_idx < 0 || bone_idx > 4096 || !readable(creature, 0xB58))
+        return false;
+    const void* ac = *(const void* const*)((const uint8_t*)creature + 0xB54);
+    if (!ac || !readable(ac, 0x180))
+        return false;
+    const void* mdl = *(const void* const*)((const uint8_t*)ac + 0x17C);
+    if (!mdl || !readable(mdl, 0x2EC))
+        return false;
+    const uint8_t* bones = *(const uint8_t* const*)((const uint8_t*)mdl + 0x2E4);
+    if (!bones)
+        return false;
+    const uint8_t* slot = bones + (size_t)bone_idx * 0x2BCu;
+    if (!readable(slot, 0x20))
+        return false;
+    if (check_entry_ptr) {
+        const void* bone_obj = *(const void* const*)slot;
+        if (!bone_obj || !readable(bone_obj, 0x144))
+            return false;
+    }
+    return true;
+}
+
+static bool __fastcall bone_xf_guard(void* creature, void*, void* out_pos, void* out_quat, int bone_idx,
+                                     uint8_t world_space)
+{
+    if (g_creature_bone_fix && !creature_bone_slot_ok(creature, bone_idx, false)) {
+        unsigned n = ++g_bone_xf_guarded;
+        if (n <= 8)
+            H->log(M, SK_WARN,
+                   "game fixes: guarded null animated creature/model in GetBoneTransform (creature=%p bone=%d world=%u mode=%08X, BUG-1576, #%u)",
+                   creature, bone_idx, (unsigned)world_space, game::mode_id(), n);
+        return false;
+    }
+    return g_bone_xf_orig(creature, out_pos, out_quat, bone_idx, world_space);
+}
+
+static bool __fastcall bone_attach_guard(void* creature, void*, int bone_idx, void* obj, void* a3, void* a4)
+{
+    if (g_creature_bone_fix && (obj || a3) && !creature_bone_slot_ok(creature, bone_idx, true)) {
+        unsigned n = ++g_bone_attach_guarded;
+        if (n <= 8)
+            H->log(M, SK_WARN,
+                   "game fixes: guarded null animated creature/model in AttachToBone (creature=%p bone=%d mode=%08X, BUG-1576, #%u)",
+                   creature, bone_idx, game::mode_id(), n);
+        return false;
+    }
+    return g_bone_attach_orig(creature, bone_idx, obj, a3, a4);
+}
+
+// tests (BUG-1576): `coop.boneguard` status; `coop.boneguard probe` invokes the hooked Creature_GetBoneTransform on a
+// synthetic zeroed creature (+0xB54 == nullptr) with bone_idx = 25, world_space = 1 (reproduces 0x00C11CEF read of 0x17C).
+static int c_boneguard(void*, int argc, const char* const* argv, SkOut* out)
+{
+    bool hooked = g_bone_xf_orig != nullptr && g_bone_attach_orig != nullptr;
+    if (argc > 1 && !strcmp(argv[1], "probe")) {
+        if (!g_bone_xf_addr) {
+            H->out_printf(out, "boneguard: Creature_GetBoneTransform missing\n");
+            return 1;
+        }
+        std::vector<uint8_t> fake_creature(0xC00, 0); // +0xB54 == nullptr
+        float pos[3] = {1.0f, 2.0f, 3.0f};
+        float quat[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        bool ok = skg::thiscall<bool>(g_bone_xf_addr, fake_creature.data(), pos, quat, 25, (uint8_t)1);
+        H->out_printf(out, "boneguard probe: ret=%d fix=%d xf_guarded=%u attach_guarded=%u\n", (int)ok,
+                      (int)g_creature_bone_fix, g_bone_xf_guarded.load(), g_bone_attach_guarded.load());
+        return 0;
+    }
+    H->out_printf(out, "boneguard: hooked=%d fix=%d xf_hook=%d attach_hook=%d xf_guarded=%u attach_guarded=%u\n",
+                  (int)hooked, (int)g_creature_bone_fix, (int)(g_bone_xf_orig != nullptr),
+                  (int)(g_bone_attach_orig != nullptr), g_bone_xf_guarded.load(), g_bone_attach_guarded.load());
+    return 0;
+}
+
 void frame()
 {
     fxcut_frame();
@@ -2669,6 +2763,20 @@ void init(const SkHost* host, SkMod* mod)
     H->command_add(M, "coop.empirecontact",
                    "coop.empirecontact [orphan <planet_hex> | probe <planet_hex>] - null empire IsContactedByPlayer / Galaxy / UpdateAndGetColor guards (BUG-1544, BUG-1567)",
                    c_empirecontact, nullptr, SK_CMD_MAIN_THREAD);
+    uintptr_t bxf = H->sym("SporeCoop::Creature_GetBoneTransform");
+    uintptr_t batt = H->sym("SporeCoop::Creature_AttachToBone");
+    g_bone_xf_addr = bxf;
+    bool bone_xf = bxf && H->hook_create(M, (void*)bxf, (void*)&bone_xf_guard, (void**)&g_bone_xf_orig) == 0;
+    if (!bone_xf)
+        g_bone_xf_orig = nullptr;
+    bool bone_att = batt && H->hook_create(M, (void*)batt, (void*)&bone_attach_guard, (void**)&g_bone_attach_orig) == 0;
+    if (!bone_att)
+        g_bone_attach_orig = nullptr;
+    H->log(M, SK_INFO, "game fixes: creature bone null guard %s (GetBoneTransform=%d AttachToBone=%d, BUG-1576)",
+           (bone_xf && bone_att) ? "on" : "off", (int)bone_xf, (int)bone_att);
+    H->command_add(M, "coop.boneguard",
+                   "coop.boneguard [probe] - cCreatureBase::GetBoneTransform / AttachToBone null +0xB54/+0x17C guard (BUG-1576)",
+                   c_boneguard, nullptr, SK_CMD_MAIN_THREAD);
 }
 
 void shutdown()
@@ -2710,7 +2818,9 @@ std::string status()
            std::to_string(g_menu_dropped.load()) + "), Cell fluid calls guarded " +
            std::to_string(g_cell_fluid_guarded.load()) + ", null empire contacts guarded " +
            std::to_string(g_empire_contact_guarded.load()) + " (SpaceGameUI badges " +
-           std::to_string(g_planet_ui_guarded.load()) + "), " + reset_status() + "\n";
+           std::to_string(g_planet_ui_guarded.load()) + "), creature bone nulls guarded " +
+           std::to_string(g_bone_xf_guarded.load()) + "/" + std::to_string(g_bone_attach_guarded.load()) + ", " +
+           reset_status() + "\n";
 }
 
 } // namespace gamefixes

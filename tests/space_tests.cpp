@@ -821,6 +821,50 @@ static void test_tutorial_drive_sync()
     CHECK(!tutorial_sync_should_send(true, true, true, true, m_full, m_full, 1, 1, 2, 6));          // peer left
 }
 
+static void test_kept_reload_in_session()
+{
+    printf("space kept reload in-session (BUG-1578)\n");
+    using namespace spacekept;
+    // Modes that tear down Space vs modes that keep the Space world in memory
+    CHECK(!mode_tears_down_space(0));            // unknown
+    CHECK(!mode_tears_down_space(0x01654C05u));  // kSpace
+    CHECK(!mode_tears_down_space(0x01654C06u));  // kEdit
+    CHECK(!mode_tears_down_space(0x00DBDBA1u));  // kEditor
+    CHECK(!mode_tears_down_space(0x01654C10u));  // kScenario (Galactic Adventure)
+    CHECK(mode_tears_down_space(0x02CCD1D2u));   // kMenu (Galaxy menu)
+    CHECK(mode_tears_down_space(0x01654C08u));   // kLoad (Loading screen)
+    CHECK(mode_tears_down_space(0x01654C04u));   // kCiv (another stage)
+
+    // Simulate guest keeping 2 colonies, then mid-session world reload (kMenu -> kLoad -> kSpace, same id=1)
+    KeptStore<std::vector<uint32_t>> s;
+    s.world(1);
+    bool first = false;
+    auto& e = s.bind("tok-guest", 1, "Akasaka", true, &first);
+    CHECK(first && !e.have);
+    CHECK(s.keep(e, {0x0052E018u, 0x0152E099u}));
+    CHECK(e.value.size() == 2);
+
+    // Entering an editor does NOT tear down Space or unbind the guest
+    CHECK(!mode_tears_down_space(0x00DBDBA1u));
+    auto& e_ed = s.bind("tok-guest", 1, "Akasaka", true, &first);
+    CHECK(!first && e_ed.value.size() == 2);
+
+    // Mid-session MSG_WORLD reload sends guest through kMenu -> host unbinds via leave(1)
+    CHECK(mode_tears_down_space(0x02CCD1D2u));
+    CHECK(s.leave(1) == 1);
+    CHECK(s.bound(1) == 0);
+
+    // Guest returns to Space with same id=1 and sends empty fresh roster: bind() reports first==true -> host restores!
+    auto& e_re = s.bind("tok-guest", 1, "Akasaka", true, &first);
+    CHECK(first && e_re.value.size() == 2 && e_re.value[0] == 0x0052E018u && e_re.value[1] == 0x0152E099u);
+    s.begin(e_re, 100.0);
+    // Empty roster arriving while restoring must NOT overwrite kept colonies
+    CHECK(!s.keep(e_re, {}));
+    CHECK(e_re.value.size() == 2);
+    CHECK(s.done(1, 0, false) == &e_re);
+    CHECK(!e_re.restoring && e_re.value.size() == 2);
+}
+
 int main()
 {
     test_jump_target();
@@ -839,6 +883,7 @@ int main()
     test_colonize_mission();
     test_space_citizen_lead();
     test_tutorial_drive_sync();
+    test_kept_reload_in_session();
     printf(g_fail ? "space_tests: %d FAILED\n" : "space_tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

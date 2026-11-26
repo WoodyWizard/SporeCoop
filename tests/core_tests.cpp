@@ -1108,6 +1108,29 @@ int main()
     busy_pump();
     share_one_planet();
     captain_rules();
+    // BUG-1577: pause-menu / modal-dialog automatic share blocker
+    {
+        using namespace share_logic;
+        CHECK(share_pause_blocker(true, 0) == nullptr);
+        CHECK(share_pause_blocker(true, busy_model::kWhyStill) == nullptr);
+        CHECK(share_pause_blocker(true, busy_model::kWhyStill | busy_model::kWhyKeyP) == nullptr);
+        CHECK(share_pause_blocker(true, busy_model::kWhyStill | busy_model::kWhyCaption) == nullptr);
+        CHECK(share_pause_blocker(true, busy_model::kWhyStill | busy_model::kWhyPauseMenu) != nullptr);
+        CHECK(share_pause_blocker(true, busy_model::kWhyStill | busy_model::kWhyPauseMenu | busy_model::kWhyModal) != nullptr);
+        CHECK(share_pause_blocker(true, busy_model::kWhyStill | busy_model::kWhySporepedia) != nullptr);
+        CHECK(share_pause_blocker(false, busy_model::kWhyStill | busy_model::kWhyPauseMenu | busy_model::kWhyModal) == nullptr);
+    }
+    // BUG-1578: Space post-editor full-galaxy world reload skip
+    {
+        using namespace share_logic;
+        constexpr uint32_t kSpace = 0x01654C05u, kCreature = 0x01654C01u;
+        CHECK(skip_space_editor_reload(true, kSpace, true, false, false));
+        CHECK(!skip_space_editor_reload(false, kSpace, true, false, false));
+        CHECK(!skip_space_editor_reload(true, kCreature, true, false, false));
+        CHECK(!skip_space_editor_reload(true, kSpace, false, false, false));
+        CHECK(!skip_space_editor_reload(true, kSpace, true, true, false));  // Civ -> Space transition
+        CHECK(!skip_space_editor_reload(true, kSpace, true, false, true));  // Host loaded another Space save
+    }
     if (g_fail) {
         printf("core_tests: %d FAILED\n", g_fail);
         return 1;

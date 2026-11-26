@@ -1381,7 +1381,7 @@ static std::string colonize(uint32_t id, bool restore)
     if (!me || !rec || !star)
         return "no such planet";
     uint32_t pol = F<uint32_t>(me, 0x84);
-    if (restore && active_planet_record() == rec) // (the test command colonizes the active planet on purpose)
+    if (restore && context() == 0 && active_planet_record() == rec) // (only while landed on the planet; BUG-1578)
         return "wait";
     if (F<uint32_t>(star, 0x54) != 0xFFFFFFFFu && F<uint32_t>(star, 0x54) != pol) {
         if (!restore || !g_npc_star_fix)
@@ -1483,7 +1483,7 @@ static std::string cities_apply(uint32_t id, const std::vector<uint8_t>& blob)
     void* rec = planet_record(id);
     if (!rec)
         return "no such planet";
-    if (active_planet_record() == rec) // its cities are live (cCity +0x2F0 points at its cCityData): not now
+    if (context() == 0 && active_planet_record() == rec) // its cities are live only while landed (ctx 0, BUG-1578)
         return "wait";
     void* civ = my_civ(rec);
     if (!civ)

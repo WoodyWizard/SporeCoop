@@ -28,6 +28,12 @@ double since_share(uint8_t peer);
 uint32_t share_serial(uint8_t peer);
 // host (BUG-1336): a world share to this guest is on its way: waiting for its save, being sent, or not acknowledged yet
 bool share_in_flight(uint8_t peer);
+// host (BUG-1577): non-null reason while the host's Pause Menu, Sporepedia, or an exit/modal dialog is open
+const char* share_pause_block_reason();
+void note_pause_share_wait(uint8_t peer, const char* why);
+// host (BUG-1578): skip post-editor full-galaxy world reloads in Space (both Together and Rivals)
+bool space_editor_no_reload_fix();
+void note_space_editor_skip(uint8_t peer, uint32_t mode);
 // the game's own save (pause menu "Save"); also works on planets in space
 bool save_game(std::string& err);
 // the game's quit message 0x4715068 (save and leave the stage for the galaxy menu); refused in an adventure (BUG-0854)

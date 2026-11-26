@@ -106,4 +106,34 @@ inline const char* load_device_blocker(bool fix, bool test_busy, bool iconic, bo
     return nullptr;
 }
 
+// BUG-1577: an automatic world-share save posted while the host's Pause Menu, Sporepedia, or an explicit game modal
+// dialog (e.g. "Do you want to save your game?" during Save & Exit to Main Menu) is open races with the player's own
+// Save & Exit teardown and corrupts the save slot (0x00BA7FA7 LoadGame crash). Matches busy_model::kWhyPauseMenu (1<<2),
+// kWhyModal (1<<4), and kWhySporepedia (1<<7); does not block implicit engine pauses or key-P simulation pauses.
+constexpr uint16_t kSharePauseMenuBit = 1u << 2;
+constexpr uint16_t kShareModalBit = 1u << 4;
+constexpr uint16_t kShareSporepediaBit = 1u << 7;
+inline const char* share_pause_blocker(bool fix, uint16_t host_why)
+{
+    if (!fix)
+        return nullptr;
+    if (host_why & kShareModalBit)
+        return "a game dialog is open";
+    if (host_why & kSharePauseMenuBit)
+        return "the pause menu is open";
+    if (host_why & kShareSporepediaBit)
+        return "Sporepedia is open";
+    return nullptr;
+}
+
+// BUG-1578: host returning from an editor to the Space stage (both Space Together and Space Rivals) never needs a
+// full-galaxy MSG_WORLD reload to guests who are already in Space (creations and designs sync live, and Space Rivals
+// isolates empires/designs). Returns true when post-editor world reload should be skipped in Space.
+inline bool skip_space_editor_reload(bool space_fix, uint32_t stage_mode, bool evolved, bool new_stage,
+                                     bool other_save)
+{
+    constexpr uint32_t kSpaceMode = 0x01654C05u;
+    return space_fix && stage_mode == kSpaceMode && evolved && !new_stage && !other_save;
+}
+
 } // namespace share_logic

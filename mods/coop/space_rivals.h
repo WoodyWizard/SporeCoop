@@ -12,6 +12,7 @@ namespace spacerivals {
 bool enabled();
 bool stage_rivals_wanted();
 bool active();
+bool emigration_in_progress();
 
 // R5 (space_allies.cpp hook): true on a guest after it emigrated when `planet` is the host's original homeworld,
 // so space_allies mirrors it as the host's rival empire while keeping its existing cities intact.

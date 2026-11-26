@@ -305,6 +305,13 @@ bool host_stands()
            in_host_world();
 }
 bool takes_tribe_pause() { return coop_core::g_host_busy_fix && coop_core::g_tribe_fix && coop_core::g_view.heard; }
+uint16_t local_ui_pause_why()
+{
+    using namespace coop_core;
+    if (!H)
+        return 0;
+    return busy_model::classify(reading(H->time_seconds())).why;
+}
 } // namespace host_busy
 
 // the session's end: what the host told and the guest heard was that session's

@@ -1,6 +1,7 @@
 // Space feature "map" (MSG_SPACE kinds 10..19): the roster of every player's empire (space_map.h)
 // and the partners and their colonies on the galaxy map. docs/re/space.md 13.
 #include "space_map.h"
+#include "lifecycle.h"
 #include "player_life.h"
 
 #include "net/utf8.h"
@@ -30,6 +31,8 @@
 #include "find.h"
 #include "fixes.h"
 #include "own_world.h"
+#include "space_rivals.h"
+#include "world.h"
 
 using skg::cdecl_call;
 using skg::thiscall;
@@ -614,6 +617,17 @@ static bool g_kept_leave_fix = true;
 COOP_FIX("space.kept_leave", "BUG-0810", g_kept_leave_fix,
          "space: a guest's kept colonies come back after a crash rejoin that keeps its player id");
 static uint32_t g_kept_left;
+// BUG-1578 (GitHub #223): when a Space guest reloads the host's world mid-session without disconnecting (leaving Space
+// to Galaxy Menu / Loading and returning with the same player id), g_store.bind() saw first==false, never sent K_KEPT,
+// and the guest's fresh empty roster overwrote the host's kept colony list with []. Also in Space Rivals the guest's
+// emigrated homeworld (c.home) is not the host's homeworld, so skipping c.home lost all homeworld cities on reload.
+// Now leaving Space tears down the guest's binding (arming K_KEPT on return), fast reloads check share_serial, Space
+// Rivals includes the guest's emigrated homeworld in kept cities/colonies, and restore waits for emigration to finish.
+static bool g_keep_reload_fix = true;
+COOP_FIX("space.keep_colonies_reload", "BUG-1578", g_keep_reload_fix,
+         "space: a guest's own colonies and Space Rivals emigrated homeworld cities are restored across in-session world reloads");
+static uint32_t g_kept_reloads;
+static std::map<uint8_t, uint32_t> g_kept_share_ser;
 // E1 (BUG-1149): the host's list also goes into the per-player store on its disk (store.h: next to its save, written
 // with every save of the game) and is read from it when the Space world opens, so a guest's colonies come back the next
 // evening (both quit, the host loads its save again, the guest joins again) the way they come back after a rejoin.
@@ -683,10 +697,13 @@ static bool g_store_reg = store::add({"space.colonies",
                                       }});
 PLAYER_STATE("space_map_kept",
              [](uint8_t id) {
+                 g_kept_share_ser.erase(id);
                  if (g_kept_leave_fix)
                      g_kept_left += (uint32_t)g_store.leave(id);
              },
-             [](uint8_t id) -> size_t { return g_store.bound(id); });
+             [](uint8_t id) -> size_t { return g_store.bound(id) + g_kept_share_ser.count(id); });
+SESSION_STATE("space_map_share_ser", nullptr, [] { g_kept_share_ser.clear(); },
+              []() -> size_t { return g_kept_share_ser.size(); });
 
 // ---- the host keeps them in g_store, the guest restores in the window of g_win (space_kept.h, C5) ----
 static void send_kept(spacekept::Entry<std::vector<uint32_t>>& k)
@@ -721,16 +738,30 @@ static void kept_roster(uint8_t id)
         return;
     bool first = false;
     auto& k = g_store.bind(key, id, spaceext::name_of(id), true, &first);
-    if (first && !k.value.empty()) { // this player's first roster since it joined: its colonies back first
+    if (first && !k.value.empty()) { // this player's first roster since it joined/reloaded: its colonies back first
+        g_kept_share_ser[id] = world::share_serial(id);
         send_kept(k);
         return;
     }
     if (k.restoring)
         return;
     std::vector<uint32_t> own;
+    bool keep_rival_home = g_keep_reload_fix && spacerivals::stage_rivals_wanted();
     for (auto& c : g_rosters[id].colonies)
-        if (!c.home && own_colony(id, c))
+        if ((!c.home || keep_rival_home) && own_colony(id, c))
             own.push_back(c.planet);
+    uint32_t share_ser = world::share_serial(id);
+    auto sit = g_kept_share_ser.find(id);
+    bool share_changed = (sit != g_kept_share_ser.end() && sit->second != share_ser);
+    if (g_keep_reload_fix && share_changed && !k.value.empty() && own.size() < k.value.size() &&
+        world::since_share(id) < 120.0) {
+        // BUG-1578: fast in-session reload completed between frames before peer_mode was seen in Galaxy menu/Load
+        g_kept_share_ser[id] = share_ser;
+        g_kept_reloads++;
+        send_kept(k);
+        return;
+    }
+    g_kept_share_ser[id] = share_ser;
     bool grew = g_colony_ids_fix ? g_new_colonies.grew(spaceext::world_epoch(), own) && k.have // BUG-1203
                                  : k.have && own.size() > k.value.size();
     if (grew)
@@ -773,23 +804,37 @@ static void kept_tick(double now)
     if (spaceext::is_host()) {
         host_disk_sync();
         std::set<uint8_t> here;
-        for (auto& p : spaceext::ctx().sess->players())
+        for (auto& p : spaceext::ctx().sess->players()) {
             here.insert(p.id);
+            if (g_keep_reload_fix && p.id != 0 && spaceext::ctx().peer_mode) {
+                uint32_t pm = spaceext::ctx().peer_mode(p.id);
+                if (spacekept::mode_tears_down_space(pm)) {
+                    size_t unbound = g_store.leave(p.id);
+                    if (unbound) {
+                        g_kept_reloads += (uint32_t)unbound;
+                        H->log(M, SK_INFO,
+                               "space map: guest %u left Space (mode %08X): kept colonies armed for reload restore (BUG-1578)",
+                               p.id, pm);
+                    }
+                }
+            }
+        }
         g_store.tick(now, [&](uint8_t id) { return here.count(id) != 0; },
                      [](spacekept::Entry<std::vector<uint32_t>>& k) { send_kept(k); }); // no answer: again
         return;
     }
     g_win.joined(spaceext::in_space(), spaceext::world_epoch());
-    // BUG-1151: my own colonies' cities to the host (those not in the host's roster), when they changed, every 10 s
+    // BUG-1151 / BUG-1578: my own colonies' cities (and in Space Rivals my emigrated homeworld's cities) to the host
     if (spaceext::colony_cities_on() && g_keep_fix && !g_restore_on && spaceext::in_space() &&
         g_win.from_host(spaceext::world_epoch()) && now >= g_cities_next) {
         g_cities_next = now + 10.0;
         const Roster* me = roster_of(spaceext::my_id());
         const Roster* host = roster_of(0);
+        bool keep_rival_home = g_keep_reload_fix && spacerivals::active();
         if (me && host)
             for (auto& c : me->colonies) {
-                if (c.home || std::any_of(host->colonies.begin(), host->colonies.end(),
-                                          [&](const Colony& h) { return h.planet == c.planet; }))
+                if ((!keep_rival_home && c.home) || std::any_of(host->colonies.begin(), host->colonies.end(),
+                                                                [&](const Colony& h) { return h.planet == c.planet; }))
                     continue;
                 std::vector<uint8_t> blob = spaceext::colony_cities(c.planet);
                 uint32_t h = blob_hash(blob);
@@ -802,6 +847,8 @@ static void kept_tick(double now)
     }
     if (!g_restore_on || !spaceext::in_space() || spaceext::world_epoch() == g_win.join)
         return;
+    if (g_keep_reload_fix && spacerivals::emigration_in_progress())
+        return; // BUG-1578: let Space Rivals finish homeworld emigration before restoring colonies & homeworld cities
     if (g_restore_own_fix && own_world::space_other()) { // BUG-1488: not into a Space save of my own; kept for the host's
         g_restore_own_held++;
         return;
@@ -863,15 +910,17 @@ static void on_kept(uint8_t origin, net::Reader& r, bool done)
         return;
     g_restore = std::move(m.planets);
     g_restore_on = true;
+    g_cities_sent_hash.clear(); // BUG-1578: re-sync cities after restore completes
 }
 
 static std::string kept_status()
 {
     std::string s;
-    char b[200];
-    snprintf(b, sizeof b, "kept: fix=%d players=%u sent=%u done=%u restored=%u failed=%u pending=%u left=%u own_held=%u\n",
-             (int)g_keep_fix, (unsigned)g_store.size(), g_kept_sent, g_kept_done, g_restored, g_restore_failed,
-             (unsigned)g_restore.size(), g_kept_left, g_restore_own_held);
+    char b[240];
+    snprintf(b, sizeof b,
+             "kept: fix=%d reload_fix=%d players=%u sent=%u done=%u restored=%u failed=%u pending=%u left=%u reloads=%u own_held=%u\n",
+             (int)g_keep_fix, (int)g_keep_reload_fix, (unsigned)g_store.size(), g_kept_sent, g_kept_done, g_restored,
+             g_restore_failed, (unsigned)g_restore.size(), g_kept_left, g_kept_reloads, g_restore_own_held);
     s += b;
     s += "  disk: fix=" + std::to_string((int)g_disk_fix) + " " + g_disk.status() + " (restored " +
          std::to_string(g_store.restored()) + ")\n";

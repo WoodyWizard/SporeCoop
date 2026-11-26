@@ -32,6 +32,13 @@ namespace spacekept {
 constexpr uint8_t kNoId = 0xFF;   // an entry whose player is not in the session
 constexpr double kResend = 10.0;  // s without an answer before the kept state goes again
 
+// BUG-1578: modes that tear down a guest's Space world in memory (Galaxy menu, Loading, another stage),
+// unlike Space itself or an editor/adventure entered from Space (matches spaceext::world_epoch).
+inline bool mode_tears_down_space(uint32_t mode)
+{
+    return mode != 0 && mode != 0x01654C05u && mode != 0x01654C06u && mode != 0x00DBDBA1u && mode != 0x01654C10u;
+}
+
 template <class T>
 struct Entry {
     T value{};

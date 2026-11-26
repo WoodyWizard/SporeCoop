@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.8.1.2"
+#define COOP_VERSION "0.8.1.3"
 #endif
 
 #include <winsock2.h>
@@ -3243,6 +3243,10 @@ static void init_civ_and_space()
         return v;
     };
     spc.beacon = add_beacon;
+    spc.peer_mode = [](uint8_t id) -> uint32_t {
+        auto it = g_remotes.find(id);
+        return (it == g_remotes.end() || it->second.buf.empty()) ? 0u : it->second.buf.latest().mode;
+    };
     spacecoop::init(H, M, std::move(spc));
     apply_startup_off(); // tests: switches that must be off before the game starts (fixes_off.txt)
     gamefixes::init(H, M);

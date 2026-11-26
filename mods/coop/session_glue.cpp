@@ -22,6 +22,7 @@
 #include "history.h"
 #include "rivals.h"
 #include "designs.h"
+#include "share_logic.h"
 #include "net/compat.h"
 #include "net/manifest.h"
 #include "recent_servers.h"
@@ -174,7 +175,7 @@ void on_mode_change(uint32_t from, uint32_t to)
         std::string k = world::current_game_key();
         other_save = g_space_load_follow_fix && last == modes::kSpace && !new_stage && !evolved && !k.empty() &&
                      !g_space_key.empty() && k != g_space_key;
-        if (other_save)
+        if (other_save && g_sess.role() == net::Role::Host)
             LOG("space: the host loaded another Space save (%s, was %s): it goes to everybody (BUG-0941)", k.c_str(),
                 g_space_key.c_str());
         if (!k.empty())
@@ -189,6 +190,15 @@ void on_mode_change(uint32_t from, uint32_t to)
     if (evolved && tribe_graduating()) { // BUG-0849: no evolution; the Civ stage comes next and is shared then
         LOG("back from the editor %08X in the end of Tribe: no share (the Civilization stage is shared)", g_last_editor_req);
         notice(g_name + " made a design for the Civilization stage: it comes next", -1);
+        return;
+    }
+    if (share_logic::skip_space_editor_reload(world::space_editor_no_reload_fix(), to, evolved, new_stage, other_save)) {
+        // BUG-1578 (GitHub #223): returning from a Space design/creation editor never needs a full-galaxy reload to
+        // guests already in Space (creations sync live; Space Rivals isolates empires/designs). Guests that left Space
+        // are still recovered by follow_phase().
+        for (auto& [id, r] : g_remotes)
+            if (!r.echo)
+                world::note_space_editor_skip(id, to);
         return;
     }
     g_evo_cine = false;
@@ -515,6 +525,10 @@ void follow_phase(double now)
                 }
                 LOG("evolved: %s gets the world (%s)", r.name.c_str(), why);
             }
+            if (const char* pwhy = world::share_pause_block_reason()) {
+                world::note_pause_share_wait(id, pwhy); // BUG-1577: wait while Pause Menu / modal dialog is up
+                continue;
+            }
             r.evo_check_until = 0;
             r.needs_world = false;
             r.world_sent = key;
@@ -572,6 +586,10 @@ void follow_phase(double now)
         // once per phase, or again when the guest had followed and then left the phase
         if (now - r.other_mode_since < 5.0 || (r.world_sent == key && !r.joined_phase))
             continue;
+        if (const char* pwhy = world::share_pause_block_reason()) {
+            world::note_pause_share_wait(id, pwhy); // BUG-1577: never start a share save during Save & Exit / Pause Menu
+            continue;
+        }
         r.world_sent = key;
         r.joined_phase = false;
         r.share_at_join = false;

@@ -3,6 +3,7 @@
 #include "share_wait.h"
 #include "world.h"
 #include "lifecycle.h"
+#include "player_life.h"
 
 #include <winsock2.h>
 #define WIN32_LEAN_AND_MEAN
@@ -16,15 +17,20 @@
 #include <map>
 
 #include "cellsync.h"
+#include "civ_rivals.h"
 #include "creature_rivals.h"
 #include "creature_rivals_logic.h"
 #include "game.h"
+#include "host_busy.h"
 #include "sporekit_game.hpp"
 #include "modes.h"
 #include "mouse.h"
 #include "coop_ui.h"
 #include "share_logic.h"
 #include "slotfs.h"
+#include "space_ext.h"
+#include "space_rivals.h"
+#include "tribe_rivals.h"
 #include "world_path.h"
 #include "world_resume.h"
 #include "net/fixes.h"
@@ -126,8 +132,26 @@ WORLD_STATE("world.warm_resume_host", &g_warm_reconnect_fix, [] { g_host_ledger.
 // planet changes, or menu/other-stage recovery shares.
 static bool g_editor_no_reload_fix = true;
 COOP_FIX("rivals.editor_no_reload", "BUG-1566", g_editor_no_reload_fix,
-         "rivals: skip unnecessary full world reload shares to rival guests when host returns from Creature/Cell Editor");
+         "rivals: skip unnecessary full world reload shares to rival guests when host returns from a same-stage editor");
 static unsigned g_editor_share_skipped = 0;
+
+// BUG-1578 (GitHub #223): returning from a Space design/creation editor never requires reloading guests' entire galaxy
+// saves (creations sync live, and in Space Rivals empires/designs are isolated). Skipping the post-editor world share
+// stops host editor visits from forcing guest galaxy reloads and resetting rival homeworlds/colonies.
+static bool g_space_editor_no_reload_fix = true;
+COOP_FIX("space.editor_no_reload", "BUG-1578", g_space_editor_no_reload_fix,
+         "space: skip unnecessary full-galaxy world reload shares to guests when host returns from a Space editor");
+static unsigned g_space_editor_skipped = 0;
+
+bool space_editor_no_reload_fix() { return g_space_editor_no_reload_fix; }
+void note_space_editor_skip(uint8_t peer, uint32_t mode)
+{
+    g_space_editor_skipped++;
+    if (H && M)
+        H->log(M, SK_INFO,
+               "world: skipped post-editor Space world share for player %u (%s, space.editor_no_reload, BUG-1578)",
+               peer, modes::mode_name(mode));
+}
 
 struct PeerShareRec {
     uint32_t tag = 0;
@@ -167,7 +191,8 @@ static void update_rivals_editor_tracker()
     bool is_ed = (m == modes::kEditor || m == modes::kEdit);
     double now = H ? H->time_seconds() : 0.0;
     if (m != g_rivals_ed_prev_mode) {
-        if (is_ed && (g_rivals_ed_prev_mode == modes::kCreature || g_rivals_ed_prev_mode == modes::kCell)) {
+        if (is_ed && (g_rivals_ed_prev_mode == modes::kCreature || g_rivals_ed_prev_mode == modes::kCell ||
+                      g_rivals_ed_prev_mode == modes::kTribe || g_rivals_ed_prev_mode == modes::kCiv)) {
             g_rivals_ed_in_editor = true;
             g_rivals_ed_from_mode = g_rivals_ed_prev_mode;
             g_rivals_ed_from_world = modes::current_world();
@@ -844,7 +869,8 @@ struct PendingShare {
     uint64_t asked = 0;  // BUG-1294: when the share was asked for (tick count)
     uint64_t posted = 0; // BUG-1294: when the save it goes out with was posted (0: none yet)
     bool wait_said = false;
-    bool dead_said = false; // BUG-1295: logged once
+    bool dead_said = false;  // BUG-1295: logged once
+    bool pause_said = false; // BUG-1577: logged once while pause menu / modal dialog is open
 };
 // BUG-0231: the final failure of a queued share ("cannot share the world"), for the caller's retry
 static void (*g_share_failed)(uint8_t peer, uint32_t tag, bool planet_missing);
@@ -889,9 +915,11 @@ bool share_with(uint8_t peer, std::string& err, bool save_first, uint32_t tag)
     {
         bool cr = (cur_mode == modes::kCreature && creature_rivals::active());
         bool cellr = (cur_mode == modes::kCell && cellsync::rivals_active());
+        bool triber = (cur_mode == modes::kTribe && tribe_rivals::active());
+        bool civr = (cur_mode == modes::kCiv && civ_rivals::active());
         creature_rivals_logic::EditorShareQuery q{};
         q.fix_enabled = g_editor_no_reload_fix;
-        q.rivals_active = cr || cellr;
+        q.rivals_active = cr || cellr || triber || civr;
         q.is_manual_share = (tag == 0);
         q.same_stage_editor = g_rivals_ed_return_on && cur_mode == g_rivals_ed_return_mode;
         q.is_stage_transition = g_rivals_ed_in_editor || (g_rivals_ed_return_on && cur_mode != g_rivals_ed_return_mode);
@@ -964,6 +992,35 @@ static unsigned g_fresh_waits; // shares that waited for their own save
 static bool g_respawn_fix = true;
 static unsigned g_dead_waits;     // shares that waited for the host's respawn
 static uint64_t g_dead_told;
+// BUG-1577: an automatic world-share save posted while the host's Pause Menu, Sporepedia, or an explicit game modal
+// dialog (such as "Do you want to save your game?" during Save & Exit to Main Menu) is open races with the player's
+// own Save & Exit teardown and corrupts the save slot (0x00BA7FA7 LoadGame crash). Hold automatic share queuing and
+// share saves until the pause menu / dialog closes. Off (`coop.fix world.share_not_paused off`): saves immediately.
+static bool g_share_not_paused_fix = true;
+COOP_FIX("world.share_not_paused", "BUG-1577", g_share_not_paused_fix,
+         "world: automatic world-share saves wait while the host has the pause menu, Sporepedia, or an exit/modal dialog open");
+static unsigned g_pause_share_waits = 0;
+static std::map<uint8_t, double> g_pause_wait_logged;
+PLAYER_STATE("world.pause_wait_log", [](uint8_t id) { g_pause_wait_logged.erase(id); },
+             [](uint8_t id) -> size_t { return g_pause_wait_logged.count(id); });
+SESSION_STATE("world.pause_wait_log_sess", nullptr, [] { g_pause_wait_logged.clear(); },
+              []() -> size_t { return g_pause_wait_logged.size(); });
+const char* share_pause_block_reason()
+{
+    return share_logic::share_pause_blocker(g_share_not_paused_fix, host_busy::local_ui_pause_why());
+}
+void note_pause_share_wait(uint8_t peer, const char* why)
+{
+    double now = H ? H->time_seconds() : 0.0;
+    auto it = g_pause_wait_logged.find(peer);
+    if (it != g_pause_wait_logged.end() && now - it->second < 10.0)
+        return;
+    g_pause_wait_logged[peer] = now;
+    g_pause_share_waits++;
+    if (H && M)
+        H->log(M, SK_INFO, "world: holding automatic world share for player %u while %s (BUG-1577)", peer,
+               why ? why : "paused");
+}
 static bool host_dead_now()
 {
     if (!game::in_creature_stage())
@@ -2242,6 +2299,19 @@ void tick(net::Session& s)
             i++;
             continue;
         }
+        if (p.need_save) { // BUG-1577: never start a share save while Pause Menu / modal dialog / Sporepedia is up
+            if (const char* pwhy = share_pause_block_reason()) {
+                if (!p.pause_said) {
+                    p.pause_said = true;
+                    g_pause_share_waits++;
+                    H->log(M, SK_INFO, "world: the share save for player %u waits while %s (BUG-1577)", p.peer, pwhy);
+                }
+                p.next_try = std::max(p.next_try, now + 500);
+                i++;
+                continue;
+            }
+            p.pause_said = false;
+        }
         if (p.need_save) {
             // a stage that just began (loading screen, setup) is saved once the player controls
             // something, like a share at join (coop.cpp player_join)
@@ -2836,6 +2906,9 @@ std::string status()
     snprintf(b, sizeof b, "shares that waited for the host's respawn %u (join_after_respawn=%d, host dead %d)\n", g_dead_waits,
              (int)g_respawn_fix, (int)host_dead_now()); // tests (BUG-1295)
     s += b;
+    snprintf(b, sizeof b, "shares that waited for pause menu/dialog %u (share_not_paused=%d)\n", g_pause_share_waits,
+             (int)g_share_not_paused_fix); // tests (BUG-1577)
+    s += b;
     snprintf(b, sizeof b, "saved box: questions left alone %u, Enters for an OK outside the window %u\n", g_box_questions,
              g_box_enters); // tests (BUG-0846, BUG-0806)
     s += b;
@@ -2858,6 +2931,9 @@ std::string status()
     s += b;
     snprintf(b, sizeof b, "rivals_editor_no_reload: fix=%d editor_share_skipped=%u\n",
              (int)g_editor_no_reload_fix, g_editor_share_skipped); // tests (BUG-1566)
+    s += b;
+    snprintf(b, sizeof b, "space_editor_no_reload: fix=%d space_editor_skipped=%u\n",
+             (int)g_space_editor_no_reload_fix, g_space_editor_skipped); // tests (BUG-1578)
     s += b;
     if (g_sw.m.coop) // BUG-1434: the slot the save database points to is a co-op copy
         s += "slot " + narrow(g_sw.slot) + ": a copy of " + g_sw.m.host + "'s world, made for " + g_sw.m.planet +

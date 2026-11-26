@@ -10,4 +10,7 @@ bool takes_tribe_pause();
 // BUG-1461: the host's world stands now (its last MSG_HOST_BUSY: paused, an editor or away, of this guest's stage and
 // world): whether or not this guest's own game waits for it
 bool host_stands();
+// BUG-1577: current frame's classified local UI pause bits (busy_model::kWhyPauseMenu / kWhyModal / kWhySporepedia),
+// independent of core.host_busy so automatic world-share saves wait while the pause menu or an exit dialog is open.
+uint16_t local_ui_pause_why();
 } // namespace host_busy

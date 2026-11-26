@@ -36,6 +36,7 @@ struct Ctx {
     std::function<std::vector<Partner>()> partners;
     std::function<uint32_t()> my_place;
     std::function<void(const net::Vec3&, const std::string&, double, uint32_t)> beacon;
+    std::function<uint32_t(uint8_t)> peer_mode; // BUG-1578: host reads a guest's latest game mode (0 = unknown)
 };
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx);
