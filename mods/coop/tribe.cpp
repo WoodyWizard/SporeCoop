@@ -2651,11 +2651,13 @@ static void SK_THISCALL h_BabyBorn(void* stage, float x, float y, float z)
         g_baby_last = b;
     }
     bool on = g_ok && g_guest_baby_fix && game::mode_id() == modes::kTribe && stage;
-    if (on && is_guest() && !local_play() && !g_guest.mirrors.empty()) {
+    if (on && is_guest() && !local_play() && (!g_guest.mirrors.empty() || tribe_rivals::wipe_recovery_active())) {
         if (bought && buyer != C.sess->my_id()) { // BUG-0824: another player's purchase: the host makes it
             g_buys_other++;
             return;
         }
+        if (tribe_rivals::wipe_recovery_active() && skg::readable(stage, 0x3A4))
+            F<uint8_t>(stage, 0x3A3) = 1; // BUG-1571: keep Add Baby enabled when guest skips local o_BabyBorn
         net::Writer w;
         w.u8(CMD_BABY); w.u8(0); w.u32(0);
         write_target(w, Target{});

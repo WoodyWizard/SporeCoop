@@ -52,12 +52,17 @@ static bool g_pack_pets_fix = true;
 COOP_FIX("rivals.tribe_pack_pets", "BUG-1564", g_pack_pets_fix,
          "tribe: carry over each player's Creature-stage pack species as domesticated village pets in Tribe Rivals");
 
+static bool g_wipe_recovery_fix = true;
+COOP_FIX("rivals.tribe_wipe_recovery", "BUG-1571", g_wipe_recovery_fix,
+         "tribe: prevent PopDestroyed Game Over in Tribe Rivals, auto-respawn wiped player tribes, keep Add Baby usable, and grant 5-minute PvP immunity");
+
 // ---- Game addresses (verified GOG 2024 dc04aee5, docs/re/tribe.md#tribe-rivals-re) ----
 static uintptr_t a_SetPlayerTribe = 0;
 static uintptr_t a_PlannerUpdate = 0;
 static uintptr_t a_HutTD = 0;
 static uintptr_t a_ToolTD = 0;
 static uintptr_t a_SetConquered = 0;
+static uintptr_t a_TribeGoalListener = 0;
 static uintptr_t a_SpeciesSlot = 0;
 static uintptr_t a_SetSpeciesSlot = 0;
 static uintptr_t a_IsToolPurchased = 0;
@@ -89,6 +94,8 @@ constexpr uint32_t kHutNoun = 0x1E4DAAEu;
 constexpr uint32_t kToolNoun = 0x18C8F0Cu;
 constexpr uint32_t kRelEventSocial = 0x0530CF07u;
 constexpr uint32_t kRelEventGift = 0x0530CF02u;
+constexpr uint32_t kMsgPopDestroyed = 0x05C80207u; // BUG-1571: TribeGame_GoalListener PopDestroyed -> TRG_PRE_PopDestroyed
+constexpr uint32_t kMsgHutDestroyed = 0x058BADDDu; // BUG-1571: TribeGame_GoalListener HutDestroyed -> TRG_PRE_HutDestroyed
 constexpr uintptr_t kProfKeyOff = 0x504;
 constexpr uintptr_t kProfGenOff = 0x53C;
 constexpr uintptr_t kSpKeyOff = 0xB28;
@@ -307,6 +314,67 @@ static uint32_t g_pack_pets_spawned = 0; // BUG-1564
 static uint32_t g_last_npc_count = 0;
 static int g_last_win_needed = 1;
 
+// BUG-1571: Tribe Rivals wipe recovery, PopDestroyed Game Over guard, and 5-minute PvP immunity
+static PlayerWipeState g_wipe[rivals::kMaxPlayers];
+static double g_wipe_respawn_delay = kDefaultWipeRespawnDelay;
+static double g_wipe_immune_duration = kDefaultWipeImmunityDuration;
+static double g_last_wipe_tick = 0.0;
+static double g_last_immune_tx = 0.0;
+static uint32_t g_pop_gameover_blocked = 0;
+static uint32_t g_wipes_detected = 0;
+static uint32_t g_wipes_recovered = 0;
+static uint32_t g_immune_blocked = 0;
+static uint32_t g_immune_broken = 0;
+
+bool wipe_recovery_active() { return active() && g_wipe_recovery_fix; }
+
+bool is_immune(uint8_t pid)
+{
+    if (!wipe_recovery_active() || !rivals::valid_player(pid))
+        return false;
+    double now = H ? H->time_seconds() : 0.0;
+    return is_player_immune(g_wipe[pid], now);
+}
+
+static std::string fmt_mmss(double secs)
+{
+    int s = std::max(0, (int)std::ceil(secs));
+    char b[24];
+    snprintf(b, sizeof b, "%d:%02d", s / 60, s % 60);
+    return b;
+}
+
+static void host_broadcast_immunity(uint8_t pid, double now)
+{
+    if (!is_host() || !active() || !rivals::valid_player(pid))
+        return;
+    double rem = player_immune_remaining(g_wipe[pid], now);
+    int32_t rem_s = rem > 0.0 ? (int32_t)std::ceil(rem) : 0;
+    uint32_t flags = g_wipe[pid].wiping ? 1u : 0u;
+    net::Writer w;
+    write_food_sync(w, {CustomOp::Immunity, pid, rem_s, flags});
+    rivals::broadcast_faction(rivals::Stage::Tribe, wire::rivals_faction::SK_STAGE_CUSTOM, w);
+}
+
+void note_pvp_aggression(uint8_t sender_pid, uint8_t target_pid)
+{
+    if (!wipe_recovery_active() || !is_host() || !rivals::valid_player(sender_pid) ||
+        !rivals::valid_player(target_pid) || sender_pid == target_pid)
+        return;
+    double now = H ? H->time_seconds() : 0.0;
+    if (is_player_immune(g_wipe[target_pid], now))
+        return;
+    if (break_immunity_on_attack(g_wipe[sender_pid], now)) {
+        g_immune_broken++;
+        host_broadcast_immunity(sender_pid, now);
+        if (H && M)
+            H->log(M, SK_INFO, "tribe_rivals: player %u attacked rival %u: PvP immunity ended early (BUG-1571)",
+                   (unsigned)sender_pid, (unsigned)target_pid);
+        if (tribe::C.notice && S)
+            tribe::C.notice(S->name_of(sender_pid) + " attacked a rival: PvP shield ended early!");
+    }
+}
+
 // BUG-1564: Creature -> Tribe pack pet handoff state (species preserved across Creature -> Tribe world change)
 static PackPetPlan g_pack_pets;
 static double g_last_pack_snap = 0.0;
@@ -460,12 +528,17 @@ static int SK_THISCALL h_HutTD(void* comb, float dmg, uint32_t pol, int type, co
         uint8_t vo = owner_of_tribe(vt);
         uint8_t ao = attacker_owner_of(att, pol);
         bool war = rivals::valid_player(ao) && rivals::valid_player(vo) && rivals::at_war(ao, vo);
-        auto dec = decide_damage(true, ao, vo, war, true);
+        bool vic_imm = is_immune(vo);
+        auto dec = decide_damage(true, ao, vo, war, true, vic_imm);
         if (dec == DamageDecision::Block) {
             g_pvp_blocked++;
+            if (war && vic_imm)
+                g_immune_blocked++;
             return 0;
         }
         if (dec == DamageDecision::ClampMainHut) {
+            if (war && rivals::valid_player(ao) && rivals::valid_player(vo))
+                note_pvp_aggression(ao, vo);
             float cur_hp = F<float>(comb, 0x38);
             float max_hp = vcall<float>(comb, 0x58 / 4);
             if (!std::isfinite(max_hp) || max_hp <= 0.0f)
@@ -495,15 +568,37 @@ static int SK_THISCALL h_ToolTD(void* comb, float dmg, uint32_t pol, int type, c
         uint8_t vo = owner_of_tribe(vt);
         uint8_t ao = attacker_owner_of(att, pol);
         bool war = rivals::valid_player(ao) && rivals::valid_player(vo) && rivals::at_war(ao, vo);
-        auto dec = decide_damage(true, ao, vo, war, false);
+        bool vic_imm = is_immune(vo);
+        auto dec = decide_damage(true, ao, vo, war, false, vic_imm);
         if (dec == DamageDecision::Block) {
             g_pvp_blocked++;
+            if (war && vic_imm)
+                g_immune_blocked++;
             return 0;
         }
-        if (dec == DamageDecision::AllowPvp)
+        if (dec == DamageDecision::AllowPvp) {
+            note_pvp_aggression(ao, vo);
             g_tool_pvp_hits++;
+        }
     }
     return o_ToolTD(comb, dmg, pol, type, pos, att);
+}
+
+// BUG-1571: Block native TRG_PRE_PopDestroyed / TRG_PRE_HutDestroyed Game Over handler in TribeGame_GoalListener
+// (0x00CD81F0) while Tribe Rivals is active, on both host and guest, so a full tribe wipe triggers respawn instead
+// of hiding the HUD and reloading the save.
+using GoalListener_t = bool(SK_THISCALL*)(void*, uint32_t, void*);
+static GoalListener_t o_TribeGoalListener = nullptr;
+static bool SK_THISCALL h_TribeGoalListener(void* self, uint32_t msg_id, void* data)
+{
+    if (wipe_recovery_active() && (msg_id == kMsgPopDestroyed || msg_id == kMsgHutDestroyed)) {
+        g_pop_gameover_blocked++;
+        if (H && M)
+            H->log(M, SK_INFO, "tribe_rivals: blocked native Tribe Game Over msg 0x%08X (#%u, BUG-1571)", msg_id,
+                   g_pop_gameover_blocked);
+        return false;
+    }
+    return o_TribeGoalListener(self, msg_id, data);
 }
 
 using SetConquered_t = void(SK_THISCALL*)(void*, bool);
@@ -601,13 +696,18 @@ bool filter_citizen_damage(void* victim, void* attacker)
     uint8_t vo = owner_of_tribe(vt);
     uint8_t ao = owner_of_tribe(at);
     bool war = rivals::valid_player(ao) && rivals::valid_player(vo) && rivals::at_war(ao, vo);
-    auto dec = decide_damage(true, ao, vo, war, false);
+    bool vic_imm = is_immune(vo);
+    auto dec = decide_damage(true, ao, vo, war, false, vic_imm);
     if (dec == DamageDecision::Block) {
         g_pvp_blocked++;
+        if (war && vic_imm)
+            g_immune_blocked++;
         return false;
     }
-    if (dec == DamageDecision::AllowPvp)
+    if (dec == DamageDecision::AllowPvp) {
+        note_pvp_aggression(ao, vo);
         g_pvp_hits++;
+    }
     return true;
 }
 
@@ -632,13 +732,13 @@ int override_choose_action(void* target_obj, int vanilla_action)
     uint8_t me = my_id();
     if (!rivals::valid_player(to) || to == me)
         return 0;
-    if (!rivals::at_war(me, to)) {
-        // Block hostile actions (0x0A attack, 0x0C raid, 0x21 raid food) on Neutral / Allied rival tribes
+    if (!rivals::at_war(me, to) || is_immune(to)) {
+        // Block hostile actions (0x0A attack, 0x0C raid, 0x21 raid food) on Neutral / Allied / immune rival tribes
         if (vanilla_action == 0x0A || vanilla_action == 0x0C || vanilla_action == 0x21)
             return -1;
         return 0;
     }
-    // At War: allow attack on rival citizen, raid on rival hut/tool
+    // At War and target not immune: allow attack on rival citizen, raid on rival hut/tool
     if (noun == kCitizenNoun && !game::is_dead(gd))
         return 0x0A;
     if (noun == kHutNoun || noun == kToolNoun)
@@ -869,14 +969,20 @@ static void host_try_war_food_raid(uint8_t att, uint8_t vic, int32_t want_amount
 {
     if (!is_host() || !active() || !rivals::at_war(att, vic) || want_amount <= 0)
         return;
+    bool vic_imm = is_immune(vic);
+    if (vic_imm) {
+        g_immune_blocked++;
+        return;
+    }
     void* at = tribe_of_player(att);
     void* vt = tribe_of_player(vic);
     if (!at || !vt)
         return;
     int32_t avail = tribe_food(vt);
-    int32_t steal = std::min(want_amount, avail);
+    int32_t steal = raid_steal_amount(avail, want_amount, vic_imm, g_wipe_recovery_fix);
     if (steal <= 0)
         return;
+    note_pvp_aggression(att, vic);
     tribe_add_food(vt, -steal);
     tribe_add_food(at, steal);
     g_raids_done++;
@@ -1064,6 +1170,19 @@ static std::vector<rivals::UiRow> on_extra_ui_rows()
     snprintf(b, sizeof b, "Tribe Rivals: own food=%d, NPCs=%u (need %d)", mt ? tribe_food(mt) : 0, g_last_npc_count,
              g_last_win_needed);
     rows.push_back({b, "", {}, 0});
+    if (wipe_recovery_active()) {
+        double now = H ? H->time_seconds() : 0.0;
+        for (const auto& p : S->players()) {
+            if (!rivals::valid_player(p.id))
+                continue;
+            double rem = player_immune_remaining(g_wipe[p.id], now);
+            if (rem > 0.0) {
+                std::string label = (p.id == me ? "  Your PvP shield: " : ("  " + p.name + " PvP shield: ")) +
+                                    fmt_mmss(rem) + (g_wipe[p.id].wiping ? " (respawning...)" : "");
+                rows.push_back({label, "", {}, 0xFF60E0FFu});
+            }
+        }
+    }
     for (const auto& p : S->players()) {
         if (p.id == me || !rivals::valid_player(p.id))
             continue;
@@ -1197,6 +1316,15 @@ static void on_faction_message(uint8_t from, uint8_t subkind, net::Reader& r)
                     if (m.tools_mask & (1u << k))
                         unlock_tool_local(k, mt);
             }
+        } else if (is_guest() && from == 0 && m.op == CustomOp::Immunity && rivals::valid_player(m.player_id)) {
+            double now = H ? H->time_seconds() : 0.0;
+            bool was = is_player_immune(g_wipe[m.player_id], now);
+            g_wipe[m.player_id].wiping = (m.tools_mask & 1u) != 0;
+            g_wipe[m.player_id].immune_until = m.value > 0 ? (now + (double)m.value) : 0.0;
+            if (!was && m.value > 0 && tribe::C.notice && S) {
+                std::string who = m.player_id == my_id() ? "Your tribe" : (S->name_of(m.player_id) + "'s tribe");
+                tribe::C.notice(who + " has a PvP shield for " + fmt_mmss((double)m.value));
+            }
         } else if (is_host() && from != 0 && m.op == CustomOp::BuyMember) {
             handle_guest_baby(from, 0.f, 0.f, 0.f);
         }
@@ -1215,13 +1343,16 @@ bool handle_guest_baby(uint8_t from, float /*x*/, float /*y*/, float /*z*/)
     int cost = 10;
     if (tribe_food(gt) < cost)
         return true;
-    tribe_add_food(gt, -cost);
     void* baby = tribe::spawn_member(gt, 0, from);
     if (baby) {
+        tribe_add_food(gt, -cost);
         host_send_food(from, true);
         if (H && M)
             H->log(M, SK_INFO, "tribe_rivals: player %u bought baby in own tribe %p (food now %d)", (unsigned)from, gt,
                    tribe_food(gt));
+    } else if (H && M) {
+        H->log(M, SK_WARN, "tribe_rivals: player %u baby spawn returned null in tribe %p (food kept at %d)",
+               (unsigned)from, gt, tribe_food(gt));
     }
     return true;
 }
@@ -1767,6 +1898,171 @@ static void save_end()
     }
 }
 
+static int live_tribe_members(void* t)
+{
+    if (!t)
+        return 0;
+    int live = 0;
+    for (void* c : tribe::members(t))
+        if (c && !game::is_dead(c) && game::health(c) > 0.0f)
+            live++;
+    return live;
+}
+
+static int tribe_up_count(void* t)
+{
+    if (!t || !skg::readable(t, 0x35C))
+        return 0;
+    uintptr_t b = F<uintptr_t>(t, 0x354);
+    uintptr_t e = F<uintptr_t>(t, 0x358);
+    if (!b || e < b || (e - b) > 4096)
+        return 0;
+    return (int)((e - b) / 4);
+}
+
+// cTribe::CreateCitizen (0x00C8E730) passes &zeroVec to Init and only moves age==0 (babies) to tribe_pos();
+// age==1 (adults) stay at (0,0,0) (planet core/underwater) and die within ~1 s unless placed on the village surface.
+static net::Vec3 village_spawn_spot(void* t, int slot_idx)
+{
+    net::Vec3 centre = tribe::tribe_pos(t);
+    float r = std::sqrt(centre.x * centre.x + centre.y * centre.y + centre.z * centre.z);
+    if (r < 1.0f)
+        return centre;
+    net::Vec3 n{centre.x / r, centre.y / r, centre.z / r};
+    net::Vec3 ref = (std::fabs(n.y) < 0.9f) ? net::Vec3{0.f, 1.f, 0.f} : net::Vec3{1.f, 0.f, 0.f};
+    net::Vec3 e1{n.y * ref.z - n.z * ref.y, n.z * ref.x - n.x * ref.z, n.x * ref.y - n.y * ref.x};
+    float e1l = std::sqrt(e1.x * e1.x + e1.y * e1.y + e1.z * e1.z);
+    if (e1l > 1e-4f)
+        e1 = {e1.x / e1l, e1.y / e1l, e1.z / e1l};
+    net::Vec3 e2{n.y * e1.z - n.z * e1.y, n.z * e1.x - n.x * e1.z, n.x * e1.y - n.y * e1.x};
+    float ang = 1.5707963f * (float)(slot_idx & 3) + 0.4f;
+    float cs = std::cos(ang) * 6.0f, sn = std::sin(ang) * 6.0f;
+    net::Vec3 p{centre.x + e1.x * cs + e2.x * sn, centre.y + e1.y * cs + e2.y * sn, centre.z + e1.z * cs + e2.z * sn};
+    float g = game::ground_radius(p);
+    float pr = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+    if (g > 1.0f && pr > 1.0f)
+        p = {p.x * g / pr, p.y * g / pr, p.z * g / pr};
+    return p;
+}
+
+static void ensure_baby_button_unlocked()
+{
+    if (!a_TribeUiGet)
+        return;
+    void* ui = skg::cdecl_call<void*>(a_TribeUiGet);
+    if (ui && skg::readable(ui, 0x3A4) && F<uint8_t>(ui, 0x3A3) == 0)
+        F<uint8_t>(ui, 0x3A3) = 1;
+}
+
+constexpr uintptr_t kTribeChiefKoTimerOff = 0x2C8; // float: cTribe chieftain knockout countdown (BT_CitizenKnockoutEnter 0xDB1A30)
+
+static void ensure_live_chieftain(void* t)
+{
+    if (!a_SetChieftain || !t || !skg::readable(t, 0x2CC))
+        return;
+    void* ch = F<void*>(t, 0x11C);
+    // Keep vanilla chieftain knockout intact when the chieftain object still exists (even while recovering).
+    if (ch && game::listed(ch, kCitizenNoun))
+        return;
+    // Chieftain pointer is null/gone: clear any stale knockout timer before promoting a living adult.
+    if (F<float>(t, kTribeChiefKoTimerOff) > 0.0f)
+        F<float>(t, kTribeChiefKoTimerOff) = 0.0f;
+    for (void* c : tribe::members(t)) {
+        if (c && !game::is_dead(c) && game::health(c) > 0.0f && F<int>(c, 0xB34) == 1) {
+            thiscall<void>(a_SetChieftain, t, c);
+            return;
+        }
+    }
+}
+
+// BUG-1571: Detect full player tribe wipes on host, grant 5-minute PvP immunity, respawn chieftain + villager
+// after short delay with >= 15 food, and keep Add Baby usable (never Game Over or softlock).
+static void host_wipe_recovery_tick(double now)
+{
+    if (!wipe_recovery_active() || !is_host() || !S || now - g_last_wipe_tick < 0.5)
+        return;
+    g_last_wipe_tick = now;
+    ensure_baby_button_unlocked();
+    bool periodic_tx = (now - g_last_immune_tx >= 3.0);
+    if (periodic_tx)
+        g_last_immune_tx = now;
+    for (const auto& pl : S->players()) {
+        uint8_t p = pl.id;
+        if (!rivals::valid_player(p))
+            continue;
+        void* pt = tribe_of_player(p);
+        if (!pt)
+            continue;
+        int live = live_tribe_members(pt);
+        if (live > 0)
+            ensure_live_chieftain(pt);
+        auto dec = step_wipe_recovery(g_wipe[p], g_wipe_recovery_fix, active(), true, live, now, g_wipe_respawn_delay,
+                                      g_wipe_immune_duration);
+        if (dec.started_wipe) {
+            g_wipes_detected++;
+            if (H && M)
+                H->log(M, SK_INFO,
+                       "tribe_rivals: player %u tribe %p wiped (0 live members); respawn in %.1fs, PvP shield %.0fs (BUG-1571)",
+                       (unsigned)p, pt, g_wipe_respawn_delay, dec.immune_remaining);
+            if (tribe::C.notice)
+                tribe::C.notice(pl.name + "'s tribe was wiped out! Respawning in " +
+                                std::to_string((int)std::round(g_wipe_respawn_delay)) + "s (" +
+                                fmt_mmss(dec.immune_remaining) + " PvP shield).");
+        }
+        if (dec.do_respawn) {
+            // Clear cTribe's chieftain knockout timer (+0x2C8) before promoting a respawned adult;
+            // otherwise BT_CitizenKnockoutEnter (0xDB1A30) immediately knocks out the new chieftain on its next tick.
+            void* old_ch = skg::readable(pt, 0x120) ? F<void*>(pt, 0x11C) : nullptr;
+            if (skg::readable(pt, kTribeChiefKoTimerOff + 4))
+                F<float>(pt, kTribeChiefKoTimerOff) = 0.0f;
+            void* first = nullptr;
+            int spawned = 0;
+            for (int k = 0; k < kWipeRespawnAdults; k++) {
+                if (void* c = tribe::spawn_member(pt, 1, p)) {
+                    net::Vec3 spot = village_spawn_spot(pt, spawned);
+                    game::teleport(c, spot, game::orientation(c));
+                    game::set_grounded(c, true);
+                    float mx = game::max_health(c);
+                    if (mx > 0.0f && game::health(c) <= 0.0f)
+                        game::set_health(c, mx);
+                    if (!first)
+                        first = c;
+                    spawned++;
+                }
+            }
+            if (first && a_SetChieftain) {
+                thiscall<void>(a_SetChieftain, pt, first);
+                if (old_ch && old_ch != first && game::listed(old_ch, kCitizenNoun) &&
+                    (game::is_dead(old_ch) || game::health(old_ch) <= 0.0f)) {
+                    vcall<void>(pt, 0x9C / 4, old_ch, 1); // RemoveMember(old_ch, destroy) so knocked-out chief doesn't linger
+                }
+            }
+            if (tribe_food(pt) < kWipeRecoveryMinFood) {
+                tribe_set_food(pt, kWipeRecoveryMinFood);
+                if (p != 0)
+                    host_send_food(p, true);
+            }
+            ensure_baby_button_unlocked();
+            if (spawned > 0) {
+                g_wipes_recovered++;
+                if (H && M)
+                    H->log(M, SK_INFO,
+                           "tribe_rivals: respawned %d adult(s) for wiped player %u tribe %p (food=%d, shield=%.0fs, BUG-1571)",
+                           spawned, (unsigned)p, pt, tribe_food(pt), dec.immune_remaining);
+                if (tribe::C.notice)
+                    tribe::C.notice(pl.name + "'s tribe respawned! PvP shield active for " +
+                                    fmt_mmss(dec.immune_remaining) + ".");
+            } else {
+                // Retry next tick if engine refused spawn for one frame
+                g_wipe[p].wiping = true;
+                g_wipe[p].wipe_at = now - g_wipe_respawn_delay;
+            }
+        }
+        if (dec.immunity_changed || (periodic_tx && (dec.immune_now || g_wipe[p].wiping)))
+            host_broadcast_immunity(p, now);
+    }
+}
+
 static void reset_runtime(bool restore_game)
 {
     if (restore_game) {
@@ -1778,7 +2074,10 @@ static void reset_runtime(bool restore_game)
     for (int i = 0; i < rivals::kMaxPlayers; i++) {
         g_owned[i] = OwnedTribe{};
         g_last_raid_at[i] = 0.0;
+        g_wipe[i] = PlayerWipeState{};
     }
+    g_last_wipe_tick = 0.0;
+    g_last_immune_tx = 0.0;
     g_guest_assign.clear();
     g_guest_npc_rels.clear();
     g_orig_pt = nullptr;
@@ -1835,6 +2134,7 @@ void tick(double now)
         host_ensure_assignments(now);
         host_spawn_pack_pets();
         host_deliver_creature_payouts();
+        host_wipe_recovery_tick(now); // BUG-1571
         host_eval_tick(now);
         if (now - g_last_food_tx >= 0.5) {
             g_last_food_tx = now;
@@ -1847,6 +2147,8 @@ void tick(double now)
         }
     } else if (is_guest()) {
         apply_guest_perspective();
+        if (wipe_recovery_active())
+            ensure_baby_button_unlocked();
         if (g_swapped && now - g_last_guest_pvp_rel >= 1.0) {
             g_last_guest_pvp_rel = now;
             sync_pvp_native_relations();
@@ -1889,6 +2191,7 @@ void init(const SkHost* host, SkMod* mod, net::Session* sess)
     a_HerdEnable = H->sym("Simulator::cHerd::SetEnabled");
     a_CreatureCreate = H->sym("Simulator::cCreatureAnimal::Create");
     a_GetDomHerd = H->sym("Simulator::cTribe::GetDomesticatedAnimalsHerd");
+    a_TribeGoalListener = H->sym("SporeCoop::TribeGame_GoalListener");
 
     if (a_PlannerUpdate)
         H->hook_create(M, (void*)a_PlannerUpdate, (void*)h_PlannerUpdate, (void**)&o_PlannerUpdate);
@@ -1900,6 +2203,8 @@ void init(const SkHost* host, SkMod* mod, net::Session* sess)
         H->hook_create(M, (void*)a_SetConquered, (void*)h_SetConquered, (void**)&o_SetConquered);
     if (a_RelApply)
         H->hook_create(M, (void*)a_RelApply, (void*)h_ApplyRel, (void**)&o_ApplyRel);
+    if (a_TribeGoalListener)
+        H->hook_create(M, (void*)a_TribeGoalListener, (void*)h_TribeGoalListener, (void**)&o_TribeGoalListener);
 
     rivals::register_faction_handler(rivals::Stage::Tribe, on_faction_message);
     rivals::register_npc_influence_callback(rivals::Stage::Tribe, on_npc_influence);
@@ -1913,26 +2218,29 @@ void init(const SkHost* host, SkMod* mod, net::Session* sess)
 
     savestrip::add_save_hooks(save_start, save_end);
     H->log(M, SK_INFO,
-           "tribe_rivals: initialized (fix=%d setpt=%d planner=%d hut=%d tool=%d conq=%d rel=%d)",
+           "tribe_rivals: initialized (fix=%d setpt=%d planner=%d hut=%d tool=%d conq=%d rel=%d goal=%d)",
            (int)g_rivals_tribe_fix, (int)(a_SetPlayerTribe != 0), (int)(o_PlannerUpdate != nullptr),
            (int)(o_HutTD != nullptr), (int)(o_ToolTD != nullptr), (int)(o_SetConquered != nullptr),
-           (int)(o_ApplyRel != nullptr));
+           (int)(o_ApplyRel != nullptr), (int)(o_TribeGoalListener != nullptr));
 }
 
 std::string status_summary()
 {
-    char b[360];
+    char b[480];
     void* mt = tribe_of_player(my_id());
     snprintf(b, sizeof b,
              "tribe_rivals: fix=%d active=%d swapped=%d orig_pt=%p my_tribe=%p my_pol=%08X my_food=%d "
              "planner_skipped=%u pvp_hits=%u pvp_blocked=%u hut_clamped=%u tool_pvp=%u conquer_blocked=%u "
              "gifts=%u raids=%u inf_earned=%u draft_unlocked=%u draft_payouts=%u species_swaps=%u "
-             "pack_pets_spawned=%u npcs=%u win_needed=%d\n",
+             "pack_pets_spawned=%u pop_go_blocked=%u wipes=%u recovered=%u immune_blocked=%u immune_broken=%u "
+             "npcs=%u win_needed=%d\n",
              (int)g_rivals_tribe_fix, (int)active(), (int)g_swapped, g_orig_pt, mt, tribe_pol(mt),
              mt ? tribe_food(mt) : 0, g_planner_skipped, g_pvp_hits, g_pvp_blocked, g_hut_clamped, g_tool_pvp_hits,
              g_conquer_blocked, g_gifts_done, g_raids_done, g_inf_earned, g_draft_unlocked, g_draft_payouts_applied,
-             g_species_swaps, g_pack_pets_spawned, g_last_npc_count, g_last_win_needed);
+             g_species_swaps, g_pack_pets_spawned, g_pop_gameover_blocked, g_wipes_detected, g_wipes_recovered,
+             g_immune_blocked, g_immune_broken, g_last_npc_count, g_last_win_needed);
     std::string out = b;
+    double now = H ? H->time_seconds() : 0.0;
     if (is_host() && active()) {
         for (int p = 0; p < rivals::kMaxPlayers; p++) {
             const auto& ot = g_owned[p];
@@ -1944,10 +2252,11 @@ std::string status_summary()
                 if (sp && skg::readable(sp, kProfKeyOff + 4))
                     sp_key = F<uint32_t>(sp, kProfKeyOff);
             }
+            int imm_s = (int)std::ceil(player_immune_remaining(g_wipe[p], now));
             snprintf(b, sizeof b,
-                     "  assign pid=%d pol=%08X ptr=%p food=%d members=%u tools=0x%X species=%08X swapped=%d planner_disabled=1\n",
+                     "  assign pid=%d pol=%08X ptr=%p food=%d members=%u tools=0x%X species=%08X swapped=%d live=%d immune=%d planner_disabled=1\n",
                      p, ot.pol, ot.ptr, tribe_food(ot.ptr), (unsigned)tribe::members(ot.ptr).size(),
-                     tribe_tools_mask(ot.ptr), sp_key, (int)ot.species_swapped);
+                     tribe_tools_mask(ot.ptr), sp_key, (int)ot.species_swapped, live_tribe_members(ot.ptr), imm_s);
             out += b;
         }
         for (void* t : tribe::all_tribes()) {
@@ -1963,9 +2272,11 @@ std::string status_summary()
     } else if (is_guest() && active()) {
         for (const auto& e : g_guest_assign) {
             void* lt = find_tribe_by_pol_or_pos(e.tribe_pol, e.x, e.y, e.z);
-            snprintf(b, sizeof b, "  assign pid=%u pol=%08X ptr=%p food=%d members=%u tools=0x%X\n",
+            int imm_s = rivals::valid_player(e.player_id) ? (int)std::ceil(player_immune_remaining(g_wipe[e.player_id], now)) : 0;
+            snprintf(b, sizeof b, "  assign pid=%u pol=%08X ptr=%p food=%d members=%u tools=0x%X live=%d immune=%d\n",
                      (unsigned)e.player_id, e.tribe_pol, lt, lt ? tribe_food(lt) : 0,
-                     lt ? (unsigned)tribe::members(lt).size() : 0u, lt ? tribe_tools_mask(lt) : 0u);
+                     lt ? (unsigned)tribe::members(lt).size() : 0u, lt ? tribe_tools_mask(lt) : 0u,
+                     live_tribe_members(lt), imm_s);
             out += b;
         }
         for (const auto& e : g_guest_npc_rels) {
@@ -2137,7 +2448,19 @@ std::string debug_cmd(const std::vector<std::string>& a)
         if (ams.empty() || vms.empty())
             return "error: no members\n";
         void* ac = ams[0];
+        for (void* c : ams) {
+            if (c && !game::is_dead(c) && game::health(c) > 0.0f) {
+                ac = c;
+                break;
+            }
+        }
         void* vc = vms[0];
+        for (void* c : vms) {
+            if (c && !game::is_dead(c) && game::health(c) > 0.0f) {
+                vc = c;
+                break;
+            }
+        }
         float before = F<float>(vc, 0x5E0);
         static const float zero[3] = {0, 0, 0};
         vcall<int>((uint8_t*)vc + 0x5A8, 0x18 / 4, dmg, tribe_pol(at), 0, zero, (uint8_t*)ac + 0x5A8);
@@ -2273,7 +2596,109 @@ std::string debug_cmd(const std::vector<std::string>& a)
         return b;
     }
 
-    return "usage: coop.tribe rivals [status|gift food|tool <pid> <val>|raid <pid> [amt]|form_npc|setrel <pid> <pol> <0..5>|addfood <pid> <d>|unlock_tool <pid> <k>|swap_species <pid> [key]|hit_hut|hit_member|hit_tool|music_win|gift_win|set_pack_pets <pid> <spec...|auto>|pets [pid]|use_ability <52..57>]\n";
+    if (a[1] == "wipe_timing" && a.size() >= 4) {
+        g_wipe_respawn_delay = std::clamp(atof(a[2].c_str()), 0.5, 300.0);
+        g_wipe_immune_duration = std::clamp(atof(a[3].c_str()), 0.0, 3600.0);
+        char b[96];
+        snprintf(b, sizeof b, "ok: respawn_delay=%.1f immune_duration=%.1f\n", g_wipe_respawn_delay,
+                 g_wipe_immune_duration);
+        return b;
+    }
+
+    if (a[1] == "wipe_all" && a.size() >= 4 && is_host()) {
+        uint8_t att_p = (uint8_t)atoi(a[2].c_str());
+        uint8_t vic_p = (uint8_t)atoi(a[3].c_str());
+        void* at = tribe_of_player(att_p);
+        void* vt = tribe_of_player(vic_p);
+        if (!at || !vt)
+            return "error: tribe missing\n";
+        auto ams = tribe::members(at);
+        void* att_comb = !ams.empty() ? (uint8_t*)ams[0] + 0x5A8 : nullptr;
+        auto vms = tribe::members(vt);
+        static const float zero[3] = {0, 0, 0};
+        int hits = 0;
+        for (void* vc : vms) {
+            if (!vc || game::is_dead(vc) || game::health(vc) <= 0.0f)
+                continue;
+            vcall<int>((uint8_t*)vc + 0x5A8, 0x18 / 4, 5000.0f, tribe_pol(at), 0, zero, att_comb);
+            // A chieftain knocked to ~0.3 HP while others were still alive takes one more hit once last
+            if (!game::is_dead(vc) && game::health(vc) > 0.0f)
+                vcall<int>((uint8_t*)vc + 0x5A8, 0x18 / 4, 5000.0f, tribe_pol(at), 0, zero, att_comb);
+            hits++;
+        }
+        // Final pass in case chieftain survived first pass at 0.3 HP before last villager dropped
+        for (void* vc : tribe::members(vt)) {
+            if (!vc || game::is_dead(vc) || game::health(vc) <= 0.0f)
+                continue;
+            vcall<int>((uint8_t*)vc + 0x5A8, 0x18 / 4, 5000.0f, tribe_pol(at), 0, zero, att_comb);
+        }
+        char b[128];
+        snprintf(b, sizeof b, "ok: hits=%d live_after=%d up=%d pop_go_blocked=%u\n", hits, live_tribe_members(vt),
+                 tribe_up_count(vt), g_pop_gameover_blocked);
+        return b;
+    }
+
+    if (a[1] == "kill_one" && a.size() >= 4 && is_host()) {
+        uint8_t att_p = (uint8_t)atoi(a[2].c_str());
+        uint8_t vic_p = (uint8_t)atoi(a[3].c_str());
+        void* at = tribe_of_player(att_p);
+        void* vt = tribe_of_player(vic_p);
+        if (!at || !vt)
+            return "error: tribe missing\n";
+        auto ams = tribe::members(at);
+        void* ac = !ams.empty() ? ams[0] : nullptr;
+        for (void* c : ams)
+            if (c && !game::is_dead(c) && game::health(c) > 0.0f) {
+                ac = c;
+                break;
+            }
+        void* att_comb = ac ? (uint8_t*)ac + 0x5A8 : nullptr;
+        int live_before = live_tribe_members(vt);
+        int up_before = tribe_up_count(vt);
+        void* target = nullptr;
+        void* ch = skg::readable(vt, 0x120) ? F<void*>(vt, 0x11C) : nullptr;
+        // Prefer killing non-chieftain members first so the chieftain drops last (or alone)
+        for (void* vc : tribe::members(vt)) {
+            if (!vc || game::is_dead(vc) || game::health(vc) <= 0.0f)
+                continue;
+            if (!target || (target == ch && vc != ch))
+                target = vc;
+        }
+        static const float zero[3] = {0, 0, 0};
+        if (target) {
+            vcall<int>((uint8_t*)target + 0x5A8, 0x18 / 4, 5000.0f, tribe_pol(at), 0, zero, att_comb);
+            if (!game::is_dead(target) && game::health(target) > 0.0f)
+                vcall<int>((uint8_t*)target + 0x5A8, 0x18 / 4, 5000.0f, tribe_pol(at), 0, zero, att_comb);
+        }
+        char b[160];
+        snprintf(b, sizeof b, "ok: killed=%d live=%d->%d up=%d->%d pop_go_blocked=%u\n", target ? 1 : 0, live_before,
+                 live_tribe_members(vt), up_before, tribe_up_count(vt), g_pop_gameover_blocked);
+        return b;
+    }
+
+    if (a[1] == "baby" && a.size() >= 3 && is_host()) {
+        uint8_t pid = (uint8_t)atoi(a[2].c_str());
+        void* t = tribe_of_player(pid);
+        if (!t)
+            return "error: tribe missing\n";
+        int before = (int)tribe::members(t).size();
+        int f_before = tribe_food(t);
+        if (pid == 0) {
+            if (f_before < 10)
+                return "error: not enough food\n";
+            if (tribe::spawn_member(t, 0, 0))
+                tribe_add_food(t, -10);
+        } else {
+            handle_guest_baby(pid, 0.f, 0.f, 0.f);
+        }
+        int after = (int)tribe::members(t).size();
+        char b[96];
+        snprintf(b, sizeof b, "%s: members %d->%d food %d->%d\n", after > before ? "ok" : "failed", before, after,
+                 f_before, tribe_food(t));
+        return b;
+    }
+
+    return "usage: coop.tribe rivals [status|gift food|tool <pid> <val>|raid <pid> [amt]|form_npc|setrel <pid> <pol> <0..5>|addfood <pid> <d>|unlock_tool <pid> <k>|swap_species <pid> [key]|hit_hut|hit_member|hit_tool|music_win|gift_win|set_pack_pets <pid> <spec...|auto>|pets [pid]|use_ability <52..57>|wipe_timing <respawn_s> <immune_s>|wipe_all <att> <vic>|baby <pid>]\n";
 }
 
 } // namespace tribe_rivals

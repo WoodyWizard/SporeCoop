@@ -17,6 +17,12 @@ void tick(double now);
 // we are in Tribe stage, and Tribe stage mode is Rivals.
 bool enabled();
 bool active();
+// BUG-1571: True when Tribe Rivals wipe recovery + PopDestroyed guard + PvP immunity is active.
+bool wipe_recovery_active();
+bool is_immune(uint8_t pid);
+// Host: called when player `sender_pid` issues an explicit hostile PvP order against non-immune rival `target_pid`.
+// Drops `sender_pid`'s own PvP immunity early so immunity cannot be exploited for free attacks.
+void note_pvp_aggression(uint8_t sender_pid, uint8_t target_pid);
 
 // R2: Host ownership of cTribe objects (0 = host, 1..3 = guest, 0xFE = NPC tribe).
 uint8_t owner_of_tribe(void* tribe);

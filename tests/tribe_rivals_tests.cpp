@@ -471,6 +471,71 @@ static void test_pack_pet_handoff()
     CHECK(plan.species[1].empty() && !plan.spawned[1]);
 }
 
+static void test_wipe_recovery_and_immunity()
+{
+    printf("tribe_rivals: wipe recovery, baby food floor, and 5-min PvP immunity (BUG-1571)\n");
+    PlayerWipeState st;
+
+    // Normal living tribe: no wipe, no immunity
+    auto d0 = step_wipe_recovery(st, true, true, true, 5, 100.0, 15.0, 300.0);
+    CHECK(!d0.started_wipe && !d0.do_respawn && !d0.immune_now && st.wipes_count == 0);
+
+    // Fix OFF: wipe does nothing
+    auto d_off = step_wipe_recovery(st, false, true, true, 0, 101.0, 15.0, 300.0);
+    CHECK(!d_off.started_wipe && !d_off.do_respawn && !d_off.immune_now);
+
+    // Full tribe wipe (0 live members): immediately starts wipe timer + 5-min (300s) PvP immunity
+    auto d1 = step_wipe_recovery(st, true, true, true, 0, 110.0, 15.0, 300.0);
+    CHECK(d1.started_wipe && !d1.do_respawn && d1.immunity_changed && d1.immune_now);
+    CHECK(std::fabs(d1.immune_remaining - 300.0) < 1e-6 && st.wipes_count == 1);
+
+    // Mid-countdown (10s later): still wiping, still immune, no respawn yet
+    auto d2 = step_wipe_recovery(st, true, true, true, 0, 120.0, 15.0, 300.0);
+    CHECK(!d2.started_wipe && !d2.do_respawn && d2.immune_now);
+    CHECK(std::fabs(d2.immune_remaining - 290.0) < 1e-6);
+
+    // At 15s delay: respawn triggers and refreshes full 5-min (300s) PvP shield from respawn time
+    auto d3 = step_wipe_recovery(st, true, true, true, 0, 125.0, 15.0, 300.0);
+    CHECK(!d3.started_wipe && d3.do_respawn && d3.immunity_changed && d3.immune_now);
+    CHECK(std::fabs(d3.immune_remaining - 300.0) < 1e-6 && !st.wiping);
+
+    // Damage, hostile orders, and food raids are blocked while victim is immune even at War
+    CHECK(decide_damage(true, 0, 1, true, false, true) == DamageDecision::Block);
+    CHECK(decide_damage(true, 0, 1, true, true, true) == DamageDecision::Block);
+    CHECK(decide_host_order(true, 7, 0, 1, true, true) == OrderDecision::BlockHostile);
+    CHECK(decide_host_order(true, 15, 0, 1, true, true) == OrderDecision::BlockHostile);
+    CHECK(raid_steal_amount(50, 15, true, true) == 0);
+    // NPC damage to immune player's citizens still passes through (PvP shield only)
+    CHECK(decide_damage(true, kNoOwner, 1, false, false, true) == DamageDecision::Passthrough);
+    CHECK(decide_damage(true, kNoOwner, 1, false, true, true) == DamageDecision::ClampMainHut);
+
+    // Food raid floor keeps >= 10 food when wipe_fix is ON so victim is never softlocked from buying babies
+    CHECK(raid_steal_amount(40, 15, false, true) == 15);
+    CHECK(raid_steal_amount(14, 15, false, true) == 4);
+    CHECK(raid_steal_amount(10, 15, false, true) == 0);
+    CHECK(raid_steal_amount(10, 15, false, false) == 10);
+
+    // Attacking a rival while immune breaks own immunity early (anti-exploit)
+    CHECK(break_immunity_on_attack(st, 200.0));
+    CHECK(!is_player_immune(st, 200.0));
+    CHECK(!break_immunity_on_attack(st, 200.0)); // idempotent
+
+    // Immunity expiration after 300s reports immunity_changed
+    PlayerWipeState st2;
+    (void)step_wipe_recovery(st2, true, true, true, 0, 100.0, 15.0, 300.0);
+    auto d_rec = step_wipe_recovery(st2, true, true, true, 1, 105.0, 15.0, 300.0);
+    CHECK(d_rec.cancelled_wipe && !st2.wiping && d_rec.immune_now); // self-recovered early, keeps shield
+    auto d_exp = step_wipe_recovery(st2, true, true, true, 2, 401.0, 15.0, 300.0);
+    CHECK(d_exp.immunity_changed && !d_exp.immune_now && d_exp.immune_remaining == 0.0);
+
+    // Wire roundtrip for CustomOp::Immunity
+    net::Writer w;
+    write_food_sync(w, {CustomOp::Immunity, 1, 300, 1});
+    net::Reader r(w.data.data(), w.data.size());
+    FoodSyncMsg m;
+    CHECK(read_food_sync(r, m) && m.op == CustomOp::Immunity && m.player_id == 1 && m.value == 300 && m.tools_mask == 1);
+}
+
 int main()
 {
     test_pick_rival_tribe();
@@ -486,6 +551,7 @@ int main()
     test_npc_ui_list();
     test_consequence_abilities_and_cooldowns();
     test_pack_pet_handoff();
+    test_wipe_recovery_and_immunity();
     if (g_fail) {
         printf("tribe_rivals_tests: %d FAILED\n", g_fail);
         return 1;

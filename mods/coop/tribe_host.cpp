@@ -713,14 +713,19 @@ void host_command(uint8_t from, net::Reader& r)
         g_last_cmd += tgt.kind == 1 && g_host.members.has(tgt.id) ? " rejected: the target is gone (BUG-1053)" : " rejected: no such target here";
         return; // the object is gone on the host
     }
-    // BUG-1554: In Tribe Rivals, bypass ff_try_order and gate hostile rival orders on rivals::at_war().
+    // BUG-1554 & BUG-1571: In Tribe Rivals, bypass ff_try_order and gate hostile rival orders on rivals::at_war()
+    // and wipe PvP immunity.
     uint8_t target_owner = tribe_rivals::kNoOwner;
     if (rivals_on && kind == CMD_ACTION && target) {
         if (void* tt = tribe_of_target_obj(target))
             target_owner = tribe_rivals::owner_of_tribe(tt);
     }
     bool at_war_target = rivals_on && rivals::valid_player(target_owner) && rivals::at_war(from, target_owner);
-    auto order_dec = tribe_rivals::decide_host_order(rivals_on, action, from, target_owner, at_war_target);
+    bool vic_immune = rivals_on && rivals::valid_player(target_owner) && tribe_rivals::is_immune(target_owner);
+    auto order_dec = tribe_rivals::decide_host_order(rivals_on, action, from, target_owner, at_war_target, vic_immune);
+    if (rivals_on && order_dec == tribe_rivals::OrderDecision::AllowNative &&
+        tribe_rivals::is_hostile_citizen_action(action) && rivals::valid_player(target_owner) && target_owner != from)
+        tribe_rivals::note_pvp_aggression(from, target_owner);
 
     int ran = 0;
     for (uint16_t id : ids) {

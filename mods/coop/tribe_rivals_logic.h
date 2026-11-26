@@ -264,16 +264,113 @@ inline SubjugationEval evaluate_stage_end(const std::vector<uint32_t>& npc_pols,
     return ev;
 }
 
-// ---------------- R7: War PvP & Main Village Inviolability ----------------
+// ---------------- R7: War PvP, Main Village Inviolability & BUG-1571 Wipe Recovery / Immunity ----------------
+constexpr double kDefaultWipeRespawnDelay = 15.0;      // s: respawn delay after full tribe wipe
+constexpr double kDefaultWipeImmunityDuration = 300.0; // s: 5-minute PvP shield after wipe / respawn
+constexpr int32_t kWipeRecoveryMinFood = 15;           // food floor on respawn so babies can be bought right away
+constexpr int32_t kRaidFoodFloor = 10;                 // war raids leave >= 10 food so defender cannot softlock
+constexpr int kWipeRespawnAdults = 2;                  // chieftain + 1 villager on wipe recovery
+
+struct PlayerWipeState {
+    bool wiping = false;
+    double wipe_at = 0.0;
+    double immune_until = 0.0;
+    uint32_t wipes_count = 0;
+};
+
+struct WipeRecoveryDecision {
+    bool started_wipe = false;
+    bool do_respawn = false;
+    bool cancelled_wipe = false;
+    bool immunity_changed = false;
+    bool immune_now = false;
+    double immune_remaining = 0.0;
+};
+
+inline bool is_player_immune(const PlayerWipeState& st, double now)
+{
+    return st.immune_until > 0.0 && now < st.immune_until;
+}
+
+inline double player_immune_remaining(const PlayerWipeState& st, double now)
+{
+    return is_player_immune(st, now) ? (st.immune_until - now) : 0.0;
+}
+
+// Clear a player's own PvP shield early if they intentionally attack a rival player while shielded.
+inline bool break_immunity_on_attack(PlayerWipeState& st, double now)
+{
+    if (!is_player_immune(st, now))
+        return false;
+    st.immune_until = 0.0;
+    return true;
+}
+
+// Pure host tick decision for a single player's tribe wipe recovery & 5-minute PvP immunity (BUG-1571).
+inline WipeRecoveryDecision step_wipe_recovery(PlayerWipeState& st, bool fix_on, bool rivals_active, bool tribe_assigned,
+                                               int live_members, double now,
+                                               double respawn_delay = kDefaultWipeRespawnDelay,
+                                               double immune_duration = kDefaultWipeImmunityDuration)
+{
+    WipeRecoveryDecision d;
+    if (!fix_on || !rivals_active || !tribe_assigned)
+        return d;
+    bool was_immune = is_player_immune(st, now);
+    if (st.immune_until > 0.0 && !was_immune) {
+        st.immune_until = 0.0;
+        d.immunity_changed = true;
+    }
+    if (live_members <= 0) {
+        if (!st.wiping) {
+            st.wiping = true;
+            st.wipe_at = now;
+            st.wipes_count++;
+            if (immune_duration > 0.0) {
+                double want = now + immune_duration;
+                if (want > st.immune_until) {
+                    st.immune_until = want;
+                    d.immunity_changed = true;
+                }
+            }
+            d.started_wipe = true;
+        } else if (now - st.wipe_at >= std::max(0.0, respawn_delay)) {
+            st.wiping = false;
+            if (immune_duration > 0.0) {
+                double want = now + immune_duration;
+                if (want > st.immune_until) {
+                    st.immune_until = want;
+                    d.immunity_changed = true;
+                }
+            }
+            d.do_respawn = true;
+        }
+    } else if (st.wiping) {
+        // Player recovered on their own (e.g., bought a baby or knocked-out chieftain stood up)
+        st.wiping = false;
+        d.cancelled_wipe = true;
+    }
+    d.immune_now = is_player_immune(st, now);
+    d.immune_remaining = player_immune_remaining(st, now);
+    return d;
+}
+
+inline int32_t raid_steal_amount(int32_t avail_food, int32_t want_amount, bool vic_immune, bool wipe_fix)
+{
+    if (vic_immune || want_amount <= 0 || avail_food <= 0)
+        return 0;
+    int32_t stealable = wipe_fix ? std::max(0, avail_food - kRaidFoodFloor) : avail_food;
+    return std::min(want_amount, stealable);
+}
+
 enum class DamageDecision : uint8_t {
     Passthrough = 0, // not rivals, or NPC target, or self
-    Block = 1,       // player-vs-player while Neutral or Allied
+    Block = 1,       // player-vs-player while Neutral, Allied, or victim has wipe PvP immunity
     AllowPvp = 2,    // player-vs-player at War (member or extra tool hut)
     ClampMainHut = 3 // main village hut of any player tribe: clamp HP above floor, never conquer
 };
 
 inline DamageDecision decide_damage(bool rivals_active, uint8_t att_owner, uint8_t vic_owner, bool at_war,
-                                    bool is_main_hut)
+                                    bool is_main_hut, bool vic_immune = false)
 {
     if (!rivals_active)
         return DamageDecision::Passthrough;
@@ -282,7 +379,7 @@ inline DamageDecision decide_damage(bool rivals_active, uint8_t att_owner, uint8
     if (rivals::valid_player(att_owner)) {
         if (att_owner == vic_owner)
             return DamageDecision::Passthrough;
-        if (!at_war)
+        if (!at_war || vic_immune)
             return DamageDecision::Block;
         return is_main_hut ? DamageDecision::ClampMainHut : DamageDecision::AllowPvp;
     }
@@ -310,11 +407,11 @@ inline bool can_conquer_tribe(bool rivals_active, uint8_t tribe_owner)
     return true;
 }
 
-// ---------------- BUG-1554: Host order routing (War PvP vs Together friendly fire) ----------------
+// ---------------- BUG-1554 & BUG-1571: Host order routing (War PvP, Immunity vs Together friendly fire) ----------------
 enum class OrderDecision : uint8_t {
     AllowNative = 0,     // pass through to cCreatureCitizen::DoAction
     RunFriendlyFire = 1, // Together mode: delegate to ff_try_order for same-tribe cross-player hits
-    BlockHostile = 2,    // Tribe Rivals: hostile order against a rival player while not at War
+    BlockHostile = 2,    // Tribe Rivals: hostile order against a rival player while not at War or victim is immune
 };
 
 inline bool is_hostile_citizen_action(int action)
@@ -324,13 +421,13 @@ inline bool is_hostile_citizen_action(int action)
 }
 
 inline OrderDecision decide_host_order(bool rivals_active, int action, uint8_t sender_pid, uint8_t target_owner_pid,
-                                       bool at_war)
+                                       bool at_war, bool vic_immune = false)
 {
     if (!rivals_active)
         return OrderDecision::RunFriendlyFire;
     if (is_hostile_citizen_action(action) && rivals::valid_player(sender_pid) &&
         rivals::valid_player(target_owner_pid) && sender_pid != target_owner_pid) {
-        return at_war ? OrderDecision::AllowNative : OrderDecision::BlockHostile;
+        return (at_war && !vic_immune) ? OrderDecision::AllowNative : OrderDecision::BlockHostile;
     }
     return OrderDecision::AllowNative;
 }
@@ -752,12 +849,13 @@ inline bool read_draft_apply(net::Reader& r, DraftApplyMsg& out)
     return true;
 }
 
-// SK_STAGE_CUSTOM (16): own-tribe food sync & guest food operations
+// SK_STAGE_CUSTOM (16): own-tribe food sync, guest food operations, and wipe PvP immunity sync
 enum class CustomOp : uint8_t {
-    FoodTotal = 1,   // host -> guest: authoritative own tribe food total
-    FoodDelta = 2,   // guest -> host: own tribe food spend/earn delta
-    BuyMember = 3,   // guest -> host: buy baby in own tribe from own food
-    BuyTool = 4,     // guest -> host: unlock/build tool in own tribe from own food
+    FoodTotal = 1, // host -> guest: authoritative own tribe food total
+    FoodDelta = 2, // guest -> host: own tribe food spend/earn delta
+    BuyMember = 3, // guest -> host: buy baby in own tribe from own food
+    BuyTool = 4,   // guest -> host: unlock/build tool in own tribe from own food
+    Immunity = 5,  // host -> all (BUG-1571): player_id, value = remaining shield seconds (0 = none), tools_mask bit 0 = wiping
 };
 
 struct FoodSyncMsg {
@@ -783,7 +881,7 @@ inline bool read_food_sync(net::Reader& r, FoodSyncMsg& out)
     out.tools_mask = r.u32();
     if (!r.ok() || !rivals::valid_player(out.player_id))
         return false;
-    if (op < (uint8_t)CustomOp::FoodTotal || op > (uint8_t)CustomOp::BuyTool)
+    if (op < (uint8_t)CustomOp::FoodTotal || op > (uint8_t)CustomOp::Immunity)
         return false;
     out.op = (CustomOp)op;
     return true;

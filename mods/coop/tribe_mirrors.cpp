@@ -66,6 +66,8 @@ bool player_tribe_out(void* t)
 {
     if (!g_fix_gameover || !t || t != player_tribe())
         return false;
+    if (tribe_rivals::wipe_recovery_active())
+        return false; // BUG-1571: Tribe Rivals handles full wipes via auto-respawn, never Game Over
     if (is_guest() && coop_ui::input_lock_now() <= 0) {
         bool none = true;
         for (void* c : members(t))
