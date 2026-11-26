@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.8.1.3] - 2026-11-26
+
+Community-reported crash and Space Rivals stability hotfix addressing Civilization bone-transform crashes, save-slot corruption during Save & Exit, and Space Rivals colony/homeworld loss when the host uses a Space editor (GitHub #223).
+
+### Fixed
+- **Civ / Creature Null Animated-Creature Crash in `GetBoneTransform` & `AttachToBone`** (`game.creature_bone_null`): hooked `cCreatureBase::GetBoneTransform` (`0x00C11CB0`) and `cCreatureBase::AttachToBone` (`0x00C120B0`) to validate `mpAnimatedCreature` (`+0xB54`), `mpModel` (`+0x17C`), and bone slot readability before dereferencing, fixing the 3x Civilization stage crash at GOG `0x00C11CEF` (Steam `0x00B81CEF`, reading `0x17C` on null) when `cCombatant::GetHitPosition` (`0x00C199D0`) is called with a non-`-1` bone index on an unbaked or cleaned-up creature. (BUG-1576)
+- **Save-Slot Corruption When Auto-Share Fires During Pause Menu / Save & Exit** (`world.share_not_paused`): held automatic world-share queuing (`session_glue.cpp`) and pending share saves (`world.cpp`) while the host's Pause Menu, Sporepedia, or an explicit modal dialog (such as "Do you want to save your game?") is open, preventing a concurrent `kSaveMsg` from running mid-teardown during Save & Exit to Main Menu and corrupting the save slot (subsequent `0x00BA7FA7` `LoadGame` crash). (BUG-1577)
+- **Space / Space Rivals Guest Colony Loss & Homeworld Reset After Host Editor** (`space.editor_no_reload`, `space.keep_colonies_reload`, GitHub #223): stopped host Space design/creation editors (and Tribe/Civ Rivals editors via extended `rivals.editor_no_reload`) from queuing full-galaxy `MSG_WORLD` reloads to guests when returning to Space and lifting off a planet; fixed `space_map.cpp` kept-colony restore across in-session world reloads without disconnect (unbinding on non-Space modes plus `share_serial` fallback so a fresh empty roster no longer wipes the host's kept colony list); included Space Rivals emigrated homeworlds in kept colony city persistence while waiting for emigration to finish; and scoped `space_allies.cpp` `colonize()`/`cities_apply()` active-planet waits to landed context (`ctx == 0`) so homeworld cities restore cleanly in solar system view. (BUG-1578)
+
 ## [0.8.1.2] - 2026-11-26
 
 Community-reported Space & Tribe Rivals fixes, streamer IP privacy, Cell knockout visibility, Tribe Rivals polish, and 5-language localization (English, Russian, Hungarian, Spanish, and Simplified Chinese).
