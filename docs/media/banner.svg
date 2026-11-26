@@ -1,124 +1,176 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 340" width="1280" height="340" role="img" aria-label="SporeCoop: play every stage of Spore together">
-<defs><radialGradient id="bg" cx="70%" cy="40%" r="90%"><stop offset="0" stop-color="#1d2650"/><stop offset="0.6" stop-color="#0f1530"/><stop offset="1" stop-color="#090d1d"/></radialGradient>
-<radialGradient id="g0" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#ffffff" stop-opacity="0.85"/><stop offset="0.25" stop-color="#3fc7d9"/><stop offset="1" stop-color="#3fc7d9" stop-opacity="0.55"/></radialGradient>
-<radialGradient id="g1" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#ffffff" stop-opacity="0.85"/><stop offset="0.25" stop-color="#74c867"/><stop offset="1" stop-color="#74c867" stop-opacity="0.55"/></radialGradient>
-<radialGradient id="g2" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#ffffff" stop-opacity="0.85"/><stop offset="0.25" stop-color="#f0b44a"/><stop offset="1" stop-color="#f0b44a" stop-opacity="0.55"/></radialGradient>
-<radialGradient id="g3" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#ffffff" stop-opacity="0.85"/><stop offset="0.25" stop-color="#ff7a5f"/><stop offset="1" stop-color="#ff7a5f" stop-opacity="0.55"/></radialGradient>
-<radialGradient id="g4" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#ffffff" stop-opacity="0.85"/><stop offset="0.25" stop-color="#b08cff"/><stop offset="1" stop-color="#b08cff" stop-opacity="0.55"/></radialGradient>
-</defs>
-<rect width="1280" height="340" rx="18" fill="url(#bg)"/>
-<circle cx="418" cy="58" r="0.7" fill="#ffffff" opacity="0.51"/>
-<circle cx="685" cy="127" r="1.2" fill="#ffffff" opacity="0.18"/>
-<circle cx="57" cy="149" r="0.7" fill="#ffffff" opacity="0.19"/>
-<circle cx="545" cy="275" r="0.9" fill="#ffffff" opacity="0.22"/>
-<circle cx="801" cy="313" r="1.1" fill="#ffffff" opacity="0.47"/>
-<circle cx="1240" cy="25" r="0.9" fill="#ffffff" opacity="0.62"/>
-<circle cx="192" cy="48" r="1.6" fill="#ffffff" opacity="0.32"/>
-<circle cx="238" cy="196" r="1.0" fill="#ffffff" opacity="0.50"/>
-<circle cx="700" cy="30" r="0.8" fill="#ffffff" opacity="0.18"/>
-<circle cx="867" cy="147" r="1.3" fill="#ffffff" opacity="0.32"/>
-<circle cx="581" cy="106" r="1.4" fill="#ffffff" opacity="0.59"/>
-<circle cx="318" cy="194" r="1.7" fill="#ffffff" opacity="0.44"/>
-<circle cx="929" cy="102" r="0.7" fill="#ffffff" opacity="0.69"/>
-<circle cx="537" cy="252" r="1.2" fill="#ffffff" opacity="0.23"/>
-<circle cx="59" cy="224" r="1.3" fill="#ffffff" opacity="0.57"/>
-<circle cx="1113" cy="110" r="1.3" fill="#ffffff" opacity="0.53"/>
-<circle cx="741" cy="156" r="1.7" fill="#ffffff" opacity="0.61"/>
-<circle cx="607" cy="223" r="1.4" fill="#ffffff" opacity="0.18"/>
-<circle cx="825" cy="328" r="0.9" fill="#ffffff" opacity="0.60"/>
-<circle cx="496" cy="224" r="1.2" fill="#ffffff" opacity="0.16"/>
-<circle cx="222" cy="47" r="1.5" fill="#ffffff" opacity="0.18"/>
-<circle cx="173" cy="89" r="1.6" fill="#ffffff" opacity="0.37"/>
-<circle cx="112" cy="154" r="1.7" fill="#ffffff" opacity="0.45"/>
-<circle cx="1042" cy="286" r="1.1" fill="#ffffff" opacity="0.30"/>
-<circle cx="462" cy="293" r="0.8" fill="#ffffff" opacity="0.68"/>
-<circle cx="232" cy="84" r="1.2" fill="#ffffff" opacity="0.28"/>
-<circle cx="752" cy="94" r="1.1" fill="#ffffff" opacity="0.15"/>
-<circle cx="475" cy="191" r="1.4" fill="#ffffff" opacity="0.67"/>
-<circle cx="660" cy="208" r="0.7" fill="#ffffff" opacity="0.52"/>
-<circle cx="1143" cy="260" r="1.6" fill="#ffffff" opacity="0.63"/>
-<circle cx="504" cy="138" r="1.4" fill="#ffffff" opacity="0.21"/>
-<circle cx="88" cy="32" r="0.8" fill="#ffffff" opacity="0.26"/>
-<circle cx="438" cy="27" r="0.8" fill="#ffffff" opacity="0.15"/>
-<circle cx="138" cy="126" r="1.6" fill="#ffffff" opacity="0.16"/>
-<circle cx="784" cy="58" r="1.0" fill="#ffffff" opacity="0.29"/>
-<circle cx="469" cy="49" r="1.8" fill="#ffffff" opacity="0.62"/>
-<circle cx="597" cy="165" r="0.7" fill="#ffffff" opacity="0.20"/>
-<circle cx="442" cy="95" r="0.8" fill="#ffffff" opacity="0.61"/>
-<circle cx="39" cy="314" r="0.8" fill="#ffffff" opacity="0.44"/>
-<circle cx="694" cy="19" r="1.8" fill="#ffffff" opacity="0.44"/>
-<circle cx="1098" cy="233" r="1.0" fill="#ffffff" opacity="0.29"/>
-<circle cx="220" cy="257" r="1.5" fill="#ffffff" opacity="0.44"/>
-<circle cx="425" cy="81" r="1.8" fill="#ffffff" opacity="0.60"/>
-<circle cx="1084" cy="268" r="1.5" fill="#ffffff" opacity="0.60"/>
-<circle cx="296" cy="176" r="0.6" fill="#ffffff" opacity="0.35"/>
-<circle cx="45" cy="99" r="1.4" fill="#ffffff" opacity="0.29"/>
-<circle cx="1215" cy="153" r="1.8" fill="#ffffff" opacity="0.67"/>
-<circle cx="1213" cy="127" r="0.9" fill="#ffffff" opacity="0.27"/>
-<circle cx="258" cy="75" r="1.7" fill="#ffffff" opacity="0.49"/>
-<circle cx="1069" cy="163" r="1.6" fill="#ffffff" opacity="0.51"/>
-<circle cx="117" cy="221" r="1.5" fill="#ffffff" opacity="0.65"/>
-<circle cx="955" cy="163" r="1.5" fill="#ffffff" opacity="0.25"/>
-<circle cx="429" cy="266" r="1.1" fill="#ffffff" opacity="0.68"/>
-<circle cx="516" cy="313" r="0.8" fill="#ffffff" opacity="0.55"/>
-<circle cx="170" cy="58" r="1.6" fill="#ffffff" opacity="0.65"/>
-<circle cx="194" cy="274" r="1.4" fill="#ffffff" opacity="0.69"/>
-<circle cx="452" cy="186" r="0.6" fill="#ffffff" opacity="0.22"/>
-<circle cx="1233" cy="218" r="1.7" fill="#ffffff" opacity="0.44"/>
-<circle cx="557" cy="289" r="0.9" fill="#ffffff" opacity="0.60"/>
-<circle cx="327" cy="104" r="1.3" fill="#ffffff" opacity="0.28"/>
-<circle cx="337" cy="144" r="1.7" fill="#ffffff" opacity="0.22"/>
-<circle cx="456" cy="157" r="1.7" fill="#ffffff" opacity="0.47"/>
-<circle cx="540" cy="304" r="1.2" fill="#ffffff" opacity="0.43"/>
-<circle cx="670" cy="16" r="0.8" fill="#ffffff" opacity="0.39"/>
-<circle cx="15" cy="266" r="1.2" fill="#ffffff" opacity="0.24"/>
-<circle cx="924" cy="188" r="1.2" fill="#ffffff" opacity="0.33"/>
-<circle cx="710" cy="261" r="1.3" fill="#ffffff" opacity="0.21"/>
-<circle cx="323" cy="99" r="1.2" fill="#ffffff" opacity="0.57"/>
-<circle cx="718" cy="253" r="1.1" fill="#ffffff" opacity="0.65"/>
-<circle cx="782" cy="172" r="1.4" fill="#ffffff" opacity="0.43"/>
-<circle cx="580" cy="181" r="1.7" fill="#ffffff" opacity="0.41"/>
-<circle cx="891" cy="290" r="0.9" fill="#ffffff" opacity="0.67"/>
-<circle cx="715" cy="312" r="0.8" fill="#ffffff" opacity="0.61"/>
-<circle cx="163" cy="151" r="0.9" fill="#ffffff" opacity="0.19"/>
-<circle cx="102" cy="224" r="1.7" fill="#ffffff" opacity="0.58"/>
-<circle cx="205" cy="239" r="0.8" fill="#ffffff" opacity="0.51"/>
-<circle cx="1122" cy="320" r="1.7" fill="#ffffff" opacity="0.27"/>
-<circle cx="512" cy="166" r="1.6" fill="#ffffff" opacity="0.69"/>
-<circle cx="213" cy="148" r="1.0" fill="#ffffff" opacity="0.43"/>
-<circle cx="257" cy="112" r="0.6" fill="#ffffff" opacity="0.55"/>
-<circle cx="708" cy="151" r="1.0" fill="#ffffff" opacity="0.16"/>
-<circle cx="796" cy="174" r="1.8" fill="#ffffff" opacity="0.19"/>
-<circle cx="1003" cy="321" r="0.9" fill="#ffffff" opacity="0.21"/>
-<circle cx="60" cy="259" r="0.8" fill="#ffffff" opacity="0.30"/>
-<circle cx="542" cy="302" r="0.9" fill="#ffffff" opacity="0.60"/>
-<circle cx="198" cy="304" r="1.4" fill="#ffffff" opacity="0.46"/>
-<circle cx="123" cy="28" r="1.1" fill="#ffffff" opacity="0.53"/>
-<circle cx="101" cy="310" r="1.6" fill="#ffffff" opacity="0.50"/>
-<circle cx="116" cy="284" r="1.6" fill="#ffffff" opacity="0.19"/>
-<circle cx="582" cy="119" r="1.7" fill="#ffffff" opacity="0.45"/>
-<path d="M560,285 L640,250 Q692,280 745,215 Q798,245 850,160 Q912,190 975,120 Q1052,150 1130,95" fill="none" stroke="#ffffff" stroke-opacity="0.25" stroke-width="2" stroke-dasharray="2 8" stroke-linecap="round"/>
-<circle cx="640" cy="250" r="26" fill="#3fc7d9" opacity="0.12"/>
-<circle cx="640" cy="250" r="16" fill="url(#g0)"/>
-<circle cx="659" cy="227" r="5" fill="#3fc7d9" stroke="#ffffff" stroke-opacity="0.6" stroke-width="1.5"/>
-<text x="640" y="292" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" letter-spacing="2" fill="#3fc7d9">CELL</text>
-<circle cx="745" cy="215" r="32" fill="#74c867" opacity="0.12"/>
-<circle cx="745" cy="215" r="22" fill="url(#g1)"/>
-<circle cx="776" cy="196" r="7" fill="#74c867" stroke="#ffffff" stroke-opacity="0.6" stroke-width="1.5"/>
-<text x="745" y="263" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" letter-spacing="2" fill="#74c867">CREATURE</text>
-<circle cx="850" cy="160" r="40" fill="#f0b44a" opacity="0.12"/>
-<circle cx="850" cy="160" r="30" fill="url(#g2)"/>
-<circle cx="893" cy="151" r="10" fill="#f0b44a" stroke="#ffffff" stroke-opacity="0.6" stroke-width="1.5"/>
-<text x="850" y="216" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" letter-spacing="2" fill="#f0b44a">TRIBE</text>
-<circle cx="975" cy="120" r="50" fill="#ff7a5f" opacity="0.12"/>
-<circle cx="975" cy="120" r="40" fill="url(#g3)"/>
-<circle cx="1028" cy="128" r="13" fill="#ff7a5f" stroke="#ffffff" stroke-opacity="0.6" stroke-width="1.5"/>
-<text x="975" y="186" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" letter-spacing="2" fill="#ff7a5f">CIVILIZATION</text>
-<circle cx="1130" cy="95" r="62" fill="#b08cff" opacity="0.12"/>
-<circle cx="1130" cy="95" r="52" fill="url(#g4)"/>
-<circle cx="1188" cy="127" r="17" fill="#b08cff" stroke="#ffffff" stroke-opacity="0.6" stroke-width="1.5"/>
-<text x="1130" y="173" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" letter-spacing="2" fill="#b08cff">SPACE</text>
-<text x="64" y="150" font-family="Arial Rounded MT Bold, Segoe UI, Helvetica, Arial, sans-serif" font-weight="800" font-size="76" fill="#ffffff">Spore<tspan fill="#8ea6ff">Coop</tspan></text>
-<text x="68" y="196" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="25" fill="#c9d2f0">Play every stage of Spore together</text>
-<text x="68" y="236" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" fill="#8f9ac0">one shared world · your own creatures · co-op mechanics in every stage</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 360" width="1280" height="360" role="img" aria-label="SporeCoop - play every stage of Spore together or as rivals">
+  <defs>
+    <radialGradient id="bg" cx="72%" cy="38%" r="88%">
+      <stop offset="0%" stop-color="#252c68"/>
+      <stop offset="48%" stop-color="#13193b"/>
+      <stop offset="100%" stop-color="#080c1c"/>
+    </radialGradient>
+    <radialGradient id="nebulaA" cx="84%" cy="28%" r="42%">
+      <stop offset="0%" stop-color="#8f7bff" stop-opacity="0.28"/>
+      <stop offset="55%" stop-color="#3fc7d9" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#080c1c" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="nebulaB" cx="18%" cy="85%" r="45%">
+      <stop offset="0%" stop-color="#2fd6b5" stop-opacity="0.18"/>
+      <stop offset="60%" stop-color="#ff9a3c" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#080c1c" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="brandGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#7ee8ff"/>
+      <stop offset="50%" stop-color="#9cb0ff"/>
+      <stop offset="100%" stop-color="#c39bff"/>
+    </linearGradient>
+    <linearGradient id="arcCoop" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#3fc7d9" stop-opacity="0.75"/>
+      <stop offset="50%" stop-color="#74c867" stop-opacity="0.65"/>
+      <stop offset="100%" stop-color="#b08cff" stop-opacity="0.85"/>
+    </linearGradient>
+    <linearGradient id="arcRivals" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f0b44a" stop-opacity="0.55"/>
+      <stop offset="55%" stop-color="#ff7a5f" stop-opacity="0.65"/>
+      <stop offset="100%" stop-color="#ff9a3c" stop-opacity="0.20"/>
+    </linearGradient>
+    <radialGradient id="g0" cx="35%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.92"/>
+      <stop offset="28%" stop-color="#3fc7d9"/>
+      <stop offset="100%" stop-color="#11768c"/>
+    </radialGradient>
+    <radialGradient id="g1" cx="35%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.92"/>
+      <stop offset="28%" stop-color="#74c867"/>
+      <stop offset="100%" stop-color="#2c7b38"/>
+    </radialGradient>
+    <radialGradient id="g2" cx="35%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.92"/>
+      <stop offset="28%" stop-color="#f0b44a"/>
+      <stop offset="100%" stop-color="#a86214"/>
+    </radialGradient>
+    <radialGradient id="g3" cx="35%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.92"/>
+      <stop offset="28%" stop-color="#ff7a5f"/>
+      <stop offset="100%" stop-color="#a83226"/>
+    </radialGradient>
+    <radialGradient id="g4" cx="35%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.92"/>
+      <stop offset="28%" stop-color="#b08cff"/>
+      <stop offset="100%" stop-color="#5a39b8"/>
+    </radialGradient>
+    <clipPath id="cardClip">
+      <rect width="1280" height="360" rx="20"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#cardClip)">
+    <!-- Deep space backdrop -->
+    <rect width="1280" height="360" fill="url(#bg)"/>
+    <rect width="1280" height="360" fill="url(#nebulaA)"/>
+    <rect width="1280" height="360" fill="url(#nebulaB)"/>
+
+    <!-- Subtle starfield -->
+    <g fill="#ffffff">
+      <circle cx="48" cy="44" r="1.2" opacity="0.45"/>
+      <circle cx="118" cy="296" r="1.5" opacity="0.35"/>
+      <circle cx="176" cy="64" r="1.0" opacity="0.55"/>
+      <circle cx="238" cy="242" r="1.1" opacity="0.30"/>
+      <circle cx="312" cy="42" r="1.6" opacity="0.40"/>
+      <circle cx="388" cy="318" r="1.1" opacity="0.45"/>
+      <circle cx="454" cy="72" r="1.4" opacity="0.55"/>
+      <circle cx="496" cy="210" r="0.9" opacity="0.30"/>
+      <circle cx="534" cy="128" r="1.5" opacity="0.60"/>
+      <circle cx="568" cy="308" r="1.2" opacity="0.40"/>
+      <circle cx="622" cy="48" r="1.7" opacity="0.50"/>
+      <circle cx="688" cy="144" r="1.1" opacity="0.45"/>
+      <circle cx="724" cy="322" r="1.3" opacity="0.55"/>
+      <circle cx="776" cy="68" r="1.5" opacity="0.40"/>
+      <circle cx="834" cy="298" r="1.0" opacity="0.50"/>
+      <circle cx="912" cy="54" r="1.4" opacity="0.65"/>
+      <circle cx="958" cy="264" r="1.2" opacity="0.35"/>
+      <circle cx="1028" cy="294" r="1.5" opacity="0.50"/>
+      <circle cx="1084" cy="42" r="1.1" opacity="0.45"/>
+      <circle cx="1146" cy="272" r="1.6" opacity="0.60"/>
+      <circle cx="1218" cy="64" r="1.4" opacity="0.55"/>
+      <circle cx="1238" cy="228" r="1.7" opacity="0.48"/>
+      <circle cx="1192" cy="324" r="1.0" opacity="0.40"/>
+      <circle cx="662" cy="88" r="0.8" opacity="0.65"/>
+      <circle cx="892" cy="112" r="0.9" opacity="0.50"/>
+      <circle cx="1044" cy="198" r="1.1" opacity="0.42"/>
+    </g>
+
+    <!-- Sparkle stars -->
+    <g fill="#ffe9a8" opacity="0.75">
+      <path d="M582 72 l3 8 8 3 -8 3 -3 8 -3 -8 -8 -3 8 -3z"/>
+      <path d="M1214 148 l3 9 9 3 -9 3 -3 9 -3 -9 -9 -3 9 -3z"/>
+      <path d="M906 246 l2.2 6 6 2.2 -6 2.2 -2.2 6 -2.2 -6 -6 -2.2 6 -2.2z"/>
+    </g>
+
+    <!-- Dual evolutionary arcs (Together + Rivals) -->
+    <path d="M578,288 Q656,282 742,226 Q816,178 864,166 Q940,148 986,126 Q1064,90 1138,104"
+          fill="none" stroke="url(#arcCoop)" stroke-width="2.5" stroke-dasharray="3 9" stroke-linecap="round"/>
+    <path d="M598,312 Q694,254 770,248 Q842,240 908,196 Q968,144 1044,146 Q1106,148 1168,118"
+          fill="none" stroke="url(#arcRivals)" stroke-width="1.8" stroke-opacity="0.7" stroke-dasharray="6 10" stroke-linecap="round"/>
+
+    <!-- Stage 1: Cell -->
+    <g>
+      <circle cx="642" cy="264" r="30" fill="#3fc7d9" opacity="0.14"/>
+      <circle cx="642" cy="264" r="17" fill="url(#g0)"/>
+      <circle cx="662" cy="242" r="5.5" fill="#3fc7d9" stroke="#ffffff" stroke-opacity="0.7" stroke-width="1.5"/>
+      <text x="642" y="308" text-anchor="middle" font-family="Segoe UI, Inter, Helvetica, Arial, sans-serif" font-weight="600" font-size="11" letter-spacing="2" fill="#5fd9e8">CELL</text>
+    </g>
+
+    <!-- Stage 2: Creature -->
+    <g>
+      <circle cx="746" cy="224" r="36" fill="#74c867" opacity="0.14"/>
+      <circle cx="746" cy="224" r="23" fill="url(#g1)"/>
+      <circle cx="776" cy="204" r="7.5" fill="#74c867" stroke="#ffffff" stroke-opacity="0.7" stroke-width="1.5"/>
+      <text x="746" y="274" text-anchor="middle" font-family="Segoe UI, Inter, Helvetica, Arial, sans-serif" font-weight="600" font-size="11" letter-spacing="2" fill="#8ad87d">CREATURE</text>
+    </g>
+
+    <!-- Stage 3: Tribe -->
+    <g>
+      <circle cx="854" cy="168" r="44" fill="#f0b44a" opacity="0.14"/>
+      <circle cx="854" cy="168" r="30" fill="url(#g2)"/>
+      <circle cx="896" cy="156" r="10" fill="#f0b44a" stroke="#ffffff" stroke-opacity="0.7" stroke-width="1.5"/>
+      <text x="854" y="226" text-anchor="middle" font-family="Segoe UI, Inter, Helvetica, Arial, sans-serif" font-weight="600" font-size="11" letter-spacing="2" fill="#f5c369">TRIBE</text>
+    </g>
+
+    <!-- Stage 4: Civilization -->
+    <g>
+      <circle cx="978" cy="126" r="54" fill="#ff7a5f" opacity="0.14"/>
+      <circle cx="978" cy="126" r="40" fill="url(#g3)"/>
+      <circle cx="1032" cy="134" r="13" fill="#ff7a5f" stroke="#ffffff" stroke-opacity="0.7" stroke-width="1.5"/>
+      <text x="978" y="192" text-anchor="middle" font-family="Segoe UI, Inter, Helvetica, Arial, sans-serif" font-weight="600" font-size="11" letter-spacing="2" fill="#ff947d">CIVILIZATION</text>
+    </g>
+
+    <!-- Stage 5: Space + Orbital Ring -->
+    <g>
+      <circle cx="1136" cy="102" r="72" fill="#b08cff" opacity="0.13"/>
+      <ellipse cx="1136" cy="102" rx="82" ry="22" transform="rotate(-18 1136 102)" fill="none" stroke="#d5c2ff" stroke-opacity="0.35" stroke-width="2"/>
+      <circle cx="1136" cy="102" r="52" fill="url(#g4)"/>
+      <circle cx="1194" cy="134" r="16" fill="#2fd6b5" stroke="#ffffff" stroke-opacity="0.75" stroke-width="1.8"/>
+      <text x="1136" y="182" text-anchor="middle" font-family="Segoe UI, Inter, Helvetica, Arial, sans-serif" font-weight="600" font-size="11" letter-spacing="2" fill="#c5a9ff">SPACE &amp; GA</text>
+    </g>
+
+    <!-- Brand & Copy -->
+    <text x="64" y="136" font-family="Arial Rounded MT Bold, Segoe UI, Inter, Helvetica, Arial, sans-serif" font-weight="800" font-size="78" letter-spacing="-1" fill="#ffffff">Spore<tspan fill="url(#brandGrad)">Coop</tspan></text>
+    <text x="68" y="184" font-family="Segoe UI, Inter, Helvetica, Arial, sans-serif" font-weight="500" font-size="24" fill="#d8e0fa">Play every stage of Spore together - or as rivals</text>
+    <text x="68" y="218" font-family="Segoe UI, Inter, Helvetica, Arial, sans-serif" font-size="15.5" fill="#95a3cb">one shared world · your own species &amp; paths · co-op Galactic Adventures</text>
+
+    <!-- Feature pills -->
+    <g font-family="Segoe UI, Inter, Helvetica, Arial, sans-serif" font-weight="700" font-size="12" letter-spacing="1.2">
+      <rect x="68" y="254" width="112" height="32" rx="16" fill="#2fd6b5" fill-opacity="0.16" stroke="#2fd6b5" stroke-opacity="0.55" stroke-width="1.2"/>
+      <text x="124" y="274.5" text-anchor="middle" fill="#6ef0d6">TOGETHER</text>
+
+      <rect x="192" y="254" width="92" height="32" rx="16" fill="#ff7a5f" fill-opacity="0.16" stroke="#ff7a5f" stroke-opacity="0.55" stroke-width="1.2"/>
+      <text x="238" y="274.5" text-anchor="middle" fill="#ff9e8a">RIVALS</text>
+
+      <rect x="296" y="254" width="128" height="32" rx="16" fill="#b08cff" fill-opacity="0.16" stroke="#b08cff" stroke-opacity="0.55" stroke-width="1.2"/>
+      <text x="360" y="274.5" text-anchor="middle" fill="#ceb8ff">ADVENTURES</text>
+
+      <rect x="436" y="254" width="118" height="32" rx="16" fill="#f0b44a" fill-opacity="0.15" stroke="#f0b44a" stroke-opacity="0.52" stroke-width="1.2"/>
+      <text x="495" y="274.5" text-anchor="middle" fill="#f7cb77">2-4 PLAYERS</text>
+    </g>
+
+    <!-- Subtle inner border -->
+    <rect x="1" y="1" width="1278" height="358" rx="19" fill="none" stroke="#ffffff" stroke-opacity="0.09" stroke-width="2"/>
+  </g>
 </svg>
