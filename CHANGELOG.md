@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.8.1.1] - 2026-11-25
+
+Hotfix for premature stage transitions after a refused or cancelled stage-end attempt across Creature, Tribe, and Civilization stages.
+
+### Fixed
+- **Premature Stage Transition After Refused Stage-End Click** (`core.stage_end_flag_clear`): fixed a bug (reported in Creature `own progress` mode) where clicking "Advance to Tribal Stage" while waiting for a partner left Spore's native `cCreatureModeStrategy + 0xDE` transition flag stuck at `1`, causing the game to skip ahead into Tribe right after exiting any subsequent normal Creature Editor without waiting for partners or holding a vote; applied the same cleanup across Creature (`+0xDE`), Tribe (`cTribeUI + 0x28`), and Civilization (`GameCiv + 0x28`) whenever a stage-end request is refused, a stage-end vote is dropped, or an ordinary in-stage editor is opened. (BUG-1569)
+
 ## [0.8.1] - 2026-11-25
 
 Independent evolution and full Rivals isolation update closing remaining shared/host-coupled progression, design, ability, drama, and editor behaviors across all stages.
