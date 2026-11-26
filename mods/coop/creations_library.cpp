@@ -11,6 +11,7 @@
 #include "creations_library.h"
 #include "library_core.h"
 #include "net/compat.h"
+#include "species_line_core.h"
 
 #include <deque>
 #include <map>
@@ -33,6 +34,10 @@ COOP_FIX("creations.library_my_filter", "BUG-0873", g_lib_my_filter_fix,
 static bool g_lib_retry_fix = true;
 COOP_FIX("creations.library_retry", "BUG-0873", g_lib_retry_fix,
          "creations: retry failed shared-library PNG imports instead of losing them");
+
+static bool g_lib_names_fix = true;
+COOP_FIX("creations.library_names", "BUG-1583", g_lib_names_fix,
+         "creations: extract Shared Library creation names from PNG/online metadata with non-empty fallback and retry Sporepedia tab registration");
 
 // Receiver policy: whether to accept creations a partner received from others (default off; toggled by user/test)
 static bool g_allow_foreign = false;
@@ -65,6 +70,7 @@ static LibraryState g_state;
 static bool g_loaded_disk = false;
 static bool g_tab_state = false;
 static bool g_tab_dirty = true;
+static double g_next_tab_retry = 0.0;
 static bool g_import_queued = false;
 static bool g_feed_sync_queued = false;
 static std::wstring g_lib_dir;
@@ -184,10 +190,45 @@ static void save_index_disk()
     write_file_atomic(index_path(), bytes.data(), bytes.size());
 }
 
-// Verify embedded creation group via DecodePNG with a pinned stack IO::FileStream (BUG-9094).
-static bool decode_png_group(const std::wstring& path, uint32_t& out_group)
+// Read an eastl::string16 {begin, end, cap} inside ThumbnailMetadata safely and convert UTF-16LE -> UTF-8 (BUG-1583).
+static std::string read_meta_utf16(const uint8_t* meta, size_t off)
+{
+    auto* p = (const uintptr_t*)(meta + off);
+    const uint16_t* beg = (const uint16_t*)p[0];
+    const uint16_t* end = (const uint16_t*)p[1];
+    if (!beg || !end || end <= beg)
+        return {};
+    size_t n = (size_t)(end - beg);
+    if (n > 128 || !skg::readable(beg, n * 2))
+        return {};
+    std::string out;
+    out.reserve(n);
+    for (size_t i = 0; i < n; ++i) {
+        uint32_t c = beg[i];
+        if (c == 0)
+            break;
+        if (c < 0x20u || c == 0x7Fu)
+            continue;
+        if (c < 0x80u) {
+            out.push_back((char)c);
+        } else if (c < 0x800u) {
+            out.push_back((char)(0xC0u | (c >> 6)));
+            out.push_back((char)(0x80u | (c & 0x3Fu)));
+        } else {
+            out.push_back((char)(0xE0u | (c >> 12)));
+            out.push_back((char)(0x80u | ((c >> 6) & 0x3Fu)));
+            out.push_back((char)(0x80u | (c & 0x3Fu)));
+        }
+    }
+    return trim_label(out);
+}
+
+// Verify embedded creation group & extract creation name via DecodePNG with a pinned stack IO::FileStream (BUG-9094, BUG-1583).
+static bool decode_png_info(const std::wstring& path, uint32_t& out_group, std::string* out_name = nullptr)
 {
     out_group = 0;
+    if (out_name)
+        out_name->clear();
     if (!a_ThumbGet || !a_DecodePng || !a_ThumbMetaDtor || !a_FileStreamCtor || !a_FileStreamOpen || !a_FileStreamAddRef ||
         !a_FileStreamDtor)
         return false;
@@ -218,8 +259,14 @@ static bool decode_png_group(const std::wstring& path, uint32_t& out_group)
 
     void* decoded_stream = nullptr;
     bool ok = skg::thiscall<bool>(a_DecodePng, imp, (void*)stream, (void*)meta, &decoded_stream);
-    if (ok)
+    if (ok) {
         out_group = *(uint32_t*)(meta + 0x08);
+        if (out_name && g_lib_names_fix) {
+            std::string nm = read_meta_utf16(meta, 0x28);
+            if (!nm.empty())
+                *out_name = std::move(nm);
+        }
+    }
 
     // Exact native cleanup order: release decoded stream -> destroy metadata -> destroy pinned FileStream.
     if (decoded_stream && skg::readable(decoded_stream, 4))
@@ -258,6 +305,8 @@ static bool import_png_now(const std::wstring& path, AssetKey& out_key)
         return false;
     if (added)
         flush_pollination();
+    else if (g_lib_names_fix)
+        flush_pollination(); // Ensure existing Pollination card metadata stays flushed for Sporepedia feed (BUG-1583)
     out_key = k;
     return true;
 }
@@ -287,7 +336,8 @@ static void load_from_disk()
                 continue;
             on_disk.insert(h);
             if (!g_state.entries.count(h)) {
-                g_state.ingest(h, 0, true, "", "", false);
+                std::string nm = g_lib_names_fix ? species::fallback_creation_name(0, h) : "";
+                g_state.ingest(h, 0, true, "", nm, false);
             }
         } while (FindNextFileW(hf, &fd));
         FindClose(hf);
@@ -296,6 +346,11 @@ static void load_from_disk()
     // Drop index entries whose PNG file is missing and no longer known in RM; re-queue ones missing from RM.
     bool dirty = false;
     for (auto it = g_state.entries.begin(); it != g_state.entries.end();) {
+        if (g_lib_names_fix && it->second.name.empty()) {
+            uint32_t grp = it->second.source_group ? it->second.source_group : it->second.imported.group;
+            it->second.name = species::fallback_creation_name(grp, it->first);
+            dirty = true;
+        }
         bool has_file = on_disk.count(it->first) != 0;
         if (it->second.is_imported()) {
             Key rk{it->second.imported.instance, it->second.imported.type, it->second.imported.group};
@@ -387,11 +442,13 @@ static void scan_own_creations(double now, bool force = false)
         std::string author, cname;
         if (const dbpf::Entry* me = pk.find({e.key.instance, kMeta, e.key.group})) {
             std::vector<uint8_t> m;
-            if (pk.read(*me, m))
-                dbpf::metadata_names(m, author, cname);
+            if (pk.read(*me, m)) {
+                if (!dbpf::metadata_names(m, author, cname) && g_lib_names_fix)
+                    species::extract_metadata_name(m.data(), m.size(), author, cname);
+            }
         }
         if (cname.empty())
-            cname = hex(e.key.instance);
+            cname = g_lib_names_fix ? species::fallback_creation_name(e.key.group, e.key.instance) : hex(e.key.instance);
 
         OwnPng op;
         op.hash = h;
@@ -429,11 +486,13 @@ static void sync_feed_lists_task(void*)
         return;
     bool want = g_lib_fix;
     int updated = 0;
+    int found_roots = 0;
     for (uint32_t root_id : kFeedListRoots) {
         void* pl = nullptr;
         bool got = vcall<bool>(pm, 0x2C / 4, root_id, kFeedListGroup, &pl);
         if (!got || !pl)
             continue;
+        found_roots++;
         size_t cnt = 0;
         uint32_t* arr = nullptr;
         if (skg::cdecl_call<bool>(a_PropGetArrayKey, pl, kPropFeedListCategories, &cnt, &arr) && arr && cnt < 128) {
@@ -467,6 +526,11 @@ static void sync_feed_lists_task(void*)
             }
         }
         vcall<uint32_t>(pl, 0x04 / 4); // IPropertyList::Release
+    }
+    if (g_lib_names_fix && found_roots == 0) {
+        // Feed lists are not loaded yet (early boot): keep dirty and retry shortly (BUG-1583).
+        g_next_tab_retry = (H ? H->time_seconds() : 0.0) + 2.0;
+        return;
     }
     g_tab_state = want;
     g_tab_dirty = false;
@@ -548,21 +612,32 @@ static void import_one_task(void*)
         return;
     std::wstring path = png_path_for(h);
 
-    // Optional group check on provisional Cell->Creature PNGs (BUG-9095): if source_group is known, verify decoded group
-    if (it->second.source_group != 0) {
-        uint32_t dec_group = 0;
-        if (decode_png_group(path, dec_group) && dec_group != it->second.source_group) {
-            H->log(M, SK_INFO, "library: skipping provisional PNG %016llx (group 0x%08X != 0x%08X)",
-                   (unsigned long long)h, dec_group, it->second.source_group);
-            it->second.gave_up = true;
-            save_index_disk();
-            return;
-        }
+    // Decode embedded creation group & creation name from the PNG (BUG-9095, BUG-1583).
+    uint32_t dec_group = 0;
+    std::string dec_name;
+    bool decoded_ok = decode_png_info(path, dec_group, &dec_name);
+    if (it->second.source_group != 0 && decoded_ok && dec_group != it->second.source_group) {
+        H->log(M, SK_INFO, "library: skipping provisional PNG %016llx (group 0x%08X != 0x%08X)",
+               (unsigned long long)h, dec_group, it->second.source_group);
+        it->second.gave_up = true;
+        save_index_disk();
+        return;
+    }
+    if (g_lib_names_fix) {
+        if (it->second.source_group == 0 && decoded_ok && is_creation_group(dec_group))
+            it->second.source_group = dec_group;
+        if (!dec_name.empty())
+            it->second.name = trim_label(dec_name);
+        else if (it->second.name.empty())
+            it->second.name = species::fallback_creation_name(
+                it->second.source_group ? it->second.source_group : dec_group, h);
     }
 
     AssetKey imported{};
     if (import_png_now(path, imported)) {
         g_state.mark_imported(h, imported);
+        if (g_lib_names_fix && it->second.name.empty())
+            it->second.name = species::fallback_creation_name(imported.group, h);
         g_import_ok++;
         save_index_disk();
         H->log(M, SK_INFO, "library: imported %016llx '%s' as %08X!%08X.%08X", (unsigned long long)h,
@@ -676,7 +751,8 @@ static bool store_received_png(uint64_t hash, uint32_t group, bool origin_own, c
         return false;
     if (hash == 0)
         hash = content_hash64(png_data, png_len);
-    bool added = g_state.ingest(hash, group, origin_own, sender, name, skip_if_own);
+    std::string eff_name = g_lib_names_fix ? species::sanitize_creation_name(name, group, hash) : name;
+    bool added = g_state.ingest(hash, group, origin_own, sender, eff_name, skip_if_own);
     if (!added)
         return false;
     if (!write_file_atomic(png_path_for(hash), png_data, png_len)) {
@@ -731,7 +807,7 @@ void library_tick(double now)
         return;
 
     // Keep Sporepedia feed lists synchronized with g_lib_fix toggle
-    if ((g_tab_dirty || g_tab_state != g_lib_fix) && !g_feed_sync_queued) {
+    if ((g_tab_dirty || g_tab_state != g_lib_fix) && !g_feed_sync_queued && now >= g_next_tab_retry) {
         g_feed_sync_queued = true;
         H->run_outside_frame(sync_feed_lists_task, nullptr);
     }
@@ -836,10 +912,11 @@ void library_message(uint8_t kind, uint8_t from, uint8_t owner, const std::vecto
         if (!g_state.should_want(pm.hash, origin_own, g_allow_foreign))
             return;
         std::string sender = pm.sender.empty() && C.name_of ? C.name_of(owner) : pm.sender;
-        if (store_received_png(pm.hash, pm.group, origin_own, sender, pm.name, pm.png.data(), pm.png.size(), true)) {
+        std::string disp_name = g_lib_names_fix ? species::sanitize_creation_name(pm.name, pm.group, pm.hash) : pm.name;
+        if (store_received_png(pm.hash, pm.group, origin_own, sender, disp_name, pm.png.data(), pm.png.size(), true)) {
             g_recv_pngs++;
             H->log(M, SK_INFO, "library: received PNG %016llx '%s' from %s (%u bytes)", (unsigned long long)pm.hash,
-                   pm.name.c_str(), sender.c_str(), (unsigned)pm.png.size());
+                   disp_name.c_str(), sender.c_str(), (unsigned)pm.png.size());
         }
     }
 }
@@ -871,16 +948,30 @@ void library_on_partner_records(const std::string& sender, const std::string& cr
     if (!g_lib_fix || !is_creation_group(group))
         return;
     load_from_disk();
+    // BUG-1583: recover creation name from online/Maxis pollen_metadata if caller passed empty name.
+    std::string resolved_name = creation_name;
+    if (g_lib_names_fix && resolved_name.empty()) {
+        for (const auto& r : recs) {
+            if (r.key.type == kMeta) {
+                std::string author, cname;
+                if (species::extract_metadata_name(r.data.data(), r.data.size(), author, cname) && !cname.empty()) {
+                    resolved_name = std::move(cname);
+                    break;
+                }
+            }
+        }
+    }
     for (const auto& r : recs) {
         if (r.key.type != kPng || r.key.group != group)
             continue;
         if (!is_valid_png(r.data.data(), r.data.size()))
             continue;
         uint64_t h = content_hash64(r.data.data(), r.data.size());
-        if (store_received_png(h, group, origin_own, sender, creation_name, r.data.data(), r.data.size(), true)) {
+        std::string final_name = g_lib_names_fix ? species::sanitize_creation_name(resolved_name, group, h) : resolved_name;
+        if (store_received_png(h, group, origin_own, sender, final_name, r.data.data(), r.data.size(), true)) {
             g_recv_pngs++;
             H->log(M, SK_INFO, "library: captured partner creation %016llx '%s' from %s", (unsigned long long)h,
-                   creation_name.c_str(), sender.c_str());
+                   final_name.c_str(), sender.c_str());
         }
         break;
     }

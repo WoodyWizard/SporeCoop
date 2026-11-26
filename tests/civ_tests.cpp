@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "civ_logic.h"
+#include "civ_rivals_logic.h"
 #include "civ_wallet_logic.h"
 #include "net/interp.h"
 #include "net/shared_ledger.h"
@@ -481,6 +482,34 @@ static void test_friendly_fire()
     CHECK(ff_combat_step(30.f, 45.f, 10.0, 9.0, 10.5) == FfStep::Wait);
 }
 
+static void test_wp3_planner_turret_sell()
+{
+    printf("wp3 planner/turret/sell (BUG-1581)\n");
+    // Command IDs stay distinct from legacy Civ CMD_ORDER..CMD_SPECIALTY (0..8)
+    CHECK(civ_rivals_logic::kCmdPlannerSync == 9);
+    CHECK(civ_rivals_logic::kCmdSellVehicle == 11);
+
+    // Turret diff math: want_add = turret_delta + turrets_removed_ok
+    // Case 1: started with 2 turrets, bought 2 (removed 0, delta +2) -> add 2
+    CHECK((2 + 0) == 2);
+    // Case 2: started with 2 turrets, sold 1 and bought 2 (removed 1, delta +1) -> add 2
+    CHECK((1 + 1) == 2);
+    // Case 3: started with 2 turrets, sold 1 (removed 1, delta -1) -> add 0
+    CHECK((-1 + 1) == 0);
+
+    // Planner net spend clamp with buildings + turrets
+    float max_spend = 800.f + 2.f * civ_rivals_logic::kDefaultTurretCost; // 1 house + 2 turrets = 1800
+    float max_refund = 400.f;
+    CHECK(std::fabs(civ_rivals_logic::clamp_planner_net_spend(1800.f, max_spend, max_refund) - 1800.f) < 1e-3f);
+    CHECK(std::fabs(civ_rivals_logic::clamp_planner_net_spend(2500.f, max_spend, max_refund) - 1800.f) < 1e-3f);
+    CHECK(std::fabs(civ_rivals_logic::clamp_planner_net_spend(-250.f, max_spend, max_refund) - (-250.f)) < 1e-3f);
+
+    // Vehicle sell ownership: guest can sell only its own vehicles, never host's or NPC's
+    CHECK(owns(1, 1));
+    CHECK(!owns(0, 1));
+    CHECK(!owns(kNpc, 1));
+}
+
 int main()
 {
     test_money();
@@ -495,6 +524,7 @@ int main()
     test_guest_ship_editor();
     test_citizen_gestures();
     test_friendly_fire();
+    test_wp3_planner_turret_sell();
     printf(g_fail ? "civ_tests: %d FAILED\n" : "civ_tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

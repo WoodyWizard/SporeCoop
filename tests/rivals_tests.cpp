@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "i18n.h"
 #include "rivals_logic.h"
 #include "wire/rivals.h"
 
@@ -132,8 +133,9 @@ static void test_symmetric_relations_and_break_countdown()
           "pair (2,3) symmetrically at War");
     CHECK(rel.get(0, 2) == rivals::Relation::Neutral, "unrelated pair (0,2) stays Neutral");
 
-    // Configurable delay seam
+    // Configurable delay seam (with fast-timer grace = 0.0, matching coop.rivals fasttimers 1)
     rel.break_delay_secs = 2.0;
+    rel.ally_break_grace_secs = 0.0;
     CHECK(rel.apply_action(0, 2, rivals::RelAction::ProposeAlly, 200.0).empty(), "0 proposes ally to 2");
     CHECK(rel.apply_action(2, 0, rivals::RelAction::ProposeAlly, 200.5, &ev).empty() && ev == "allied",
           "mutual ProposeAlly completes alliance");
@@ -665,6 +667,136 @@ static void test_draft_payout_stage_isolation()
           "Creature claims Creature draft payout cleanly");
 }
 
+static size_t utf8_codepoints(const char* s)
+{
+    size_t n = 0;
+    for (const unsigned char* p = (const unsigned char*)s; *p; p++)
+        if ((*p & 0xC0u) != 0x80u)
+            n++;
+    return n;
+}
+
+static void test_bug1579_rivals_fixes()
+{
+    printf("rivals: Together save protection, Galaxy-menu Buy gate, 2.5 s alliance debounce, 5-lang errors (BUG-1579)\n");
+
+    // 1. Together save non-contamination (classify_world_open)
+    CHECK(rivals::classify_world_open(true, 7, 2, 1700000000) == rivals::WorldOpenAction::LoadStored,
+          "store with valid rivals.state loads stored Rivals config");
+    CHECK(rivals::classify_world_open(false, 5, 2, 1700000000) == rivals::WorldOpenAction::SuppressTogetherSave,
+          "existing Together save (5 store records, no rivals.state) suppresses lobby Rivals preset");
+    CHECK(rivals::classify_world_open(false, 0, 1, 0) == rivals::WorldOpenAction::SuppressTogetherSave,
+          "existing Together save with stored player suppresses Rivals");
+    CHECK(rivals::classify_world_open(false, 0, 0, 1700000000) == rivals::WorldOpenAction::SuppressTogetherSave,
+          "existing Together save with prior saved timestamp suppresses Rivals");
+    CHECK(rivals::classify_world_open(false, 0, 0, 0) == rivals::WorldOpenAction::ApplyLobbyConfig,
+          "brand-new world with empty store applies lobby Rivals config");
+
+    // 2. Galaxy-menu / Cell / no-hook Buy +25 rejection + per-stage price scaling
+    CHECK(!rivals::can_buy_influence_in_stage(rivals::Stage::None, true), "Galaxy menu rejects Buy even with hook");
+    CHECK(!rivals::can_buy_influence_in_stage(rivals::Stage::None, false), "Galaxy menu rejects Buy without hook");
+    CHECK(!rivals::can_buy_influence_in_stage(rivals::Stage::Cell, true), "Cell stage rejects Buy");
+    CHECK(!rivals::can_buy_influence_in_stage(rivals::Stage::Creature, false), "Creature without hook rejects Buy");
+    CHECK(!rivals::can_buy_influence_in_stage(rivals::Stage::Tribe, false), "Tribe without hook rejects Buy");
+    CHECK(!rivals::can_buy_influence_in_stage(rivals::Stage::Civ, false), "Civ without hook rejects Buy");
+    CHECK(!rivals::can_buy_influence_in_stage(rivals::Stage::Space, false), "Space without hook rejects Buy");
+    CHECK(rivals::can_buy_influence_in_stage(rivals::Stage::Creature, true), "Creature with hook allows Buy");
+    CHECK(rivals::can_buy_influence_in_stage(rivals::Stage::Tribe, true), "Tribe with hook allows Buy");
+    CHECK(rivals::can_buy_influence_in_stage(rivals::Stage::Civ, true), "Civ with hook allows Buy");
+    CHECK(rivals::can_buy_influence_in_stage(rivals::Stage::Space, true), "Space with hook allows Buy");
+
+    CHECK(rivals::stage_influence_buy_price(rivals::Stage::Creature, 50) == 50, "Creature buy price 50 DNA");
+    CHECK(rivals::stage_influence_buy_price(rivals::Stage::Tribe, 100) == 100, "Tribe buy price 100 food");
+    CHECK(rivals::stage_influence_buy_price(rivals::Stage::Civ, 50) == 500, "Civ buy price 500 $");
+    CHECK(rivals::stage_influence_buy_price(rivals::Stage::Civ, 100) == 1000, "Civ 2nd buy price 1000 $");
+    CHECK(rivals::stage_influence_buy_price(rivals::Stage::Space, 50) == 10000, "Space buy price 10000 $");
+    CHECK(rivals::stage_influence_buy_price(rivals::Stage::Space, 100) == 20000, "Space 2nd buy price 20000 $");
+
+    // 3. Alliance 2.5 s break-debounce (prevents double-click race on Accept Ally -> Break Ally)
+    {
+        rivals::Relations rel;
+        std::string ev;
+        CHECK(std::fabs(rel.ally_break_grace_secs - 2.5) < 1e-6, "default alliance break grace is 2.5 s");
+        CHECK(rel.apply_action(0, 1, rivals::RelAction::ProposeAlly, 100.0, &ev).empty(), "0 proposes ally to 1");
+        CHECK(rel.apply_action(1, 0, rivals::RelAction::AcceptAlly, 100.5, &ev).empty() && ev == "allied",
+              "1 accepts ally at 100.5 s");
+        // 213 ms later (exact stream double-click race!) -> MUST be rejected
+        std::string err1 = rel.apply_action(1, 0, rivals::RelAction::BreakAlly, 100.713, &ev);
+        CHECK(err1 == "Alliance just formed, wait a moment", "BreakAlly 213 ms after AcceptAlly rejected");
+        CHECK(rel.get(0, 1) == rivals::Relation::Ally && rel.find_break_notice(0, 1) == nullptr,
+              "still Ally with no break notice during grace window");
+        // 2.49 s later -> still rejected for either side
+        CHECK(rel.apply_action(0, 1, rivals::RelAction::BreakAlly, 102.99, &ev) == "Alliance just formed, wait a moment",
+              "BreakAlly at 2.49 s still rejected");
+        // At 2.50 s -> allowed
+        CHECK(rel.apply_action(0, 1, rivals::RelAction::BreakAlly, 103.0, &ev).empty() && ev == "break_pending",
+              "BreakAlly allowed once 2.5 s elapsed");
+
+        // Mutual ProposeAlly also arms the 2.5 s grace window
+        CHECK(rel.apply_action(2, 3, rivals::RelAction::ProposeAlly, 200.0, &ev).empty(), "2 proposes ally to 3");
+        CHECK(rel.apply_action(3, 2, rivals::RelAction::ProposeAlly, 200.5, &ev).empty() && ev == "allied",
+              "mutual ProposeAlly completes alliance at 200.5 s");
+        CHECK(rel.apply_action(3, 2, rivals::RelAction::BreakAlly, 201.0, &ev) == "Alliance just formed, wait a moment",
+              "BreakAlly 0.5 s after mutual ProposeAlly rejected");
+        CHECK(rel.apply_action(3, 2, rivals::RelAction::BreakAlly, 203.1, &ev).empty() && ev == "break_pending",
+              "BreakAlly allowed 2.6 s after mutual ProposeAlly");
+    }
+
+    // 4. All rivals_logic.h / rivals.cpp error strings have 5-language translations in i18n.h
+    static const char* const kErrors[] = {
+        "invalid player",
+        "can only propose alliance when neutral",
+        "not neutral",
+        "no alliance proposal",
+        "already at war",
+        "allied: must break alliance first (60 s notice)",
+        "not allied",
+        "Alliance just formed, wait a moment",
+        "alliance break already pending",
+        "not at war",
+        "no peace proposal",
+        "unknown relation action",
+        "rival bond is protected",
+        "not enough influence",
+        "npc rejected protect",
+        "no active draft",
+        "cannot pick",
+        "no picks left",
+        "unknown draft item",
+        "already picked",
+        "cannot skip",
+        "rivals.core is off",
+        "not host",
+        "Influence can only be bought during an active stage",
+        "insufficient resources to buy influence",
+        "buy failed",
+        "npc rejected turn against",
+        "must be allied with faction to protect",
+        "npc rejected smooth over",
+        "unknown influence action",
+        "invalid target",
+        "host does not support MSG_RIVALS",
+        "not connected",
+    };
+    const i18n::Lang kLangs[4] = {i18n::Lang::Ru, i18n::Lang::Hu, i18n::Lang::Es, i18n::Lang::Zh};
+    for (const char* err : kErrors) {
+        CHECK(std::string(i18n::tr_lang(i18n::Lang::En, err)) == err, "EN error returns original key");
+        for (i18n::Lang l : kLangs) {
+            const char* tr = i18n::tr_lang(l, err);
+            CHECK(tr && *tr && std::string(tr) != err, "non-EN error string translated in i18n.h");
+            CHECK(std::string(tr).find("\xE2\x80\x94") == std::string::npos, "no em-dash in translation");
+        }
+    }
+
+    // 5. Shortened Russian Space Rivals toasts fit cleanly in 2 lines (<= 48 chars)
+    const char* ru_sw = i18n::tr_lang(i18n::Lang::Ru,
+                                      " switched to rivals mode: every player is an empire of its own with its own budget");
+    const char* ru_cont = i18n::tr_lang(i18n::Lang::Ru,
+                                        "Rivals mode goes on from the last session: every player is an empire of its own again");
+    CHECK(utf8_codepoints(ru_sw) <= 48, "RU Space Rivals switch toast <= 48 chars");
+    CHECK(utf8_codepoints(ru_cont) <= 48, "RU Space Rivals continue toast <= 48 chars");
+}
+
 int main()
 {
     test_stage_modes_and_config();
@@ -679,6 +811,7 @@ int main()
     test_protect_callback_rejection();
     test_3p_4p_disconnect_race_completion();
     test_draft_payout_stage_isolation();
+    test_bug1579_rivals_fixes();
     printf("rivals_tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

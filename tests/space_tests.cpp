@@ -865,6 +865,40 @@ static void test_kept_reload_in_session()
     CHECK(!e_re.restoring && e_re.value.size() == 2);
 }
 
+static void test_contracts_rivals_world_and_puppet_pol()
+{
+    printf("space contracts rivals suppression, world reset, and rival puppet pol (BUG-1582)\n");
+    using namespace spacelogic;
+
+    // Co-op contracts auto-offer: allowed in Space co-op, blocked in Space Rivals and legacy Rivals
+    CHECK(contract_auto_offer_allowed(true, true, true, 600.0, false, false));
+    CHECK(!contract_auto_offer_allowed(true, true, true, 600.0, true, false));  // Space Rivals active
+    CHECK(!contract_auto_offer_allowed(true, true, true, 600.0, false, true));  // legacy Rivals active
+    CHECK(!contract_auto_offer_allowed(true, true, true, 600.0, true, true));   // both active
+    CHECK(!contract_auto_offer_allowed(true, false, true, 600.0, false, false)); // not in space
+    CHECK(!contract_auto_offer_allowed(true, true, false, 600.0, false, false)); // no partners
+    CHECK(!contract_auto_offer_allowed(true, true, true, 0.0, false, false));    // period disabled
+    CHECK(contract_auto_offer_allowed(false, true, true, 600.0, true, true));    // fix off -> legacy behavior
+
+    // World change resets stale contracts across saves
+    CHECK(contract_should_reset_on_world_change(true, 1u, 2u, true));
+    CHECK(!contract_should_reset_on_world_change(true, 2u, 2u, true));   // same world
+    CHECK(!contract_should_reset_on_world_change(true, 1u, 2u, false));  // no active/pending contract
+    CHECK(!contract_should_reset_on_world_change(true, 0u, 2u, true));   // unknown contract epoch
+    CHECK(!contract_should_reset_on_world_change(false, 1u, 2u, true));  // fix off
+
+    // Rival puppet political ID: prefers rival's mirror empire pol over pirate sentinel 0xFFFFFFFF
+    constexpr uint32_t kMine = 0x80000001u;
+    constexpr uint32_t kMirror = 0x80000042u;
+    CHECK(rival_puppet_pol(true, true, true, kMine, kMirror) == kMirror);
+    CHECK(rival_puppet_pol(true, true, true, kMine, 0u) == 0xFFFFFFFFu);          // no mirror yet -> fallback
+    CHECK(rival_puppet_pol(true, true, true, kMine, 0xFFFFFFFFu) == 0xFFFFFFFFu); // sentinel -> fallback
+    CHECK(rival_puppet_pol(true, true, true, kMine, kMine) == 0xFFFFFFFFu);       // never use own pol at war
+    CHECK(rival_puppet_pol(true, true, false, kMine, kMirror) == kMine);          // neutral/ally -> friendly
+    CHECK(rival_puppet_pol(true, false, true, kMine, kMirror) == kMine);          // not rivals -> friendly
+    CHECK(rival_puppet_pol(false, true, true, kMine, kMirror) == 0xFFFFFFFFu);    // fix off -> legacy pirate pol
+}
+
 int main()
 {
     test_jump_target();
@@ -884,6 +918,7 @@ int main()
     test_space_citizen_lead();
     test_tutorial_drive_sync();
     test_kept_reload_in_session();
+    test_contracts_rivals_world_and_puppet_pol();
     printf(g_fail ? "space_tests: %d FAILED\n" : "space_tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

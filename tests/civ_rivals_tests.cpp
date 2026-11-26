@@ -444,6 +444,189 @@ static void test_specialty_conversion_and_superweapon_spend()
     assert(clamped == 0.0f && dom == 0.0f && exp == 0.0f);
 }
 
+static void test_rejoin_nation_memory_and_store_codec()
+{
+    // BUG-1581: player_key -> pol_id persists across disconnect/reconnect and store reload
+    NationMemory mem;
+    mem.remember("dermogen", 0x2282u, {100.0f, 200.0f, 300.0f}, kCitySpecMilitary);
+    assert(mem.has("dermogen"));
+    assert(mem.is_reserved_pol(0x2282u));
+    assert(!mem.is_reserved_pol(0x2285u));
+    assert(mem.is_reserved_for_other(0x2282u, "newcomer"));
+    assert(!mem.is_reserved_for_other(0x2282u, "dermogen"));
+
+    std::vector<BaseCandidate> live = {
+        {0x2282u, {100.0f, 200.0f, 300.0f}, 1, 10, false},
+        {0x2285u, {-200.0f, 50.0f, 100.0f}, 1, 10, false},
+    };
+    // Exact pol_id reclaim on reconnect
+    assert(mem.find_reclaim("dermogen", live, {}) == 0x2282u);
+    // Already actively taken by someone else -> cannot double-assign
+    assert(mem.find_reclaim("dermogen", live, {0x2282u}) == 0u);
+
+    // Fallback by capital position within kCapitalMatchRadius (e.g. pol_id changed after reload)
+    std::vector<BaseCandidate> reloaded = {
+        {0x3009u, {105.0f, 198.0f, 302.0f}, 1, 10, false},
+        {0x3010u, {-200.0f, 50.0f, 100.0f}, 1, 10, false},
+    };
+    assert(mem.find_reclaim("dermogen", reloaded, {}) == 0x3009u);
+
+    // Zero-city (eliminated) nation is not reclaimed
+    std::vector<BaseCandidate> dead = {
+        {0x2282u, {100.0f, 200.0f, 300.0f}, 0, 10, false},
+    };
+    assert(mem.find_reclaim("dermogen", dead, {}) == 0u);
+
+    // Key adopt migrates ownership cleanly
+    mem.adopt("dermogen", "dermogen_v2");
+    assert(!mem.has("dermogen") && mem.has("dermogen_v2"));
+    assert(mem.find_reclaim("dermogen_v2", live, {}) == 0x2282u);
+
+    // Store persistence codec roundtrip + malformed rejection
+    net::Writer w;
+    write_saved_nations(w, mem);
+    net::Reader r(w.data.data(), w.data.size());
+    NationMemory out;
+    assert(read_saved_nations(r, out));
+    assert(out.has("dermogen_v2"));
+    assert(out.by_key["dermogen_v2"].pol_id == 0x2282u);
+    assert(out.by_key["dermogen_v2"].cap_specialty == kCitySpecMilitary);
+
+    net::Writer w_bad;
+    w_bad.u8(99); // > 32
+    net::Reader r_bad(w_bad.data.data(), w_bad.data.size());
+    assert(!read_saved_nations(r_bad, out));
+}
+
+static void test_large_city_selection_preference()
+{
+    // BUG-1581: prefer non-small / higher-slot starting city for guest
+    Vec3 host{0, 0, 0};
+    std::vector<BaseCandidate> cands = {
+        {0x2281u, {80.0f, 0, 0}, 1, 5, true},   // closest, but small coastal city (5 slots)
+        {0x2282u, {150.0f, 0, 0}, 1, 11, false}, // large inland city (11 slots)
+        {0x2283u, {280.0f, 0, 0}, 1, 10, false}, // large city (10 slots)
+        {0x2284u, {200.0f, 0, 0}, 1, 6, false},  // non-small flag, but low slot count (6 vs max 11 -> outside top tier)
+    };
+    // With prefer_large=true, Near skips small 0x2281 and low-slot 0x2284, picking 0x2282
+    assert(select_base_nation(host, cands, rivals::BaseDistance::Near, {}, true) == 0x2282u);
+    assert(select_base_nation(host, cands, rivals::BaseDistance::Far, {}, true) == 0x2283u);
+    // With prefer_large=false (legacy), Near picks closest 0x2281
+    assert(select_base_nation(host, cands, rivals::BaseDistance::Near, {}, false) == 0x2281u);
+    // Fallback when only small cities remain free
+    assert(select_base_nation(host, cands, rivals::BaseDistance::Near, {0x2282u, 0x2283u, 0x2284u}, true) == 0x2281u);
+}
+
+static void test_superweapon_borrow_safety()
+{
+    // BUG-1581: validate +0x470 (48 bytes) and +0x490 (384 bytes) vector ranges before borrowing
+    assert(!sw_vec_valid(0u, 0u, kSwToolsMinBytes));
+    assert(!sw_vec_valid(0x1000u, 0x1000u + 20u, kSwToolsMinBytes)); // too short
+    assert(sw_vec_valid(0x1000u, 0x1000u + (uint32_t)kSwToolsMinBytes, kSwToolsMinBytes));
+    assert(!sw_vec_valid(0x2000u, 0x2000u + 128u, kSwTimersMinBytes));
+    assert(sw_vec_valid(0x2000u, 0x2000u + (uint32_t)kSwTimersMinBytes, kSwTimersMinBytes));
+
+    // Guest NPC-origin civ has empty +0x470 and +0x490; orig player civ has valid vectors -> borrow needed
+    assert(sw_borrow_needed(false, 0u, 0u, 0x1000u, 0x1000u + (uint32_t)kSwToolsMinBytes, kSwToolsMinBytes));
+    assert(sw_borrow_needed(false, 0u, 0u, 0x2000u, 0x2000u + (uint32_t)kSwTimersMinBytes, kSwTimersMinBytes));
+    // Same civ (host's own civ): never borrow
+    assert(!sw_borrow_needed(true, 0u, 0u, 0x1000u, 0x1000u + (uint32_t)kSwToolsMinBytes, kSwToolsMinBytes));
+    // Already populated destination: no borrow needed
+    assert(!sw_borrow_needed(false, 0x3000u, 0x3000u + (uint32_t)kSwToolsMinBytes, 0x1000u,
+                             0x1000u + (uint32_t)kSwToolsMinBytes, kSwToolsMinBytes));
+    // Uninitialized source: cannot borrow
+    assert(!sw_borrow_needed(false, 0u, 0u, 0u, 0u, kSwToolsMinBytes));
+}
+
+static void test_planner_sync_codec_and_wealth_clamp()
+{
+    // BUG-1581: atomic planner sync codec roundtrip (buildings + turrets + net_spend)
+    PlannerSyncMsg in;
+    in.ci = 3;
+    in.removed.push_back({0x18EB106u, {10.0f, 20.0f, 30.0f}, 800.0f});
+    in.moved.push_back({0x18EA2CCu, {1.0f, 2.0f, 3.0f}, {4.0f, 5.0f, 6.0f}});
+    in.added.push_back({0x1A56ABAu, {11.0f, 22.0f, 33.0f}, 800.0f});
+    in.turret_delta = 2;
+    in.removed_turrets.push_back({50.0f, 60.0f, 70.0f});
+    in.net_spend = 1100.0f;
+
+    net::Writer w;
+    write_planner_sync(w, in);
+    net::Reader r(w.data.data(), w.data.size());
+    assert(r.u8() == kCmdPlannerSync);
+    PlannerSyncMsg out;
+    assert(read_planner_sync(r, out));
+    assert(out.ci == 3);
+    assert(out.removed.size() == 1 && out.removed[0].noun == 0x18EB106u && std::fabs(out.removed[0].price - 800.0f) < 1e-3f);
+    assert(out.moved.size() == 1 && out.moved[0].noun == 0x18EA2CCu && std::fabs(out.moved[0].to.x - 4.0f) < 1e-3f);
+    assert(out.added.size() == 1 && out.added[0].noun == 0x1A56ABAu && std::fabs(out.added[0].pos.z - 33.0f) < 1e-3f);
+    assert(out.turret_delta == 2);
+    assert(out.removed_turrets.size() == 1 && std::fabs(out.removed_turrets[0].x - 50.0f) < 1e-3f);
+    assert(std::fabs(out.net_spend - 1100.0f) < 1e-3f);
+
+    // Malformed count rejected
+    net::Writer w_bad;
+    w_bad.u8(1);
+    w_bad.u8(40); // nr > 32
+    net::Reader r_bad(w_bad.data.data(), w_bad.data.size());
+    assert(!read_planner_sync(r_bad, out));
+
+    // Wealth delta clamping protects host against tampered or desynced planner spend
+    assert(std::fabs(clamp_planner_net_spend(1800.0f, 1800.0f, 400.0f) - 1800.0f) < 1e-3f);
+    assert(std::fabs(clamp_planner_net_spend(9999.0f, 1800.0f, 400.0f) - 1800.0f) < 1e-3f);
+    assert(std::fabs(clamp_planner_net_spend(-5000.0f, 1800.0f, 400.0f) - (-400.0f)) < 1e-3f);
+    assert(clamp_planner_net_spend(std::nanf(""), 1000.0f, 1000.0f) == 0.0f);
+}
+
+static void test_diplo_gift_capital_softlock_and_clean_notice()
+{
+    // BUG-1581: vanilla diplomacy Sporebucks gift validation + wire codec
+    assert(can_apply_diplo_gift(0, 1, 1000.0f, 2500.0f));
+    assert(can_apply_diplo_gift(1, 0, 500.0f, 500.0f));
+    assert(!can_apply_diplo_gift(0, 0, 500.0f, 5000.0f));     // self
+    assert(!can_apply_diplo_gift(0, 1, 3000.0f, 2500.0f));    // insufficient funds
+    assert(!can_apply_diplo_gift(0, 1, 0.0f, 2500.0f));       // non-positive
+    assert(!can_apply_diplo_gift(0, 1, -100.0f, 2500.0f));    // negative
+    assert(!can_apply_diplo_gift(0, 1, std::nanf(""), 2500.0f));
+
+    net::Writer wd;
+    write_diplo_gift(wd, {1, 1500.0f});
+    net::Reader rd(wd.data.data(), wd.data.size());
+    DiploGiftMsg dm;
+    assert(read_diplo_gift(rd, dm) && dm.target_pid == 1 && std::fabs(dm.amount - 1500.0f) < 1e-3f);
+
+    net::Writer wd_bad;
+    wd_bad.u8(1);
+    wd_bad.f32(-50.0f);
+    net::Reader rd_bad(wd_bad.data.data(), wd_bad.data.size());
+    assert(!read_diplo_gift(rd_bad, dm));
+
+    // BUG-1581: capital softlock guard
+    // Non-capital: always Allow
+    assert(capital_siege_gate(false, true, true, 0, 100.0f, 1000.0f, 500.0f) == CapitalDamageAction::Allow);
+    // Capital Hall attacked by NPC -> BlockAndRepel
+    assert(capital_siege_gate(true, true, true, 5, 800.0f, 1000.0f, 100.0f) == CapitalDamageAction::BlockAndRepel);
+    // Capital Hall attacked by rival player: Allow above 25% floor, ClampHp when crossing floor
+    assert(capital_siege_gate(true, true, false, 5, 800.0f, 1000.0f, 100.0f) == CapitalDamageAction::Allow);
+    assert(capital_siege_gate(true, true, false, 5, 300.0f, 1000.0f, 100.0f) == CapitalDamageAction::ClampHp);
+    assert(std::fabs(clamped_hall_damage(300.0f, 1000.0f, 100.0f) - 50.0f) < 1e-3f);
+    assert(clamped_hall_damage(250.0f, 1000.0f, 100.0f) == 0.0f);
+    // Capital ordinary building attacked by NPC: allowed while >2 alive, BlockAndRepel at <=2
+    assert(capital_siege_gate(true, false, true, 4, 200.0f, 200.0f, 50.0f) == CapitalDamageAction::Allow);
+    assert(capital_siege_gate(true, false, true, 2, 200.0f, 200.0f, 50.0f) == CapitalDamageAction::BlockAndRepel);
+
+    // BUG-1581: player-facing rival takeover notice never exposes raw hex IDs
+    std::string n1 = format_rival_takeover_notice("DERMOGEN", "Brown", kCitySpecMilitary, false);
+    std::string n2 = format_rival_takeover_notice("DERMOGEN", "", kCitySpecEconomic, false);
+    std::string n3 = format_rival_takeover_notice("DERMOGEN", "Red", -1, false);
+    std::string n4 = format_rival_takeover_notice("DERMOGEN", "", -1, false);
+    std::string n5 = format_rival_takeover_notice("DERMOGEN", "Blue", kCitySpecMilitary, true);
+    for (const auto& s : {n1, n2, n3, n4, n5})
+        assert(s.find("0x") == std::string::npos);
+    assert(n1.find("Brown Military") != std::string::npos);
+    assert(n5.find("reclaimed") != std::string::npos);
+}
+
 int main()
 {
     test_base_distance_selection();
@@ -455,6 +638,11 @@ int main()
     test_guest_direct_spend_and_handoff_and_payout();
     test_civ_npc_ui_list();
     test_specialty_conversion_and_superweapon_spend();
+    test_rejoin_nation_memory_and_store_codec();
+    test_large_city_selection_preference();
+    test_superweapon_borrow_safety();
+    test_planner_sync_codec_and_wealth_clamp();
+    test_diplo_gift_capital_softlock_and_clean_notice();
     printf("civ_rivals_tests: all passed\n");
     return 0;
 }

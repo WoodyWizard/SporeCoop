@@ -1653,7 +1653,24 @@ static void refresh_lobby()
             }
         }
     }
-    text(D.session, A.session_line());
+    // BUG-1579: keep the host lobby header on a single line so it never wraps over the column headers at y=138.
+    {
+        std::string sline = A.session_line();
+        if (caption_width(sline) + 30.f > 680.f) {
+            if (sline.rfind("Hosting on UDP port ", 0) == 0)
+                sline.replace(0, 20, T("Host UDP ", "Сервер UDP "));
+            size_t pl = sline.find(" players");
+            if (pl != std::string::npos && caption_width(sline) + 30.f > 680.f)
+                sline.replace(pl, 8, T(" pl.", " игр."));
+            static const char kRuAutoFull[] = " (\xD0\xB0\xD0\xB2\xD1\x82\xD0\xBE\xD1\x81\xD0\xBE\xD1\x85\xD1\x80\xD0\xB0\xD0\xBD\xD0\xB5\xD0\xBD\xD0\xB8\xD0\xB5)";
+            size_t as = sline.find(kRuAutoFull);
+            if (as != std::string::npos && caption_width(sline) + 30.f > 680.f)
+                sline.replace(as, sizeof(kRuAutoFull) - 1, " (\xD0\xB0\xD0\xB2\xD1\x82\xD0\xBE\xD1\x81\xD0\xBE\xD1\x85\xD1\x80.)");
+            if (caption_width(sline) + 30.f > 680.f)
+                sline = cut_caption("", sline, 680.f + 18.f);
+        }
+        text(D.session, sline);
+    }
     auto rows = A.players();
     int own_row = -1;
     for (int i = 0; i < 4; i++) {
@@ -1729,7 +1746,10 @@ static void refresh_lobby()
         }
     }
     std::string gwhat, gto;
-    int gn = A.give ? A.give(gwhat, gto) : 0;
+    // BUG-1579: hide the Together-mode F9 Give row (tribe members / Civ cities & vehicles) in both Tribe and Civ Rivals.
+    bool rivals_no_give = A.mode && (A.mode() == modes::kTribe || A.mode() == modes::kCiv) &&
+                          rivals::stage_is_rivals(rivals::stage_from_mode(A.mode()));
+    int gn = (!rivals_no_give && A.give) ? A.give(gwhat, gto) : 0;
     bool space = gwhat == "spice";
     // BUG-1289: in Tribe and Civ the creature row of a guest without its own creature gives way to selected units
     if (!cl.empty() && gn > 0 && A.mode && (A.mode() == 0x1654C02 || A.mode() == 0x1654C04)) {
@@ -1888,8 +1908,8 @@ static void refresh_lobby()
         text(D.vote_mode_btn, vm_label);
     }
     std::string rl = host ? (A.report_line ? A.report_line() : "")
-                   : asked ? T("Sent: logs, a game summary, screenshots, crash files (paths masked)",
-                               "Отправится: логи, сводка, снимки, сбои (пути скрыты)")
+                   : asked ? T("Sent: zip with logs, summary, screenshots, crash files (paths masked)",
+                               "Отправится .zip: логи, сводка, снимки, сбои (пути скрыты)")
                            : rq;
     if (round)
         text(D.rline, rl);
@@ -2465,7 +2485,7 @@ static std::string tooltip_for(const std::string& name)
     if (name == "jump")
         return T("Fly to your partner's star system", "Перелететь в звёздную систему напарника");
     if (name == "rsend")
-        return T("Include your logs and summary in the host's report", "Отправить ваши логи в общий отчёт хоста");
+        return T("Pack and send your logs (.zip) to the host's report", "Собрать и отправить архив (.zip) с логами в отчёт хоста");
     if (name == "rnosend")
         return T("Decline sending your report this time", "Не отправлять ваш отчёт в этот раз");
     if (name == "setback" || name == "sback" || name == "rback")
@@ -2598,16 +2618,27 @@ static void refresh_static_labels()
 {
     if (!D.root)
         return;
-    // Update static button/header labels on live language switch (BUG-1575) and widen Report button if needed
+    // Update static button/header labels on live language switch (BUG-1575) and widen Report button (BUG-1579:
+    // +72 px accounts for Spore's 46 px pill borders + Cyrillic glyph width so "Сообщить об ошибке" never clips).
     std::string rcap = T("Report a problem", "Сообщить об ошибке");
     text(D.report_btn, rcap);
     if (D.report_btn) {
-        float want_w = std::min(290.f, std::max(210.f, std::round(caption_width(rcap) + 44.f)));
+        float want_w = i18n::lang() == i18n::Lang::En
+                           ? 210.f
+                           : std::min(320.f, std::max(210.f, std::round(caption_width(rcap) + 72.f)));
         Rect rr = sui::area(D.report_btn);
         float rx1 = 720.f - want_w;
         if (std::abs(rr.x1 - rx1) > 0.5f) {
             rr.x1 = rx1;
             sui::set_area(D.report_btn, rr);
+        }
+        if (D.version) {
+            auto& vc = g_cache[D.version];
+            float vx2 = rx1 - 10.f;
+            if (std::abs(vc.box.x2 - vx2) > 0.5f) {
+                vc.box.x2 = vx2;
+                fit(D.version, vc);
+            }
         }
     }
     text(D.settings_btn, T("Settings", "Настройки"));

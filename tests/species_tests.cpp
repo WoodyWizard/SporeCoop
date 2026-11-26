@@ -198,6 +198,44 @@ static void test_store()
     CHECK(!t.get(bob, kStoreFeature) && t.players.empty());
 }
 
+static void test_creature_starter_filtering()
+{
+    printf("creature starter filtering (BUG-1583)\n");
+    Row r;
+    r.creature = 0x1111;
+    r.tribe = tribe_ref(r, 0x2222, kCrt, kCrtG, shared_instance(0xAA));
+    r.civ = civ_ref(r, 0x3333, kCrt, kCrtG, shared_instance(0xBB));
+    CHECK(!is_row_outfit_instance(r, 0x1111));
+    CHECK(is_row_outfit_instance(r, 0x2222));
+    CHECK(is_row_outfit_instance(r, 0x3333));
+
+    // Stream repro (BUG-1583): Civ-armored creature with 24 HP and Strike lvl 5 MUST be rejected at brain 0
+    CreatureStageStats civ_armored{0x7C8C857E, 14.0f, 24.0f, 5.0f, false, false};
+    CHECK(is_overpowered_or_outfitted_starter(civ_armored, 10.0f));
+
+    // Known outfit or outfitter-part creature MUST be rejected even with low HP
+    CreatureStageStats tribe_outfit{0x2222, 0.0f, 10.0f, 1.0f, true, false};
+    CreatureStageStats civ_hat{0x4444, 2.0f, 12.0f, 1.0f, false, true};
+    CHECK(is_overpowered_or_outfitted_starter(tribe_outfit, 10.0f));
+    CHECK(is_overpowered_or_outfitted_starter(civ_hat, 10.0f));
+
+    // High-combat-level creature (Strike lvl 4) rejected even if HP is moderate
+    CreatureStageStats high_combat{0x5555, 2.0f, 12.0f, 4.0f, false, false};
+    CHECK(is_overpowered_or_outfitted_starter(high_combat, 10.0f));
+
+    // Clean starting Creature-stage creature (10-12 HP, Strike lvl 1-2) is accepted
+    CreatureStageStats clean_starter{0x6666, 2.0f, 12.0f, 2.0f, false, false};
+    CHECK(!is_overpowered_or_outfitted_starter(clean_starter, 10.0f));
+
+    // Auto-selector skips Civ-armored & outfitted entries and picks clean starter
+    std::vector<CreatureStageStats> mixed = {civ_armored, tribe_outfit, high_combat, clean_starter};
+    CHECK(select_clean_creature_starter(mixed, 10.0f) == 0x6666);
+
+    // When only Civ/outfitted creatures exist, returns 0 (clean fallback to Host's starting Creature species)
+    std::vector<CreatureStageStats> only_civ = {civ_armored, tribe_outfit, civ_hat};
+    CHECK(select_clean_creature_starter(only_civ, 10.0f) == 0);
+}
+
 int main()
 {
     test_rules();
@@ -205,6 +243,7 @@ int main()
     test_shared();
     test_format();
     test_store();
+    test_creature_starter_filtering();
     if (g_fail) {
         printf("species_tests: %d FAILED\n", g_fail);
         return 1;

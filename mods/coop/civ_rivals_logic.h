@@ -66,27 +66,66 @@ struct BaseCandidate {
     uint32_t pol_id = 0;
     Vec3 cap_pos{};
     int city_count = 0;
+    int building_slots = 0; // cCity building layout slot count (+0x43C, stride 0x18)
+    bool is_small = false;  // cCity +0x519 (mbSmallCity): true = small city (fewer plots / lower cap)
 };
 
 // Picks a free NPC civilization matching `dist` (Near / Middle / Far) from `host_cap`.
-// Returns 0 if no free candidate is available.
+// When `prefer_large` is true (BUG-1581), prefers non-small / larger-slot cities so guests are not stuck
+// in a 4-tank small coastal city when full-sized cities exist. Returns 0 if no free candidate is available.
 inline uint32_t select_base_nation(const Vec3& host_cap, const std::vector<BaseCandidate>& candidates,
-                                   rivals::BaseDistance dist, const std::vector<uint32_t>& already_taken = {})
+                                   rivals::BaseDistance dist, const std::vector<uint32_t>& already_taken = {},
+                                   bool prefer_large = true)
 {
     struct Ranked {
         uint32_t pol_id;
         float d;
+        int building_slots;
+        bool is_small;
     };
     std::vector<Ranked> pool;
+    bool has_large = false;
+    int max_slots = 0;
     for (const auto& c : candidates) {
         if (!c.pol_id || c.city_count <= 0)
             continue;
         if (std::find(already_taken.begin(), already_taken.end(), c.pol_id) != already_taken.end())
             continue;
-        pool.push_back({c.pol_id, dist3(host_cap, c.cap_pos)});
+        pool.push_back({c.pol_id, dist3(host_cap, c.cap_pos), c.building_slots, c.is_small});
+        if (!c.is_small)
+            has_large = true;
+        if (c.building_slots > max_slots)
+            max_slots = c.building_slots;
     }
     if (pool.empty())
         return 0;
+    if (prefer_large) {
+        if (has_large) {
+            std::vector<Ranked> large_only;
+            for (const auto& r : pool)
+                if (!r.is_small)
+                    large_only.push_back(r);
+            if (!large_only.empty())
+                pool = std::move(large_only);
+        }
+        // Recompute max_slots within surviving pool; if slot counts vary meaningfully, prefer top tier.
+        int pool_max = 0;
+        int pool_min = 0x7fffffff;
+        for (const auto& r : pool) {
+            if (r.building_slots > pool_max)
+                pool_max = r.building_slots;
+            if (r.building_slots < pool_min)
+                pool_min = r.building_slots;
+        }
+        if (pool_max > 0 && pool_max - pool_min >= 3) {
+            std::vector<Ranked> top_tier;
+            for (const auto& r : pool)
+                if (r.building_slots >= pool_max - 2)
+                    top_tier.push_back(r);
+            if (!top_tier.empty())
+                pool = std::move(top_tier);
+        }
+    }
     std::sort(pool.begin(), pool.end(), [](const Ranked& a, const Ranked& b) {
         if (std::fabs(a.d - b.d) > 1e-3f)
             return a.d < b.d;
@@ -100,6 +139,313 @@ inline uint32_t select_base_nation(const Vec3& host_cap, const std::vector<BaseC
     else
         idx = pool.size() / 2;
     return pool[idx].pol_id;
+}
+
+// ---------------- BUG-1581: Persisted player_key -> nation memory across disconnect/reconnect ----------------
+struct SavedNation {
+    uint32_t pol_id = 0;
+    Vec3 cap_pos{};
+    int8_t cap_specialty = -1;
+};
+
+struct NationMemory {
+    std::map<std::string, SavedNation> by_key;
+
+    void clear() { by_key.clear(); }
+
+    void remember(const std::string& key, uint32_t pol_id, const Vec3& cap_pos, int8_t cap_specialty)
+    {
+        if (key.empty() || !pol_id)
+            return;
+        by_key[key] = {pol_id, cap_pos, cap_specialty};
+    }
+
+    bool has(const std::string& key) const { return !key.empty() && by_key.count(key) != 0; }
+
+    // Finds the player's original nation among live non-host candidates (first by exact pol_id,
+    // then by capital position within kCapitalMatchRadius if pol_id changed after reload).
+    uint32_t find_reclaim(const std::string& key, const std::vector<BaseCandidate>& live_civs,
+                          const std::vector<uint32_t>& active_taken) const
+    {
+        if (key.empty())
+            return 0;
+        auto it = by_key.find(key);
+        if (it == by_key.end() || !it->second.pol_id)
+            return 0;
+        const SavedNation& sv = it->second;
+        auto is_taken = [&](uint32_t pol) {
+            return std::find(active_taken.begin(), active_taken.end(), pol) != active_taken.end();
+        };
+        for (const auto& c : live_civs) {
+            if (c.pol_id == sv.pol_id && c.city_count > 0 && !is_taken(c.pol_id))
+                return c.pol_id;
+        }
+        // Fallback: position match (e.g. after a save/reload)
+        uint32_t best_pol = 0;
+        float best_d = kCapitalMatchRadius;
+        for (const auto& c : live_civs) {
+            if (!c.pol_id || c.city_count <= 0 || is_taken(c.pol_id))
+                continue;
+            float d = dist3(c.cap_pos, sv.cap_pos);
+            if (d <= best_d) {
+                best_d = d;
+                best_pol = c.pol_id;
+            }
+        }
+        return best_pol;
+    }
+
+    // True if `pol_id` is remembered for a DIFFERENT player key (prevents a newcomer stealing a reconnecting peer's nation).
+    bool is_reserved_for_other(uint32_t pol_id, const std::string& requester_key) const
+    {
+        if (!pol_id)
+            return false;
+        for (const auto& [k, sv] : by_key)
+            if (sv.pol_id == pol_id && k != requester_key)
+                return true;
+        return false;
+    }
+
+    // True if ANY remembered player owns `pol_id` (keeps NPC AI paused during brief disconnects).
+    bool is_reserved_pol(uint32_t pol_id) const
+    {
+        if (!pol_id)
+            return false;
+        for (const auto& [k, sv] : by_key)
+            if (sv.pol_id == pol_id)
+                return true;
+        return false;
+    }
+
+    void adopt(const std::string& from, const std::string& to)
+    {
+        if (from.empty() || to.empty() || from == to)
+            return;
+        auto it = by_key.find(from);
+        if (it == by_key.end())
+            return;
+        by_key[to] = it->second;
+        by_key.erase(it);
+    }
+};
+
+// ---------------- BUG-1581: Superweapon tools (+0x470) & timers (+0x490) borrow validation ----------------
+constexpr size_t kSwToolsMinBytes = 12u * 4u;    // 12 intrusive_ptr<cSpaceToolData>
+constexpr size_t kSwTimersMinBytes = 12u * 32u;  // 12 cGameTime timers (stride 0x20)
+
+inline bool sw_vec_valid(uint32_t begin, uint32_t end, size_t min_bytes)
+{
+    return begin != 0u && end >= begin && (size_t)(end - begin) >= min_bytes;
+}
+
+inline bool sw_borrow_needed(bool same_civ, uint32_t dst_begin, uint32_t dst_end, uint32_t src_begin, uint32_t src_end,
+                             size_t min_bytes)
+{
+    return !same_civ && !sw_vec_valid(dst_begin, dst_end, min_bytes) && sw_vec_valid(src_begin, src_end, min_bytes);
+}
+
+// ---------------- BUG-1581: Capital siege softlock guard & vanilla diplomatic gift validation ----------------
+constexpr uint32_t kEventCivDiplomaticGift = 0x0526E4FBu; // verified at SporeApp.exe 0x00DCA96C
+constexpr float kCapitalHallMinHpRatio = 0.25f;
+constexpr int kCapitalMinProtectedBuildings = 2;
+
+enum class CapitalDamageAction : uint8_t {
+    Allow = 0,         // normal damage proceeds
+    ClampHp = 1,       // player attacker on inviolable capital City Hall: clamp damage so Hall never falls below floor
+    BlockAndRepel = 2, // NPC attacker trying to ruin protected capital City Hall or last buildings: block and repel NPC
+};
+
+inline CapitalDamageAction capital_siege_gate(bool is_capital, bool is_hall, bool attacker_is_npc, int alive_buildings,
+                                              float cur_hp, float max_hp, float dmg)
+{
+    if (!is_capital)
+        return CapitalDamageAction::Allow;
+    if (is_hall) {
+        if (attacker_is_npc)
+            return CapitalDamageAction::BlockAndRepel;
+        float floor_hp = (std::isfinite(max_hp) && max_hp > 0.0f) ? (max_hp * kCapitalHallMinHpRatio) : 0.0f;
+        if (std::isfinite(cur_hp) && std::isfinite(dmg) && cur_hp - dmg < floor_hp)
+            return CapitalDamageAction::ClampHp;
+        return CapitalDamageAction::Allow;
+    }
+    if (attacker_is_npc && alive_buildings <= kCapitalMinProtectedBuildings)
+        return CapitalDamageAction::BlockAndRepel;
+    return CapitalDamageAction::Allow;
+}
+
+inline float clamped_hall_damage(float cur_hp, float max_hp, float dmg)
+{
+    if (!std::isfinite(cur_hp) || !std::isfinite(max_hp) || !std::isfinite(dmg) || max_hp <= 0.0f || dmg <= 0.0f)
+        return 0.0f;
+    float floor_hp = max_hp * kCapitalHallMinHpRatio;
+    if (cur_hp <= floor_hp)
+        return 0.0f;
+    return std::min(dmg, cur_hp - floor_hp);
+}
+
+inline bool can_apply_diplo_gift(uint8_t from, uint8_t to, float amount, float sender_wealth)
+{
+    if (from >= kMaxPlayers || to >= kMaxPlayers || from == to)
+        return false;
+    if (!std::isfinite(amount) || amount <= 0.0f || amount > kMaxGiftAmount)
+        return false;
+    if (!std::isfinite(sender_wealth) || sender_wealth < amount)
+        return false;
+    return true;
+}
+
+// ---------------- BUG-1581: Atomic guest city planner sync payload (buildings + turrets) ----------------
+constexpr uint8_t kCmdPlannerSync = 9;
+constexpr uint8_t kCmdSellVehicle = 11;
+constexpr uint8_t kSkDiploGift = 17; // MSG_RIVALS_FACTION subkind: vanilla diplomacy Sporebucks gift
+constexpr float kDefaultTurretCost = 500.0f;
+
+struct PlannerBuildingItem {
+    uint32_t noun = 0;
+    Vec3 pos{};
+    float price = 0.0f;
+};
+
+struct PlannerMoveItem {
+    uint32_t noun = 0;
+    Vec3 from{};
+    Vec3 to{};
+};
+
+struct PlannerSyncMsg {
+    uint8_t ci = 0;
+    std::vector<PlannerBuildingItem> removed;
+    std::vector<PlannerMoveItem> moved;
+    std::vector<PlannerBuildingItem> added;
+    int8_t turret_delta = 0; // net turrets added (>0) or removed (<0)
+    std::vector<Vec3> removed_turrets;
+    float net_spend = 0.0f;  // positive = player spent Sporebucks, negative = net refund
+};
+
+inline bool finite_vec3(const Vec3& v) { return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z); }
+
+inline void write_planner_sync(net::Writer& w, const PlannerSyncMsg& m)
+{
+    w.u8(kCmdPlannerSync);
+    w.u8(m.ci);
+    uint8_t nr = (uint8_t)std::min<size_t>(m.removed.size(), 32);
+    w.u8(nr);
+    for (uint8_t i = 0; i < nr; i++) {
+        w.u32(m.removed[i].noun);
+        w.f32(m.removed[i].pos.x);
+        w.f32(m.removed[i].pos.y);
+        w.f32(m.removed[i].pos.z);
+        w.f32(m.removed[i].price);
+    }
+    uint8_t nm = (uint8_t)std::min<size_t>(m.moved.size(), 32);
+    w.u8(nm);
+    for (uint8_t i = 0; i < nm; i++) {
+        w.u32(m.moved[i].noun);
+        w.f32(m.moved[i].from.x);
+        w.f32(m.moved[i].from.y);
+        w.f32(m.moved[i].from.z);
+        w.f32(m.moved[i].to.x);
+        w.f32(m.moved[i].to.y);
+        w.f32(m.moved[i].to.z);
+    }
+    uint8_t na = (uint8_t)std::min<size_t>(m.added.size(), 32);
+    w.u8(na);
+    for (uint8_t i = 0; i < na; i++) {
+        w.u32(m.added[i].noun);
+        w.f32(m.added[i].pos.x);
+        w.f32(m.added[i].pos.y);
+        w.f32(m.added[i].pos.z);
+        w.f32(m.added[i].price);
+    }
+    w.u8((uint8_t)m.turret_delta);
+    uint8_t nt = (uint8_t)std::min<size_t>(m.removed_turrets.size(), 32);
+    w.u8(nt);
+    for (uint8_t i = 0; i < nt; i++) {
+        w.f32(m.removed_turrets[i].x);
+        w.f32(m.removed_turrets[i].y);
+        w.f32(m.removed_turrets[i].z);
+    }
+    w.f32(m.net_spend);
+}
+
+inline bool read_planner_sync(net::Reader& r, PlannerSyncMsg& out)
+{
+    out = PlannerSyncMsg{};
+    out.ci = r.u8();
+    uint8_t nr = r.u8();
+    if (!r.ok() || nr > 32)
+        return false;
+    out.removed.resize(nr);
+    for (uint8_t i = 0; i < nr; i++) {
+        out.removed[i].noun = r.u32();
+        out.removed[i].pos = {r.f32(), r.f32(), r.f32()};
+        out.removed[i].price = r.f32();
+        if (!r.ok() || !finite_vec3(out.removed[i].pos) || !std::isfinite(out.removed[i].price))
+            return false;
+    }
+    uint8_t nm = r.u8();
+    if (!r.ok() || nm > 32)
+        return false;
+    out.moved.resize(nm);
+    for (uint8_t i = 0; i < nm; i++) {
+        out.moved[i].noun = r.u32();
+        out.moved[i].from = {r.f32(), r.f32(), r.f32()};
+        out.moved[i].to = {r.f32(), r.f32(), r.f32()};
+        if (!r.ok() || !finite_vec3(out.moved[i].from) || !finite_vec3(out.moved[i].to))
+            return false;
+    }
+    uint8_t na = r.u8();
+    if (!r.ok() || na > 32)
+        return false;
+    out.added.resize(na);
+    for (uint8_t i = 0; i < na; i++) {
+        out.added[i].noun = r.u32();
+        out.added[i].pos = {r.f32(), r.f32(), r.f32()};
+        out.added[i].price = r.f32();
+        if (!r.ok() || !finite_vec3(out.added[i].pos) || !std::isfinite(out.added[i].price) ||
+            out.added[i].price < 0.0f || out.added[i].price > 100000.0f)
+            return false;
+    }
+    out.turret_delta = (int8_t)r.u8();
+    uint8_t nt = r.u8();
+    if (!r.ok() || nt > 32 || out.turret_delta < -32 || out.turret_delta > 32)
+        return false;
+    out.removed_turrets.resize(nt);
+    for (uint8_t i = 0; i < nt; i++) {
+        out.removed_turrets[i] = {r.f32(), r.f32(), r.f32()};
+        if (!r.ok() || !finite_vec3(out.removed_turrets[i]))
+            return false;
+    }
+    out.net_spend = r.f32();
+    if (!r.ok() || !std::isfinite(out.net_spend) || out.net_spend < -200000.0f || out.net_spend > 200000.0f)
+        return false;
+    return true;
+}
+
+inline float clamp_planner_net_spend(float reported_spend, float max_charge, float max_refund)
+{
+    if (!std::isfinite(reported_spend))
+        return 0.0f;
+    float hi = (std::isfinite(max_charge) && max_charge > 0.0f) ? max_charge : 0.0f;
+    float lo = (std::isfinite(max_refund) && max_refund > 0.0f) ? -max_refund : 0.0f;
+    return std::max(lo, std::min(hi, reported_spend));
+}
+
+inline std::string format_rival_takeover_notice(const std::string& player_name, const char* color_name,
+                                                int native_spec, bool reclaimed)
+{
+    if (reclaimed)
+        return player_name + " reclaimed their rival nation";
+    const char* spec = (native_spec == 0) ? "Military" : (native_spec == 1) ? "Religious" : (native_spec == 2) ? "Economic" : "";
+    bool has_col = color_name && color_name[0] != '\0';
+    bool has_spec = spec[0] != '\0';
+    if (has_col && has_spec)
+        return player_name + " took command of the " + color_name + " " + spec + " nation";
+    if (has_spec)
+        return player_name + " took command of a " + spec + " rival nation";
+    if (has_col)
+        return player_name + " took command of the " + color_name + " rival nation";
+    return player_name + " took command of a rival nation";
 }
 
 // ---------------- R1 / R2: Nation assignment table ----------------
@@ -912,6 +1258,67 @@ inline bool read_draft_apply(net::Reader& r, DraftApplyMsg& out)
     if (!r.ok() || t >= kMaxPlayers || !did)
         return false;
     out = {t, did, {k0, k1, k2}};
+    return true;
+}
+
+// kSkDiploGift (17): u8 target_pid, f32 amount (BUG-1581: vanilla diplomacy gift relay)
+struct DiploGiftMsg {
+    uint8_t target_pid = 0;
+    float amount = 0.0f;
+};
+
+inline void write_diplo_gift(net::Writer& w, const DiploGiftMsg& m)
+{
+    w.u8(m.target_pid);
+    w.f32(m.amount);
+}
+
+inline bool read_diplo_gift(net::Reader& r, DiploGiftMsg& out)
+{
+    uint8_t t = r.u8();
+    float amt = r.f32();
+    if (!r.ok() || t >= kMaxPlayers || !std::isfinite(amt) || amt <= 0.0f || amt > kMaxGiftAmount)
+        return false;
+    out = {t, amt};
+    return true;
+}
+
+// Persisted store codec for NationMemory (world record "civ.rivals_nations" v1, BUG-1581)
+inline void write_saved_nations(net::Writer& w, const NationMemory& mem)
+{
+    uint8_t n = (uint8_t)std::min<size_t>(mem.by_key.size(), 32);
+    w.u8(n);
+    uint8_t written = 0;
+    for (const auto& [k, sv] : mem.by_key) {
+        if (written >= n)
+            break;
+        w.str8(k);
+        w.u32(sv.pol_id);
+        w.f32(sv.cap_pos.x);
+        w.f32(sv.cap_pos.y);
+        w.f32(sv.cap_pos.z);
+        w.u8(valid_native_specialty(sv.cap_specialty) ? (uint8_t)sv.cap_specialty : 0xFFu);
+        written++;
+    }
+}
+
+inline bool read_saved_nations(net::Reader& r, NationMemory& out)
+{
+    uint8_t n = r.u8();
+    if (!r.ok() || n > 32)
+        return false;
+    NationMemory tmp;
+    for (uint8_t i = 0; i < n; i++) {
+        std::string k = r.str8();
+        uint32_t pol = r.u32();
+        Vec3 pos{r.f32(), r.f32(), r.f32()};
+        uint8_t sp = r.u8();
+        if (!r.ok() || k.empty() || !pol || !finite_vec3(pos))
+            return false;
+        int8_t sp8 = sp <= (uint8_t)kCitySpecEconomic ? (int8_t)sp : (int8_t)-1;
+        tmp.by_key[k] = {pol, pos, sp8};
+    }
+    out = std::move(tmp);
     return true;
 }
 

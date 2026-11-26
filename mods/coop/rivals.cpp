@@ -35,8 +35,15 @@ static Ctx C;
 static bool g_rivals_core_fix = true;
 COOP_FIX("rivals.core", "BUG-0794", g_rivals_core_fix,
          "rivals: shared Rivals systems (stage modes, 4x4 relations, influence, race, draft, chronicle)");
+// BUG-1579: never auto-activate in-memory lobby Rivals config on an existing Together save (store has prior records
+// and no rivals.state), and never persist All rivals into a Together save; keep lobby preset intact for new worlds.
+static bool g_protect_together_fix = true;
+COOP_FIX("rivals.protect_together_save", "BUG-1579", g_protect_together_fix,
+         "rivals: suppress lobby Rivals preset when loading an existing Together save so it is never hijacked or contaminated");
 
 static State g_state;
+static Config g_lobby_config;            // BUG-1579: lobby's configured preset preserved across loaded Together saves
+static bool g_together_save_suppressed = false;
 static bool g_have_snapshot = false;
 static bool g_fast_timers = false;
 static double g_fast_catchup_secs = 0.0;
@@ -82,6 +89,45 @@ static const char* tr_mode(StageMode m) { return i18n::tr(mode_name(m, false), m
 static const char* tr_preset(Preset p) { return i18n::tr(preset_name(p, false), preset_name(p, true)); }
 static const char* tr_dist(BaseDistance d) { return i18n::tr(distance_name(d, false), distance_name(d, true)); }
 static const char* tr_rel(Relation r) { return i18n::tr(relation_name(r, false), relation_name(r, true)); }
+
+static const char* stage_currency_label(Stage st)
+{
+    switch (st) {
+    case Stage::Creature: return tr("DNA", "ДНК");
+    case Stage::Tribe: return tr("food", "еды");
+    case Stage::Civ:
+    case Stage::Space: return "$";
+    default: return "";
+    }
+}
+
+static std::string npc_display_name(Stage st, uint8_t viewer, uint32_t npc_id)
+{
+    if (auto* hk = active_stage_hooks(st); hk && hk->on_npc_ui_list) {
+        auto entries = hk->on_npc_ui_list(viewer);
+        for (const auto& e : entries) {
+            if (e.npc_id == npc_id && !e.label.empty())
+                return e.label;
+        }
+        if (viewer != 0) {
+            auto host_entries = hk->on_npc_ui_list(0);
+            for (const auto& e : host_entries) {
+                if (e.npc_id == npc_id && !e.label.empty())
+                    return e.label;
+            }
+        }
+    }
+    char fb[48];
+    snprintf(fb, sizeof fb, "%s #%u", tr("Faction", "Фракция"), (unsigned)((npc_id % 99u) + 1u));
+    return fb;
+}
+
+static std::string localize_error_text(const std::string& err)
+{
+    if (err.empty())
+        return {};
+    return i18n::tr(err.c_str());
+}
 
 static std::string name_of(uint8_t id)
 {
@@ -265,18 +311,67 @@ static void disk_load_if_opened()
     if (!g_rivals_core_fix)
         return;
     pstore::Store* w = store::world();
-    uint32_t ser = store::serial();
-    if (!w || ser == g_store_serial)
-        return;
-    g_store_serial = ser;
-    const pstore::Record* rec = w->get_world(kStoreFeature);
-    if (!rec || rec->ver != kStoreVer) {
-        if (g_persisted_world != w->world) {
-            g_persisted = PersistedWorld{};
-            g_persisted_world = w->world;
+    if (!w) {
+        // BUG-1579: when returning to the galaxy menu after closing a world, restore the lobby's configured preset.
+        if (g_protect_together_fix && !g_persisted_world.empty() && C.mode && C.mode() == modes::kMenu) {
+            bool was_suppressed = g_together_save_suppressed;
+            g_together_save_suppressed = false;
+            g_persisted_world.clear();
+            g_store_serial = 0;
+            if (g_state.config != g_lobby_config) {
+                g_state.config = g_lobby_config;
+                if (H && M && was_suppressed)
+                    H->log(M, SK_INFO, "rivals: returned to galaxy menu, restored lobby preset (%s) (BUG-1579)",
+                           preset_name(g_lobby_config.preset()));
+                if (is_host())
+                    host_broadcast(true);
+            }
         }
         return;
     }
+    uint32_t ser = store::serial();
+    if (ser == g_store_serial)
+        return;
+    g_store_serial = ser;
+    const pstore::Record* rec = w->get_world(kStoreFeature);
+    bool has_valid_rec = rec && rec->ver == kStoreVer;
+    WorldOpenAction act = g_protect_together_fix
+                              ? classify_world_open(has_valid_rec, w->records(), w->players.size(), w->saved)
+                              : (has_valid_rec ? WorldOpenAction::LoadStored : WorldOpenAction::ApplyLobbyConfig);
+    if (act == WorldOpenAction::SuppressTogetherSave) {
+        bool had_rivals = g_state.config.any_rivals() || g_lobby_config.any_rivals();
+        g_together_save_suppressed = true;
+        g_persisted = PersistedWorld{};
+        g_persisted_world = w->world;
+        g_state.config = Config{};
+        g_state.rel.reset();
+        g_state.chronicle.reset();
+        if (H && M && had_rivals)
+            H->log(M, SK_INFO,
+                   "rivals: existing Together save '%s' (%u records, no rivals.state): suppressing lobby Rivals preset (%s) so save is not contaminated (BUG-1579)",
+                   w->world.c_str(), (unsigned)w->records(), preset_name(g_lobby_config.preset()));
+        if (is_host()) {
+            host_broadcast(true);
+            sync_space_rivalry();
+        }
+        return;
+    }
+    if (act == WorldOpenAction::ApplyLobbyConfig) {
+        g_together_save_suppressed = false;
+        if (g_persisted_world != w->world) {
+            g_persisted = PersistedWorld{};
+            g_persisted_world = w->world;
+            if (g_protect_together_fix && g_state.config != g_lobby_config) {
+                g_state.config = g_lobby_config;
+                if (is_host()) {
+                    host_broadcast(true);
+                    sync_space_rivalry();
+                }
+            }
+        }
+        return;
+    }
+    g_together_save_suppressed = false;
     PersistedWorld loaded;
     if (loaded.decode(rec->data)) {
         g_persisted = std::move(loaded);
@@ -300,6 +395,8 @@ static void disk_save(pstore::Store& s, int64_t now)
 {
     if (!g_rivals_core_fix || !g_store_serial || g_store_serial != store::serial() || &s != store::world())
         return;
+    if (g_protect_together_fix && g_together_save_suppressed)
+        return; // BUG-1579: never write rivals.state into a loaded Together save
     if (is_host())
         sync_persisted_from_state();
     // Write when non-default data exists OR when a record already exists on disk (BUG-1551: switching back to
@@ -354,6 +451,8 @@ SESSION_STATE(
     "rivals.session", nullptr,
     [] {
         g_state.reset_all();
+        g_lobby_config = Config{};
+        g_together_save_suppressed = false;
         g_persisted = PersistedWorld{};
         g_persisted_world.clear();
         g_store_serial = 0;
@@ -361,6 +460,7 @@ SESSION_STATE(
         g_fast_timers = false;
         g_fast_catchup_secs = 0.0;
         g_state.rel.break_delay_secs = kDefaultBreakNoticeSecs;
+        g_state.rel.ally_break_grace_secs = kDefaultAllyBreakGraceSecs;
         g_state.inf.protect_duration_secs = kDefaultProtectSecs;
         g_state.draft.timeout_secs = kDefaultDraftTimeoutSecs;
         g_last_broadcast = 0.0;
@@ -453,30 +553,36 @@ static std::string host_apply_influence(uint8_t actor, InfluenceAction action, u
     int32_t cost_out = 0;
     switch (action) {
     case InfluenceAction::Buy: {
+        Stage st = current_stage();
+        auto* hk = active_stage_hooks(st);
+        // BUG-1579: require an active non-Cell stage with a registered resource-charging hook (prevents free buys in Galaxy menu).
+        if (!can_buy_influence_in_stage(st, hk && hk->on_buy_influence))
+            return "Influence can only be bought during an active stage";
         int32_t next_price = g_state.inf.buy_cost(actor);
-        if (auto* hk = active_stage_hooks(current_stage()); hk && hk->on_buy_influence) {
-            if (!hk->on_buy_influence(actor, next_price, kInfluenceBuyGain))
-                return "insufficient resources to buy influence";
-        }
+        if (!hk->on_buy_influence(actor, next_price, kInfluenceBuyGain))
+            return "insufficient resources to buy influence";
         if (!g_state.inf.buy(actor, cost_out))
             return "buy failed";
-        char b[128];
-        snprintf(b, sizeof b, "%s bought +%d influence (cost %d)", name_of(actor).c_str(), (int)kInfluenceBuyGain,
-                 (int)cost_out);
+        int32_t shown_cost = stage_influence_buy_price(st, cost_out);
+        char b[160];
+        snprintf(b, sizeof b, "%s %s +%d %s (%d %s)", name_of(actor).c_str(), tr("bought", "купил(а)"),
+                 (int)kInfluenceBuyGain, tr("influence", "влияния"), (int)shown_cost, stage_currency_label(st));
         msg = b;
         break;
     }
     case InfluenceAction::TurnAgainst: {
+        Stage st = current_stage();
         err = g_state.inf.spend_turn_against(actor, npc_id, rival_id, now);
         if (!err.empty())
             return err;
-        if (auto* cb = active_npc_cb(current_stage()); cb && !(*cb)(current_stage(), action, actor, npc_id, rival_id)) {
+        if (auto* cb = active_npc_cb(st); cb && !(*cb)(st, action, actor, npc_id, rival_id)) {
             g_state.inf.earn(actor, kCostTurnAgainst);
             return "npc rejected turn against";
         }
-        char b[128];
-        snprintf(b, sizeof b, "%s turned faction 0x%X against %s", name_of(actor).c_str(), (unsigned)npc_id,
-                 name_of(rival_id).c_str());
+        std::string fname = npc_display_name(st, actor, npc_id);
+        char b[160];
+        snprintf(b, sizeof b, "%s %s %s %s %s", name_of(actor).c_str(), tr("turned", "настроил(а)"),
+                 fname.c_str(), tr("against", "против"), name_of(rival_id).c_str());
         msg = b;
         break;
     }
@@ -506,22 +612,26 @@ static std::string host_apply_influence(uint8_t actor, InfluenceAction action, u
         });
         if (!err.empty())
             return err;
-        char b[128];
-        snprintf(b, sizeof b, "%s protected bond with faction 0x%X (%.0f s)", name_of(actor).c_str(), (unsigned)npc_id,
-                 g_state.inf.protect_duration_secs);
+        std::string fname = npc_display_name(st, actor, npc_id);
+        char b[160];
+        snprintf(b, sizeof b, "%s %s %s (%.0f s)", name_of(actor).c_str(),
+                 tr("protected bond with", "защитил(а) союз с"), fname.c_str(), g_state.inf.protect_duration_secs);
         msg = b;
         break;
     }
     case InfluenceAction::SmoothOver: {
+        Stage st = current_stage();
         err = g_state.inf.spend_smooth_over(actor, npc_id, now);
         if (!err.empty())
             return err;
-        if (auto* cb = active_npc_cb(current_stage()); cb && !(*cb)(current_stage(), action, actor, npc_id, 255)) {
+        if (auto* cb = active_npc_cb(st); cb && !(*cb)(st, action, actor, npc_id, 255)) {
             g_state.inf.earn(actor, kCostSmoothOver);
             return "npc rejected smooth over";
         }
-        char b[128];
-        snprintf(b, sizeof b, "%s smoothed over relations with faction 0x%X", name_of(actor).c_str(), (unsigned)npc_id);
+        std::string fname = npc_display_name(st, actor, npc_id);
+        char b[160];
+        snprintf(b, sizeof b, "%s %s %s", name_of(actor).c_str(),
+                 tr("smoothed over relations with", "улучшил(а) отношения с"), fname.c_str());
         msg = b;
         break;
     }
@@ -546,20 +656,23 @@ static std::string host_apply_draft(uint8_t actor, bool skip, uint32_t item_id)
     std::string err = skip ? g_state.draft.skip(actor) : g_state.draft.pick(actor, item_id, &payout);
     if (!err.empty())
         return err;
-    char b[128];
+    char b[160];
     if (skip)
         snprintf(b, sizeof b, "%s skipped remaining draft picks", name_of(actor).c_str());
     else {
-        snprintf(b, sizeof b, "%s copied draft item #%u (winner +%d)", name_of(actor).c_str(), (unsigned)item_id,
-                 (int)payout);
-        if (auto* hk = active_stage_hooks(g_state.draft.stage); hk && hk->on_draft_pick) {
-            for (const auto& it : g_state.draft.items) {
-                if (it.id == item_id) {
+        std::string item_lbl;
+        for (const auto& it : g_state.draft.items) {
+            if (it.id == item_id) {
+                item_lbl = it.label;
+                if (auto* hk = active_stage_hooks(g_state.draft.stage); hk && hk->on_draft_pick)
                     hk->on_draft_pick(actor, it.id, it.kind, it.label);
-                    break;
-                }
+                break;
             }
         }
+        if (item_lbl.empty())
+            item_lbl = "#" + std::to_string((unsigned)item_id);
+        snprintf(b, sizeof b, "%s %s %s (%s +%d)", name_of(actor).c_str(), tr("copied", "взял(а)"),
+                 item_lbl.c_str(), tr("winner", "победителю"), (int)payout);
     }
     host_broadcast();
     emit_notice(b);
@@ -574,9 +687,12 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     M = mod;
     C = std::move(ctx);
     g_state.reset_all();
+    g_lobby_config = Config{};
+    g_together_save_suppressed = false;
     g_have_snapshot = false;
     g_fast_timers = false;
     g_fast_catchup_secs = 0.0;
+    g_state.rel.ally_break_grace_secs = kDefaultAllyBreakGraceSecs;
     g_store_serial = 0;
     if (H && M)
         H->log(M, SK_INFO, "rivals: initialized (rivals.core=%d)", (int)g_rivals_core_fix);
@@ -669,8 +785,13 @@ void on_message(uint8_t from, net::Reader& r)
             return;
         }
         g_rx++;
-        if (!ev.text.empty())
-            emit_notice(ev.text);
+        if (!ev.text.empty()) {
+            // BUG-1579: localize host-sent Rivals error notices into the guest's chosen UI language.
+            if (ev.value == -1 && ev.text.rfind("Rivals: ", 0) == 0)
+                emit_notice(std::string(tr("Rivals: ", "Соперники: ")) + localize_error_text(ev.text.substr(8)));
+            else
+                emit_notice(ev.text);
+        }
         return;
     }
     if (!is_host() || from == 0 || !valid_player(from))
@@ -787,10 +908,15 @@ void on_stage_change(uint32_t from_mode, uint32_t to_mode)
 // ---- Public API ----
 bool enabled() { return g_rivals_core_fix; }
 Stage current_stage() { return C.mode ? stage_from_mode(C.mode()) : Stage::None; }
-bool stage_is_rivals(Stage s) { return g_rivals_core_fix && g_state.config.stage_is_rivals(s); }
-bool active_in_stage() { return g_rivals_core_fix && g_state.config.stage_is_rivals(current_stage()); }
-bool active_in_mode(uint32_t mode) { return g_rivals_core_fix && g_state.config.stage_is_rivals(stage_from_mode(mode)); }
+bool stage_is_rivals(Stage s)
+{
+    return g_rivals_core_fix && !(g_protect_together_fix && g_together_save_suppressed) && g_state.config.stage_is_rivals(s);
+}
+bool active_in_stage() { return stage_is_rivals(current_stage()); }
+bool active_in_mode(uint32_t mode) { return stage_is_rivals(stage_from_mode(mode)); }
 const Config& config() { return g_state.config; }
+bool lobby_any_rivals() { return g_rivals_core_fix && g_lobby_config.any_rivals(); }
+Preset lobby_preset() { return g_lobby_config.preset(); }
 BaseDistance base_distance() { return g_state.config.base_distance; }
 
 bool set_stage_mode(Stage s, StageMode m)
@@ -799,7 +925,9 @@ bool set_stage_mode(Stage s, StageMode m)
         return false;
     if (connected() && !is_host())
         return false;
+    g_together_save_suppressed = false;
     g_state.config.set_stage_mode(s, m);
+    g_lobby_config.set_stage_mode(s, m);
     if (is_host()) {
         host_broadcast(true);
         std::string msg = std::string("Stage ") + stage_name(s) + " set to " + mode_name(m);
@@ -814,7 +942,9 @@ bool set_preset(Preset p)
 {
     if (!g_rivals_core_fix || (connected() && !is_host()))
         return false;
+    g_together_save_suppressed = false;
     g_state.config.apply_preset(p);
+    g_lobby_config.apply_preset(p);
     // BUG-1558: automatically apply matching default Settings preset for All rivals / All together (never Custom)
     if (p == Preset::AllRivals || p == Preset::AllTogether)
         settings::apply_mode_preset(p == Preset::AllRivals);
@@ -833,6 +963,7 @@ bool set_catchup_secs(uint16_t secs)
         return false;
     g_state.config.catchup_secs = secs;
     g_state.config.clamp();
+    g_lobby_config.catchup_secs = g_state.config.catchup_secs;
     if (is_host())
         host_broadcast(true);
     return true;
@@ -844,6 +975,7 @@ bool set_draft_picks(uint8_t picks)
         return false;
     g_state.config.draft_picks = picks;
     g_state.config.clamp();
+    g_lobby_config.draft_picks = g_state.config.draft_picks;
     if (is_host())
         host_broadcast(true);
     return true;
@@ -855,6 +987,7 @@ bool set_base_distance(BaseDistance d)
         return false;
     g_state.config.base_distance = d;
     g_state.config.clamp();
+    g_lobby_config.base_distance = g_state.config.base_distance;
     if (is_host())
         host_broadcast(true);
     return true;
@@ -1306,7 +1439,7 @@ std::vector<UiRow> ui_rows()
 
         auto report_ui_err = [](const std::string& err) {
             if (!err.empty())
-                emit_notice(std::string(tr("Rivals: ", "Соперники: ")) + err);
+                emit_notice(std::string(tr("Rivals: ", "Соперники: ")) + localize_error_text(err));
         };
 
         // Section 3: Relations (11.4)
@@ -1374,17 +1507,28 @@ std::vector<UiRow> ui_rows()
             }
         }
 
-        // Section 4: Influence & NPC Diplomacy (11.4, BUG-1551)
+        // Section 4: Influence & NPC Diplomacy (11.4, BUG-1551, BUG-1579)
         Stage st = current_stage();
         if (st == Stage::Cell) {
             rows.push_back({tr("Influence: not used in Cell stage", "Влияние: не используется на этапе Клетки"),
                             "", nullptr, kDim});
+        } else if (!valid_stage(st)) {
+            if (valid_player(me)) {
+                int32_t my_inf = influence_balance(me);
+                snprintf(buf, sizeof buf, "%s: %d (%s)", tr("Influence", "Влияние"), (int)my_inf,
+                         tr("available in active stage", "доступно на активном этапе"));
+                rows.push_back({buf, "", nullptr, kDim});
+            }
         } else if (valid_player(me)) {
             int32_t my_inf = influence_balance(me);
+            int32_t next_cost = stage_influence_buy_price(st, g_state.inf.buy_cost(me));
             snprintf(buf, sizeof buf, "%s: %d | %s %d | %s %d | %s %d", tr("Influence", "Влияние"), (int)my_inf,
                      tr("Turn", "Ссора"), (int)kCostTurnAgainst, tr("Protect", "Защита"), (int)kCostProtect,
                      tr("Smooth", "Мир"), (int)kCostSmoothOver);
-            rows.push_back({buf, tr("Buy +25", "Купить +25"),
+            char bbtn[64];
+            snprintf(bbtn, sizeof bbtn, "%s (%d %s)", tr("Buy +25", "Купить +25"), (int)next_cost,
+                     stage_currency_label(st));
+            rows.push_back({buf, bbtn,
                             [report_ui_err] { report_ui_err(request_influence(InfluenceAction::Buy, 0, 255)); }, kGold});
         }
 
@@ -1455,12 +1599,14 @@ std::vector<UiRow> ui_rows()
                 };
                 if (!npcs.empty())
                     rows.push_back({tr("NPC Diplomacy & Influence", "Дипломатия NPC и Влияние"), "", nullptr, kGold});
+                unsigned npc_num = 0;
                 for (const auto& e : npcs) {
+                    npc_num++;
                     uint32_t nid = e.npc_id;
                     std::string lbl = e.label;
                     if (lbl.empty()) {
-                        char nb[32];
-                        snprintf(nb, sizeof nb, "NPC 0x%X", (unsigned)nid);
+                        char nb[48];
+                        snprintf(nb, sizeof nb, "%s #%u", tr("Faction", "Фракция"), npc_num);
                         lbl = nb;
                     }
                     double my_prot = prot_rem(me, nid);
@@ -1812,6 +1958,7 @@ int command(void*, int argc, const char* const* argv, SkOut* out)
     if (sub == "fasttimers" && argc >= 3) {
         g_fast_timers = atoi(argv[2]) != 0;
         g_state.rel.break_delay_secs = g_fast_timers ? 2.0 : kDefaultBreakNoticeSecs;
+        g_state.rel.ally_break_grace_secs = g_fast_timers ? 0.0 : kDefaultAllyBreakGraceSecs;
         g_fast_catchup_secs = g_fast_timers ? 3.0 : 0.0;
         g_state.draft.timeout_secs = g_fast_timers ? 5.0 : kDefaultDraftTimeoutSecs;
         say(std::string("fasttimers = ") + (g_fast_timers ? "1 (break=2s catchup=3s draft=5s)" : "0 (defaults)") + "\n");

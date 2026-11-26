@@ -87,6 +87,8 @@ bool stage_is_rivals(Stage s);
 bool active_in_stage();
 bool active_in_mode(uint32_t mode);
 const Config& config();
+bool lobby_any_rivals(); // BUG-1579: lobby preset configured for new worlds (preserved when a Together save suppresses Rivals)
+Preset lobby_preset();
 BaseDistance base_distance();
 
 // Host-only config mutations (broadcasts snapshot and syncs Space rivalry when in Space)

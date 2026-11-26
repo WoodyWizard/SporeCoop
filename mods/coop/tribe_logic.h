@@ -711,4 +711,103 @@ struct ConsCooldowns {
     }
 };
 
+// ---------------- BUG-1580: Outfitter baby guard, MSG_TRIBE_ANIM UDP chunking, native ability cooldown ----------------
+
+// TribeStage_BabyBorn (0xCD74A0) has only two callers:
+//  1) hut-buy message 0x63BBC42 (from_hut_msg = true, return address 0xCD8ED3)
+//  2) TribeStage_Enter (0xCD7B21) when TribeStage+0x3A3 == 0 (returning from Outfitter or fresh stage start).
+// Stage re-entry from Outfitter must NEVER send CMD_BABY on a guest or spawn an extra baby when the player tribe
+// already has members (or in Tribe Rivals).
+inline bool allow_baby_born_call(bool fix_on, bool is_guest, bool from_hut_msg, bool has_existing_members,
+                                 bool rivals_active)
+{
+    if (!fix_on)
+        return true;
+    if (!from_hut_msg) {
+        if (is_guest)
+            return false;
+        if (has_existing_members || rivals_active)
+            return false;
+    }
+    return true;
+}
+
+// UDP payload budget for MSG_TRIBE_ANIM / MSG_NPC_ANIM (leaves >= 100 bytes headroom below net::kMaxPacket = 1200).
+constexpr size_t kAnimMaxPayload = 1100;
+
+// Fixed per-entry wire size for list-format MSG_TRIBE_ANIM sub-kinds (header = 2 bytes: u8 kind, u8 count).
+// Returns 0 for non-list / variable-format sub-kinds.
+inline size_t anim_list_entry_bytes(uint8_t kind)
+{
+    switch (kind) {
+    case 2: return 12;  // MemberAnim: u16 id, u32 anim, u8 how, u8 a, u32 b
+    case 3: return 6;   // anim snap: u16 id, u32 anim
+    case 9: return 6;   // air: u16 id, f32 agl
+    case 10: return 7;  // idle: u16 id, u32 anim, u8 how
+    case 11: return 6;  // hold (no item): u16 id, u32 anim
+    case 12: return 7;  // hold (with item): u16 id, u32 anim, u8 item
+    case 14: return 10; // phase: u16 id, u32 anim, f32 t
+    case 15: return 16; // phase2: u16 id, u32 anim, f32 t, f32 a0, u16 b0
+    case 16: return 16; // phase_tracks: u16 id, u32 anim, f32 t, f32 a0, u16 b0
+    default: return 0;
+    }
+}
+
+// Splits an oversized list-format MSG_TRIBE_ANIM payload into chunks that each fit within `max_payload`.
+// Non-list or already-fitting payloads are returned unchanged as a single chunk.
+inline std::vector<std::vector<uint8_t>> split_anim_payload(const uint8_t* data, size_t len,
+                                                            size_t max_payload = kAnimMaxPayload)
+{
+    std::vector<std::vector<uint8_t>> out;
+    if (!data || len == 0)
+        return out;
+    if (len <= max_payload || len < 2) {
+        out.emplace_back(data, data + len);
+        return out;
+    }
+    uint8_t kind = data[0];
+    size_t count = data[1];
+    size_t esz = anim_list_entry_bytes(kind);
+    if (esz == 0 || count == 0 || 2 + count * esz != len || max_payload < 2 + esz) {
+        out.emplace_back(data, data + len);
+        return out;
+    }
+    size_t per = std::min<size_t>(255, (max_payload - 2) / esz);
+    if (per == 0)
+        per = 1;
+    for (size_t off = 0; off < count; off += per) {
+        size_t n = std::min(per, count - off);
+        std::vector<uint8_t> chunk;
+        chunk.reserve(2 + n * esz);
+        chunk.push_back(kind);
+        chunk.push_back((uint8_t)n);
+        const uint8_t* src = data + 2 + off * esz;
+        chunk.insert(chunk.end(), src, src + n * esz);
+        out.push_back(std::move(chunk));
+    }
+    return out;
+}
+
+// BUG-1580: Native cCreatureBase ability cooldown check (+0xC28..+0xC2C vector + bitmasks +0xBEC playing / +0xBF8
+// recharging). Bounds-checks `ab_idx < cd_count` and requires the playing or recharging bit to actually be set so
+// stale/uninitialized 0.0f entries (which cCreatureBase::Update 0xC15540 never recharges) cannot cause permanent false
+// OnCooldown denials.
+inline bool native_ability_on_cooldown(int ab_idx, size_t cd_count, uint32_t playing_word, uint32_t recharging_word,
+                                       float pct)
+{
+    if (ab_idx < 0 || (size_t)ab_idx >= cd_count)
+        return false;
+    uint32_t bit = 1u << (ab_idx & 31);
+    if (((playing_word | recharging_word) & bit) == 0)
+        return false;
+    return std::isfinite(pct) && pct < 0.999f;
+}
+
+inline double consequence_guard_cooldown(float native_recharge_sec)
+{
+    if (std::isfinite(native_recharge_sec) && native_recharge_sec >= 2.0f)
+        return std::min<double>((double)native_recharge_sec, 300.0);
+    return ConsCooldowns::kMinGuardSec;
+}
+
 } // namespace tribe_logic

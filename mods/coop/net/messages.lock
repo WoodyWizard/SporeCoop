@@ -10,7 +10,7 @@ tribe 1 3 97d372dc1ab7a351
 civ 1 4 e803fd08f81279f4
 space 1 6 715da861c461267d
 shared 1 0 c29c6202f6ae9b35
-creations 1 3 4aa6dc3bfc31e8f4
+creations 1 3 f18c53ecaec731c4
 # rebased space: C6 (BUG-1133): the Space wire structs join the lock; golden bytes identical (tests/wire_tests.cpp)
 # rebased shared: C6 (BUG-1133): the shared resource wire struct joins the lock; golden bytes identical (tests/wire_tests.cpp)
 # rebased creations: feat/w54-shims: species_line_core.h gets the Cell / Creature rule creation_counts (no wire change, golden bytes of tests/species_tests.cpp identical); MSG_CREATION kind 9 of WP-C2 (never released) removed: the designs ride MSG_SPECIES_LINE; still 1.1, unreleased
@@ -30,3 +30,4 @@ creations 1 3 4aa6dc3bfc31e8f4
 # rebased session: Wave 1 merge: WP-R1 MSG 80 RIVALS + WP-Q CAP_JOIN_PROOF + WP-C CAP_RESUME_WORLD, unreleased session 1.4 of 0.8.0
 # rebased npc: Wave 2 scaffold: MSG 81 RIVALS_FACTION and wire/rivals_faction.h, unreleased npc 1.3 of 0.8.0
 # rebased creature: WP-AE: MSG 82 ADV_EDITOR shared adventure editor (BUG-0863), unreleased creature 1.5 of 0.8.0
+# rebased creations: pure starter-species filter and metadata-name helpers in species_line_core.h; wire bytes unchanged

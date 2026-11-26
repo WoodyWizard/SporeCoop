@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "fixes.h"
+#include "i18n.h"
 #include "net/protocol.h"
 #include "net/sreport.h"
 #include "net/utf8.h"
@@ -139,6 +140,7 @@ struct WriteJob {
     std::unique_ptr<Round> r;
     std::string host_zip, host_name, dir;
     std::string versions; // B6 (BUG-1137): the versions and message families of every player, taken on the main thread
+    i18n::Lang lang = i18n::Lang::En; // BUG-1579: captured on main thread for thread-safe localization
     int delay_ms = 0;
     // results (read on the main thread)
     std::string line, ui_line, path, log, err;
@@ -189,7 +191,7 @@ static void do_write(WriteJob& j)
     }
     if (entries.empty()) {
         j.line = "No report came: " + summary_line(rr);
-        j.ui_line = "No report came (see the chat)";
+        j.ui_line = i18n::tr_lang(j.lang, "No report came (see the chat)");
         j.log = "session report: round " + std::to_string(rr.id) + ": nothing to write (" + summary_line(rr) + ")";
     } else {
         std::string base = "SporeCoop-session-report-" + stamp(), name = base + ".zip";
@@ -225,14 +227,14 @@ static void do_write(WriteJob& j)
         if (ok && MoveFileExW(widen(part).c_str(), widen(path).c_str(), MOVEFILE_REPLACE_EXISTING)) {
             j.path = path;
             j.names = names;
-            j.line = "Session report saved: " + name + " - " + summary_line(rr);
-            j.ui_line = "Session report saved: " + name;
+            j.line = std::string(i18n::tr_lang(j.lang, "Session report saved: ")) + name + " - " + summary_line(rr);
+            j.ui_line = std::string(i18n::tr_lang(j.lang, "Session report saved: ")) + name;
             j.log = "session report: round " + std::to_string(rr.id) + ": " + path + " (" + std::to_string(z.entries()) +
                     " entries, " + std::to_string(z.bytes() >> 10) + " KB): " + summary_line(rr);
         } else {
             DeleteFileW(widen(part).c_str()); // no partial file
             j.line = "The session report could not be written (" + summary_line(rr) + ")";
-            j.ui_line = "The session report could not be written (see the chat)";
+            j.ui_line = i18n::tr_lang(j.lang, "The session report could not be written (see the chat)");
             j.err = "session report: cannot write " + path;
         }
     }
@@ -300,6 +302,7 @@ static void start_write()
                 j->versions += "  " + line.substr(10) + "\n";
         }
     }
+    j->lang = i18n::lang();
     j->delay_ms = g_write_delay_ms;
     g_writing = true;
     if (g_write_worker_fix && net::g_spawn_thread && net::g_spawn_thread(write_worker, j)) {
@@ -378,7 +381,9 @@ std::string host_ui_line()
         int done = 0;
         for (auto& g : g_round->guests)
             done += final_state(g.st);
-        return "Reports: " + std::to_string(done) + " of " + std::to_string(g_round->guests.size()) + " answered";
+        return std::string(i18n::tr("Reports: ", "Отчёты: ")) + std::to_string(done) +
+               i18n::tr(" of ", " из ") + std::to_string(g_round->guests.size()) +
+               i18n::tr(" answered", " ответили");
     }
     return g_ui_line;
 }
@@ -496,7 +501,7 @@ static void make_and_send(void*)
         LOG("session report: my report could not be made or read ('%s')", p.c_str());
         send_answer(false, 0);
         g_gs = GState::Done;
-        g_guest_line = "Your report could not be made (SporeKit too old?)";
+        g_guest_line = i18n::tr("Your report could not be made (SporeKit too old?)");
         return;
     }
     if (g_test != "none")
@@ -512,7 +517,7 @@ static void make_and_send(void*)
         g_out_off = 0;
     }
     g_gs = GState::Sending;
-    g_guest_line = "Sending your report to the host...";
+    g_guest_line = i18n::tr("Sending your report zip to the host...");
     LOG("session report: sending my report %s (%u KB%s) to the host", file_of(p).c_str(), g_out_size >> 10,
         g_test != "none" ? (", test " + g_test).c_str() : "");
 }
@@ -526,12 +531,12 @@ void answer(bool send)
         send_answer(false, 0);
         g_gs = GState::Done;
         g_declined++;
-        g_guest_line = "You did not send your report";
+        g_guest_line = i18n::tr("You did not send your report");
         LOG("session report: I did not send my report");
         return;
     }
     g_gs = GState::Making;
-    g_guest_line = "Making your report...";
+    g_guest_line = i18n::tr("Making your report zip...");
     int s = C.shot ? C.shot() : 0;
     g_make_until = s > 0 ? now_s() + 4.0 : 0; // its screenshot first, as "Report a problem" takes one
 }
@@ -539,11 +544,13 @@ void answer(bool send)
 int guest_prompt(std::string& line)
 {
     if (g_gs == GState::Asked) {
-        line = (g_ask_host.empty() ? std::string("The host") : g_ask_host) + " (host) asks for your report:";
+        line = (g_ask_host.empty() ? std::string(i18n::tr("The host")) : g_ask_host) +
+               i18n::tr(" (host) asks for your report:");
         return 1;
     }
     line = g_gs == GState::Sending && g_out_size && !g_out.empty()
-               ? "Sending your report to the host: " + std::to_string((unsigned)(std::min<size_t>(g_out_off, g_out_size) * 100ull / g_out_size)) + "%"
+               ? std::string(i18n::tr("Sending your report to the host: ")) +
+                     std::to_string((unsigned)(std::min<size_t>(g_out_off, g_out_size) * 100ull / g_out_size)) + "%"
                : g_guest_line;
     return 0;
 }
@@ -572,7 +579,7 @@ static void guest_message(uint8_t kind, net::Reader& r)
             if (g_gs == GState::Sending) {
                 g_out_off = 0;
                 send_answer(true, g_out_size);
-                g_guest_line = "Sending your report to the host...";
+                g_guest_line = i18n::tr("Sending your report zip to the host...");
             }
             LOG("session report: asked again (round %u, was %u) while %s: my report goes to the new round", a.round, old,
                 g_gs == GState::Sending ? "sending" : "making");
@@ -587,7 +594,8 @@ static void guest_message(uint8_t kind, net::Reader& r)
         LOG("session report: the host asks for my report (round %u)", a.round);
         trace::line("report", "asked by the host (round %u)", a.round);
         if (C.feed)
-            C.feed(g_ask_host + " asks for your problem report: Send or Don't send in the co-op window (F9)");
+            C.feed(g_ask_host +
+                   i18n::tr(" asks for your problem report: click Send in F9 to pack & send logs (.zip), or Don't send"));
         if (C.open_window)
             C.open_window();
     } else if (kind == kStop) {
@@ -606,7 +614,7 @@ static void guest_tick()
 {
     if (g_gs == GState::Asked && now_s() - g_ask_at > kAnswerWait) {
         g_gs = GState::Done;
-        g_guest_line = "The host's request for your report ran out";
+        g_guest_line = i18n::tr("The host's request for your report ran out");
         LOG("session report: I did not answer in time");
     }
     if (g_gs == GState::Making && !g_make_queued &&
@@ -617,7 +625,7 @@ static void guest_tick()
     if (g_gs != GState::Sending)
         return;
     if (g_out_size > kMaxReport) { // too big to send: the host's kStop ends it
-        g_guest_line = "Your report is too big to send (over 25 MB)";
+        g_guest_line = i18n::tr("Your report is too big to send (over 25 MB)");
         return;
     }
     int rtt = C.sess->rtt_of(0);
@@ -647,7 +655,8 @@ static void guest_tick()
         C.sess->send_reliable_to(0, net::MSG_REPORT, w);
         g_sent_reports++;
         g_gs = GState::Done;
-        g_guest_line = "Your report went to the host (" + std::to_string((g_out.size() + 1023) / 1024) + " KB)";
+        g_guest_line = std::string(i18n::tr("Report zip sent to the host (")) +
+                       std::to_string((g_out.size() + 1023) / 1024) + " KB)";
         LOG("session report: my report went to the host (%u KB)", (unsigned)(g_out.size() >> 10));
         std::vector<uint8_t>().swap(g_out);
     }
@@ -701,7 +710,7 @@ void on_player_leave(uint8_t id)
 void on_disconnect()
 {
     if (g_gs != GState::Idle && g_gs != GState::Done)
-        g_guest_line = "The session ended before your report was sent";
+        g_guest_line = i18n::tr("The session ended before your report was sent");
     g_gs = g_gs == GState::Idle ? GState::Idle : GState::Done;
     std::vector<uint8_t>().swap(g_out);
     g_out_off = 0;

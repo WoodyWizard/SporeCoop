@@ -26,19 +26,51 @@ constexpr int kMinToolKind = 1;
 constexpr int kMaxToolKind = 9;
 constexpr uint8_t kMaxWireTribes = 32;
 
-// ---------------- R2: Base distance site picker ----------------
+// ---------------- R2: Base distance site picker & BUG-1580 persisted assignment ----------------
 struct TribeSite {
     uint32_t pol = 0;
     float x = 0.0f, y = 0.0f, z = 0.0f;
     bool is_host = false;
     bool conquered = false;
     bool taken = false;
+    bool has_live_hut = true;
+    float hut_hp = 100.0f;
 };
+
+inline bool is_eligible_rival_tribe(const TribeSite& s)
+{
+    return !s.is_host && !s.conquered && !s.taken && s.has_live_hut && std::isfinite(s.hut_hp) && s.hut_hp > 0.0f;
+}
 
 inline float dist3(float ax, float ay, float az, float bx, float by, float bz)
 {
     float dx = ax - bx, dy = ay - by, dz = az - bz;
     return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+// Matches a persisted guest tribe assignment by political ID first, then by nearest eligible site within max_dist.
+// Strictly rejects conquered, dead-hut, host, or already-taken tribes (BUG-1580).
+inline int match_persisted_tribe(const std::vector<TribeSite>& sites, uint32_t stored_pol, float x, float y, float z,
+                                 float max_dist = 45.0f)
+{
+    if (stored_pol != 0) {
+        for (int i = 0; i < (int)sites.size(); i++) {
+            if (sites[i].pol == stored_pol && is_eligible_rival_tribe(sites[i]))
+                return i;
+        }
+    }
+    int best = -1;
+    float bd = max_dist;
+    for (int i = 0; i < (int)sites.size(); i++) {
+        if (!is_eligible_rival_tribe(sites[i]))
+            continue;
+        float d = dist3(sites[i].x, sites[i].y, sites[i].z, x, y, z);
+        if (d < bd) {
+            bd = d;
+            best = i;
+        }
+    }
+    return best;
 }
 
 // Picks an available NPC cTribe site at the requested base distance from the host's village.
@@ -55,7 +87,7 @@ inline int pick_rival_tribe(const std::vector<TribeSite>& sites, float host_x, f
     cands.reserve(sites.size());
     for (int i = 0; i < (int)sites.size(); i++) {
         const auto& s = sites[i];
-        if (s.is_host || s.conquered || s.taken)
+        if (!is_eligible_rival_tribe(s))
             continue;
         cands.push_back({i, dist3(s.x, s.y, s.z, host_x, host_y, host_z), s.pol});
     }
@@ -518,14 +550,116 @@ inline bool should_sync_tribe_food(bool tribe_rivals_active, bool is_local_playe
     return !is_guest_own_rivals_tribe;
 }
 
-// ---------------- BUG-1554: PvP native diplomacy & Creature -> Tribe draft payout ----------------
+// ---------------- BUG-1554 & BUG-1580: PvP native diplomacy & Creature -> Tribe draft payout ----------------
+// BUG-1580: Map PvP Ally to NpcRel::Friendly (level 3), NEVER NpcRel::Allied (level 4):
+// TribeToTribeMission_Update (0xC2F750) completes an NPC ally mission as soon as GetRelationshipLevel == 4,
+// which granted a totem piece and ended Tribe stage early when two players allied!
 inline NpcRel pvp_npc_rel_for(rivals::Relation r)
 {
     if (r == rivals::Relation::War)
         return NpcRel::Hostile;
     if (r == rivals::Relation::Ally)
-        return NpcRel::Allied;
+        return NpcRel::Friendly;
     return NpcRel::Neutral;
+}
+
+inline bool should_block_rival_mission(bool rivals_active, uint8_t tribe_owner)
+{
+    return rivals_active && rivals::valid_player(tribe_owner);
+}
+
+// ---------------- BUG-1580: Pop cap, o_Form growth, species sync, buy influence, sell tool, KO state ----------------
+constexpr int kMaxTribePopHardCap = 12;
+
+// Vanilla Tribe hut population cap by upgrade tier (cTribe +0x38): 0 -> 6, 1 -> 9, >=2 -> 12 (hard-capped at 12).
+inline int tribe_pop_cap(uint32_t hut_tier)
+{
+    if (hut_tier == 0)
+        return 6;
+    if (hut_tier == 1)
+        return 9;
+    return kMaxTribePopHardCap;
+}
+
+struct BabySpawnCheck {
+    bool allowed = false;
+    int pop_cap = 6;
+    const char* reason = "";
+};
+
+inline BabySpawnCheck can_spawn_tribe_baby(int cur_members, uint32_t hut_tier, int32_t food, int32_t cost = 10)
+{
+    int cap = tribe_pop_cap(hut_tier);
+    if (cur_members >= cap)
+        return {false, cap, "pop_cap"};
+    if (cost > 0 && food < cost)
+        return {false, cap, "no_food"};
+    return {true, cap, ""};
+}
+
+// tribe::o_Form returns bool in AL (upper EAX bits may be stale non-zero garbage): confirm real tribe-list growth.
+inline bool npc_tribe_formed(size_t tribes_before, size_t tribes_after)
+{
+    return tribes_after > tribes_before;
+}
+
+inline bool should_auto_form_npc(bool has_guests, uint32_t auto_count, double now, double last_at, bool need_guest,
+                                 int free_npcs, bool stage_won, bool race_ended)
+{
+    if (!has_guests || auto_count >= 6 || (now - last_at) < 2.0)
+        return false;
+    if (need_guest)
+        return true;
+    return !stage_won && !race_ended && free_npcs < 2;
+}
+
+struct SpeciesSyncPlan {
+    bool swap_slot = false;
+    bool swap_members = false;
+    bool mark_members_done = false;
+};
+
+// Decides per-tribe species slot + adult member swap (Host and Guest, BUG-1580):
+// - Re-swaps whenever `want_key` changes (rejoin/outfitter).
+// - Keeps retrying member swap until `!cinematic_playing` AND all live adult members match `want_key`.
+inline SpeciesSyncPlan decide_species_swap(uint32_t want_key, uint32_t cur_slot_key, bool members_swapped,
+                                           bool cinematic_playing, bool all_adults_match)
+{
+    SpeciesSyncPlan p;
+    if (!want_key)
+        return p;
+    bool key_changed = (cur_slot_key != want_key);
+    if (key_changed) {
+        p.swap_slot = true;
+        members_swapped = false;
+    }
+    if (!members_swapped || !all_adults_match) {
+        if (!cinematic_playing) {
+            p.swap_members = !all_adults_match || key_changed;
+            p.mark_members_done = true;
+        }
+    }
+    return p;
+}
+
+// Host influence purchase validation: must return false when Tribe Rivals is inactive or caller is not host (BUG-1580).
+inline bool can_buy_influence(bool rivals_active, bool is_host_role, bool has_tribe, int32_t food, int32_t price)
+{
+    return rivals_active && is_host_role && has_tribe && price >= 0 && food >= price;
+}
+
+inline int32_t tool_sell_refund(int tool_type)
+{
+    if (tool_type < kMinToolKind || tool_type > kMaxToolKind)
+        return 0;
+    int32_t c = tool_buy_cost(tool_type, false);
+    return c > 0 ? c : 0;
+}
+
+// A knocked-out chieftain has +0xB58 bit 0x800 set and/or BT node 0x05CA7FA7 even while HP > 0 (0.3f floor).
+inline bool is_citizen_knocked_out(bool is_dead, float hp, uint32_t flags_b58, uint32_t bt_node)
+{
+    return is_dead || hp <= 0.0f || (flags_b58 & 0x800u) != 0 || bt_node == 0x05CA7FA7u;
 }
 
 constexpr int32_t kMaxDraftFoodPayout = 2000;
@@ -859,13 +993,15 @@ inline bool read_draft_apply(net::Reader& r, DraftApplyMsg& out)
     return true;
 }
 
-// SK_STAGE_CUSTOM (16): own-tribe food sync, guest food operations, and wipe PvP immunity sync
+// SK_STAGE_CUSTOM (16): own-tribe food sync, guest food/tool operations, immunity & chieftain respawn sync
 enum class CustomOp : uint8_t {
-    FoodTotal = 1, // host -> guest: authoritative own tribe food total
-    FoodDelta = 2, // guest -> host: own tribe food spend/earn delta
-    BuyMember = 3, // guest -> host: buy baby in own tribe from own food
-    BuyTool = 4,   // guest -> host: unlock/build tool in own tribe from own food
-    Immunity = 5,  // host -> all (BUG-1571): player_id, value = remaining shield seconds (0 = none), tools_mask bit 0 = wiping
+    FoodTotal = 1,    // host -> guest: authoritative own tribe food total
+    FoodDelta = 2,    // guest -> host: own tribe food spend/earn delta
+    BuyMember = 3,    // guest -> host: buy baby in own tribe from own food
+    BuyTool = 4,      // guest -> host: unlock/build tool in own tribe from own food
+    Immunity = 5,     // host -> all (BUG-1571): player_id, value = remaining shield seconds (0 = none), tools_mask bit 0 = wiping
+    SellTool = 6,     // guest -> host (BUG-1580): sell tool hut `value` (1..9) from own tribe and refund food
+    ChiefRespawn = 7, // host -> guest (BUG-1580): player_id, value = remaining KO seconds (0 = recovered), tools_mask bit 0 = ko
 };
 
 struct FoodSyncMsg {
@@ -891,7 +1027,7 @@ inline bool read_food_sync(net::Reader& r, FoodSyncMsg& out)
     out.tools_mask = r.u32();
     if (!r.ok() || !rivals::valid_player(out.player_id))
         return false;
-    if (op < (uint8_t)CustomOp::FoodTotal || op > (uint8_t)CustomOp::Immunity)
+    if (op < (uint8_t)CustomOp::FoodTotal || op > (uint8_t)CustomOp::ChiefRespawn)
         return false;
     out.op = (CustomOp)op;
     return true;

@@ -18,6 +18,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <map>
 #include <string>
@@ -226,5 +227,178 @@ inline bool decode(const std::vector<uint8_t>& d, Row& out)
 // A peer before 0.7.16 does not know the type: its dispatch drops it (nothing changes there).
 enum Kind : uint8_t { kRow = 1, kStored = 2, kBundle = 3 };
 constexpr size_t kChunk = 900;
+
+// ---- Creature-stage starter filtering (BUG-1583) ----
+// Prevents a guest without explicit Creature selection from auto-spawning as a Tribe/Civ-stage outfitted creature
+// (e.g. armored 20-26 HP, Strike lvl 5) against a starting 10 HP Creature-stage host.
+constexpr float kMaxStarterBonusHp = 6.0f;       // clean starting Creature profile bonus HP (+0x56C) ceiling
+constexpr float kMaxStarterTotalHp = 16.0f;      // clean starting Creature brain-0 total HP ceiling
+constexpr float kMaxStarterCombatLevel = 2.0f;   // Strike/Bite/Charge/Spit level > 2 indicates mid/late or Civ-armored tier
+
+struct CreatureStageStats {
+    uint32_t instance = 0;
+    float bonus_hp = 0.0f;         // cSpeciesProfile +0x56C
+    float total_hp = 10.0f;        // measured or estimated brain-0 max HP
+    float max_combat_level = 0.0f; // highest combat ability level (+0x3C for Bite/Charge/Strike/Spit)
+    bool is_known_outfit = false;  // matches Row::tribe.own or Row::civ.own
+    bool has_outfitter_parts = false;
+};
+
+inline bool is_row_outfit_instance(const Row& r, uint32_t inst)
+{
+    if (inst == 0)
+        return false;
+    return (r.tribe.set() && r.tribe.own == inst) || (r.civ.set() && r.civ.own == inst);
+}
+
+// True if this creature creation exceeds starting Creature-stage tier (outfitted Tribe/Civ creature or high-tier combat/armor).
+inline bool is_overpowered_or_outfitted_starter(const CreatureStageStats& s, float host_max_hp = 10.0f)
+{
+    if (s.is_known_outfit || s.has_outfitter_parts)
+        return true;
+    if (s.bonus_hp > kMaxStarterBonusHp)
+        return true;
+    float hp_cap = kMaxStarterTotalHp;
+    if (host_max_hp >= 10.0f) {
+        float rel_cap = host_max_hp * 1.4f + 2.0f;
+        if (rel_cap > hp_cap)
+            hp_cap = rel_cap;
+    }
+    if (s.total_hp > hp_cap)
+        return true;
+    if (s.max_combat_level > kMaxStarterCombatLevel)
+        return true;
+    return false;
+}
+
+// Pick the newest clean Creature-stage candidate from `candidates`, or 0 to fall back to the world's starting species.
+inline uint32_t select_clean_creature_starter(const std::vector<CreatureStageStats>& candidates, float host_max_hp = 10.0f)
+{
+    for (const auto& c : candidates) {
+        if (c.instance == 0)
+            continue;
+        if (!is_overpowered_or_outfitted_starter(c, host_max_hp))
+            return c.instance;
+    }
+    return 0;
+}
+
+// ---- Shared creation metadata & fallback name helpers (BUG-1583) ----
+// Parses Spore pollen_metadata (0x030BDEE3) for BOTH offline (-2 sentinel) AND online/Maxis author IDs.
+inline bool extract_metadata_name(const uint8_t* data, size_t len, std::string& out_author, std::string& out_name)
+{
+    out_author.clear();
+    out_name.clear();
+    if (!data || len < 0x40)
+        return false;
+    auto be32 = [](const uint8_t* p) -> uint32_t {
+        return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+    };
+    auto utf16le_to_utf8 = [](const uint8_t* p, size_t chars, bool strict_printable) -> std::string {
+        std::string s;
+        s.reserve(chars);
+        for (size_t i = 0; i < chars; i++) {
+            uint32_t c = (uint32_t)p[2 * i] | ((uint32_t)p[2 * i + 1] << 8);
+            if (strict_printable && (c < 0x20u || c == 0x7Fu || c == 0xFFFEu || c == 0xFFFFu))
+                return {};
+            if (c < 0x80u) {
+                s += (char)c;
+            } else if (c < 0x800u) {
+                s += (char)(0xC0u | (c >> 6));
+                s += (char)(0x80u | (c & 0x3Fu));
+            } else {
+                s += (char)(0xE0u | (c >> 12));
+                s += (char)(0x80u | ((c >> 6) & 0x3Fu));
+                s += (char)(0x80u | (c & 0x3Fu));
+            }
+        }
+        return s;
+    };
+    auto try_at = [&](size_t off, bool strict) -> bool {
+        size_t o = off;
+        std::string parts[2];
+        for (int k = 0; k < 2; k++) {
+            if (o + 4 > len)
+                return false;
+            uint32_t slen = be32(data + o);
+            o += 4;
+            if (slen > 256 || o + (size_t)slen * 2 > len)
+                return false;
+            if (slen > 0) {
+                parts[k] = utf16le_to_utf8(data + o, slen, strict);
+                if (strict && parts[k].empty())
+                    return false;
+            }
+            o += (size_t)slen * 2;
+        }
+        if (parts[1].empty())
+            return false;
+        out_author = std::move(parts[0]);
+        out_name = std::move(parts[1]);
+        return true;
+    };
+
+    // 1. Offline author ID (-2 = FF FF FF FF FF FF FF FE) sentinel scan (matches dbpf::metadata_names)
+    static constexpr uint8_t kOfflineMark[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE};
+    for (size_t i = 0; i + 8 <= len; i++) {
+        if (std::memcmp(data + i, kOfflineMark, 8) == 0) {
+            if (try_at(i + 8, false))
+                return true;
+        }
+    }
+
+    // 2. Online EA / Maxis / Sporepedia metadata (version 10..20, author & name after 8-byte author ID at +0x38)
+    uint32_t ver = be32(data);
+    if (ver >= 10 && ver <= 20) {
+        constexpr size_t kOffsets[3] = {0x38, 0x34, 0x3C};
+        for (size_t off : kOffsets) {
+            if (try_at(off, true))
+                return true;
+        }
+    }
+    return false;
+}
+
+inline const char* creation_group_label(uint32_t group)
+{
+    switch (group) {
+    case 0x40616200u: return "Cell";
+    case 0x40626200u: return "Creature";
+    case 0x40636200u: return "Building";
+    case 0x40646200u: return "Vehicle";
+    case 0x40656200u: return "UFO";
+    case 0x40666200u: return "Flora";
+    default: return "Creation";
+    }
+}
+
+inline std::string fallback_creation_name(uint32_t group, uint64_t id_or_hash)
+{
+    char buf[64];
+    uint32_t tag = (uint32_t)((id_or_hash ^ (id_or_hash >> 32)) & 0xFFFFu);
+    if (tag == 0)
+        tag = 1;
+    snprintf(buf, sizeof buf, "%s #%u", creation_group_label(group), (unsigned)tag);
+    return buf;
+}
+
+inline std::string sanitize_creation_name(const std::string& raw, uint32_t group, uint64_t id_or_hash)
+{
+    std::string cleaned;
+    cleaned.reserve(raw.size());
+    for (unsigned char c : raw) {
+        if (cleaned.size() >= 64)
+            break;
+        if (c >= 0x20 && c != 0x7F)
+            cleaned.push_back((char)c);
+    }
+    while (!cleaned.empty() && cleaned.front() == ' ')
+        cleaned.erase(cleaned.begin());
+    while (!cleaned.empty() && cleaned.back() == ' ')
+        cleaned.pop_back();
+    if (cleaned.empty())
+        return fallback_creation_name(group, id_or_hash);
+    return cleaned;
+}
 
 } // namespace species

@@ -8,7 +8,9 @@
 #include <cstring>
 
 #include "fixes.h"
+#include "lifecycle.h"
 #include "net/protocol.h"
+#include "rivals.h"
 
 namespace settings {
 
@@ -16,10 +18,14 @@ static const SkHost* H;
 static SkMod* M;
 static Ctx C;
 
-static Values g_defaults;     // a new world's values: the built-in defaults, coop.ini's keys over them
-static Values g_cur;          // the host's / a player's alone values in force
-static bool g_pending = false; // set while no world was open (the lobby): the next world takes them
-static std::string g_open;    // the world whose values g_cur are ("" = none open)
+static Values g_defaults;       // a new world's values: the built-in defaults, coop.ini's keys over them
+static Values g_cur;            // the host's / a player's alone values in force
+static Values g_lobby_defaults; // BUG-1579: sticky lobby defaults (active mode preset + lobby tweaks for new worlds)
+static bool g_lobby_rivals = false;
+static bool g_lobby_edited = false;
+static bool g_lobby_sticky = false;
+static bool g_pending = false;  // set while no world was open (the lobby): the next world takes them
+static std::string g_open;      // the world whose values g_cur are ("" = none open)
 static bool g_was_client = false;
 
 static Values g_host;         // guest: the host's table
@@ -49,6 +55,22 @@ static uint32_t g_kept_frames; // status: frames the open world was kept through
 static bool g_rivals_preset_fix = true;
 COOP_FIX("rivals.settings_preset", "BUG-1558", g_rivals_preset_fix,
          "rivals: apply default Settings preset on All rivals / All together switch and allow live all.friendly_fire toggle");
+
+// BUG-1579: keep the lobby's Rivals mode preset (and lobby-configured settings for new worlds) sticky across 2nd/3rd/4th
+// new worlds in the same lobby, while loading an existing Together save's stored settings cleanly without contaminating it.
+static bool g_sticky_preset_fix = true;
+COOP_FIX("rivals.sticky_preset", "BUG-1579", g_sticky_preset_fix,
+         "settings: keep lobby Rivals preset and new-world defaults sticky across multiple new worlds without overwriting existing saves");
+
+SESSION_STATE(
+    "settings.lobby_preset", &g_sticky_preset_fix,
+    [] {
+        g_lobby_defaults = g_defaults;
+        g_lobby_rivals = false;
+        g_lobby_edited = false;
+        g_lobby_sticky = false;
+    },
+    []() -> size_t { return g_lobby_sticky ? 1 : 0; });
 
 static bool is_client() { return C.sess && C.sess->role() == net::Role::Client; }
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
@@ -136,6 +158,10 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
         if (kDefs[i].ini)
             g_defaults.v[i] = clamp_value(i, H->config_int(M, "coop", kDefs[i].ini, kDefs[i].def));
     g_cur = g_defaults;
+    g_lobby_defaults = g_defaults;
+    g_lobby_rivals = false;
+    g_lobby_edited = false;
+    g_lobby_sticky = false;
     std::string d = diff_text(g_defaults, Values());
     H->log(M, SK_INFO, "settings: %d declared; coop.ini defaults %s", (int)kCount, d.empty() ? "as built in" : d.c_str());
 }
@@ -166,13 +192,25 @@ void tick()
     if (k.empty()) { // the world closed (menu; with settings.world_kept off also a load, an editor): the values stay,
                      // the lobby may change them
         g_open.clear();
+        if (g_sticky_preset_fix && g_lobby_sticky && g_cur != g_lobby_defaults)
+            g_cur = g_lobby_defaults; // BUG-1579: restore sticky lobby preset after leaving an existing Together save
         if (is_host())
             broadcast();
         return;
     }
     Values stored, before = g_cur;
     bool has = load(k, stored);
-    Opened o = on_world_open(g_pending, has, stored, g_defaults, g_cur);
+    Opened o;
+    if (g_sticky_preset_fix) {
+        bool rivals_lobby = rivals::enabled() && rivals::lobby_any_rivals();
+        bool sticky = g_lobby_sticky || rivals_lobby;
+        Values lobby_vals = g_lobby_defaults;
+        if (!g_lobby_rivals && rivals::enabled() && rivals::lobby_preset() == rivals::Preset::AllRivals)
+            apply_mode_preset_values(lobby_vals, g_defaults, true);
+        o = on_world_open_sticky(g_pending, has, stored, g_defaults, sticky, lobby_vals, g_cur);
+    } else {
+        o = on_world_open(g_pending, has, stored, g_defaults, g_cur);
+    }
     g_pending = false;
     g_open = k;
     if (o == Opened::Stored)
@@ -303,9 +341,14 @@ bool set(Id id, int value, bool force, std::string* why)
     value = clamp_value(id, value);
     int old = g_cur.v[id];
     g_cur.v[id] = value;
-    if (g_open.empty())
+    if (g_open.empty()) {
         g_pending = true; // the next world takes it
-    else
+        if (g_sticky_preset_fix) {
+            g_lobby_defaults.v[id] = value;
+            g_lobby_edited = true;
+            g_lobby_sticky = true;
+        }
+    } else
         save();
     H->log(M, SK_INFO, "settings: %s = %d (was %d)%s%s", kDefs[id].key, value, old, force ? " (forced)" : "",
            g_open.empty() ? ", for the next world" : "");
@@ -319,14 +362,22 @@ int apply_mode_preset(bool rivals_mode)
         return -1;
     if (!g_rivals_preset_fix)
         return 0;
+    if (g_sticky_preset_fix) {
+        g_lobby_rivals = rivals_mode;
+        apply_mode_preset_values(g_lobby_defaults, g_defaults, rivals_mode);
+        g_lobby_sticky = g_lobby_rivals || g_lobby_edited;
+    }
     int changed = apply_mode_preset_values(g_cur, g_defaults, rivals_mode);
     if (changed > 0) {
-        if (g_open.empty())
-            g_pending = true;
-        else
+        if (g_open.empty()) {
+            // BUG-1579: sticky lobby preset applies to all future new worlds via g_lobby_defaults,
+            // without setting g_pending (which would overwrite an existing Together save's stored settings).
+            if (!g_sticky_preset_fix)
+                g_pending = true;
+        } else
             save();
         H->log(M, SK_INFO, "settings: applied %s mode preset (%d settings changed)%s",
-               rivals_mode ? "Rivals" : "Together", changed, g_open.empty() ? ", for the next world" : "");
+               rivals_mode ? "Rivals" : "Together", changed, g_open.empty() ? ", for new worlds" : "");
         broadcast();
     } else {
         H->log(M, SK_INFO, "settings: %s mode preset already matched (0 settings changed)",

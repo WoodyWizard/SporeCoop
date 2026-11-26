@@ -13,17 +13,18 @@ using namespace creature_rivals_logic;
 
 static void test_nest_selection_distances()
 {
-    NestCandidate host{1, 500.f, 0.f, 0.f, 0xAAAA, true, true, false, false, 4};
+    // Planet with populated habitable clusters along a dry-land continent (distances ~70, ~210, ~360, ~500 m)
+    NestCandidate host{1, 500.f, 0.f, 0.f, 0xAAAA, true, true, false, false, 4, false};
     std::vector<NestCandidate> cands = {
-        {1, 500.f, 0.f, 0.f, 0xAAAA, true, true, false, false, 4},     // avatar herd -> skip
-        {2, 505.f, 0.f, 0.f, 0x1000, false, true, false, false, 3},    // too close (<25 m) -> fallback only
-        {3, 450.f, 50.f, 0.f, 0x1001, false, true, false, false, 3},   // d ~ 70.7 (Near)
-        {4, 300.f, 200.f, 0.f, 0x1002, false, true, false, false, 3},  // d ~ 282.8 (Middle)
-        {5, 0.f, 500.f, 0.f, 0x1003, false, true, false, false, 3},    // d ~ 707.1
-        {6, -500.f, 0.f, 0.f, 0x1004, false, true, false, false, 3},   // d = 1000 (Far)
-        {7, -400.f, 0.f, 0.f, 0x1005, false, true, true, false, 1},    // epic -> skip
-        {8, -450.f, 0.f, 0.f, 0x1006, false, true, false, true, 0},    // extinct -> skip
-        {9, -460.f, 0.f, 0.f, 0x1007, false, false, false, false, 2},  // no nest -> skip
+        {1, 500.f, 0.f, 0.f, 0xAAAA, true, true, false, false, 4, false},     // avatar herd -> skip
+        {2, 505.f, 0.f, 0.f, 0x1000, false, true, false, false, 3, false},    // too close (<25 m) -> fallback only
+        {3, 450.f, 50.f, 0.f, 0x1001, false, true, false, false, 3, false},   // d ~ 70.7 (Near)
+        {4, 350.f, 150.f, 0.f, 0x1002, false, true, false, false, 3, false},  // d ~ 212.1 (Middle)
+        {5, 220.f, 230.f, 0.f, 0x1003, false, true, false, false, 3, false},  // d ~ 362.4
+        {6, 100.f, 300.f, 0.f, 0x1004, false, true, false, false, 3, false},  // d = 500.0 (Far)
+        {7, -400.f, 0.f, 0.f, 0x1005, false, true, true, false, 1, false},    // epic -> skip
+        {8, -450.f, 0.f, 0.f, 0x1006, false, true, false, true, 0, false},    // extinct -> skip
+        {9, -460.f, 0.f, 0.f, 0x1007, false, false, false, false, 2, false},  // no nest -> skip
     };
 
     assert(select_nest_for_guest(host, cands, {}, rivals::BaseDistance::Near) == 3);
@@ -38,6 +39,51 @@ static void test_nest_selection_distances()
     assert(select_nest_for_guest(host, cands, {3, 4, 5, 6}, rivals::BaseDistance::Near) == 2);
     // Exhausted
     assert(select_nest_for_guest(host, cands, {2, 3, 4, 5, 6}, rivals::BaseDistance::Near) == 0);
+}
+
+static void test_habitable_same_landmass_nest_selection()
+{
+    // Water-crossing sample check (BUG-1583)
+    assert(!has_water_on_samples(0.f, {490.f, 480.f, 470.f}));
+    assert(!has_water_on_samples(500.f, {505.f, 498.f, 504.f, 506.f})); // single shallow dip is tolerated
+    assert(has_water_on_samples(500.f, {505.f, 495.f, 490.f, 504.f}));  // 2+ underwater samples = water crossing
+
+    // Stream softlock regression (BUG-1583):
+    // Host continent has populated clustered wild nests (101..104); distant continent ~850 m away across water
+    // has isolated 0-member nest (201) and sparse 0-member nest (202). Guest MUST NEVER be placed on 201/202!
+    NestCandidate host{1, 500.f, 0.f, 0.f, 0xAAAA, true, true, false, false, 4, false};
+    std::vector<NestCandidate> cands = {
+        {1, 500.f, 0.f, 0.f, 0xAAAA, true, true, false, false, 4, false},
+        // Host continent cluster (populated, >=2 wild neighbors within 300 m, dry land)
+        {101, 420.f, 80.f, 0.f, 0x2001, false, true, false, false, 3, false},
+        {102, 340.f, 150.f, 0.f, 0x2002, false, true, false, false, 4, false},
+        {103, 280.f, 210.f, 0.f, 0x2003, false, true, false, false, 3, false},
+        {104, 240.f, 120.f, 0.f, 0x2004, false, true, false, false, 3, false},
+        // Isolated 0-member nest on host continent edge -> rejected while populated nests exist
+        {150, 390.f, -200.f, 0.f, 0x2050, false, true, false, false, 0, false},
+        // Distant empty continent ~850 m across water (0 members, 0 neighbors)
+        {201, -350.f, 100.f, 0.f, 0x3001, false, true, false, false, 0, true},
+        {202, -400.f, -350.f, 0.f, 0x3002, false, true, false, false, 0, true},
+    };
+
+    uint32_t near_id = select_nest_for_guest(host, cands, {}, rivals::BaseDistance::Near);
+    uint32_t mid_id = select_nest_for_guest(host, cands, {}, rivals::BaseDistance::Middle);
+    uint32_t far_id = select_nest_for_guest(host, cands, {}, rivals::BaseDistance::Far);
+    assert(near_id == 101);
+    assert(mid_id >= 101 && mid_id <= 104); // Same-continent habitable populated nest, NEVER 201/202/150
+    assert(far_id >= 101 && far_id <= 104); // Even Far rejects empty 0-member isolated continent!
+
+    // Now add a genuinely habitable, populated second continent across water (301, 302, 303 clustered together)
+    cands.push_back({301, -420.f, 60.f, 0.f, 0x4001, false, true, false, false, 3, true});
+    cands.push_back({302, -390.f, 120.f, 0.f, 0x4002, false, true, false, false, 4, true});
+    cands.push_back({303, -450.f, 110.f, 0.f, 0x4003, false, true, false, false, 3, true});
+
+    // Near & Middle STILL prefer Host's connected dry-land continent (101..104)
+    uint32_t mid_same = select_nest_for_guest(host, cands, {}, rivals::BaseDistance::Middle);
+    assert(mid_same >= 101 && mid_same <= 104);
+    // Far CAN use the second continent now that it is populated & habitable with >= 2 wild neighbors
+    uint32_t far_hab = select_nest_for_guest(host, cands, {}, rivals::BaseDistance::Far);
+    assert(far_hab == 301 || far_hab == 302 || far_hab == 303);
 }
 
 static void test_relationship_enum_and_predator_not_extinct()
@@ -225,19 +271,25 @@ static void test_war_pvp_hover_collision_and_settings()
     // Wild NPC always damageable
     assert(allow_creature_damage(true, false, 0, 255, TargetKind::WildNpc, false));
 
-    // Creature Rivals: Neutral/Allied cannot damage rival avatar or rival family (even if friendly_fire is on)
-    assert(!allow_creature_damage(true, true, 0, 1, TargetKind::PlayerAvatar, false));
-    assert(!allow_creature_damage(true, true, 0, 1, TargetKind::PlayerFamily, false));
-    assert(!allow_creature_damage(true, true, 1, 0, TargetKind::PlayerAvatar, false));
-    assert(!allow_creature_damage(true, true, 1, 0, TargetKind::PlayerFamily, false));
+    // Creature Rivals (BUG-1583): Neutral/Allied with Friendly Fire OFF is blocked symmetrically for BOTH Host->Guest and Guest->Host
+    assert(!allow_creature_damage(true, false, 0, 1, TargetKind::PlayerAvatar, false));
+    assert(!allow_creature_damage(true, false, 0, 1, TargetKind::PlayerFamily, false));
+    assert(!allow_creature_damage(true, false, 1, 0, TargetKind::PlayerAvatar, false));
+    assert(!allow_creature_damage(true, false, 1, 0, TargetKind::PlayerFamily, false));
 
-    // Creature Rivals: At War CAN damage rival avatar and rival family (even if friendly_fire is off)
+    // Creature Rivals (BUG-1583): Friendly Fire ON allows PvP symmetrically for BOTH Host->Guest and Guest->Host (avatar & family)
+    assert(allow_creature_damage(true, true, 0, 1, TargetKind::PlayerAvatar, false));
+    assert(allow_creature_damage(true, true, 0, 1, TargetKind::PlayerFamily, false));
+    assert(allow_creature_damage(true, true, 1, 0, TargetKind::PlayerAvatar, false));
+    assert(allow_creature_damage(true, true, 1, 0, TargetKind::PlayerFamily, false));
+
+    // Creature Rivals: At War CAN damage rival avatar and rival family symmetrically (even if friendly_fire is off)
     assert(allow_creature_damage(true, false, 0, 1, TargetKind::PlayerAvatar, true));
     assert(allow_creature_damage(true, false, 0, 1, TargetKind::PlayerFamily, true));
     assert(allow_creature_damage(true, false, 1, 0, TargetKind::PlayerAvatar, true));
     assert(allow_creature_damage(true, false, 1, 0, TargetKind::PlayerFamily, true));
 
-    // 3-4p: guest 1 at War with guest 2 can hit guest 2's family; cannot hit host 0's family when Neutral
+    // 3-4p: guest 1 at War with guest 2 can hit guest 2's family; cannot hit host 0's family when Neutral & FF off
     assert(allow_creature_damage(true, false, 1, 2, TargetKind::PlayerFamily, true));
     assert(!allow_creature_damage(true, false, 1, 0, TargetKind::PlayerFamily, false));
 
@@ -245,21 +297,46 @@ static void test_war_pvp_hover_collision_and_settings()
     assert(!allow_creature_damage(true, true, 0, 0, TargetKind::PlayerFamily, true));
     assert(!allow_creature_damage(true, true, 1, 1, TargetKind::PlayerFamily, true));
 
-    // Together mode: gated strictly by friendly_fire_setting
+    // Together mode: gated strictly and symmetrically by friendly_fire_setting
     assert(!allow_creature_damage(false, false, 0, 1, TargetKind::PlayerAvatar, true));
+    assert(!allow_creature_damage(false, false, 1, 0, TargetKind::PlayerAvatar, true));
     assert(allow_creature_damage(false, true, 0, 1, TargetKind::PlayerAvatar, false));
+    assert(allow_creature_damage(false, true, 1, 0, TargetKind::PlayerAvatar, false));
     assert(!allow_creature_damage(false, true, 0, 1, TargetKind::PlayerFamily, true));
 
-    // Puppet hover/collision pass-through policy (BUG-1553):
-    // In Creature Rivals: War allows hover & collision (false); Neutral/Allied passes through (true) regardless of FF
+    // Symmetric pair relation policy (BUG-1583)
+    assert(resolve_player_pair_relation(0, 0, false, false, true) == kRelAllied);
+    assert(resolve_player_pair_relation(1, 0, true, false, false) == kRelHostile);
+    assert(resolve_player_pair_relation(0, 1, true, false, false) == kRelHostile);
+    assert(resolve_player_pair_relation(1, 0, false, false, true) == kRelHostile);
+    assert(resolve_player_pair_relation(0, 1, false, false, true) == kRelHostile);
+    assert(resolve_player_pair_relation(1, 0, false, true, false) == kRelAllied);
+    assert(resolve_player_pair_relation(1, 0, false, false, false) == kRelNeutral);
+
+    // Puppet hover/collision pass-through policy (BUG-1553, BUG-1583):
+    // In Creature Rivals: War OR FF ON allows hover & collision (false); Neutral/Allied with FF OFF passes through (true)
     assert(!should_pass_through_puppet(true, false, true));
     assert(!should_pass_through_puppet(true, true, true));
+    assert(!should_pass_through_puppet(true, true, false));
     assert(should_pass_through_puppet(true, false, false));
-    assert(should_pass_through_puppet(true, true, false));
     // Outside Creature Rivals: follows friendly_fire setting
     assert(should_pass_through_puppet(false, false, false));
     assert(should_pass_through_puppet(false, false, true));
     assert(!should_pass_through_puppet(false, true, false));
+
+    // Cursor targeting symmetry (BUG-1583):
+    // Guest hovering Host's family in combat stance while at War (even if native returned friendly cursor 0x10!) -> Attack (7)
+    assert(evaluate_pvp_cursor_override(true, false, 1, 0, TargetKind::PlayerFamily, true, true, 0x10) == 7);
+    assert(evaluate_pvp_cursor_override(true, false, 0, 1, TargetKind::PlayerFamily, true, true, 0x10) == 7);
+    // Guest or Host hovering rival with FF ON in combat stance -> Attack (7)
+    assert(evaluate_pvp_cursor_override(true, true, 1, 0, TargetKind::PlayerAvatar, false, true, 0x10) == 7);
+    assert(evaluate_pvp_cursor_override(false, true, 1, 0, TargetKind::PlayerAvatar, false, true, 0x10) == 7);
+    // Host or Guest hovering partner with FF OFF (and not at War) when native tried Attack (7) -> Walk (0x1C) symmetrically!
+    assert(evaluate_pvp_cursor_override(false, false, 0, 1, TargetKind::PlayerAvatar, false, true, 7) == 0x1C);
+    assert(evaluate_pvp_cursor_override(false, false, 1, 0, TargetKind::PlayerAvatar, false, true, 7) == 0x1C);
+    assert(evaluate_pvp_cursor_override(true, false, 0, 1, TargetKind::PlayerFamily, false, true, 7) == 0x1C);
+    // Social stance does not force Attack cursor
+    assert(evaluate_pvp_cursor_override(true, true, 1, 0, TargetKind::PlayerFamily, true, false, 0x10) == -1);
 
     // Co-op pack bonuses must be disabled in Rivals (settings_core.h)
     assert(settings::kDefs[settings::kPackRescue].off_in_rivals);
@@ -355,14 +432,41 @@ static void test_npc_ui_list_generation()
     assert(rows1[0].npc_id == 0xAAA1 && rows1[0].label == "Kook");
     assert(rows1[0].allied && !rows1[0].hostile && rows1[0].can_turn && rows1[0].can_protect && !rows1[0].can_smooth);
 
-    assert(rows1[1].npc_id == 0xBBB2 && rows1[1].label == "Wild 0x0000BBB2");
+    assert(rows1[1].npc_id == 0xBBB2 && rows1[1].label == "Wild species #1");
     assert(!rows1[1].allied && rows1[1].hostile && rows1[1].can_turn && !rows1[1].can_protect && rows1[1].can_smooth);
 
-    assert(rows1[2].npc_id == 0xCCC3 && rows1[2].label == "Wild 0x0000CCC3");
+    assert(rows1[2].npc_id == 0xCCC3 && rows1[2].label == "Wild species #2");
     assert(!rows1[2].allied && !rows1[2].hostile && rows1[2].can_turn && !rows1[2].can_protect && !rows1[2].can_smooth);
 
-    assert(rows1[3].npc_id == 0xEEE5 && rows1[3].label == "Wild 0x0000EEE5");
+    assert(rows1[3].npc_id == 0xEEE5 && rows1[3].label == "Wild species #3");
     assert(!rows1[3].allied && !rows1[3].hostile && rows1[3].can_turn && !rows1[3].can_protect && !rows1[3].can_smooth);
+
+    // Russian fallback labels and zero raw hex anywhere (BUG-1583)
+    auto rows1_ru = build_wild_npc_ui_list(t, 1, discovered, &names, true);
+    assert(rows1_ru.size() == 4);
+    assert(rows1_ru[0].label == "Kook");
+    assert(rows1_ru[1].label == "Дикий вид #1");
+    for (const auto& r : rows1)
+        assert(r.label.find("0x") == std::string::npos);
+    for (const auto& r : rows1_ru)
+        assert(r.label.find("0x") == std::string::npos);
+
+    // Player nest UI rows: human-readable species, distance, brain tier - ZERO raw hex or raw (x,y,z) (BUG-1583)
+    std::string my_row_en = format_player_nest_row("Vlaid18", true, "Sporeling", 0.f, 1, false);
+    assert(my_row_en.find("Vlaid18 (you)") != std::string::npos);
+    assert(my_row_en.find("Sporeling") != std::string::npos);
+    assert(my_row_en.find("Brain 1/4") != std::string::npos);
+    assert(my_row_en.find("sp=") == std::string::npos && my_row_en.find("0x") == std::string::npos);
+
+    std::string rival_row_en = format_player_nest_row("DERMOGEN", false, "", 240.4f, 2, false);
+    assert(rival_row_en.find("DERMOGEN") != std::string::npos);
+    assert(rival_row_en.find("240 m") != std::string::npos);
+    assert(rival_row_en.find("Brain 2/4") != std::string::npos);
+    assert(rival_row_en.find("sp=") == std::string::npos && rival_row_en.find("nest (") == std::string::npos);
+
+    std::string rival_row_ru = format_player_nest_row("DERMOGEN", false, "Дед", 185.f, 0, true);
+    assert(rival_row_ru.find("185 м") != std::string::npos && rival_row_ru.find("Дед") != std::string::npos);
+    assert(rival_row_ru.find("sp=") == std::string::npos && rival_row_ru.find("0x") == std::string::npos);
 
     // Viewer = Host 0: sees sp_pred (rel=5, NOT extinct!) as hostile & smoothable, sp_ally as NOT allied
     auto rows0 = build_wild_npc_ui_list(t, 0, discovered, &names);
@@ -397,10 +501,10 @@ static void test_auto_tribe_transition_and_draft_items()
     build_creature_draft_items(winner, baseline, items, keys);
 
     assert(items.size() == 3 && keys.size() == 3);
-    // Unique winner-only parts come first
+    // Unique winner-only parts come first, with human-readable labels (no raw hex)
     assert(keys[0].first == 0x200 && keys[1].first == 0x300 && keys[2].first == 0x100);
     assert(items[0].id == 1 && items[1].id == 2 && items[2].id == 3);
-    assert(items[0].kind == 1);
+    assert(items[0].kind == 1 && items[0].label == "Creature Part #1");
 }
 
 static void test_wire_codecs()
@@ -649,6 +753,7 @@ static void test_rivals_editor_no_reload_policy()
 int main()
 {
     test_nest_selection_distances();
+    test_habitable_same_landmass_nest_selection();
     test_relationship_enum_and_predator_not_extinct();
     test_per_player_species_relations_and_influence();
     test_war_pvp_hover_collision_and_settings();

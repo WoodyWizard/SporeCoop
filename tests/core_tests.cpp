@@ -19,6 +19,7 @@
 #include "lifecycle.h"
 #include "mirror_registry.h"
 #include "net/snapshot_rx.h"
+#include "settings_core.h"
 #include "share_logic.h"
 #include "world_id.h"
 #include "worldobj_corn.h"
@@ -1130,6 +1131,54 @@ int main()
         CHECK(!skip_space_editor_reload(true, kSpace, false, false, false));
         CHECK(!skip_space_editor_reload(true, kSpace, true, true, false));  // Civ -> Space transition
         CHECK(!skip_space_editor_reload(true, kSpace, true, false, true));  // Host loaded another Space save
+    }
+    // BUG-1579: Sticky Rivals lobby preset across 2+ new worlds without contaminating existing Together saves
+    {
+        using namespace settings;
+        Values defaults;
+        Values lobby_rivals = defaults;
+        CHECK(apply_mode_preset_values(lobby_rivals, defaults, true) > 0);
+        CHECK(lobby_rivals.v[kFriendlyFire] == 1 && lobby_rivals.v[kSwitchVote] == 0 &&
+              lobby_rivals.v[kCivOwnMoney] == 1 && lobby_rivals.v[kSpaceContracts] == 0);
+
+        Values stored_together = defaults;
+        stored_together.v[kFriendlyFire] = 0;
+        stored_together.v[kSwitchVote] = 1;
+        stored_together.v[kCivOwnMoney] = 0;
+        stored_together.v[kSpaceContracts] = 1;
+
+        // 1st new world (!has_stored) takes sticky lobby Rivals preset
+        Values cur = lobby_rivals;
+        CHECK(on_world_open_sticky(false, false, stored_together, defaults, true, lobby_rivals, cur) == Opened::Pending);
+        CHECK(cur == lobby_rivals);
+
+        // 2nd and 3rd new worlds (!has_stored, pending == false) KEEP sticky lobby Rivals preset (no reset to Together!)
+        cur = defaults;
+        CHECK(on_world_open_sticky(false, false, stored_together, defaults, true, lobby_rivals, cur) == Opened::Pending);
+        CHECK(cur == lobby_rivals);
+        cur = defaults;
+        CHECK(on_world_open_sticky(false, false, stored_together, defaults, true, lobby_rivals, cur) == Opened::Pending);
+        CHECK(cur == lobby_rivals);
+
+        // Loading an existing Together save (has_stored == true, pending == false) loads its stored Together values cleanly!
+        cur = lobby_rivals;
+        CHECK(on_world_open_sticky(false, true, stored_together, defaults, true, lobby_rivals, cur) == Opened::Stored);
+        CHECK(cur == stored_together);
+
+        // 4th new world after closing the Together save STILL takes sticky lobby Rivals preset!
+        CHECK(on_world_open_sticky(false, false, stored_together, defaults, true, lobby_rivals, cur) == Opened::Pending);
+        CHECK(cur == lobby_rivals);
+
+        // Switching lobby back to Together (sticky_lobby == false): new world opens with coop.ini defaults
+        CHECK(on_world_open_sticky(false, false, stored_together, defaults, false, defaults, cur) == Opened::Defaults);
+        CHECK(cur == defaults);
+
+        // Explicit pending lobby tweak still overrides next opened world
+        Values custom = defaults;
+        custom.v[kPartyDifficulty] = 2;
+        cur = custom;
+        CHECK(on_world_open_sticky(true, true, stored_together, defaults, false, defaults, cur) == Opened::Pending);
+        CHECK(cur == custom);
     }
     if (g_fail) {
         printf("core_tests: %d FAILED\n", g_fail);

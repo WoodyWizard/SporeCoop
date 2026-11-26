@@ -125,6 +125,11 @@ unsigned g_stage_end_votes, g_stage_end_guest_refused; // tests (coop.vote)
 static bool g_stage_end_flag_fix = true;
 COOP_FIX("core.stage_end_flag_clear", "BUG-1569", g_stage_end_flag_fix,
          "core: clear stuck Creature/Tribe/Civ stage-end transition flags (+0xDE / +0x28) when a stage-end request is refused, dropped, or followed by an in-stage editor");
+// BUG-1579: in Rivals stages, players evolve and customize outfits/designs independently; never start or force a shared
+// Together-mode Outfitter or in-stage evolution vote on rivals (keep stage-advance votes only when explicitly configured).
+static bool g_rivals_no_outfitter_vote_fix = true;
+COOP_FIX("rivals.no_outfitter_vote", "BUG-1579", g_rivals_no_outfitter_vote_fix,
+         "vote: never start or force a shared Outfitter or in-stage evolution vote in Rivals stages");
 unsigned g_stage_end_flags_cleared = 0;
 static bool g_vote_stage_end = false;
 
@@ -284,6 +289,13 @@ bool start_action_vote(const std::string& text, const std::string& done, std::fu
 
 void start_vote(void* req, const std::string& text)
 {
+    // BUG-1579: defensive guard: never start a shared Outfitter vote in a Rivals stage
+    if (g_rivals_no_outfitter_vote_fix && req && skg::readable(req, 0x10) &&
+        rivals::stage_is_rivals(rivals::stage_from_mode(game::mode_id())) &&
+        designs::outfit_texts(game::mode_id(), skg::field<uint32_t>(req, 0xC))) {
+        LOG("evolution: suppressed Outfitter vote in Rivals stage (BUG-1579)");
+        return;
+    }
     g_vote_action = nullptr;
     g_vote_done = design_stage(game::mode_id()) ? "the editor opens" : "evolution starts";
     if (req)
@@ -977,7 +989,32 @@ bool SK_CDECL h_Submit(void* req)
         // vote's way, a guest outside the host's world evolves its own. Off (core.host_mode_vote): as 0.7.16.1
         bool one_host = one && !(g_host_mode_vote_fix && (stage_end || g_vote.active));
         bool one_guest = one && !(g_host_mode_vote_fix && host_world_now() != host_world::HostWorld::Same);
-        if (one_host && g_sess.role() == net::Role::Host) {
+        // BUG-1579: in Rivals stages, never start or force a shared Outfitter / in-stage evolution / design vote.
+        // Each rival opens Outfitter, mating evolution, and design editors independently; stage-advance editors
+        // (`req_stage_end`) still go through the normal stage-transition path.
+        bool rivals_stage = g_rivals_no_outfitter_vote_fix && rivals::stage_is_rivals(rivals::stage_from_mode(mode));
+        if (rivals_stage && !req_stage_end) {
+            if (g_sess.role() == net::Role::Host) {
+                LOG("evolution: Rivals stage (%s): host in-stage editor %08X opens locally without a vote (BUG-1579)",
+                    modes::mode_name(mode), editor);
+            } else if (designs::own_outfitter(req, mode, editor, host_world_now() != host_world::HostWorld::Same)) {
+                LOG("evolution: Rivals stage (%s): guest Tribal Outfitter %08X opens locally without a vote (BUG-1579)",
+                    modes::mode_name(mode), editor);
+            } else if (g_own_mating_fix && mode == modes::kCreature && in_stage &&
+                       host_world_now() == host_world::HostWorld::Same && guest_plays_own_creation()) {
+                offer_end("the own evolution");
+                g_own_mating_rerouted++;
+                g_evo_flag_refused = true;
+                g_own_editor_due = editor;
+                g_own_editor_due_at = g_own_editor_due_first = H->time_seconds();
+                LOG("evolution: Rivals stage (Creature): guest mating call opens own editor %08X without ready/vote (BUG-1579)",
+                    editor);
+                return false;
+            } else {
+                LOG("evolution: Rivals stage (%s): guest in-stage editor %08X opens locally without ready/vote (BUG-1579)",
+                    modes::mode_name(mode), editor);
+            }
+        } else if (one_host && g_sess.role() == net::Role::Host) {
             LOG("evolution: creature.mode host: the host's editor opens at once, every player gets the result");
             notice(g_name + " evolves the creature of everybody", -1);
         } else if (one_guest && g_sess.role() != net::Role::Host) {

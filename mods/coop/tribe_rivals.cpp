@@ -11,6 +11,7 @@
 #include <unordered_set>
 
 #include "call_guard.h"
+#include "civ_rivals.h"
 #include "creations.h"
 #include "fixes.h"
 #include "game.h"
@@ -61,6 +62,10 @@ static bool g_tribe_polish_fix = true;
 COOP_FIX("rivals.tribe_polish", "BUG-1573", g_tribe_polish_fix,
          "tribe: block Neutral/Ally/Shield food-mat stealing, clamp guest starting food to match host, rebuild held staff after species swap, and explain rival main-hut 10% floor");
 
+static bool g_tribe_082_fix = true;
+COOP_FIX("rivals.tribe_fixes_082", "BUG-1580", g_tribe_082_fix,
+         "tribe: enforce 6/9/12 pop cap, real o_Form growth check, Host+Guest species/diet sync, persisted pol assignment, rival alliance exclusion from NPC victory, guest tool sell, night-sleep/peace aggro guard, and chieftain KO recovery");
+
 // ---- Game addresses (verified GOG 2024 dc04aee5, docs/re/tribe.md#tribe-rivals-re) ----
 static uintptr_t a_SetPlayerTribe = 0;
 static uintptr_t a_PlannerUpdate = 0;
@@ -68,6 +73,12 @@ static uintptr_t a_HutTD = 0;
 static uintptr_t a_ToolTD = 0;
 static uintptr_t a_SetConquered = 0;
 static uintptr_t a_TribeGoalListener = 0;
+static uintptr_t a_MissionSetTarget = 0;
+static uintptr_t a_MissionComplete = 0;
+static uintptr_t a_StageAddGoal = 0;
+static uintptr_t a_CommunityEditorSell = 0;
+static uintptr_t a_DoAction = 0;
+static uintptr_t a_SetValueVector3 = 0;
 static uintptr_t a_SpeciesSlot = 0;
 static uintptr_t a_SetSpeciesSlot = 0;
 static uintptr_t a_IsToolPurchased = 0;
@@ -133,6 +144,45 @@ static uint32_t tribe_pol(void* t)
 static bool tribe_conquered(void* t)
 {
     return t && skg::readable(t, 0x558) && F<uint8_t>(t, 0x556) != 0;
+}
+
+static uint32_t tribe_hut_tier(void* t)
+{
+    if (!t || !skg::readable(t, 0x3C))
+        return 0;
+    return F<uint32_t>(t, 0x38);
+}
+
+static bool tribe_has_live_hut(void* t, float* out_hp = nullptr)
+{
+    if (out_hp)
+        *out_hp = 0.0f;
+    if (!t || !skg::readable(t, 0x36C))
+        return false;
+    void* hut = F<void*>(t, 0x368);
+    if (!hut || !game::listed(hut, kHutNoun) || !skg::readable(hut, 0x160))
+        return false;
+    int comb_state = F<int>(hut, 0x120 + 0x34);
+    float hp = F<float>(hut, 0x120 + 0x38);
+    if (out_hp)
+        *out_hp = std::isfinite(hp) ? hp : 0.0f;
+    return comb_state != 2 && std::isfinite(hp) && hp > 0.0f;
+}
+
+static bool citizen_knocked_out(void* c)
+{
+    if (!c || !game::listed(c, kCitizenNoun))
+        return true;
+    bool dead = game::is_dead(c);
+    float hp = game::health(c);
+    uint32_t flags = skg::readable((uint8_t*)c + 0xB58, 4) ? F<uint32_t>(c, 0xB58) : 0u;
+    uint32_t node = 0;
+    if (skg::readable((uint8_t*)c + 0xB4C, 4)) {
+        uint8_t* ai = F<uint8_t*>(c, 0xB4C);
+        if (ai && skg::readable(ai + 0x1D8, 4))
+            node = *(uint32_t*)(ai + 0x1D8);
+    }
+    return is_citizen_knocked_out(dead, hp, flags, node);
 }
 
 static int32_t tribe_food(void* t)
@@ -255,11 +305,22 @@ struct OwnedTribe {
     void* orig_slot = nullptr;
     uint32_t swapped_key[3] = {};
     bool species_swapped = false;
+    bool members_swapped = false;
     int32_t last_sent_food = -1;
     uint32_t last_sent_tools = 0;
 };
 
+struct GuestSpeciesState {
+    void* ptr = nullptr;
+    uint32_t serial = 0;
+    void* orig_slot = nullptr;
+    uint32_t swapped_key[3] = {};
+    bool species_swapped = false;
+    bool members_swapped = false;
+};
+
 static OwnedTribe g_owned[rivals::kMaxPlayers];
+static GuestSpeciesState g_guest_sp[rivals::kMaxPlayers];
 static uint32_t g_assign_rev = 0;
 static bool g_was_active = false;
 
@@ -279,14 +340,19 @@ static bool g_stage_won_reported = false;
 static bool g_race_end_handled = false;
 static double g_last_eval_at = 0.0;
 static double g_last_guest_pvp_rel = 0.0;
+static double g_last_guest_sp_sync = 0.0;
 static double g_last_assign_tx = 0.0;
 static double g_last_food_tx = 0.0;
 static double g_last_rel_tx = 0.0;
 static double g_last_auto_form = 0.0;
 static uint32_t g_auto_form_count = 0;
 static double g_last_raid_at[rivals::kMaxPlayers] = {};
+static double g_last_peace_ai_tick = 0.0;
+static double g_chief_ko_until[rivals::kMaxPlayers] = {};
+static bool g_chief_ko_active[rivals::kMaxPlayers] = {};
+static double g_last_chief_ko_tx = 0.0;
 
-// Save-strip temporary backup for host species slots
+// Save-strip temporary backup for host & guest species slots
 struct SavedSlot {
     void* tribe = nullptr;
     uint32_t serial = 0;
@@ -295,9 +361,10 @@ struct SavedSlot {
 };
 static std::vector<SavedSlot> g_saved_slots;
 
-// Persistence (store.cpp "tribe.rivals" v1): player stable key -> village position
+// Persistence (store.cpp "tribe.rivals" v2): player stable key -> political ID + village position
 struct StoredAssign {
     std::string key;
+    uint32_t pol = 0;
     float x = 0.f, y = 0.f, z = 0.f;
 };
 static std::vector<StoredAssign> g_stored_assign;
@@ -317,6 +384,11 @@ static uint32_t g_draft_unlocked = 0;
 static uint32_t g_draft_payouts_applied = 0;
 static uint32_t g_species_swaps = 0;
 static uint32_t g_pack_pets_spawned = 0; // BUG-1564
+static uint32_t g_babies_capped = 0;     // BUG-1580
+static uint32_t g_rival_mission_blocked = 0;
+static uint32_t g_tools_sold = 0;
+static uint32_t g_peace_aggro_cleared = 0;
+static uint32_t g_sleep_suppressed = 0;
 static uint32_t g_last_npc_count = 0;
 static int g_last_win_needed = 1;
 
@@ -617,6 +689,101 @@ static bool SK_THISCALL h_TribeGoalListener(void* self, uint32_t msg_id, void* d
     return o_TribeGoalListener(self, msg_id, data);
 }
 
+static void* resolve_tribe_from_obj(void* obj)
+{
+    if (!obj || IsBadReadPtr(obj, 4))
+        return nullptr;
+    void* gd = obj;
+    if (!game::listed(gd, 0))
+        gd = vcall<void*>(obj, 0xC / 4, (uint32_t)0x17F243Bu);
+    if (!gd || !game::listed(gd, 0))
+        return nullptr;
+    uint32_t noun = game::noun_id(gd);
+    if (noun == kTribeNoun)
+        return gd;
+    if (noun == kCitizenNoun && skg::readable(gd, 0x1018))
+        return F<void*>(gd, 0x1014);
+    if (noun == kHutNoun && skg::readable(gd, 0x234))
+        return F<void*>(gd, 0x230);
+    if (noun == kToolNoun && skg::readable(gd, 0x1FC))
+        return F<void*>(gd, 0x1F8);
+    if (noun == kFoodMatNoun) {
+        for (void* t : tribe::all_tribes())
+            if (t && skg::readable(t, 0x264) && F<void*>(t, 0x260) == gd)
+                return t;
+    }
+    return nullptr;
+}
+
+// BUG-1580: Block player-owned rival tribes from entering vanilla NPC Tribe-to-Tribe missions,
+// completing ally/conquer missions, adding totem pole pieces, or advancing the 5-tribe progress bar.
+using MissionSetTarget_t = void(SK_THISCALL*)(void*, void*);
+static MissionSetTarget_t o_MissionSetTarget = nullptr;
+static void SK_THISCALL h_MissionSetTarget(void* mgr, void* obj)
+{
+    if (g_tribe_082_fix && active() && obj) {
+        void* t = resolve_tribe_from_obj(obj);
+        if (t && should_block_rival_mission(true, owner_of_tribe(t))) {
+            g_rival_mission_blocked++;
+            return;
+        }
+    }
+    o_MissionSetTarget(mgr, obj);
+}
+
+using MissionComplete_t = bool(SK_THISCALL*)(void*);
+static MissionComplete_t o_MissionComplete = nullptr;
+static bool SK_THISCALL h_MissionComplete(void* mission)
+{
+    if (g_tribe_082_fix && active() && mission && skg::readable(mission, 0x84)) {
+        void* t = F<void*>(mission, 0x80);
+        if (t && should_block_rival_mission(true, owner_of_tribe(t))) {
+            g_rival_mission_blocked++;
+            if (H && M)
+                H->log(M, SK_INFO, "tribe_rivals: blocked NPC mission completion for player-owned rival tribe %p (BUG-1580)",
+                       t);
+            return false;
+        }
+    }
+    return o_MissionComplete(mission);
+}
+
+using StageAddGoal_t = void(SK_THISCALL*)(void*, int, void*);
+static StageAddGoal_t o_StageAddGoal = nullptr;
+static void SK_THISCALL h_StageAddGoal(void* self, int kind, void* tribe)
+{
+    if (g_tribe_082_fix && active() && tribe && should_block_rival_mission(true, owner_of_tribe(tribe))) {
+        g_rival_mission_blocked++;
+        if (H && M)
+            H->log(M, SK_INFO, "tribe_rivals: blocked totem/goal progress (kind=%d) for player-owned rival tribe %p (BUG-1580)",
+                   kind, tribe);
+        return;
+    }
+    o_StageAddGoal(self, kind, tribe);
+}
+
+// BUG-1580: Relay guest Tribe tool-hut sells to host so worldobj sync does not recreate the sold hut and food refunds cleanly.
+using CommunityEditorSell_t = void(SK_THISCALL*)(void*, void*);
+static CommunityEditorSell_t o_CommunityEditorSell = nullptr;
+static void SK_THISCALL h_CommunityEditorSell(void* editor, void* spatial)
+{
+    if (g_tribe_082_fix && active() && is_guest() && spatial && !IsBadReadPtr(spatial, 4)) {
+        void* gd = vcall<void*>(spatial, 0xC / 4, (uint32_t)0x17F243Bu);
+        if (gd && game::listed(gd, kToolNoun) && skg::readable(gd, 0x1FC)) {
+            void* tt = F<void*>(gd, 0x1F8);
+            int kind = tribe::tool_type(gd);
+            if (tt == tribe_of_player(my_id()) && kind >= kMinToolKind && kind <= kMaxToolKind) {
+                net::Writer w;
+                write_food_sync(w, {CustomOp::SellTool, my_id(), kind, 0});
+                rivals::send_faction_to(0, rivals::Stage::Tribe, wire::rivals_faction::SK_STAGE_CUSTOM, w);
+                if (H && M)
+                    H->log(M, SK_INFO, "tribe_rivals: guest requested sell of tool hut kind=%d (BUG-1580)", kind);
+            }
+        }
+    }
+    o_CommunityEditorSell(editor, spatial);
+}
+
 using SetConquered_t = void(SK_THISCALL*)(void*, bool);
 static SetConquered_t o_SetConquered = nullptr;
 static void SK_THISCALL h_SetConquered(void* t, bool conquered)
@@ -699,6 +866,8 @@ static float SK_THISCALL h_ApplyRel(void* mgr, uint32_t polA, uint32_t polB, uin
                 history::record_tribe_outcome(actor, true);
         }
     }
+    if (!g_in_internal_rel)
+        civ_rivals::on_rel_apply(polA, polB, eventId, scale);
     return res;
 }
 
@@ -735,6 +904,26 @@ int override_choose_action(void* target_obj, int vanilla_action)
     if (!gd || !game::listed(gd, 0))
         return 0;
     uint32_t noun = game::noun_id(gd);
+    uint8_t me = my_id();
+    // BUG-1580: On Guest in Tribe Rivals, if vanilla ChooseInputActionID returned 0 on a wild animal or an
+    // unconquered NPC tribe hut/tool/citizen while guest has own living selected members, allow attack/raid cleanly.
+    auto guest_has_selected = [&]() -> bool {
+        if (!is_guest())
+            return false;
+        void* mt = tribe_of_player(me);
+        if (!mt)
+            return false;
+        for (void* m : tribe::members(mt))
+            if (m && !game::is_dead(m) && skg::readable((uint8_t*)m + 0x109C, 1) && F<uint8_t>(m, 0x109C))
+                return true;
+        return false;
+    };
+    if (g_tribe_082_fix && is_guest() && vanilla_action == 0 && noun == 0x18EB45Eu && !game::is_dead(gd)) {
+        void* mt = tribe_of_player(me);
+        if (mt && !tribe::is_domesticated_animal(gd, mt) && guest_has_selected())
+            return 0x0A;
+        return 0;
+    }
     void* target_tribe = nullptr;
     if (noun == kCitizenNoun)
         target_tribe = F<void*>(gd, 0x1014);
@@ -753,8 +942,17 @@ int override_choose_action(void* target_obj, int vanilla_action)
     if (!target_tribe)
         return 0;
     uint8_t to = owner_of_tribe(target_tribe);
-    uint8_t me = my_id();
-    if (!rivals::valid_player(to) || to == me)
+    if (!rivals::valid_player(to)) {
+        if (g_tribe_082_fix && is_guest() && vanilla_action == 0 && !tribe_conquered(target_tribe) &&
+            guest_has_selected()) {
+            if (noun == kHutNoun || noun == kToolNoun)
+                return 0x0C;
+            if (noun == kCitizenNoun && !game::is_dead(gd))
+                return 0x0A;
+        }
+        return 0;
+    }
+    if (to == me)
         return 0;
     if (!rivals::at_war(me, to) || is_immune(to)) {
         // Block hostile actions (0x0A attack, 0x0C raid, 0x21 raid food) on Neutral / Allied / immune rival tribes
@@ -775,7 +973,7 @@ int override_choose_action(void* target_obj, int vanilla_action)
     return 0;
 }
 
-// ---- R2: Species swap for taken-over NPC tribe ----
+// ---- R2 & BUG-1580: Species & diet swap for player-owned tribes on BOTH Host AND Guest ----
 static void* species_profile_of(const creations::Key& k)
 {
     if (!k.instance)
@@ -787,46 +985,126 @@ static void* species_profile_of(const creations::Key& k)
     return p && skg::readable(p, kProfGenOff + 4) ? p : nullptr;
 }
 
-static bool swap_tribe_species(OwnedTribe& ot, void* prof)
+static bool swap_tribe_species_ex(void* t, uint32_t serial, void*& orig_slot, uint32_t swapped_key[3],
+                                  bool& species_swapped, bool& members_swapped, void* prof, bool ensure_chief)
 {
-    if (!ot.ptr || !prof || !tribe_alive(ot.ptr, ot.serial))
+    if (!t || !prof || !tribe_alive(t, serial))
         return false;
     if (!a_SpeciesSlot || !a_SetSpeciesSlot)
         return false;
-    if (!ot.orig_slot)
-        ot.orig_slot = thiscall<void*>(a_SpeciesSlot, ot.ptr, 0);
-    thiscall<void>(a_SetSpeciesSlot, ot.ptr, prof, 0);
     uint32_t* pk = &F<uint32_t>(prof, kProfKeyOff);
-    ot.swapped_key[0] = pk[0];
-    ot.swapped_key[1] = pk[1];
-    ot.swapped_key[2] = pk[2];
-    ot.species_swapped = true;
-    g_species_swaps++;
-    // Swap existing adult members & chief to the guest's species
-    if (!world::cinematic_playing()) {
-        for (void* c : tribe::members(ot.ptr)) {
+    uint32_t want_key = pk[0];
+    if (!want_key)
+        return false;
+
+    auto ms = tribe::members(t);
+    int live_adults = 0;
+    bool all_adults_match = true;
+    for (void* c : ms) {
+        if (!c || game::is_dead(c) || F<int>(c, 0xB34) != 1) // skip babies (BUG-1313)
+            continue;
+        live_adults++;
+        if (F<uint32_t>(c, kSpKeyOff) != want_key)
+            all_adults_match = false;
+    }
+    if (live_adults == 0)
+        all_adults_match = false;
+
+    uint32_t cur_slot_key = 0;
+    if (void* cur_sp = thiscall<void*>(a_SpeciesSlot, t, 0); cur_sp && skg::readable(cur_sp, kProfKeyOff + 4))
+        cur_slot_key = F<uint32_t>(cur_sp, kProfKeyOff);
+    if (!species_swapped)
+        cur_slot_key = 0;
+
+    auto plan = decide_species_swap(want_key, cur_slot_key, members_swapped, world::cinematic_playing(),
+                                    all_adults_match);
+    bool did_work = false;
+    if (plan.swap_slot) {
+        if (!orig_slot)
+            orig_slot = thiscall<void*>(a_SpeciesSlot, t, 0);
+        thiscall<void>(a_SetSpeciesSlot, t, prof, 0);
+        swapped_key[0] = pk[0];
+        swapped_key[1] = pk[1];
+        swapped_key[2] = pk[2];
+        species_swapped = true;
+        members_swapped = false;
+        g_species_swaps++;
+        did_work = true;
+    }
+    if (plan.swap_members && !world::cinematic_playing()) {
+        for (void* c : ms) {
             if (!c || game::is_dead(c) || F<int>(c, 0xB34) != 1) // skip babies (BUG-1313)
                 continue;
-            if (F<uint32_t>(c, kSpKeyOff) == pk[0])
+            if (F<uint32_t>(c, kSpKeyOff) == want_key)
                 continue;
+            float hp0 = game::health(c), max0 = game::max_health(c);
             if (a_SetSpecies)
                 thiscall<bool>(a_SetSpecies, c, prof, 1, true);
             else if (a_SetSpeciesProfile)
                 thiscall<void>(a_SetSpeciesProfile, c, prof);
             if (g_tribe_polish_fix)
                 tribe::rebuild_member_hand(c); // BUG-1573: re-attach chieftain staff/held tool to new species bones
+            float max1 = game::max_health(c);
+            if (!game::is_dead(c) && hp0 > 0.f && max0 > 0.f && max1 > 0.f && max1 != max0)
+                game::set_health(c, std::max(1.f, std::min(1.f, hp0 / max0) * max1));
+            did_work = true;
         }
     }
-    // Ensure tribe has a chieftain
-    if (a_SetChieftain && skg::readable(ot.ptr, 0x120) && !F<void*>(ot.ptr, 0x11C)) {
-        for (void* c : tribe::members(ot.ptr)) {
+    if (plan.mark_members_done && !world::cinematic_playing()) {
+        int check_adults = 0;
+        bool now_match = true;
+        for (void* c : tribe::members(t)) {
+            if (!c || game::is_dead(c) || F<int>(c, 0xB34) != 1)
+                continue;
+            check_adults++;
+            if (F<uint32_t>(c, kSpKeyOff) != want_key)
+                now_match = false;
+        }
+        members_swapped = (check_adults > 0 && now_match);
+    }
+    // Ensure tribe has a chieftain (host only)
+    if (ensure_chief && a_SetChieftain && skg::readable(t, 0x120) && !F<void*>(t, 0x11C)) {
+        for (void* c : tribe::members(t)) {
             if (c && !game::is_dead(c) && F<int>(c, 0xB34) == 1) {
-                thiscall<void>(a_SetChieftain, ot.ptr, c);
+                thiscall<void>(a_SetChieftain, t, c);
                 break;
             }
         }
     }
-    return true;
+    return did_work;
+}
+
+static bool swap_tribe_species(OwnedTribe& ot, void* prof)
+{
+    return swap_tribe_species_ex(ot.ptr, ot.serial, ot.orig_slot, ot.swapped_key, ot.species_swapped,
+                                 ot.members_swapped, prof, true);
+}
+
+static void guest_sync_species()
+{
+    if (!g_tribe_082_fix || !active() || !is_guest() || g_save_temp_unswapped)
+        return;
+    for (const auto& e : g_guest_assign) {
+        if (!rivals::valid_player(e.player_id) || e.player_id == 0)
+            continue; // host's own tribe already has host's world species slot
+        void* t = find_tribe_by_pol_or_pos(e.tribe_pol, e.x, e.y, e.z);
+        if (!t || t == orig_pt_live())
+            continue;
+        auto& gs = g_guest_sp[e.player_id];
+        uint32_t ser = game::object_serial(t);
+        if (gs.ptr != t || gs.serial != ser) {
+            gs = GuestSpeciesState{};
+            gs.ptr = t;
+            gs.serial = ser;
+        }
+        creations::Key lk = species::key(e.player_id, species::Stage::Tribe);
+        if (!lk.instance && e.sp_inst)
+            lk = {e.sp_inst, e.sp_type, e.sp_group};
+        if (void* prof = species_profile_of(lk)) {
+            swap_tribe_species_ex(gs.ptr, gs.serial, gs.orig_slot, gs.swapped_key, gs.species_swapped,
+                                  gs.members_swapped, prof, false);
+        }
+    }
 }
 
 static void restore_host_species_slots()
@@ -838,6 +1116,13 @@ static void restore_host_species_slots()
         if (ot.species_swapped && ot.orig_slot && ot.ptr && tribe_alive(ot.ptr, ot.serial)) {
             thiscall<void>(a_SetSpeciesSlot, ot.ptr, ot.orig_slot, 0);
             ot.species_swapped = false;
+            ot.members_swapped = false;
+        }
+        auto& gs = g_guest_sp[p];
+        if (gs.species_swapped && gs.orig_slot && gs.ptr && tribe_alive(gs.ptr, gs.serial)) {
+            thiscall<void>(a_SetSpeciesSlot, gs.ptr, gs.orig_slot, 0);
+            gs.species_swapped = false;
+            gs.members_swapped = false;
         }
     }
 }
@@ -918,6 +1203,8 @@ static void apply_guest_perspective()
     } else {
         g_swapped = true;
     }
+    // BUG-1580: Sync species slot & diet on Guest for own tribe and all rival tribes immediately after perspective swap.
+    guest_sync_species();
 }
 
 // ---- Wire send helpers (MSG_RIVALS_FACTION = 81, Stage::Tribe) ----
@@ -1144,14 +1431,10 @@ static bool on_npc_influence(rivals::Stage stage, rivals::InfluenceAction action
 
 static bool on_buy_influence(uint8_t actor, int32_t price, int32_t /*gain*/)
 {
-    if (!active() || !is_host())
-        return true; // allow fallback outside Tribe Rivals
-    void* t = tribe_of_player(actor);
-    if (!t)
-        return false;
-    int32_t food = tribe_food(t);
-    if (food < price)
-        return false;
+    void* t = (active() && is_host()) ? tribe_of_player(actor) : nullptr;
+    int32_t food = t ? tribe_food(t) : 0;
+    if (!can_buy_influence(active(), is_host(), t != nullptr, food, price))
+        return false; // BUG-1580: never return true when inactive/non-host (allowed free influence buys)
     tribe_add_food(t, -price);
     if (actor != 0)
         host_send_food(actor, true);
@@ -1204,6 +1487,10 @@ static std::vector<rivals::UiRow> on_extra_ui_rows()
     rows.push_back({b, "", {}, 0});
     if (wipe_recovery_active()) {
         double now = H ? H->time_seconds() : 0.0;
+        if (rivals::valid_player(me) && g_chief_ko_active[me] && g_chief_ko_until[me] > now) {
+            rows.push_back({std::string(i18n::tr("  Chieftain reviving: ")) + fmt_mmss(g_chief_ko_until[me] - now), "",
+                            {}, 0xFFFFB060u});
+        }
         for (const auto& p : S->players()) {
             if (!rivals::valid_player(p.id))
                 continue;
@@ -1363,12 +1650,60 @@ static void on_faction_message(uint8_t from, uint8_t subkind, net::Reader& r)
             }
         } else if (is_host() && from != 0 && m.op == CustomOp::BuyMember) {
             handle_guest_baby(from, 0.f, 0.f, 0.f);
+        } else if (is_host() && from != 0 && m.op == CustomOp::SellTool && g_tribe_082_fix) {
+            void* gt = tribe_of_player(from);
+            int kind = m.value;
+            if (gt && kind >= kMinToolKind && kind <= kMaxToolKind) {
+                bool removed = false;
+                for (void* tool : tribe::tribe_tools(gt)) {
+                    if (tribe::tool_type(tool) == kind && tribe::remove_tool(tool)) {
+                        removed = true;
+                        break;
+                    }
+                }
+                if (removed) {
+                    int32_t refund = tool_sell_refund(kind);
+                    if (refund > 0)
+                        tribe_add_food(gt, refund);
+                    g_tools_sold++;
+                    if (H && M)
+                        H->log(M, SK_INFO, "tribe_rivals: sold guest %u tool hut kind=%d (+%d food, BUG-1580)",
+                               (unsigned)from, kind, (int)refund);
+                }
+                host_send_food(from, true);
+            }
+        } else if (is_guest() && from == 0 && m.op == CustomOp::ChiefRespawn && rivals::valid_player(m.player_id)) {
+            double now = H ? H->time_seconds() : 0.0;
+            bool was_ko = g_chief_ko_active[m.player_id];
+            bool now_ko = (m.tools_mask & 1u) != 0 && m.value > 0;
+            g_chief_ko_active[m.player_id] = now_ko;
+            g_chief_ko_until[m.player_id] = now_ko ? (now + (double)m.value) : 0.0;
+            if (m.player_id == my_id() && tribe::C.notice) {
+                if (!was_ko && now_ko)
+                    tribe::C.notice(std::string(i18n::tr("Your Chieftain was knocked out! Reviving in ")) +
+                                    fmt_mmss((double)m.value) + ".");
+                else if (was_ko && !now_ko)
+                    tribe::C.notice(i18n::tr("Your Chieftain has recovered!"));
+            }
         }
         return;
     }
 }
 
-// ---- Host guest baby purchase in own tribe ----
+static int live_tribe_members(void* t);
+
+// ---- Host guest baby purchase in own tribe (BUG-1580: strict 6/9/12 pop cap enforcement) ----
+bool can_local_buy_baby()
+{
+    if (!active())
+        return true;
+    void* mt = tribe_of_player(my_id());
+    if (!mt)
+        return false;
+    int cur = std::max(live_tribe_members(mt), (int)tribe::members(mt).size());
+    return can_spawn_tribe_baby(cur, tribe_hut_tier(mt), tribe_food(mt), 10).allowed;
+}
+
 bool handle_guest_baby(uint8_t from, float /*x*/, float /*y*/, float /*z*/)
 {
     if (!active() || !is_host() || from == 0 || !rivals::valid_player(from))
@@ -1376,17 +1711,29 @@ bool handle_guest_baby(uint8_t from, float /*x*/, float /*y*/, float /*z*/)
     void* gt = tribe_of_player(from);
     if (!gt)
         return true; // swallow in rivals mode if guest tribe not assigned yet
-    int cost = 10;
-    if (tribe_food(gt) < cost)
+    constexpr int32_t cost = 10;
+    int cur_pop = std::max(live_tribe_members(gt), (int)tribe::members(gt).size());
+    uint32_t tier = tribe_hut_tier(gt);
+    auto chk = can_spawn_tribe_baby(cur_pop, tier, tribe_food(gt), cost);
+    if (!chk.allowed) {
+        if (std::strcmp(chk.reason, "pop_cap") == 0)
+            g_babies_capped++;
+        host_send_food(from, true); // sync/refund guest HUD if local deduct occurred
+        if (H && M)
+            H->log(M, SK_INFO,
+                   "tribe_rivals: refused player %u baby in tribe %p (%s: pop=%d/%d tier=%u food=%d, BUG-1580)",
+                   (unsigned)from, gt, chk.reason, cur_pop, chk.pop_cap, tier, tribe_food(gt));
         return true;
+    }
     void* baby = tribe::spawn_member(gt, 0, from);
     if (baby) {
         tribe_add_food(gt, -cost);
         host_send_food(from, true);
         if (H && M)
-            H->log(M, SK_INFO, "tribe_rivals: player %u bought baby in own tribe %p (food now %d)", (unsigned)from, gt,
-                   tribe_food(gt));
+            H->log(M, SK_INFO, "tribe_rivals: player %u bought baby in own tribe %p (pop=%d/%d, food now %d)",
+                   (unsigned)from, gt, cur_pop + 1, chk.pop_cap, tribe_food(gt));
     } else if (H && M) {
+        host_send_food(from, true);
         H->log(M, SK_WARN, "tribe_rivals: player %u baby spawn returned null in tribe %p (food kept at %d)",
                (unsigned)from, gt, tribe_food(gt));
     }
@@ -1649,8 +1996,36 @@ static void host_deliver_creature_payouts()
 }
 
 // ---- Host tick: R2 takeover, species swap, R4 NPC relations, 11.5 stage end ----
+static bool host_has_connected_guest()
+{
+    if (!S)
+        return false;
+    for (const auto& pl : S->players())
+        if (pl.id != 0 && rivals::valid_player(pl.id))
+            return true;
+    return false;
+}
+
+static void record_stored_assign(const std::string& pkey, uint32_t pol, const net::Vec3& pos)
+{
+    if (pkey.empty())
+        return;
+    for (auto& sa : g_stored_assign) {
+        if (sa.key == pkey) {
+            sa.pol = pol;
+            sa.x = pos.x;
+            sa.y = pos.y;
+            sa.z = pos.z;
+            return;
+        }
+    }
+    g_stored_assign.push_back({pkey, pol, pos.x, pos.y, pos.z});
+}
+
 static void host_try_auto_form_npc(double now, const char* reason)
 {
+    if (!host_has_connected_guest())
+        return; // BUG-1580: never auto-form extra tribes while solo
     if (now - g_last_auto_form < 2.0 || g_auto_form_count >= 6)
         return;
     if (!tribe::a_NpcCtrl || !tribe::o_Form)
@@ -1662,12 +2037,20 @@ static void host_try_auto_form_npc(double now, const char* reason)
     if (tribe::form_species_state(ctrl, fs) && fs.past)
         return;
     g_last_auto_form = now;
+    // BUG-1580: tribe::o_Form returns bool in AL (upper EAX bits can hold stale non-zero values);
+    // verify actual tribe list growth instead of trusting raw pointer truthiness.
+    size_t before = tribe::all_tribes().size();
     void* made = tribe::o_Form(ctrl, 0);
-    if (made) {
+    size_t after = tribe::all_tribes().size();
+    bool al = ((uintptr_t)made & 0xFFu) != 0;
+    if (npc_tribe_formed(before, after)) {
         g_auto_form_count++;
         if (H && M)
-            H->log(M, SK_INFO, "tribe_rivals: auto-formed NPC tribe %p (%s, total_auto=%u, tribes=%u)", made, reason,
-                   g_auto_form_count, (unsigned)tribe::all_tribes().size());
+            H->log(M, SK_INFO, "tribe_rivals: auto-formed NPC tribe (%s, al=%d, total_auto=%u, tribes=%u->%u, BUG-1580)",
+                   reason, (int)al, g_auto_form_count, (unsigned)before, (unsigned)after);
+    } else if (H && M) {
+        H->log(M, SK_INFO, "tribe_rivals: o_Form did not grow tribe list (%s, raw=%p al=%d, tribes=%u, BUG-1580)",
+               reason, made, (int)al, (unsigned)after);
     }
 }
 
@@ -1686,46 +2069,51 @@ static void host_ensure_assignments(double now)
     net::Vec3 hp = g_owned[0].pos;
     bool changed = false;
     bool need_guest_tribe = false;
+    bool has_guest = false;
 
     for (const auto& pl : S->players()) {
         uint8_t pid = pl.id;
         if (pid == 0 || !rivals::valid_player(pid))
             continue;
+        has_guest = true;
         auto& ot = g_owned[pid];
-        if (ot.ptr && tribe_alive(ot.ptr, ot.serial) && !tribe_conquered(ot.ptr)) {
+        if (ot.ptr && tribe_alive(ot.ptr, ot.serial) && !tribe_conquered(ot.ptr) && tribe_has_live_hut(ot.ptr)) {
             ot.pol = tribe_pol(ot.ptr);
             ot.pos = tribe::tribe_pos(ot.ptr);
-            // Apply guest species line if it arrived and hasn't been applied yet
-            if (!ot.species_swapped) {
-                creations::Key lk = species::key(pid, species::Stage::Tribe);
-                if (void* prof = species_profile_of(lk)) {
-                    if (swap_tribe_species(ot, prof))
-                        changed = true;
-                }
+            record_stored_assign(store::key_of(pid), ot.pol, ot.pos);
+            // BUG-1580: Always check species sync: retries post-cinematic member swaps AND re-swaps on species change.
+            creations::Key lk = species::key(pid, species::Stage::Tribe);
+            if (void* prof = species_profile_of(lk)) {
+                if (swap_tribe_species(ot, prof))
+                    changed = true;
             }
             continue;
         }
-        // Try persisted assignment by stable player key first
+        // Build eligible site list excluding host, conquered, already-taken, and destroyed/dead-hut tribes (BUG-1580).
+        std::vector<TribeSite> sites;
+        sites.reserve(ts.size());
+        for (void* t : ts) {
+            net::Vec3 p = tribe::tribe_pos(t);
+            float hut_hp = 0.0f;
+            bool live_hut = tribe_has_live_hut(t, &hut_hp);
+            sites.push_back(
+                {tribe_pol(t), p.x, p.y, p.z, t == pt, tribe_conquered(t), is_player_owned_tribe(t), live_hut, hut_hp});
+        }
+        // Try persisted assignment by stable player key first (matches pol first, then pos; rejects dead-hut/conquered).
         void* picked = nullptr;
         std::string pkey = store::key_of(pid);
         if (!pkey.empty()) {
             for (const auto& sa : g_stored_assign) {
                 if (sa.key == pkey) {
-                    void* cand = find_tribe_by_pol_or_pos(0, sa.x, sa.y, sa.z);
-                    if (cand && cand != pt && !tribe_conquered(cand) && !is_player_owned_tribe(cand)) {
-                        picked = cand;
+                    int midx = match_persisted_tribe(sites, sa.pol, sa.x, sa.y, sa.z);
+                    if (midx >= 0 && midx < (int)ts.size()) {
+                        picked = ts[midx];
                         break;
                     }
                 }
             }
         }
         if (!picked) {
-            std::vector<TribeSite> sites;
-            sites.reserve(ts.size());
-            for (void* t : ts) {
-                net::Vec3 p = tribe::tribe_pos(t);
-                sites.push_back({tribe_pol(t), p.x, p.y, p.z, t == pt, tribe_conquered(t), is_player_owned_tribe(t)});
-            }
             int idx = pick_rival_tribe(sites, hp.x, hp.y, hp.z, rivals::base_distance());
             if (idx >= 0 && idx < (int)ts.size())
                 picked = ts[idx];
@@ -1739,14 +2127,16 @@ static void host_ensure_assignments(double now)
         ot.serial = game::object_serial(picked);
         ot.pol = tribe_pol(picked);
         ot.pos = tribe::tribe_pos(picked);
+        record_stored_assign(pkey, ot.pol, ot.pos); // BUG-1580: persist immediately on assignment
         int32_t target_food = starting_rival_food(tribe_food(picked), tribe_food(pt), g_tribe_polish_fix);
         if (target_food != tribe_food(picked))
             tribe_set_food(picked, target_food);
         creations::Key lk = species::key(pid, species::Stage::Tribe);
         if (void* prof = species_profile_of(lk))
             swap_tribe_species(ot, prof);
-        // Remove taken-over tribe from NPC relations table
+        // Remove taken-over tribe from NPC relations table and sync PvP diplomacy immediately
         g_npc_rels.forget_npc(ot.pol);
+        sync_pvp_native_relations();
         changed = true;
         if (H && M)
             H->log(M, SK_INFO, "tribe_rivals: assigned NPC tribe %p (pol %08X) to player %u (dist=%s)", picked, ot.pol,
@@ -1754,16 +2144,14 @@ static void host_ensure_assignments(double now)
     }
     // Fresh Tribe planets start with only 1 NPC tribe; once guests take it over (R7 inviolable), spawn extra tribes
     // so 3-4 players each get a village AND at least 2 non-player NPC tribes exist for stage progression.
-    if (need_guest_tribe) {
-        host_try_auto_form_npc(now, "guest_tribe");
-    } else if (!ts.empty() && !g_stage_won_reported && !g_race_end_handled) {
-        int total_npcs = 0;
-        for (void* t : ts) {
-            if (t && t != pt && !is_player_owned_tribe(t))
-                total_npcs++;
-        }
-        if (total_npcs < 2)
-            host_try_auto_form_npc(now, "free_npc_reserve");
+    int total_npcs = 0;
+    for (void* t : ts) {
+        if (t && t != pt && !is_player_owned_tribe(t) && !tribe_conquered(t) && tribe_has_live_hut(t))
+            total_npcs++;
+    }
+    if (should_auto_form_npc(has_guest, g_auto_form_count, now, g_last_auto_form, need_guest_tribe, total_npcs,
+                             g_stage_won_reported, g_race_end_handled)) {
+        host_try_auto_form_npc(now, need_guest_tribe ? "guest_tribe" : "free_npc_reserve");
     }
     if (changed || now - g_last_assign_tx >= 3.0) {
         g_last_assign_tx = now;
@@ -1835,7 +2223,7 @@ static void host_eval_tick(double now)
     }
 }
 
-// ---- Persistence (store.cpp "tribe.rivals" v1) ----
+// ---- Persistence (store.cpp "tribe.rivals" v2: key + pol + pos; reads legacy v1 too) ----
 static void store_load_if_opened()
 {
     pstore::Store* w = store::world();
@@ -1845,13 +2233,14 @@ static void store_load_if_opened()
     g_store_serial = ser;
     g_stored_assign.clear();
     const pstore::Record* rec = w->get_world("tribe.rivals");
-    if (!rec || rec->ver != 1)
+    if (!rec || (rec->ver != 1 && rec->ver != 2))
         return;
     pstore::In in(rec->data);
     uint8_t n = in.u8();
     for (uint8_t i = 0; i < n && in.ok; i++) {
         StoredAssign sa;
         sa.key = in.str();
+        sa.pol = (rec->ver >= 2) ? in.u32() : 0u;
         sa.x = in.f32();
         sa.y = in.f32();
         sa.z = in.f32();
@@ -1865,8 +2254,7 @@ static void store_save(pstore::Store& st, int64_t now)
     if (!g_rivals_tribe_fix || !g_store_serial || g_store_serial != store::serial() || &st != store::world() ||
         game::mode_id() != modes::kTribe || !is_host() || !active())
         return;
-    std::vector<StoredAssign> list;
-    std::vector<std::string> owners;
+    // Update stored assignments from live owned tribes, while preserving offline players' persisted assignments.
     for (int p = 1; p < rivals::kMaxPlayers; p++) {
         if (!g_owned[p].ptr || !tribe_alive(g_owned[p].ptr, g_owned[p].serial))
             continue;
@@ -1874,20 +2262,24 @@ static void store_save(pstore::Store& st, int64_t now)
         if (k.empty())
             continue;
         net::Vec3 pos = tribe::tribe_pos(g_owned[p].ptr);
-        list.push_back({k, pos.x, pos.y, pos.z});
-        owners.push_back(k);
+        record_stored_assign(k, tribe_pol(g_owned[p].ptr), pos);
     }
-    if (list.empty())
+    if (g_stored_assign.empty())
         return;
+    std::vector<std::string> owners;
     pstore::Out o;
-    o.u8((uint8_t)list.size());
-    for (const auto& sa : list) {
+    uint8_t n = (uint8_t)std::min<size_t>(g_stored_assign.size(), 32);
+    o.u8(n);
+    for (uint8_t i = 0; i < n; i++) {
+        const auto& sa = g_stored_assign[i];
         o.str(sa.key);
+        o.u32(sa.pol);
         o.f32(sa.x);
         o.f32(sa.y);
         o.f32(sa.z);
+        owners.push_back(sa.key);
     }
-    st.put_world("tribe.rivals", 1, o.d);
+    st.put_world("tribe.rivals", 2, o.d);
     store::mark_owners(st, "tribe.rivals.owner", owners, now);
 }
 
@@ -1916,6 +2308,12 @@ static void save_start()
                 g_saved_slots.push_back({ot.ptr, ot.serial, cur, ot.orig_slot});
                 thiscall<void>(a_SetSpeciesSlot, ot.ptr, ot.orig_slot, 0);
             }
+            auto& gs = g_guest_sp[p];
+            if (gs.species_swapped && gs.orig_slot && gs.ptr && tribe_alive(gs.ptr, gs.serial)) {
+                void* cur = thiscall<void*>(a_SpeciesSlot, gs.ptr, 0);
+                g_saved_slots.push_back({gs.ptr, gs.serial, cur, gs.orig_slot});
+                thiscall<void>(a_SetSpeciesSlot, gs.ptr, gs.orig_slot, 0);
+            }
         }
     }
 }
@@ -1941,7 +2339,7 @@ static int live_tribe_members(void* t)
         return 0;
     int live = 0;
     for (void* c : tribe::members(t))
-        if (c && !game::is_dead(c) && game::health(c) > 0.0f)
+        if (c && !citizen_knocked_out(c))
             live++;
     return live;
 }
@@ -2012,8 +2410,95 @@ static void ensure_live_chieftain(void* t)
     }
 }
 
-// BUG-1571: Detect full player tribe wipes on host, grant 5-minute PvP immunity, respawn chieftain + villager
-// after short delay with >= 15 food, and keep Add Baby usable (never Game Over or softlock).
+static void cancel_citizen_action_in_place(void* c)
+{
+    if (!c || !a_DoAction || !a_SetValueVector3)
+        return;
+    net::Vec3 p = game::position(c);
+    float pos[3] = {p.x, p.y, p.z};
+    void* rec = thiscall<void*>(a_DoAction, c, 4, (void*)nullptr, (void*)nullptr);
+    if (rec)
+        thiscall<void>(a_SetValueVector3, (uint8_t*)rec + 0x39, (const float*)pos);
+}
+
+// BUG-1580: Suppress NPC night-sleep-in-hut & panic AI on guest player tribes (set ai+0x5FC bit 0 = IsPlayerOwned
+// and wake healthy sleeping rival citizens) and cancel hostile auto-attacks between non-warring / shielded players.
+static void host_tribe_ai_and_peace_tick(double now)
+{
+    if (!g_tribe_082_fix || !active() || !is_host() || !S || now - g_last_peace_ai_tick < 0.5)
+        return;
+    g_last_peace_ai_tick = now;
+    for (int p = 0; p < rivals::kMaxPlayers; p++) {
+        void* pt = tribe_of_player((uint8_t)p);
+        if (!pt)
+            continue;
+        for (void* c : tribe::members(pt)) {
+            if (!c || citizen_knocked_out(c) || !skg::readable((uint8_t*)c + 0xB50, 4))
+                continue;
+            uint8_t* ai = F<uint8_t*>(c, 0xB4C);
+            if (!ai || !skg::readable(ai, 0x620))
+                continue;
+            // 1. Mark guest rival citizens as player-owned in their AI flags (bit 0) so NPC night-sleep & panic stay off.
+            if (p != 0) {
+                uint32_t& flags = *(uint32_t*)(ai + 0x5FC);
+                if ((flags & 1u) == 0)
+                    flags |= 1u;
+                uint32_t node = *(uint32_t*)(ai + 0x1D8);
+                if (node == 0x04611FF4u) { // sleep node: allow healing when wounded, suppress healthy NPC night-sleep
+                    float hp = game::health(c), mx = game::max_health(c);
+                    if (mx > 0.f && hp >= mx * 0.95f) {
+                        cancel_citizen_action_in_place(c);
+                        g_sleep_suppressed++;
+                        continue;
+                    }
+                }
+            }
+            // 2. Peace / Shield auto-attack guard for BOTH host and guest tribes: cancel hostile order or combat target
+            // pointing at a rival player while not at War or while victim has wipe PvP immunity.
+            bool cancel_hostile = false;
+            uint8_t* head = ai + 0x60C;
+            uint8_t* first = *(uint8_t**)head;
+            if (first && first != head && skg::readable(first, 0x50)) {
+                int act = *(int*)(first + 8);
+                void* tgt = *(void**)(first + 8 + 0x28);
+                if (is_hostile_citizen_action(act) && tgt) {
+                    void* tt = resolve_tribe_from_obj(tgt);
+                    uint8_t to = owner_of_tribe(tt);
+                    if (rivals::valid_player(to) && to != (uint8_t)p &&
+                        (!rivals::at_war((uint8_t)p, to) || is_immune(to)))
+                        cancel_hostile = true;
+                }
+            }
+            if (!cancel_hostile && skg::readable((uint8_t*)c + 0xE80, 4)) {
+                void* comb = F<void*>(c, 0xE7C);
+                if (comb && !IsBadReadPtr(comb, 4)) {
+                    void* obj = vcall<void*>(comb, 0x0C / 4);
+                    void* tt = resolve_tribe_from_obj(obj);
+                    uint8_t to = owner_of_tribe(tt);
+                    if (rivals::valid_player(to) && to != (uint8_t)p &&
+                        (!rivals::at_war((uint8_t)p, to) || is_immune(to)))
+                        cancel_hostile = true;
+                }
+            }
+            if (cancel_hostile) {
+                cancel_citizen_action_in_place(c);
+                g_peace_aggro_cleared++;
+            }
+        }
+    }
+}
+
+static void host_send_chief_respawn(uint8_t pid, int32_t rem_s, bool is_ko)
+{
+    if (!is_host() || !active() || pid == 0 || !rivals::valid_player(pid))
+        return;
+    net::Writer w;
+    write_food_sync(w, {CustomOp::ChiefRespawn, pid, rem_s, is_ko ? 1u : 0u});
+    rivals::send_faction_to(pid, rivals::Stage::Tribe, wire::rivals_faction::SK_STAGE_CUSTOM, w);
+}
+
+// BUG-1571 & BUG-1580: Detect full player tribe wipes on host, grant 5-minute PvP immunity, respawn chieftain + villager
+// after short delay with >= 15 food, keep Add Baby usable, and send chieftain KO countdown notices to guests.
 static void host_wipe_recovery_tick(double now)
 {
     if (!wipe_recovery_active() || !is_host() || !S || now - g_last_wipe_tick < 0.5)
@@ -2023,6 +2508,9 @@ static void host_wipe_recovery_tick(double now)
     bool periodic_tx = (now - g_last_immune_tx >= 3.0);
     if (periodic_tx)
         g_last_immune_tx = now;
+    bool periodic_ko_tx = (now - g_last_chief_ko_tx >= 2.0);
+    if (periodic_ko_tx)
+        g_last_chief_ko_tx = now;
     for (const auto& pl : S->players()) {
         uint8_t p = pl.id;
         if (!rivals::valid_player(p))
@@ -2033,6 +2521,35 @@ static void host_wipe_recovery_tick(double now)
         int live = live_tribe_members(pt);
         if (live > 0)
             ensure_live_chieftain(pt);
+        // BUG-1580: Track knocked-out guest chieftain (while tribe still has other living members) and relay timer.
+        if (g_tribe_082_fix && p != 0 && live > 0 && skg::readable(pt, kTribeChiefKoTimerOff + 4)) {
+            void* ch = F<void*>(pt, 0x11C);
+            bool ko_now = ch && game::listed(ch, kCitizenNoun) && citizen_knocked_out(ch);
+            if (ko_now) {
+                float ko_t = F<float>(pt, kTribeChiefKoTimerOff);
+                if (!g_chief_ko_active[p]) {
+                    g_chief_ko_active[p] = true;
+                    double est = (std::isfinite(ko_t) && ko_t > 1.0f && ko_t < 300.0f) ? (double)ko_t : 90.0;
+                    g_chief_ko_until[p] = now + est;
+                    host_send_chief_respawn(p, (int32_t)std::ceil(est), true);
+                } else {
+                    if (std::isfinite(ko_t) && ko_t > 0.5f && ko_t < 300.0f)
+                        g_chief_ko_until[p] = now + (double)ko_t;
+                    if (periodic_ko_tx) {
+                        int32_t rem = std::max<int32_t>(1, (int32_t)std::ceil(g_chief_ko_until[p] - now));
+                        host_send_chief_respawn(p, rem, true);
+                    }
+                }
+            } else if (g_chief_ko_active[p]) {
+                g_chief_ko_active[p] = false;
+                g_chief_ko_until[p] = 0.0;
+                host_send_chief_respawn(p, 0, false);
+            }
+        } else if (p != 0 && g_chief_ko_active[p]) {
+            g_chief_ko_active[p] = false;
+            g_chief_ko_until[p] = 0.0;
+            host_send_chief_respawn(p, 0, false);
+        }
         auto dec = step_wipe_recovery(g_wipe[p], g_wipe_recovery_fix, active(), true, live, now, g_wipe_respawn_delay,
                                       g_wipe_immune_duration);
         if (dec.started_wipe) {
@@ -2069,8 +2586,7 @@ static void host_wipe_recovery_tick(double now)
             }
             if (first && a_SetChieftain) {
                 thiscall<void>(a_SetChieftain, pt, first);
-                if (old_ch && old_ch != first && game::listed(old_ch, kCitizenNoun) &&
-                    (game::is_dead(old_ch) || game::health(old_ch) <= 0.0f)) {
+                if (old_ch && old_ch != first && game::listed(old_ch, kCitizenNoun) && citizen_knocked_out(old_ch)) {
                     vcall<void>(pt, 0x9C / 4, old_ch, 1); // RemoveMember(old_ch, destroy) so knocked-out chief doesn't linger
                 }
             }
@@ -2110,11 +2626,17 @@ static void reset_runtime(bool restore_game)
     }
     for (int i = 0; i < rivals::kMaxPlayers; i++) {
         g_owned[i] = OwnedTribe{};
+        g_guest_sp[i] = GuestSpeciesState{};
         g_last_raid_at[i] = 0.0;
         g_wipe[i] = PlayerWipeState{};
+        g_chief_ko_until[i] = 0.0;
+        g_chief_ko_active[i] = false;
     }
     g_last_wipe_tick = 0.0;
     g_last_immune_tx = 0.0;
+    g_last_chief_ko_tx = 0.0;
+    g_last_peace_ai_tick = 0.0;
+    g_last_guest_sp_sync = 0.0;
     g_last_hut_floor_notice = 0.0;
     g_guest_assign.clear();
     g_guest_npc_rels.clear();
@@ -2172,6 +2694,7 @@ void tick(double now)
         host_ensure_assignments(now);
         host_spawn_pack_pets();
         host_deliver_creature_payouts();
+        host_tribe_ai_and_peace_tick(now); // BUG-1580
         host_wipe_recovery_tick(now); // BUG-1571
         host_eval_tick(now);
         if (now - g_last_food_tx >= 0.5) {
@@ -2185,6 +2708,10 @@ void tick(double now)
         }
     } else if (is_guest()) {
         apply_guest_perspective();
+        if (g_tribe_082_fix && now - g_last_guest_sp_sync >= 0.5) {
+            g_last_guest_sp_sync = now;
+            guest_sync_species();
+        }
         if (wipe_recovery_active())
             ensure_baby_button_unlocked();
         if (g_swapped && now - g_last_guest_pvp_rel >= 1.0) {
@@ -2205,6 +2732,12 @@ void init(const SkHost* host, SkMod* mod, net::Session* sess)
     a_HutTD = H->sym("SporeCoop::cTribeHut_TakeDamage");
     a_ToolTD = H->sym("SporeCoop::cTribeTool_TakeDamage");
     a_SetConquered = H->sym("SporeCoop::cTribe_SetConquered");
+    a_MissionSetTarget = H->sym("SporeCoop::TribeMission_SetTargetTribe");
+    a_MissionComplete = H->sym("SporeCoop::TribeToTribeMission_Complete");
+    a_StageAddGoal = H->sym("SporeCoop::TribeStage_AddGoalProgress");
+    a_CommunityEditorSell = H->sym("SporeCoop::CommunityEditor_Sell");
+    a_DoAction = H->sym("Simulator::cCreatureCitizen::DoAction");
+    a_SetValueVector3 = H->sym("App::Property::SetValueVector3");
     a_SpeciesSlot = H->sym("SporeCoop::cTribe_SpeciesSlot");
     a_SetSpeciesSlot = H->sym("SporeCoop::cTribe_SetSpeciesSlot");
     a_IsToolPurchased = H->sym("SporeCoop::cTribe_IsToolPurchased");
@@ -2239,6 +2772,14 @@ void init(const SkHost* host, SkMod* mod, net::Session* sess)
         H->hook_create(M, (void*)a_ToolTD, (void*)h_ToolTD, (void**)&o_ToolTD);
     if (a_SetConquered)
         H->hook_create(M, (void*)a_SetConquered, (void*)h_SetConquered, (void**)&o_SetConquered);
+    if (a_MissionSetTarget)
+        H->hook_create(M, (void*)a_MissionSetTarget, (void*)h_MissionSetTarget, (void**)&o_MissionSetTarget);
+    if (a_MissionComplete)
+        H->hook_create(M, (void*)a_MissionComplete, (void*)h_MissionComplete, (void**)&o_MissionComplete);
+    if (a_StageAddGoal)
+        H->hook_create(M, (void*)a_StageAddGoal, (void*)h_StageAddGoal, (void**)&o_StageAddGoal);
+    if (a_CommunityEditorSell)
+        H->hook_create(M, (void*)a_CommunityEditorSell, (void*)h_CommunityEditorSell, (void**)&o_CommunityEditorSell);
     if (a_RelApply)
         H->hook_create(M, (void*)a_RelApply, (void*)h_ApplyRel, (void**)&o_ApplyRel);
     if (a_TribeGoalListener)
@@ -2264,19 +2805,21 @@ void init(const SkHost* host, SkMod* mod, net::Session* sess)
 
 std::string status_summary()
 {
-    char b[480];
+    char b[560];
     void* mt = tribe_of_player(my_id());
     snprintf(b, sizeof b,
              "tribe_rivals: fix=%d active=%d swapped=%d orig_pt=%p my_tribe=%p my_pol=%08X my_food=%d "
              "planner_skipped=%u pvp_hits=%u pvp_blocked=%u hut_clamped=%u tool_pvp=%u conquer_blocked=%u "
              "gifts=%u raids=%u inf_earned=%u draft_unlocked=%u draft_payouts=%u species_swaps=%u "
              "pack_pets_spawned=%u pop_go_blocked=%u wipes=%u recovered=%u immune_blocked=%u immune_broken=%u "
-             "polish=%d foodmat_blocked=%u npcs=%u win_needed=%d\n",
+             "polish=%d foodmat_blocked=%u babies_capped=%u mission_blocked=%u tools_sold=%u peace_cleared=%u "
+             "sleep_suppressed=%u npcs=%u win_needed=%d\n",
              (int)g_rivals_tribe_fix, (int)active(), (int)g_swapped, g_orig_pt, mt, tribe_pol(mt),
              mt ? tribe_food(mt) : 0, g_planner_skipped, g_pvp_hits, g_pvp_blocked, g_hut_clamped, g_tool_pvp_hits,
              g_conquer_blocked, g_gifts_done, g_raids_done, g_inf_earned, g_draft_unlocked, g_draft_payouts_applied,
              g_species_swaps, g_pack_pets_spawned, g_pop_gameover_blocked, g_wipes_detected, g_wipes_recovered,
-             g_immune_blocked, g_immune_broken, (int)g_tribe_polish_fix, g_foodmat_blocked, g_last_npc_count,
+             g_immune_blocked, g_immune_broken, (int)g_tribe_polish_fix, g_foodmat_blocked, g_babies_capped,
+             g_rival_mission_blocked, g_tools_sold, g_peace_aggro_cleared, g_sleep_suppressed, g_last_npc_count,
              g_last_win_needed);
     std::string out = b;
     double now = H ? H->time_seconds() : 0.0;
@@ -2368,9 +2911,13 @@ std::string debug_cmd(const std::vector<std::string>& a)
         tribe::FormSpecies fs;
         if (tribe::form_species_state(ctrl, fs) && fs.past)
             return "error: species list exhausted\n";
+        size_t before = tribe::all_tribes().size();
         void* made = tribe::o_Form(ctrl, 0);
-        char b[96];
-        snprintf(b, sizeof b, "ok: formed npc tribe %p (count=%u)\n", made, (unsigned)tribe::all_tribes().size());
+        size_t after = tribe::all_tribes().size();
+        char b[120];
+        snprintf(b, sizeof b, "%s: formed npc tribe raw=%p al=%d (count=%u->%u)\n",
+                 npc_tribe_formed(before, after) ? "ok" : "no_change", made, (int)(((uintptr_t)made & 0xFFu) != 0),
+                 (unsigned)before, (unsigned)after);
         return b;
     }
 
@@ -2723,8 +3270,9 @@ std::string debug_cmd(const std::vector<std::string>& a)
         int before = (int)tribe::members(t).size();
         int f_before = tribe_food(t);
         if (pid == 0) {
-            if (f_before < 10)
-                return "error: not enough food\n";
+            auto chk = can_spawn_tribe_baby(std::max(live_tribe_members(t), before), tribe_hut_tier(t), f_before, 10);
+            if (!chk.allowed)
+                return std::string("error: ") + chk.reason + "\n";
             if (tribe::spawn_member(t, 0, 0))
                 tribe_add_food(t, -10);
         } else {

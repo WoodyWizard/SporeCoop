@@ -31,7 +31,10 @@ void* civ_of_player(uint8_t pid);
 int player_of_pol(uint32_t pol);
 bool is_guest_nation(void* civ);
 bool is_guest_city(void* city);
+bool is_reserved_nation(void* civ);
+bool is_reserved_city(void* city);
 bool is_player_capital(void* city, uint8_t* owner_out = nullptr);
+bool capital_softlock_fix_enabled();
 int my_capital_specialty();
 int foreign_city_count(void* civ);
 
@@ -43,16 +46,22 @@ bool host_spend_civ_money(void* civ, float cost);
 bool host_charge_player(uint8_t pid, float amount);
 void host_credit_player(uint8_t pid, float amount);
 void host_mark_assign_dirty();
+void host_broadcast_assign_now();
 void host_finalize_sw_spend(uint8_t from, void* civ, float before_wealth, float cost);
 void record_sw_refused_funds();
+void on_city_specialty_changed(void* city, void* civ, int new_spec);
+void note_local_spend(void* civ, float amount);
 
-// RAII guard: temporarily lends host player civ's superweapon tool vector (+0x470) to an NPC-origin guest civ
-// during FireSuperweapon (NPC civs have mIsPlayer==0 so 0x00BF7020 never populates +0x470, crashing at 0x00BF18CA).
+// RAII guard: temporarily lends host player civ's superweapon tool (+0x470) & timer (+0x490) vectors to an
+// NPC-origin guest civ (NPC civs have mIsPlayer==0 so 0x00BF7020 never populates +0x470, crashing at 0x00BF18CA).
 struct SwToolsBorrow {
     void* civ = nullptr;
     uint32_t saved[3] = {};
+    uint32_t saved_timers[3] = {};
     size_t mark = 0;
+    size_t mark_timers = 0;
     bool active_borrow = false;
+    bool active_timers_borrow = false;
     explicit SwToolsBorrow(void* target_civ);
     ~SwToolsBorrow();
     SwToolsBorrow(const SwToolsBorrow&) = delete;
@@ -68,6 +77,7 @@ bool block_convert(void* city, uint32_t converter_pol);
 bool block_superweapon(uint8_t attacker_pid, int sw_type, const float* target);
 void on_city_captured(void* city, uint32_t new_pol);
 void on_allied_trade(uint8_t a, uint8_t b, int gain);
+void on_rel_apply(uint32_t polA, uint32_t polB, uint32_t event_id, float value);
 
 // Vehicles across all player-assigned nations (for civ_own_designs.cpp)
 std::vector<void*> all_player_vehicles();

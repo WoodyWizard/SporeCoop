@@ -43,7 +43,9 @@
 #include "rivals.h"
 #include "space_logic.h"
 #include "space_ext.h"
+#include "space_map.h"
 #include "space_rivals.h"
+#include "spacecoop.h"
 #include "sporekit_game.hpp"
 #include "space_kept.h"
 #include "store.h"
@@ -118,6 +120,14 @@ static uint32_t g_newcomers, g_merge_fix_skipped;
 static bool g_money_range_fix = true;
 COOP_FIX("space.money_range", "BUG-1110", g_money_range_fix,
          "space rivals: budgets outside the game's money range are ignored, the allies merge sum stays in range");
+// BUG-1582: prefer the rival's mirror empire political ID for war puppets (instead of 0xFFFFFFFF "Pirates")
+// when available, and apply rivals relations atomically with A_RIVALS so alliances are not transiently severed.
+static bool g_puppet_pol_fix = true;
+COOP_FIX("space.rivalry_puppet_pol", "BUG-1582", g_puppet_pol_fix,
+         "space rivals: use rival mirror empire political ID on war ship puppets instead of pirate ID when available");
+static bool g_sync_preserve_fix = true;
+COOP_FIX("space.rivalry_sync_preserve", "BUG-1582", g_sync_preserve_fix,
+         "space rivals: apply rivals relations atomically during A_RIVALS sync without intermediate Neutral broadcast");
 static uint32_t g_money_refused;
 // BUG-1414 (audit SPC-2): the switch to Allies needs only the host in Space. A guest in an editor or an adventure entered
 // from Space keeps its merge pending (no money_ptr there), but shared.cpp already takes the host's shared totals into its
@@ -373,7 +383,7 @@ static void drop_props(const std::string& a, const std::string& b)
 }
 
 // one player's request (the host's own ones too); "" = done, else why not
-static std::string host_apply(uint8_t action, uint8_t origin, uint8_t target)
+static std::string host_apply(uint8_t action, uint8_t origin, uint8_t target, bool defer_broadcast = false)
 {
     if (!spaceext::is_host())
         return "not the host";
@@ -433,7 +443,8 @@ static std::string host_apply(uint8_t action, uint8_t origin, uint8_t target)
         g_budget.clear();
         budget_clear();
         g_last_reported = -1;
-        host_broadcast();
+        if (!defer_broadcast)
+            host_broadcast();
         host_event(action == A_RIVALS ? E_RIVALS : E_ALLIES, origin, 0);
         // BUG-1555: keep rivals::config() Space stage mode in sync when toggled from the Space page / console.
         if (!g_in_rivals_sync && rivals::enabled()) {
@@ -861,8 +872,21 @@ bool at_war(uint8_t id)
     return spaceext::connected() && spaceext::rivals() && id != me() && spaceext::relation(me(), id) == Relation::War;
 }
 
-// the puppets of players at war with us belong to no empire (our weapons hit them), the others
-// to ours (the game's own friendly-fire rules keep them safe)
+// the puppets of players at war with us belong to their rival mirror empire (so Spore shows their empire name instead
+// of "Pirates", BUG-1582; falling back to no empire 0xFFFFFFFF if no mirror empire exists yet), and the others to ours
+// (the game's own friendly-fire rules keep them safe)
+static uint32_t rival_mirror_pol_of(uint8_t player_id)
+{
+    const spacemap::Roster* r = spacemap::roster_of(player_id);
+    if (!r || !r->home_star)
+        return 0;
+    void* star = spacecoop::star_record(r->home_star);
+    if (!star || IsBadReadPtr(star, 0x58))
+        return 0;
+    uint32_t pol = F<uint32_t>(star, 0x54);
+    return spaceext::allies_mirror_pol(pol) ? pol : 0;
+}
+
 static void puppets_tick()
 {
     if (!spaceext::in_space() || !spaceext::ctx().partners || !a_PlayerEmpireID)
@@ -874,7 +898,8 @@ static void puppets_tick()
         if (!modes::space_puppet_ok(u))
             continue; // freed by the game, not spawned yet (docs/re/space.md 9.4), or a game ship at its address (BUG-0111)
         bool war = spaceext::rivals() && spaceext::relation(me(), p.id) == Relation::War;
-        uint32_t want = war ? kEnemyPol : mine;
+        uint32_t mirror_pol = (g_puppet_pol_fix && war) ? rival_mirror_pol_of(p.id) : 0;
+        uint32_t want = spacelogic::rival_puppet_pol(g_puppet_pol_fix, spaceext::rivals(), war, mine, mirror_pol, kEnemyPol);
         if (F<uint32_t>(u, kPol) != want)
             F<uint32_t>(u, kPol) = want; // cGameData::SetPoliticalID is this store (0x804880)
         n += war;
@@ -1323,11 +1348,13 @@ void sync_from_rivals(bool space_rivals, const std::vector<std::tuple<uint8_t, u
         g_rivals_sync_pending = false;
         g_rivals_sync_rels.clear();
         callguard::Hold sync_guard(g_in_rivals_sync);
-        if (space_rivals != spaceext::rivals())
-            host_apply(space_rivals ? A_RIVALS : A_ALLIES, 0, 0);
+        bool switched_mode = (space_rivals != spaceext::rivals());
+        bool deferred = switched_mode && space_rivals && g_sync_preserve_fix;
+        if (switched_mode)
+            host_apply(space_rivals ? A_RIVALS : A_ALLIES, 0, 0, deferred);
         if (!spaceext::rivals())
             return;
-        bool changed = false;
+        bool changed = deferred;
         for (const auto& [a, b, rel] : rels) {
             if (a == b)
                 continue;
@@ -1349,7 +1376,7 @@ void sync_from_rivals(bool space_rivals, const std::vector<std::tuple<uint8_t, u
         if (changed)
             host_broadcast();
     } else {
-        if (space_rivals && spaceext::rivals()) {
+        if (space_rivals && (spaceext::rivals() || g_sync_preserve_fix)) {
             for (const auto& [a, b, rel] : rels)
                 if (a != b)
                     spaceext::set_relation(a, b, rel);

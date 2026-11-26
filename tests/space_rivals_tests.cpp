@@ -429,6 +429,144 @@ static void test_relinquish_clean_and_color_fallback()
     }
 }
 
+static void test_r7_hp_floor_and_cinematic_guards()
+{
+    printf("space_rivals: R7 DestroyCity HP floor and intro cinematic guards (BUG-1582)\n");
+    using namespace spacerivals;
+
+    // HP floor keeps protected homeworld cities above 0 HP so DestroyCity never loops forever
+    CHECK(std::fabs(r7_city_hp_floor(1000.0f) - 200.0f) < 0.01f, "20% floor for 1000 max HP");
+    CHECK(std::fabs(r7_city_hp_floor(500.0f) - 100.0f) < 0.01f, "100 HP floor for 500 max HP");
+    CHECK(std::fabs(r7_city_hp_floor(200.0f) - 100.0f) < 0.01f, "min 100 HP floor for 200 max HP");
+    CHECK(std::fabs(r7_city_hp_floor(60.0f) - 60.0f) < 0.01f, "floor never exceeds max HP for small buildings");
+    CHECK(std::fabs(r7_city_hp_floor(0.0f) - kR7CityHpFloorMin) < 0.01f, "zero max HP falls back to 100 HP");
+    CHECK(std::fabs(r7_city_hp_floor(-10.0f) - kR7CityHpFloorMin) < 0.01f, "negative max HP falls back to 100 HP");
+    CHECK(std::fabs(r7_city_hp_floor(NAN) - kR7CityHpFloorMin) < 0.01f, "NaN max HP falls back to 100 HP");
+
+    // Star transfer / CaptureSystem guards
+    CHECK(!r7_should_block_star_transfer(true, false, true, 0x80000001u, 0x80000002u),
+          "intro cinematic suppresses false-positive star transfer block");
+    CHECK(!r7_should_block_star_transfer(true, false, false, 0x80000001u, 0x80000001u),
+          "idempotent same-owner refresh is allowed");
+    CHECK(!r7_should_block_star_transfer(true, true, false, 0x80000001u, 0x80000002u),
+          "emigrating_guard bypasses star transfer block");
+    CHECK(r7_should_block_star_transfer(true, false, false, 0x80000001u, 0x80000002u),
+          "hostile empire takeover on protected home star is blocked");
+    CHECK(r7_should_block_star_transfer(true, false, false, 0x80000001u, 0xFFFFFFFFu),
+          "clearing protected home star to unowned is blocked");
+    CHECK(!r7_should_block_star_transfer(false, false, false, 0x80000001u, 0x80000002u),
+          "unprotected star transfer allowed");
+
+    // City capture progress guards
+    CHECK(!r7_should_block_city_capture(true, true, 0x80000001u, 0x80000002u, 0.5f),
+          "cinematic suppresses city capture block");
+    CHECK(!r7_should_block_city_capture(true, false, 0x80000001u, 0x80000001u, 0.5f),
+          "self-pol capture progress is allowed");
+    CHECK(!r7_should_block_city_capture(true, false, 0x80000001u, 0x80000002u, 0.0f),
+          "zero capture progress is allowed");
+    CHECK(!r7_should_block_city_capture(true, false, 0x80000001u, 0xFFFFFFFFu, 0.5f),
+          "clear-captor sentinel 0xFFFFFFFF is allowed");
+    CHECK(r7_should_block_city_capture(true, false, 0x80000001u, 0x80000002u, 0.25f),
+          "rival capture progress on protected homeworld city is blocked");
+
+    // Notice suppression
+    CHECK(!r7_should_emit_notice(true, true), "no R7 notice during cinematic");
+    CHECK(!r7_should_emit_notice(false, false), "no R7 notice without rival attacker");
+    CHECK(r7_should_emit_notice(false, true), "R7 notice emitted on genuine rival attack");
+}
+
+static void test_city_surface_orientation_and_civ_cleanup()
+{
+    printf("space_rivals: spherical city orientation and Civ->Space homeworld cleanup (BUG-1582)\n");
+    using namespace spacerivals;
+
+    // Equatorial city positions used by sanitize_city_pose / ensure_city_count
+    for (size_t idx = 0; idx < 6; idx++) {
+        float angle = (float)idx * 2.0943951f;
+        float lat = (idx % 2 == 0) ? 0.35f : -0.35f;
+        float rad = 160.0f;
+        float x = rad * std::cos(lat) * std::cos(angle);
+        float y = rad * std::cos(lat) * std::sin(angle);
+        float z = rad * std::sin(lat);
+
+        // Old buggy identity quaternion is tilted (~70 deg) and must be flagged as NOT upright
+        CHECK(!city_quat_upright(x, y, z, 0.0f, 0.0f, 0.0f, 1.0f),
+              "identity quaternion at equatorial latitude is detected as tilted");
+
+        float q[4];
+        city_surface_quat(x, y, z, q);
+        float qn = std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
+        CHECK(std::fabs(qn - 1.0f) < 1e-4f, "surface quaternion is unit length");
+        CHECK(city_quat_upright(x, y, z, q[0], q[1], q[2], q[3]),
+              "computed surface quaternion is upright along planet normal");
+    }
+
+    // Pole edge cases (+Z and -Z)
+    float q_north[4], q_south[4];
+    city_surface_quat(0.0f, 0.0f, 160.0f, q_north);
+    city_surface_quat(0.0f, 0.0f, -160.0f, q_south);
+    CHECK(city_quat_upright(0.0f, 0.0f, 160.0f, q_north[0], q_north[1], q_north[2], q_north[3]),
+          "north pole surface quaternion is upright");
+    CHECK(city_quat_upright(0.0f, 0.0f, -160.0f, q_south[0], q_south[1], q_south[2], q_south[3]),
+          "south pole surface quaternion is upright");
+    CHECK(!city_quat_upright(0.0f, 0.0f, -160.0f, 0.0f, 0.0f, 0.0f, 1.0f),
+          "identity quaternion at south pole is upside-down");
+
+    // Civ->Space homeworld cleanup predicates
+    constexpr uint32_t kHostPol = 0x10000001u;
+    constexpr uint32_t kGuestPol = 0x10000002u;
+    CHECK(!should_cleanup_civ_vehicle(kHostPol, kHostPol), "host own vehicle kept");
+    CHECK(should_cleanup_civ_vehicle(kGuestPol, kHostPol), "foreign Civ tank swept");
+    CHECK(should_cleanup_civ_vehicle(0xFFFFFFFFu, kHostPol), "rogue/unowned Civ vehicle swept");
+    CHECK(!should_cleanup_civ_vehicle(kGuestPol, 0u), "invalid host pol never sweeps");
+
+    CHECK(!should_unify_civ_city(kHostPol, kHostPol), "host own city already unified");
+    CHECK(should_unify_civ_city(kGuestPol, kHostPol), "rival Civ city unified to host");
+    CHECK(!should_unify_civ_city(0xFFFFFFFFu, kHostPol), "unowned sentinel not unified");
+    CHECK(!should_unify_civ_city(kGuestPol, 0xFFFFFFFFu), "invalid host pol never unifies");
+}
+
+static void test_emigration_starter_and_colony_unlock()
+{
+    printf("space_rivals: emigrated guest tutorial/starter/Colony Pack unlock (BUG-1582)\n");
+    using namespace spacerivals;
+
+    // Host never gets emigration unlocks
+    auto host_p = emigration_unlock_plan(true, true, true, true, false, true, true,
+                                         false, false, false, false, false,
+                                         false, false, false, false, false, false, false, false);
+    CHECK(!host_p.any(), "host gets no emigration unlock");
+
+    // Pre-emigration guest gets nothing
+    auto pre_p = emigration_unlock_plan(true, true, false, false, false, true, true,
+                                        false, false, false, false, false,
+                                        false, false, false, false, false, false, false, false);
+    CHECK(!pre_p.any(), "guest before home creation gets no emigration unlock");
+
+    // Fresh emigrated guest gets travel flags, drives, Flight School tools, and 1x Colony Pack
+    auto fresh_p = emigration_unlock_plan(true, true, false, true, false, true, true,
+                                          false, false, false, false, false,
+                                          false, false, false, false, false, false, false, false);
+    CHECK(fresh_p.set_first_comm && fresh_p.set_flight_school && fresh_p.set_mission201,
+          "emigrated guest unlocks tutorial travel flags");
+    CHECK(fresh_p.grant_interplanetary && fresh_p.grant_interstellar && fresh_p.grant_scan && fresh_p.grant_laser &&
+              fresh_p.grant_abduct && fresh_p.grant_drop_cargo && fresh_p.grant_health && fresh_p.grant_energy &&
+              fresh_p.grant_place_colony,
+          "emigrated guest gets starter drives, tools, and Colony Pack");
+
+    // Once Colony Pack was granted (and consumed), it is NOT re-granted endlessly
+    auto after_pack = emigration_unlock_plan(true, true, false, true, false, true, true,
+                                             true, true, true, true, true,
+                                             true, true, true, true, true, true, false, true);
+    CHECK(!after_pack.any(), "consumed Colony Pack is not re-granted after initial grant");
+
+    // While hold_grants is true (kept cargo restore), flags unlock immediately while tool grants wait
+    auto held_p = emigration_unlock_plan(true, true, false, true, true, true, true,
+                                         false, false, false, false, false,
+                                         false, false, false, false, false, false, false, false);
+    CHECK(held_p.any_flag() && !held_p.any_tool(), "hold_grants defers tool grants but allows flags");
+}
+
 int main()
 {
     test_r5_emigration_filtering_and_scoring();
@@ -439,6 +577,9 @@ int main()
     test_space_influence_scaling_and_draft_payout();
     test_space_npc_ui_list();
     test_relinquish_clean_and_color_fallback();
+    test_r7_hp_floor_and_cinematic_guards();
+    test_city_surface_orientation_and_civ_cleanup();
+    test_emigration_starter_and_colony_unlock();
     printf("space_rivals_tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

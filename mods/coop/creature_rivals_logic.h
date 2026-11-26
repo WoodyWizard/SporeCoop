@@ -71,6 +71,10 @@ inline bool finite3(float x, float y, float z)
 }
 
 // ---------------- R2: Nest & Family Herd Selection ----------------
+constexpr float kWildNeighborRadius = 300.0f; // m: radius to count nearby wild nests for habitability (BUG-1583)
+constexpr int kMinHabitableNeighbors = 2;     // minimum other non-epic wild nests nearby for a habitable continent
+constexpr float kLandClusterRadius = 300.0f;  // m: proximity link radius for connected wild-nest landmass graph
+
 struct NestCandidate {
     uint32_t id = 0; // unique local handle / serial
     float x = 0, y = 0, z = 0;
@@ -80,50 +84,162 @@ struct NestCandidate {
     bool is_epic = false;
     bool is_extinct = false;
     int members = 0;
+    bool water_between_host = false; // true if terrain samples between host and candidate drop below water_radius (BUG-1583)
 };
 
-// Deterministically pick an eligible planet nest at the requested BaseDistance from host_nest.
+// Pure helper for terrain water-crossing check along host -> candidate great-circle samples (BUG-1583).
+// Requires at least 2 underwater samples (ground < water - margin) to avoid single-sample coastal puddle false positives.
+inline bool has_water_on_samples(float water_r, const std::vector<float>& ground_radii, float margin = 0.5f)
+{
+    if (!std::isfinite(water_r) || water_r <= 1.0f || ground_radii.empty())
+        return false;
+    int wet = 0;
+    for (float gr : ground_radii) {
+        if (std::isfinite(gr) && gr > 1.0f && gr < water_r - margin) {
+            if (++wet >= 2)
+                return true;
+        }
+    }
+    return false;
+}
+
+// Deterministically pick a habitable, populated planet nest at the requested BaseDistance from host_nest (BUG-1583).
+// Strongly prefers populated nests (members > 0) surrounded by >= kMinHabitableNeighbors wild non-epic nests,
+// and on Near/Middle strongly prefers the host's connected landmass (no ocean crossing / connected wild-nest cluster).
 // Returns candidate.id, or 0 if none eligible.
 inline uint32_t select_nest_for_guest(const NestCandidate& host_nest, const std::vector<NestCandidate>& candidates,
                                       const std::vector<uint32_t>& already_taken_ids, rivals::BaseDistance pref)
 {
     std::set<uint32_t> taken(already_taken_ids.begin(), already_taken_ids.end());
-    struct Entry {
-        uint32_t id;
-        float d;
-    };
-    std::vector<Entry> pool;
-    std::vector<Entry> fallback;
-    for (const auto& c : candidates) {
-        if (c.id == 0 || !c.has_nest || c.is_avatar_herd || c.is_epic || c.is_extinct || taken.count(c.id))
+
+    // Collect all live non-epic, non-extinct wild nests to measure surrounding ecosystem & landmass connectivity.
+    std::vector<size_t> wild_indices;
+    wild_indices.reserve(candidates.size());
+    for (size_t i = 0; i < candidates.size(); i++) {
+        const auto& c = candidates[i];
+        if (c.id == 0 || !c.has_nest || c.is_avatar_herd || c.is_epic || c.is_extinct)
             continue;
         if (!finite3(c.x, c.y, c.z))
             continue;
-        float d = dist3(host_nest.x, host_nest.y, host_nest.z, c.x, c.y, c.z);
-        if (d >= kMinNestSeparation)
-            pool.push_back({c.id, d});
-        else
-            fallback.push_back({c.id, d});
+        wild_indices.push_back(i);
     }
-    if (pool.empty())
-        pool = std::move(fallback);
-    if (pool.empty())
+
+    // BFS connected landmass cluster reachable from host_nest through dry-land wild-nest hops.
+    std::vector<bool> in_host_cluster(candidates.size(), false);
+    std::vector<size_t> queue;
+    bool host_valid = finite3(host_nest.x, host_nest.y, host_nest.z);
+    if (host_valid) {
+        for (size_t idx : wild_indices) {
+            const auto& c = candidates[idx];
+            if (!c.water_between_host &&
+                dist3(host_nest.x, host_nest.y, host_nest.z, c.x, c.y, c.z) <= kLandClusterRadius) {
+                in_host_cluster[idx] = true;
+                queue.push_back(idx);
+            }
+        }
+        for (size_t qi = 0; qi < queue.size(); qi++) {
+            const auto& a = candidates[queue[qi]];
+            for (size_t idx : wild_indices) {
+                if (in_host_cluster[idx])
+                    continue;
+                const auto& b = candidates[idx];
+                // Do not bridge across water between dry-land and across-water nests
+                if (b.water_between_host)
+                    continue;
+                if (dist3(a.x, a.y, a.z, b.x, b.y, b.z) <= kLandClusterRadius) {
+                    in_host_cluster[idx] = true;
+                    queue.push_back(idx);
+                }
+            }
+        }
+    }
+    const bool any_in_host_cluster = !queue.empty();
+
+    struct Entry {
+        uint32_t id;
+        float d;
+        int tier;
+    };
+    std::vector<Entry> scored;
+    scored.reserve(wild_indices.size());
+
+    for (size_t idx : wild_indices) {
+        const auto& c = candidates[idx];
+        if (taken.count(c.id))
+            continue;
+        float d = dist3(host_nest.x, host_nest.y, host_nest.z, c.x, c.y, c.z);
+        int nearby_wild = 0;
+        for (size_t oidx : wild_indices) {
+            if (oidx == idx)
+                continue;
+            const auto& o = candidates[oidx];
+            if (dist3(c.x, c.y, c.z, o.x, o.y, o.z) <= kWildNeighborRadius)
+                nearby_wild++;
+        }
+        bool populated = c.members > 0;
+        bool habitable = nearby_wild >= kMinHabitableNeighbors;
+        bool same_landmass = !c.water_between_host && (any_in_host_cluster ? in_host_cluster[idx] : true);
+
+        int tier = 0;
+        if (d < kMinNestSeparation) {
+            tier = populated ? 7 : 8;
+        } else if (pref == rivals::BaseDistance::Far) {
+            if (populated && habitable)
+                tier = 0;
+            else if (populated && nearby_wild >= 1)
+                tier = 1;
+            else if (populated)
+                tier = 2;
+            else if (habitable)
+                tier = 3;
+            else
+                tier = 4;
+        } else { // Near or Middle
+            if (populated && habitable && same_landmass)
+                tier = 0;
+            else if (populated && habitable)
+                tier = 1;
+            else if (populated && same_landmass)
+                tier = 2;
+            else if (populated)
+                tier = 3;
+            else if (habitable && same_landmass)
+                tier = 4;
+            else if (habitable)
+                tier = 5;
+            else
+                tier = 6;
+        }
+        scored.push_back({c.id, d, tier});
+    }
+    if (scored.empty())
         return 0;
+
+    int best_tier = scored[0].tier;
+    for (const auto& e : scored)
+        if (e.tier < best_tier)
+            best_tier = e.tier;
+
+    std::vector<Entry> pool;
+    for (const auto& e : scored)
+        if (e.tier == best_tier)
+            pool.push_back(e);
+
     std::sort(pool.begin(), pool.end(), [](const Entry& a, const Entry& b) {
         if (std::fabs(a.d - b.d) > 1e-3f)
             return a.d < b.d;
         return a.id < b.id;
     });
     size_t n = pool.size();
-    size_t idx = 0;
+    size_t pick_idx = 0;
     if (pref == rivals::BaseDistance::Near) {
-        idx = 0;
+        pick_idx = 0;
     } else if (pref == rivals::BaseDistance::Middle) {
-        idx = n / 2;
+        pick_idx = n / 2;
     } else { // Far
-        idx = n - 1;
+        pick_idx = n - 1;
     }
-    return pool[idx].id;
+    return pool[pick_idx].id;
 }
 
 // ---------------- R4: Per-Player Wild Species Relations ----------------
@@ -429,15 +545,17 @@ inline bool allow_creature_damage(bool rivals_active, bool friendly_fire_setting
 {
     if (kind == TargetKind::WildNpc)
         return true;
+    if (attacker_player == target_player)
+        return false;
     if (!rivals_active) {
         if (kind == TargetKind::PlayerAvatar)
-            return attacker_player != target_player && friendly_fire_setting;
+            return friendly_fire_setting;
         // Together mode: own family cannot be hit by own party
         return false;
     }
-    if (attacker_player == target_player)
-        return false;
-    return at_war;
+    // Creature Rivals (BUG-1583): symmetric PvP when at War OR Friendly Fire is ON;
+    // symmetrically blocked for both Host -> Guest and Guest -> Host when Neutral/Allied with FF OFF.
+    return at_war || friendly_fire_setting;
 }
 
 inline bool block_extinction(bool rivals_active, bool is_player_home_species)
@@ -445,14 +563,52 @@ inline bool block_extinction(bool rivals_active, bool is_player_home_species)
     return rivals_active && is_player_home_species;
 }
 
-// Partner puppet pass-through / combat-hover filter policy (BUG-1553):
-// In Creature Rivals, War rivals MUST NOT be passed through or skipped by combat hover;
-// Neutral and Allied rivals remain pass-through and non-targetable in combat stance.
+// Symmetric relationship value between two players' creatures/families in Creature Rivals (BUG-1583):
+// Same player -> Allied (6); War or Friendly Fire ON -> Hostile (2); Allied -> Allied (6); else Neutral (3).
+inline int32_t resolve_player_pair_relation(uint8_t pa, uint8_t pb, bool at_war, bool allied, bool friendly_fire_setting)
+{
+    if (pa == pb)
+        return kRelAllied;
+    if (at_war || friendly_fire_setting)
+        return kRelHostile;
+    return allied ? kRelAllied : kRelNeutral;
+}
+
+// Partner puppet pass-through / combat-hover filter policy (BUG-1553, BUG-1583):
+// When players can damage each other (War or Friendly Fire ON in Rivals, or Friendly Fire ON in Together),
+// puppets MUST NOT be passed through or skipped by combat hover; otherwise pass through symmetrically.
 inline bool should_pass_through_puppet(bool rivals_active, bool friendly_fire_setting, bool at_war)
 {
     if (rivals_active)
-        return !at_war;
+        return !(at_war || friendly_fire_setting);
     return !friendly_fire_setting;
+}
+
+// Creature cursor override decision for PvP targeting symmetry (BUG-1583):
+// Returns:
+//   7 (attack cursor) when in combat stance and PvP is allowed against another player / rival family,
+//   0x1C (walk cursor) when native cursor tried to attack (7) a non-hostile player / family,
+//   -1 when native cursor should stay unchanged.
+inline int evaluate_pvp_cursor_override(bool rivals_active, bool friendly_fire_setting, uint8_t viewer,
+                                        uint8_t target_owner, TargetKind kind, bool at_war, bool combat_stance,
+                                        int native_cursor)
+{
+    if (kind == TargetKind::WildNpc || target_owner == 255 || viewer == 255)
+        return -1;
+    if (viewer == target_owner) {
+        if (native_cursor == 7)
+            return 0x1C;
+        return -1;
+    }
+    bool can_hit = allow_creature_damage(rivals_active, friendly_fire_setting, viewer, target_owner, kind, at_war);
+    if (can_hit) {
+        if (combat_stance)
+            return 7; // Force Attack cursor even if guest's native PlayerSpecies == host species
+        return -1;
+    }
+    if (native_cursor == 7)
+        return 0x1C; // Block asymmetric Attack cursor when FF OFF and not at War
+    return -1;
 }
 
 // Guest pack recruitment policy in Creature Rivals (BUG-1553):
@@ -546,9 +702,49 @@ struct WildNpcUiRow {
     bool can_smooth = false;
 };
 
+// Human-readable F9 Creature Rivals player nest status row (BUG-1583: no raw coordinates or hex sp= ids).
+inline std::string format_player_nest_row(const std::string& player_name, bool is_me, const std::string& species_name,
+                                          float dist_meters, int brain_level, bool russian)
+{
+    std::string out = "  ";
+    out += player_name.empty() ? (russian ? "Игрок" : "Player") : player_name;
+    if (is_me)
+        out += russian ? " (вы)" : " (you)";
+    out += ": ";
+    if (!species_name.empty()) {
+        out += species_name;
+        out += " - ";
+    }
+    char buf[96];
+    if (is_me) {
+        if (brain_level >= 0) {
+            snprintf(buf, sizeof buf, russian ? "Ваше гнездо, Мозг %d/%d" : "Your nest, Brain %d/%d",
+                     std::clamp(brain_level, 0, kMaxBrainLevel), kMaxBrainLevel);
+        } else {
+            snprintf(buf, sizeof buf, "%s", russian ? "Ваше гнездо" : "Your nest");
+        }
+    } else {
+        int dm = std::isfinite(dist_meters) && dist_meters >= 0.0f ? (int)std::lround(dist_meters) : -1;
+        if (dm >= 0 && brain_level >= 0) {
+            snprintf(buf, sizeof buf, russian ? "%d м, Мозг %d/%d" : "%d m, Brain %d/%d", dm,
+                     std::clamp(brain_level, 0, kMaxBrainLevel), kMaxBrainLevel);
+        } else if (dm >= 0) {
+            snprintf(buf, sizeof buf, russian ? "%d м" : "%d m", dm);
+        } else if (brain_level >= 0) {
+            snprintf(buf, sizeof buf, russian ? "Мозг %d/%d" : "Brain %d/%d",
+                     std::clamp(brain_level, 0, kMaxBrainLevel), kMaxBrainLevel);
+        } else {
+            snprintf(buf, sizeof buf, "%s", russian ? "Гнездо" : "Nest");
+        }
+    }
+    out += buf;
+    return out;
+}
+
 inline std::vector<WildNpcUiRow> build_wild_npc_ui_list(const PerPlayerSpeciesTables& tables, uint8_t viewer,
                                                         const std::vector<uint32_t>& discovered_species,
-                                                        const std::map<uint32_t, std::string>* names = nullptr)
+                                                        const std::map<uint32_t, std::string>* names = nullptr,
+                                                        bool russian = false)
 {
     std::vector<WildNpcUiRow> out;
     if (!rivals::valid_player(viewer))
@@ -563,6 +759,7 @@ inline std::vector<WildNpcUiRow> build_wild_npc_ui_list(const PerPlayerSpeciesTa
                 ids.insert(inst);
 
     out.reserve(ids.size());
+    unsigned fallback_idx = 0;
     for (uint32_t inst : ids) {
         if (tables.is_home_species(inst) || tables.is_extinct(inst))
             continue;
@@ -576,8 +773,9 @@ inline std::vector<WildNpcUiRow> build_wild_npc_ui_list(const PerPlayerSpeciesTa
                 row.label = it->second;
         }
         if (row.label.empty()) {
-            char buf[32];
-            snprintf(buf, sizeof buf, "Wild 0x%08X", inst);
+            fallback_idx++;
+            char buf[48];
+            snprintf(buf, sizeof buf, russian ? "Дикий вид #%u" : "Wild species #%u", fallback_idx);
             row.label = buf;
         }
         row.allied = allied;
@@ -629,7 +827,7 @@ inline void build_creature_draft_items(const std::vector<PartKey>& winner_parts,
     }
     for (size_t i = 0; i < picked.size(); i++) {
         char lbl[40];
-        snprintf(lbl, sizeof lbl, "Creature Part %08X", picked[i].first);
+        snprintf(lbl, sizeof lbl, "Creature Part #%u", (unsigned)(i + 1));
         rivals::Draft::Item it{};
         it.id = (uint32_t)(i + 1);
         it.kind = 1; // Creature part

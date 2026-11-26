@@ -44,6 +44,11 @@ static net::Session* S;
 static bool g_line_fix = true;
 COOP_FIX("species.line", "BUG-1270", g_line_fix, "species: every player's own species line per stage (tribe outfit, Civ outfit, Civ designs) is kept and sent to every game");
 
+// BUG-1583: never select a Tribe/Civ outfit creation as a Creature-stage base species in the species line.
+static bool g_starter_filter_fix = true;
+COOP_FIX("species.creature_starter_filter", "BUG-1583", g_starter_filter_fix,
+         "species: never resolve or auto-select a Tribe or Civ outfit creation as a Creature-stage base species");
+
 // ---- the table (every game: as the host sent it; the host: its own) ----
 static std::map<uint8_t, Row> g_rows;
 // ---- the line creations registered here: shared instance -> key ----
@@ -152,6 +157,9 @@ static Resolved resolve(uint8_t pid)
         return r; // no row (a player of an older version, or not sent yet): the world's own from Creature on
     const Row& row = it->second;
     Key creature = creation_here(pid, creations::kCreature);
+    // BUG-1583: do not resolve a Tribe/Civ outfit creation as the Creature-stage base species
+    if (g_starter_filter_fix && is_row_outfit_instance(row, row.creature))
+        creature = {};
     auto have = [&](Source s) {
         return s == Source::Creature ? creature.instance != 0
                : s == Source::Tribe  ? registered(row.tribe.shared).instance != 0
@@ -278,6 +286,8 @@ static uint32_t own_creature()
 {
     creations::Option o = creations::mine(creations::kCreature);
     if (!o.key.instance)
+        return 0;
+    if (g_starter_filter_fix && is_row_outfit_instance(g_own, o.key.instance))
         return 0;
     for (auto& c : creations::options(creations::kCreature))
         if (c.key == o.key)

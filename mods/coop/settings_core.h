@@ -420,6 +420,29 @@ inline Opened on_world_open(bool pending, bool has_stored, const Values& stored,
     return has_stored ? Opened::Stored : Opened::Defaults;
 }
 
+// BUG-1579: Sticky lobby defaults / mode preset across multiple new worlds in the same lobby.
+// - Explicit lobby setting change (`pending`): applies to the next opened world (Opened::Pending).
+// - Existing world with stored settings (`has_stored`): loads its stored values cleanly (Opened::Stored) so a lobby
+//   Rivals preset never contaminates an existing Together save.
+// - New world (`!has_stored`) with active sticky lobby preset/defaults (`sticky_lobby`): applies `lobby_defaults`
+//   across 1st, 2nd, 3rd... new worlds instead of reverting to Together coop.ini defaults after the 1st world.
+inline Opened on_world_open_sticky(bool pending, bool has_stored, const Values& stored, const Values& defaults,
+                                   bool sticky_lobby, const Values& lobby_defaults, Values& cur)
+{
+    if (pending)
+        return Opened::Pending;
+    if (has_stored) {
+        cur = stored;
+        return Opened::Stored;
+    }
+    if (sticky_lobby) {
+        cur = lobby_defaults;
+        return Opened::Pending;
+    }
+    cur = defaults;
+    return Opened::Defaults;
+}
+
 // the settings that differ from the defaults, "key=value ..." ("" when none): the support report and the lobby
 inline std::string diff_text(const Values& v, const Values& defaults)
 {

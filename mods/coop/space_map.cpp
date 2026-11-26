@@ -1325,6 +1325,14 @@ static void click_tick()
     int x = 0, y = 0;
     POINT pt;
     RECT rc;
+    if (context() != 2 || g_covered) {
+        // BUG-1582: clear stale galaxy tags and ignore clicks outside uncovered galaxy view so clicks in system/planet
+        // view or over dialogs never trigger phantom fly_to / go_to_partner jumps.
+        g_tags.clear();
+        g_click_seen = mouse::clicks();
+        g_lmb = false;
+        return;
+    }
     if (mouse::g_fix) {
         uint32_t n = mouse::clicks();
         bool edge = n != g_click_seen;

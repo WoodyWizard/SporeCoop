@@ -473,4 +473,35 @@ inline bool tutorial_sync_should_send(bool fix, bool is_host, bool in_space, boo
     return false;
 }
 
+// BUG-1582: Co-op Space contracts must never auto-offer in Space Rivals (regardless of space.contracts period),
+// and an active/pending contract must reset cleanly when the Space world changes so timers never leak across saves.
+inline bool contract_auto_offer_allowed(bool fix, bool in_space, bool has_partners, double period,
+                                        bool space_rivals_active, bool legacy_rivals)
+{
+    if (!in_space || !has_partners || period <= 0.0)
+        return false;
+    if (fix && (space_rivals_active || legacy_rivals))
+        return false;
+    return true;
+}
+
+inline bool contract_should_reset_on_world_change(bool fix, uint32_t contract_epoch, uint32_t cur_epoch,
+                                                  bool has_contract)
+{
+    return fix && has_contract && contract_epoch != 0 && cur_epoch != 0 && contract_epoch != cur_epoch;
+}
+
+// BUG-1582: In Space Rivals PvP, prefer the rival's mirror empire political ID for war puppets so Spore labels
+// their ship with their empire name instead of "Pirates" (0xFFFFFFFF), falling back to enemy_fallback when no
+// mirror empire exists yet.
+inline uint32_t rival_puppet_pol(bool fix, bool rivals_on, bool at_war, uint32_t my_pol, uint32_t rival_mirror_pol,
+                                 uint32_t enemy_fallback = 0xFFFFFFFFu)
+{
+    if (!rivals_on || !at_war)
+        return my_pol;
+    if (fix && rival_mirror_pol != 0 && rival_mirror_pol != 0xFFFFFFFFu && rival_mirror_pol != my_pol)
+        return rival_mirror_pol;
+    return enemy_fallback;
+}
+
 } // namespace spacelogic

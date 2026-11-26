@@ -33,6 +33,7 @@
 #include "tribe.h"
 #include "tribe_internal.h"
 #include "tribe_logic.h"
+#include "tribe_rivals.h"
 #include "species_line.h"
 
 namespace tribe {
@@ -195,7 +196,8 @@ void birth_begin(void* t, uint8_t owner)
 {
     g_birth_tribe = nullptr, g_birth_prof = nullptr, g_birth_key = 0;
     if (!g_birth_fix || !g_own_species_fix || !o_SpeciesSlot || !t || t != player_tribe() || !C.sess ||
-        !C.sess->connected() || game::mode_id() != modes::kTribe || owner >= 0xFE || world::cinematic_playing())
+        !C.sess->connected() || game::mode_id() != modes::kTribe || owner >= 0xFE || world::cinematic_playing() ||
+        tribe_rivals::active())
         return;
     uint8_t* slot = slot_profile(t);
     if (!slot)
@@ -222,6 +224,11 @@ void birth_end(const std::vector<void*>& made)
 void species_tick(double now)
 {
     if (!g_ok || game::mode_id() != modes::kTribe || !a_SpSetSpecies)
+        return;
+    // BUG-1580: In Tribe Rivals each player owns a distinct cTribe whose species slot + members are managed by
+    // tribe_rivals on both Host and Guest; skip Together-mode per-member own_species pass so it never fights or
+    // reverts a player's rival tribe species.
+    if (tribe_rivals::active())
         return;
     uint32_t ep = game::world_epoch();
     if (ep != g_sp_epoch) {

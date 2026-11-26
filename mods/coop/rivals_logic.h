@@ -34,6 +34,7 @@ constexpr uint8_t kMaxDraftPicks = 5;
 constexpr uint8_t kDefaultDraftPicks = 3;
 
 constexpr double kDefaultBreakNoticeSecs = 60.0;
+constexpr double kDefaultAllyBreakGraceSecs = 2.5; // BUG-1579: prevent double-click on Accept Ally from immediately firing BreakAlly
 constexpr double kDefaultProtectSecs = 600.0;
 constexpr double kDefaultDraftTimeoutSecs = 60.0;
 
@@ -120,6 +121,46 @@ enum class InfluenceAction : uint8_t {
 
 inline bool valid_stage(Stage s) { return (uint8_t)s < kStages; }
 inline bool valid_player(uint8_t id) { return id < kMaxPlayers; }
+
+// BUG-1579: Influence purchase gate and per-stage display price scaling (Creature DNA 1x, Tribe food 1x,
+// Civ Sporebucks 10x, Space Sporebucks 200x).
+inline bool can_buy_influence_in_stage(Stage st, bool has_hook)
+{
+    return valid_stage(st) && st != Stage::Cell && has_hook;
+}
+
+inline int32_t stage_influence_buy_price(Stage st, int32_t base_price)
+{
+    if (base_price <= 0)
+        return 0;
+    int64_t mult = 1;
+    if (st == Stage::Civ)
+        mult = 10;
+    else if (st == Stage::Space)
+        mult = 200;
+    int64_t res = (int64_t)base_price * mult;
+    if (res > 99999999LL)
+        res = 99999999LL;
+    return (int32_t)res;
+}
+
+// BUG-1579: Decide how opening a world store affects the active Rivals config so a lobby Rivals preset
+// never contaminates an existing Together save while remaining sticky for new worlds.
+enum class WorldOpenAction : uint8_t {
+    LoadStored = 0,
+    SuppressTogetherSave = 1,
+    ApplyLobbyConfig = 2,
+};
+
+inline WorldOpenAction classify_world_open(bool has_rivals_record, size_t existing_records,
+                                           size_t existing_players, int64_t saved_ts)
+{
+    if (has_rivals_record)
+        return WorldOpenAction::LoadStored;
+    if (existing_records > 0 || existing_players > 0 || saved_ts != 0)
+        return WorldOpenAction::SuppressTogetherSave;
+    return WorldOpenAction::ApplyLobbyConfig;
+}
 
 inline Stage stage_from_mode(uint32_t mode)
 {
@@ -323,12 +364,18 @@ struct Relations {
     std::vector<Proposal> proposals;
     std::vector<BreakNotice> break_notices;
     double break_delay_secs = kDefaultBreakNoticeSecs;
+    double ally_break_grace_secs = kDefaultAllyBreakGraceSecs; // BUG-1579: 2.5 s debounce after forming alliance
+    double allied_since[kMaxPlayers][kMaxPlayers] = {};
+    bool has_allied_since[kMaxPlayers][kMaxPlayers] = {};
 
     void reset()
     {
         for (int i = 0; i < kMaxPlayers; i++)
-            for (int j = 0; j < kMaxPlayers; j++)
+            for (int j = 0; j < kMaxPlayers; j++) {
                 matrix[i][j] = Relation::Neutral;
+                allied_since[i][j] = 0.0;
+                has_allied_since[i][j] = false;
+            }
         proposals.clear();
         break_notices.clear();
     }
@@ -367,6 +414,10 @@ struct Relations {
             r = Relation::Neutral;
         matrix[a][b] = r;
         matrix[b][a] = r;
+        if (r != Relation::Ally) {
+            has_allied_since[a][b] = false;
+            has_allied_since[b][a] = false;
+        }
         drop_proposals(a, b);
         drop_break_notice(a, b);
         return true;
@@ -406,6 +457,8 @@ struct Relations {
                 return "can only propose alliance when neutral";
             if (has_proposal(target, actor, ProposalKind::Ally)) {
                 set(actor, target, Relation::Ally);
+                allied_since[actor][target] = allied_since[target][actor] = now;
+                has_allied_since[actor][target] = has_allied_since[target][actor] = true;
                 set_ev("allied");
                 return "";
             }
@@ -419,6 +472,8 @@ struct Relations {
             if (!has_proposal(target, actor, ProposalKind::Ally))
                 return "no alliance proposal";
             set(actor, target, Relation::Ally);
+            allied_since[actor][target] = allied_since[target][actor] = now;
+            has_allied_since[actor][target] = has_allied_since[target][actor] = true;
             set_ev("allied");
             return "";
         case RelAction::DeclineAlly:
@@ -442,6 +497,13 @@ struct Relations {
         case RelAction::BreakAlly: {
             if (cur != Relation::Ally)
                 return "not allied";
+            // BUG-1579: 2.5 s grace window after forming an alliance so double-clicking Accept Ally
+            // (which flips into the Break Ally button in place) cannot accidentally break the alliance.
+            if (ally_break_grace_secs > 0.0 && has_allied_since[actor][target]) {
+                double elapsed = now - allied_since[actor][target];
+                if (elapsed >= 0.0 && elapsed < ally_break_grace_secs)
+                    return "Alliance just formed, wait a moment";
+            }
             uint8_t lo = actor < target ? actor : target;
             uint8_t hi = actor < target ? target : actor;
             if (find_break_notice(lo, hi))

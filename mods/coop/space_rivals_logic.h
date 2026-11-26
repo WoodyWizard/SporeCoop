@@ -517,6 +517,184 @@ inline std::string format_protection_notice(uint32_t tool_inst, bool is_capture,
               : "A player's homeworld cannot be destroyed!";
 }
 
+// ---------------- BUG-1582: R7 HP Floor, Cinematic Guards, Surface Orientation & Civ Cleanup ----------------
+constexpr float kR7CityHpFloorMin = 100.0f;
+constexpr float kR7CityHpFloorFrac = 0.20f;
+constexpr uint32_t kToolPlaceColony = 0x733B280Cu; // placecolony (Colony Incredi-Pak)
+
+// Safe HP floor restored on a protected homeworld city's hall/buildings when h_DestroyCity blocks destruction,
+// so Spore stops re-invoking DestroyCity every simulation tick (fixes 67x infinite R7 spam).
+inline float r7_city_hp_floor(float max_hp)
+{
+    if (!std::isfinite(max_hp) || max_hp <= 0.0f)
+        return kR7CityHpFloorMin;
+    float frac = max_hp * kR7CityHpFloorFrac;
+    float base = std::min(max_hp, kR7CityHpFloorMin);
+    return std::max(base, frac);
+}
+
+// Decide whether h_CaptureSystem / h_TransferStar should block a star transfer on a protected homeworld.
+// Allows idempotent ownership refreshes (cur_owner_pol == new_pol) and Space intro cinematic setup.
+inline bool r7_should_block_star_transfer(bool protected_star, bool emigrating_guard, bool cinematic_playing,
+                                          uint32_t cur_owner_pol, uint32_t new_pol)
+{
+    if (!protected_star || emigrating_guard || cinematic_playing)
+        return false;
+    if (new_pol != 0xFFFFFFFFu && cur_owner_pol == new_pol)
+        return false;
+    return true;
+}
+
+// Decide whether h_SetCaptureProgress should block city capture progress on a protected homeworld.
+// Ignores intro cinematic transitions and self-pol updates.
+inline bool r7_should_block_city_capture(bool protected_planet, bool cinematic_playing, uint32_t city_pol,
+                                         uint32_t attacker_pol, float pct)
+{
+    if (!protected_planet || cinematic_playing || pct <= 0.0f || attacker_pol == 0xFFFFFFFFu)
+        return false;
+    if (city_pol != 0 && city_pol != 0xFFFFFFFFu && attacker_pol == city_pol)
+        return false;
+    return true;
+}
+
+// Suppress R7 protection notices during Space intro cinematics or self-inflicted/non-rival events.
+inline bool r7_should_emit_notice(bool cinematic_playing, bool has_rival_attacker = true)
+{
+    return !cinematic_playing && has_rival_attacker;
+}
+
+// Build a unit quaternion (x, y, z, w) that aligns a city's local +Z axis to the outward radial surface normal
+// at planet position (x, y, z). Prevents cities from lying tilted on their sides at non-polar latitudes.
+inline void city_surface_quat(float x, float y, float z, float q_out[4])
+{
+    float len2 = x * x + y * y + z * z;
+    if (!std::isfinite(len2) || len2 < 1e-6f) {
+        q_out[0] = 0.0f;
+        q_out[1] = 0.0f;
+        q_out[2] = 0.0f;
+        q_out[3] = 1.0f;
+        return;
+    }
+    float inv = 1.0f / std::sqrt(len2);
+    float ux = x * inv, uy = y * inv, uz = z * inv;
+    if (uz < -0.9999f) {
+        // 180 deg rotation around +X aligns +Z to -Z.
+        q_out[0] = 1.0f;
+        q_out[1] = 0.0f;
+        q_out[2] = 0.0f;
+        q_out[3] = 0.0f;
+        return;
+    }
+    float s = std::sqrt((1.0f + uz) * 2.0f);
+    float qx = -uy / s;
+    float qy = ux / s;
+    float qz = 0.0f;
+    float qw = 0.5f * s;
+    float qlen = std::sqrt(qx * qx + qy * qy + qz * qz + qw * qw);
+    if (qlen > 1e-6f) {
+        qx /= qlen;
+        qy /= qlen;
+        qz /= qlen;
+        qw /= qlen;
+    }
+    q_out[0] = qx;
+    q_out[1] = qy;
+    q_out[2] = qz;
+    q_out[3] = qw;
+}
+
+// Returns true when quaternion (qx, qy, qz, qw) is valid and its rotated +Z axis points radially outward at (x, y, z).
+inline bool city_quat_upright(float x, float y, float z, float qx, float qy, float qz, float qw)
+{
+    float len2 = x * x + y * y + z * z;
+    float qn2 = qx * qx + qy * qy + qz * qz + qw * qw;
+    if (!std::isfinite(len2) || len2 < 1e-6f || !std::isfinite(qn2) || qn2 < 0.01f)
+        return false;
+    float inv_q = 1.0f / std::sqrt(qn2);
+    qx *= inv_q;
+    qy *= inv_q;
+    qz *= inv_q;
+    qw *= inv_q;
+    // Rotated +Z column of unit quaternion.
+    float rx = 2.0f * (qx * qz + qw * qy);
+    float ry = 2.0f * (qy * qz - qw * qx);
+    float rz = 1.0f - 2.0f * (qx * qx + qy * qy);
+    float inv_p = 1.0f / std::sqrt(len2);
+    float dot = rx * (x * inv_p) + ry * (y * inv_p) + rz * (z * inv_p);
+    return std::isfinite(dot) && dot >= 0.70f;
+}
+
+// Civ -> Space homeworld cleanup predicates: identify leftover foreign Civ-stage vehicles and rival cities.
+inline bool should_cleanup_civ_vehicle(uint32_t veh_pol, uint32_t my_pol)
+{
+    if (my_pol == 0 || my_pol == 0xFFFFFFFFu)
+        return false;
+    return veh_pol != my_pol;
+}
+
+inline bool should_unify_civ_city(uint32_t city_pol, uint32_t my_pol)
+{
+    if (my_pol == 0 || my_pol == 0xFFFFFFFFu)
+        return false;
+    if (city_pol == 0 || city_pol == 0xFFFFFFFFu)
+        return false;
+    return city_pol != my_pol;
+}
+
+// Space Rivals emigrated guest starter unlock plan: unlocks Space tutorial travel gates (Story201 / Flight School)
+// so an emigrated guest is never trapped in its new home star system or locked out of Colony Packs.
+struct EmigUnlockPlan {
+    bool set_first_comm = false;
+    bool set_flight_school = false;
+    bool set_mission201 = false;
+    bool grant_interplanetary = false;
+    bool grant_interstellar = false;
+    bool grant_scan = false;
+    bool grant_laser = false;
+    bool grant_abduct = false;
+    bool grant_drop_cargo = false;
+    bool grant_health = false;
+    bool grant_energy = false;
+    bool grant_place_colony = false;
+
+    bool any_flag() const { return set_first_comm || set_flight_school || set_mission201; }
+    bool any_tool() const
+    {
+        return grant_interplanetary || grant_interstellar || grant_scan || grant_laser || grant_abduct ||
+               grant_drop_cargo || grant_health || grant_energy || grant_place_colony;
+    }
+    bool any() const { return any_flag() || any_tool(); }
+};
+
+inline EmigUnlockPlan emigration_unlock_plan(bool fix, bool active, bool is_host, bool home_created, bool hold_grants,
+                                             bool has_mm, bool has_inv, bool first_comm, bool flight_school,
+                                             bool mission201, bool has_interplanetary, bool has_interstellar,
+                                             bool has_scan, bool has_laser, bool has_abduct, bool has_drop_cargo,
+                                             bool has_health, bool has_energy, bool has_place_colony,
+                                             bool colony_pack_already_granted)
+{
+    EmigUnlockPlan p;
+    if (!fix || !active || is_host || !home_created)
+        return p;
+    if (has_mm) {
+        p.set_first_comm = !first_comm;
+        p.set_flight_school = !flight_school;
+        p.set_mission201 = !mission201;
+    }
+    if (has_inv && !hold_grants) {
+        p.grant_interplanetary = !has_interplanetary;
+        p.grant_interstellar = !has_interstellar;
+        p.grant_scan = !has_scan;
+        p.grant_laser = !has_laser;
+        p.grant_abduct = !has_abduct;
+        p.grant_drop_cargo = !has_drop_cargo;
+        p.grant_health = !has_health;
+        p.grant_energy = !has_energy;
+        p.grant_place_colony = !has_place_colony && !colony_pack_already_granted;
+    }
+    return p;
+}
+
 // ---------------- Space NPC Empire Influence Helpers ----------------
 inline int32_t influence_gain_for_event(uint32_t ev_id, std::string* reason_out = nullptr)
 {

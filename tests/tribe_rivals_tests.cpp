@@ -314,9 +314,10 @@ static void test_wsync_isolation_policy()
 
 static void test_pvp_diplomacy_and_creature_payout()
 {
-    printf("tribe_rivals: PvP native diplomacy & Creature -> Tribe draft payout (BUG-1554)\n");
+    printf("tribe_rivals: PvP native diplomacy & Creature -> Tribe draft payout (BUG-1554/BUG-1580)\n");
     CHECK(pvp_npc_rel_for(rivals::Relation::War) == NpcRel::Hostile);
-    CHECK(pvp_npc_rel_for(rivals::Relation::Ally) == NpcRel::Allied);
+    CHECK(pvp_npc_rel_for(rivals::Relation::Ally) == NpcRel::Friendly);
+    CHECK(pvp_npc_rel_for(rivals::Relation::Ally) != NpcRel::Allied);
     CHECK(pvp_npc_rel_for(rivals::Relation::Neutral) == NpcRel::Neutral);
 
     // Creature Rivals draft payout for guest winner (pid = 1)
@@ -558,6 +559,152 @@ static void test_tribe_polish_food_and_raid()
     CHECK(decide_host_order(true, 8, 1, kNoOwner, false, false) == OrderDecision::AllowNative);
 }
 
+static void test_bug1580_pop_cap_and_oform()
+{
+    printf("tribe_rivals: pop cap (6/9/12) & o_Form real tribe-count growth (BUG-1580)\n");
+    CHECK(tribe_pop_cap(0) == 6);
+    CHECK(tribe_pop_cap(1) == 9);
+    CHECK(tribe_pop_cap(2) == 12);
+    CHECK(tribe_pop_cap(3) == 12);
+    CHECK(tribe_pop_cap(99) == 12);
+
+    auto ok0 = can_spawn_tribe_baby(5, 0, 10);
+    CHECK(ok0.allowed && ok0.pop_cap == 6);
+    auto cap0 = can_spawn_tribe_baby(6, 0, 100);
+    CHECK(!cap0.allowed && cap0.pop_cap == 6 && std::strcmp(cap0.reason, "pop_cap") == 0);
+    auto cap_over = can_spawn_tribe_baby(151, 0, 500);
+    CHECK(!cap_over.allowed && std::strcmp(cap_over.reason, "pop_cap") == 0);
+
+    CHECK(can_spawn_tribe_baby(8, 1, 10).allowed);
+    CHECK(!can_spawn_tribe_baby(9, 1, 50).allowed);
+    CHECK(can_spawn_tribe_baby(11, 2, 10).allowed);
+    CHECK(!can_spawn_tribe_baby(12, 2, 50).allowed);
+    auto poor = can_spawn_tribe_baby(3, 0, 9);
+    CHECK(!poor.allowed && std::strcmp(poor.reason, "no_food") == 0);
+
+    // o_Form growth check: never fooled by stale upper EAX bits when tribe list did not grow
+    CHECK(!npc_tribe_formed(2, 2));
+    CHECK(!npc_tribe_formed(3, 2));
+    CHECK(npc_tribe_formed(2, 3));
+
+    // Solo guard + cooldown + count cap for auto-forming NPC tribes
+    CHECK(!should_auto_form_npc(false, 0, 10.0, 0.0, false, 0, false, false)); // solo host: never auto-form
+    CHECK(!should_auto_form_npc(true, 6, 10.0, 0.0, true, 0, false, false));   // exhausted 6
+    CHECK(!should_auto_form_npc(true, 1, 5.0, 4.0, true, 0, false, false));    // < 2s cooldown
+    CHECK(should_auto_form_npc(true, 1, 10.0, 0.0, true, 2, false, false));    // need guest tribe
+    CHECK(should_auto_form_npc(true, 1, 10.0, 0.0, false, 1, false, false));   // < 2 free NPCs
+    CHECK(!should_auto_form_npc(true, 1, 10.0, 0.0, false, 2, false, false));  // enough free NPCs
+    CHECK(!should_auto_form_npc(true, 1, 10.0, 0.0, false, 1, true, false));   // stage already won
+}
+
+static void test_bug1580_species_sync()
+{
+    printf("tribe_rivals: post-cinematic member swap & species-change re-swap (BUG-1580)\n");
+    // During intro cinematic: swap tribe slot immediately, defer member swap until cinematic ends
+    auto p1 = decide_species_swap(0xAAA, 0, false, true, false);
+    CHECK(p1.swap_slot && !p1.swap_members && !p1.mark_members_done);
+
+    // Cinematic ended, slot already swapped, members not yet swapped -> swap members and mark done
+    auto p2 = decide_species_swap(0xAAA, 0xAAA, false, false, false);
+    CHECK(!p2.swap_slot && p2.swap_members && p2.mark_members_done);
+
+    // Everything matches -> no-op
+    auto p3 = decide_species_swap(0xAAA, 0xAAA, true, false, true);
+    CHECK(!p3.swap_slot && !p3.swap_members && !p3.mark_members_done);
+
+    // A newly grown/spawned adult still has old species -> re-swap members
+    auto p4 = decide_species_swap(0xAAA, 0xAAA, true, false, false);
+    CHECK(!p4.swap_slot && p4.swap_members && p4.mark_members_done);
+
+    // Player changed species on rejoin / outfitter (0xAAA -> 0xBBB) -> re-swap BOTH slot and members!
+    auto p5 = decide_species_swap(0xBBB, 0xAAA, true, false, true);
+    CHECK(p5.swap_slot && p5.swap_members && p5.mark_members_done);
+
+    // Empty want key -> no-op
+    auto p0 = decide_species_swap(0, 0xAAA, true, false, false);
+    CHECK(!p0.swap_slot && !p0.swap_members && !p0.mark_members_done);
+}
+
+static void test_bug1580_persisted_assign_and_destroyed_exclusion()
+{
+    printf("tribe_rivals: persisted pol assignment & destroyed/dead-hut exclusion (BUG-1580)\n");
+    std::vector<TribeSite> sites = {
+        {0x23D0, 0.f, 0.f, 0.f, true, false, false, true, 100.f},     // 0: host
+        {0x23E1, 50.f, 0.f, 0.f, false, true, false, false, 0.f},     // 1: conquered + dead maroon tribe
+        {0x23E2, 60.f, 0.f, 0.f, false, false, false, false, 0.f},    // 2: dead hut (not yet flagged conquered)
+        {0x23E3, 70.f, 0.f, 0.f, false, false, false, true, 0.f},     // 3: 0 HP hut
+        {0x23DF, 200.f, 0.f, 0.f, false, false, false, true, 100.f},  // 4: guest's real live tribe
+        {0x23E4, 300.f, 0.f, 0.f, false, false, false, true, 80.f},   // 5: another live NPC tribe
+    };
+    CHECK(!is_eligible_rival_tribe(sites[0]));
+    CHECK(!is_eligible_rival_tribe(sites[1]));
+    CHECK(!is_eligible_rival_tribe(sites[2]));
+    CHECK(!is_eligible_rival_tribe(sites[3]));
+    CHECK(is_eligible_rival_tribe(sites[4]));
+
+    // Matches persisted pol FIRST even if position drifted
+    CHECK(match_persisted_tribe(sites, 0x23DF, 0.f, 0.f, 0.f) == 4);
+    // Rejects persisted pol if that tribe was destroyed/conquered
+    CHECK(match_persisted_tribe(sites, 0x23E1, 50.f, 0.f, 0.f) == -1);
+    CHECK(match_persisted_tribe(sites, 0x23E2, 60.f, 0.f, 0.f) == -1);
+    // Legacy v1 (pol==0): falls back to nearest eligible by position within 45 m, skipping dead huts
+    CHECK(match_persisted_tribe(sites, 0, 205.f, 0.f, 0.f) == 4);
+    CHECK(match_persisted_tribe(sites, 0, 55.f, 0.f, 0.f) == -1);
+    // Base distance picker also excludes dead/0-HP huts
+    CHECK(pick_rival_tribe(sites, 0.f, 0.f, 0.f, rivals::BaseDistance::Near) == 4);
+    CHECK(pick_rival_tribe(sites, 0.f, 0.f, 0.f, rivals::BaseDistance::Far) == 5);
+}
+
+static void test_bug1580_alliance_buy_influence_sell_and_ko()
+{
+    printf("tribe_rivals: rival-alliance exclusion, buy_influence, tool sell & chieftain KO (BUG-1580)\n");
+    // Rival alliance exclusion from vanilla NPC missions / totem / 5-tribe progress bar
+    CHECK(should_block_rival_mission(true, 0));
+    CHECK(should_block_rival_mission(true, 1));
+    CHECK(should_block_rival_mission(true, 3));
+    CHECK(!should_block_rival_mission(true, kNoOwner));
+    CHECK(!should_block_rival_mission(false, 1));
+
+    // on_buy_influence MUST return false when inactive or non-host (no free buys)
+    CHECK(!can_buy_influence(false, true, true, 100, 10));
+    CHECK(!can_buy_influence(true, false, true, 100, 10));
+    CHECK(!can_buy_influence(true, true, false, 100, 10));
+    CHECK(!can_buy_influence(true, true, true, 5, 10));
+    CHECK(can_buy_influence(true, true, true, 10, 10));
+    CHECK(can_buy_influence(true, true, true, 50, 15));
+
+    // Tool sell refund
+    CHECK(tool_sell_refund(1) == 15);
+    CHECK(tool_sell_refund(3) == 25);
+    CHECK(tool_sell_refund(9) == 20);
+    CHECK(tool_sell_refund(0) == 0);
+    CHECK(tool_sell_refund(10) == 0);
+
+    // Knocked-out chieftain detection (prevents stuck 1-alive wounded ghost state at 0.3 HP)
+    CHECK(!is_citizen_knocked_out(false, 100.f, 0u, 0x05524115u));
+    CHECK(is_citizen_knocked_out(true, 100.f, 0u, 0u));
+    CHECK(is_citizen_knocked_out(false, 0.f, 0u, 0u));
+    CHECK(is_citizen_knocked_out(false, 0.3f, 0x800u, 0u));
+    CHECK(is_citizen_knocked_out(false, 0.3f, 0u, 0x05CA7FA7u));
+
+    // Wire roundtrip for CustomOp::SellTool and CustomOp::ChiefRespawn
+    {
+        net::Writer w;
+        write_food_sync(w, {CustomOp::SellTool, 1, 3, 0});
+        net::Reader r(w.data.data(), w.data.size());
+        FoodSyncMsg m;
+        CHECK(read_food_sync(r, m) && m.op == CustomOp::SellTool && m.player_id == 1 && m.value == 3);
+    }
+    {
+        net::Writer w;
+        write_food_sync(w, {CustomOp::ChiefRespawn, 2, 75, 1});
+        net::Reader r(w.data.data(), w.data.size());
+        FoodSyncMsg m;
+        CHECK(read_food_sync(r, m) && m.op == CustomOp::ChiefRespawn && m.player_id == 2 && m.value == 75 &&
+              m.tools_mask == 1);
+    }
+}
+
 int main()
 {
     test_pick_rival_tribe();
@@ -575,6 +722,10 @@ int main()
     test_pack_pet_handoff();
     test_wipe_recovery_and_immunity();
     test_tribe_polish_food_and_raid();
+    test_bug1580_pop_cap_and_oform();
+    test_bug1580_species_sync();
+    test_bug1580_persisted_assign_and_destroyed_exclusion();
+    test_bug1580_alliance_buy_influence_sell_and_ko();
     if (g_fail) {
         printf("tribe_rivals_tests: %d FAILED\n", g_fail);
         return 1;

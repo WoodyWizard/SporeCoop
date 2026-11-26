@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <deque>
 
+#include "civ_rivals.h"
 #include "designs.h"
 #include "fixes.h"
 #include "game.h"
@@ -179,6 +180,17 @@ static void SK_THISCALL h_Apply(void* planner, uint32_t id, const uint32_t* key)
         o_Apply(planner, id, key);
         return;
     }
+    // BUG-1581: in Civ Rivals, the guest controls its own rival cCivilization (not the host's shared one).
+    // Apply the design natively to the guest's own nation so vehicle buttons & previews stay populated, AND
+    // queue it to the species line so the host applies the same design to the guest's nation on the host.
+    if (civ_rivals::active()) {
+        o_Apply(planner, id, key);
+        if (key[0])
+            queue(false, id, key);
+        H->log(M, SK_INFO, "civedit: Civ Rivals guest applied own design %08X = %08X and queued for host sync (BUG-1581)",
+               id, key[0]);
+        return;
+    }
     g_applies_skipped++;
     if (!guest_own())
         g_offline_returns++; // BUG-1298
@@ -226,6 +238,14 @@ static int SK_THISCALL h_PlannerMsg(void* planner, uint32_t msg, void* data)
             continue;
         uint32_t mine[3] = {e.v[0], e.v[1], e.v[2]};
         uint32_t old[3] = {was ? was->v[0] : 0u, was ? was->v[1] : 0u, was ? was->v[2] : 0u};
+        if (civ_rivals::active()) {
+            // BUG-1581: in Civ Rivals keep the guest's Sporepedia pick on its own rival nation and ship to host.
+            if (mine[1] == kBuildingType || mine[1] == kVehicleType)
+                queue(false, e.key, mine);
+            H->log(M, SK_INFO, "civedit: Civ Rivals guest Sporepedia pick %08X for design %08X kept & queued (BUG-1581)",
+                   mine[0], e.key);
+            continue;
+        }
         if (old[0])
             thiscall<void>(a_SetDesign, civ, e.key, (const uint32_t*)old); // the host's again (and its objects)
         else if (uint32_t* p = (uint32_t*)designs::civ_design(e.key))

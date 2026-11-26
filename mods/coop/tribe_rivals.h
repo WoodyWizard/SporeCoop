@@ -45,6 +45,8 @@ int override_choose_action(void* target_obj, int vanilla_action);
 // Guest baby purchase in Tribe Rivals (spawns in guest's own tribe and charges guest's own food).
 // Returns true if handled by Tribe Rivals.
 bool handle_guest_baby(uint8_t from, float x, float y, float z);
+// BUG-1580: True if local player's tribe in Tribe Rivals is below its 6/9/12 pop cap and can buy a baby.
+bool can_local_buy_baby();
 
 // Guest tool purchase food helpers in Tribe Rivals (BUG-1554).
 int32_t player_food(uint8_t pid);

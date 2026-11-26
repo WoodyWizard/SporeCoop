@@ -25,9 +25,11 @@
 #include <set>
 
 #include "game.h"
+#include "lifecycle.h"
 #include "net/utf8.h"
 #include "space_ext.h"
 #include "space_logic.h"
+#include "space_rivals.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
 #include "world.h"
@@ -113,6 +115,12 @@ COOP_FIX("contracts.wave_away", "BUG-0227", g_wave_away_fix, "space: an armada r
 // starts. Off: resumed once more (0.7.13).
 bool g_wave_empty_fix = true;
 COOP_FIX("space.armada_empty_wave", "BUG-1038", g_wave_empty_fix, "space: an armada wave whose raid brought no ships starts a new raid");
+// BUG-1582: clear active/pending contracts on world change so timers never leak across saves, and never
+// auto-offer co-op contracts while Space Rivals or legacy Rivals mode is active.
+bool g_rivals_world_fix = true;
+COOP_FIX("space.contracts_rivals_world", "BUG-1582", g_rivals_world_fix,
+         "space: clear contracts on world change and suppress co-op contract auto-offers in Space Rivals");
+uint32_t g_contract_epoch;        // world_epoch() in which g was offered/received
 bool g_wave_resumed;              // the running wave was resumed (BUG-0227)
 int g_wave_away_result;           // the wave's raid ended while the host was away: 5 or 6 (BUG-0227)
 bool g_tough_reuse, g_hide_ships; // tests: the address-reuse simulation / the resumed raid brings no ships
@@ -567,6 +575,10 @@ Contract g_sent;
 void publish()
 {
     double t = now();
+    if (g.state != S_NONE && g_contract_epoch == 0)
+        g_contract_epoch = spaceext::world_epoch();
+    else if (g.state == S_NONE)
+        g_contract_epoch = 0;
     announce(g_sent, g);
     g_sent = g;
     g_last_publish = t;
@@ -1128,8 +1140,38 @@ void survey_tick(double dt)
         publish();
 }
 
+void reset_state()
+{
+    g = Contract{};
+    g_sent = Contract{};
+    g_wave_on = false;
+    g_seen.clear();
+    g_wave_mission = nullptr;
+    g_toughened.clear();
+    g_wave_resumed = false;
+    g_wave_away_result = 0;
+    g_alive.clear();
+    g_next_offer = 0;
+    g_contract_epoch = 0;
+}
+
 void host_tick(double t)
 {
+    if (spacelogic::contract_should_reset_on_world_change(g_rivals_world_fix, g_contract_epoch, spaceext::world_epoch(),
+                                                          g.state != S_NONE)) {
+        H->log(M, SK_INFO, "contracts: cleared stale contract id=%u on Space world change (BUG-1582)", g.id);
+        reset_state();
+        if (connected())
+            publish();
+        return;
+    }
+    if (g_rivals_world_fix && g.state == S_OFFERED && (spacerivals::active() || spaceext::rivals())) {
+        H->log(M, SK_INFO, "contracts: cleared pending offer id=%u because Space Rivals is active (BUG-1582)", g.id);
+        reset_state();
+        if (connected())
+            publish();
+        return;
+    }
     double gap = g_last_tick > 0 ? t - g_last_tick : 0;
     double dt = std::min(1.0, gap);
     g_last_tick = t;
@@ -1173,9 +1215,11 @@ void host_tick(double t)
         g = Contract{};
         publish();
     }
-    // a new offer every few minutes while the players are in space together
-    bool together = spaceext::in_space() && C().partners && !C().partners().empty();
-    if (!together || g_period <= 0)
+    // a new offer every few minutes while the players are in space together (never in Space Rivals, BUG-1582)
+    bool allow_offer = spacelogic::contract_auto_offer_allowed(
+        g_rivals_world_fix, spaceext::in_space(), C().partners && !C().partners().empty(), g_period,
+        spacerivals::active(), spaceext::rivals());
+    if (!allow_offer)
         g_next_offer = 0;
     else if (!g_next_offer)
         g_next_offer = t + std::min(g_first_delay, g_period);
@@ -1230,7 +1274,16 @@ void tick(double t)
         owed_tick(); // BUG-0694 (also after the session ended: the reward was earned in it)
     if (!connected()) {
         if (g.state != S_NONE)
-            g = Contract{};
+            reset_state();
+        return;
+    }
+    if (spacelogic::contract_should_reset_on_world_change(g_rivals_world_fix, g_contract_epoch, spaceext::world_epoch(),
+                                                          g.state != S_NONE)) {
+        if (H && M)
+            H->log(M, SK_INFO, "contracts: cleared contract id=%u on world change (BUG-1582)", g.id);
+        reset_state();
+        if (host())
+            publish();
         return;
     }
     if (host()) {
@@ -1252,6 +1305,7 @@ void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
             return;
         announce(g, c);
         g = c;
+        g_contract_epoch = c.state != S_NONE ? spaceext::world_epoch() : 0;
     } else if (kind == K_ACCEPT && host()) {
         wire::space_contracts::Accept m;
         if (m.read(r) && m.id == g.id)
@@ -1263,20 +1317,19 @@ void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
     }
 }
 
+LIFECYCLE_HOOK(
+    "space_contracts.world", lifecycle::kWorldChange, -35,
+    [](const lifecycle::Ctx&) {
+        if (g_rivals_world_fix && (g.state != S_NONE || g_wave_on || g_next_offer != 0)) {
+            if (H && M)
+                H->log(M, SK_INFO, "contracts: world changed, clearing contract state id=%u (BUG-1582)", g.id);
+            reset_state();
+        }
+    },
+    false);
+
 // lifecycle-exempt: a Space feature (space_ext.h), run by spaceext::session_end_all from the spacecoop.session hook
-void on_session_end()
-{
-    g = Contract{};
-    g_sent = Contract{};
-    g_wave_on = false;
-    g_seen.clear();
-    g_wave_mission = nullptr;
-    g_toughened.clear();
-    g_wave_resumed = false;
-    g_wave_away_result = 0;
-    g_alive.clear();
-    g_next_offer = 0;
-}
+void on_session_end() { reset_state(); }
 
 std::vector<spaceext::Row> rows()
 {

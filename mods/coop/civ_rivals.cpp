@@ -58,6 +58,31 @@ static bool g_fix_civ_sw_spend = true;
 COOP_FIX("rivals.civ_sw_spend", "BUG-1563", g_fix_civ_sw_spend,
          "civ: validate and deduct guest superweapon mWealth cost directly in Civ Rivals");
 
+// BUG-1581: protect guest superweapon targeting/firing by borrowing +0x470 tools and +0x490 timers on guest civs.
+static bool g_fix_civ_guest_sw = true;
+COOP_FIX("rivals.civ_guest_sw", "BUG-1581", g_fix_civ_guest_sw,
+         "civ: borrow superweapon tool & timer vectors for guest NPC-origin civilizations so guest superweapons never crash");
+
+// BUG-1581: persist player_key -> pol_id across disconnects/rejoins (and host store) so reconnecting guests keep their nation.
+static bool g_fix_civ_rejoin_nation = true;
+COOP_FIX("rivals.civ_rejoin_nation", "BUG-1581", g_fix_civ_rejoin_nation,
+         "civ: remember each player's rival nation across disconnects and reloads so rejoining guests reclaim their original nation");
+
+// BUG-1581: prefer large (non-small / highest building-slot) free NPC starting cities for guests.
+static bool g_fix_civ_large_start = true;
+COOP_FIX("rivals.civ_large_start", "BUG-1581", g_fix_civ_large_start,
+         "civ: prefer large starting cities for guests in Civ Rivals instead of small coastal cities");
+
+// BUG-1581: credit vanilla diplomatic Sporebucks gifts (event 0x0526E4FB) to the recipient rival player's mWealth.
+static bool g_fix_civ_diplo_gift = true;
+COOP_FIX("rivals.civ_diplo_gift", "BUG-1581", g_fix_civ_diplo_gift,
+         "civ: credit vanilla diplomatic gifts of Sporebucks to the recipient player's wealth in Civ Rivals");
+
+// BUG-1581: prevent NPCs from ruining a protected player capital into a permanent softlock.
+static bool g_fix_civ_capital_softlock = true;
+COOP_FIX("rivals.civ_capital_softlock", "BUG-1581", g_fix_civ_capital_softlock,
+         "civ: repel NPC sieges on protected player capitals so capitals are not softlocked in permanent ruins");
+
 // ---- Game addresses ----
 static uintptr_t a_GetPlayerCiv = 0;
 static uintptr_t a_GetPlayerPol = 0;
@@ -83,12 +108,14 @@ static uintptr_t a_GameCivShowWon = 0;
 
 constexpr uint32_t kRelDelta = 0x530CF07; // raw delta relationship event (wsync.cpp)
 constexpr uintptr_t kCivWealth = 0x98;
-constexpr uintptr_t kCivSwTools = 0x470; // eastl::vector<intrusive_ptr<cSpaceToolData>> (12 entries on player civ, empty on NPC)
+constexpr uintptr_t kCivSwTools = 0x470;  // eastl::vector<intrusive_ptr<cSpaceToolData>> (12 entries on player civ, empty on NPC)
+constexpr uintptr_t kCivSwTimers = 0x490; // eastl::vector<cGameTime> (12 entries, stride 0x20)
 constexpr uintptr_t kCivDomesticBudget = 0x4AC;
 constexpr uintptr_t kCivExpansionBudget = 0x4B0;
 constexpr uintptr_t kCivIsPlayer = 0x89;
 constexpr uintptr_t kCivSelectable = 0xD4;
 constexpr uintptr_t kCityIsPlayer = 0x33C;
+constexpr uintptr_t kCitySmallFlag = 0x519; // cCity mbSmallCity (verified at 0x00BF21C3)
 constexpr uintptr_t kCitySpatialOff = 0x120;
 
 // ---- Hook originals ----
@@ -115,6 +142,9 @@ CALL_GUARD("civ_rivals.bypass_swap", g_bypass_swap);
 static bool g_in_save = false;
 
 static std::array<PlayerNation, kMaxPlayers> g_nations{};
+static std::string g_slot_key[kMaxPlayers]; // host: stable player key currently assigned to each slot
+static NationMemory g_saved_nations;        // host: player_key -> original nation across disconnects/reloads (BUG-1581)
+static uint32_t g_saved_store_serial = 0;
 static NpcRelationTable g_npc_rels;
 static std::map<uint32_t, float> g_guest_npc_rels; // guest's received per-player NPC relations
 static bool g_swap_applied = false;
@@ -135,14 +165,43 @@ static std::set<uint8_t> g_species_applied;
 static std::set<std::pair<uint8_t, uint32_t>> g_war_captured_from; // (winner, loser)
 static uint16_t g_last_city_counts[kMaxPlayers] = {};
 
+// Guest persistent borrow of orig_player_civ() +0x470 tools and +0x490 timers while perspective swap is active (BUG-1581).
+struct GuestSwBorrow {
+    void* civ = nullptr;
+    uint32_t saved_tools[3] = {};
+    uint32_t saved_timers[3] = {};
+    bool tools = false;
+    bool timers = false;
+};
+static GuestSwBorrow g_guest_sw_borrow;
+
+// Recent SpendMoney observation for pairing with vanilla diplomacy gift ApplyRelationship (0x0526E4FB, BUG-1581).
+struct LocalSpend {
+    void* civ = nullptr;
+    float amount = 0.0f;
+    double at = -100.0;
+};
+static LocalSpend g_last_local_spend;
+
+// Host-side guest design sync tracking (BUG-1581: keep guest's custom vehicle/building designs in guest civ's culture map).
+struct AppliedDesign {
+    uint32_t orig[3] = {};
+    uint32_t applied[3] = {};
+};
+static std::map<std::pair<uint8_t, uint32_t>, AppliedDesign> g_applied_designs; // (pid, design_id) -> keys
+static bool g_designs_dirty = true;
+static double g_last_design_sync = -100.0;
+
 // ---- Diagnostics counters ----
 static struct {
     uint32_t takeovers = 0;
+    uint32_t reclaimed = 0;
     uint32_t ai_blocked = 0;
     uint32_t swap_hits = 0;
     uint32_t cap_blocked = 0;
     uint32_t conv_blocked = 0;
     uint32_t sw_blocked = 0;
+    uint32_t sw_guest_borrows = 0;
     uint32_t pvp_allowed = 0;
     uint32_t pvp_blocked = 0;
     uint32_t war_captures = 0;
@@ -150,6 +209,7 @@ static struct {
     uint32_t gifts_done = 0;
     uint32_t gifts_rejected = 0;
     uint32_t spice_gifts = 0;
+    uint32_t diplo_gifts = 0;
     uint32_t inf_bought = 0;
     uint32_t inf_turned = 0;
     uint32_t inf_protected = 0;
@@ -167,6 +227,7 @@ static struct {
     uint32_t spec_converted = 0;
     uint32_t sw_spent = 0;
     uint32_t sw_refused_funds = 0;
+    uint32_t designs_synced = 0;
 } g_st;
 
 // ---- Helpers ----
@@ -312,6 +373,300 @@ bool is_guest_city(void* city)
     return pid >= 1 && pid < kMaxPlayers;
 }
 
+bool is_reserved_nation(void* civ)
+{
+    if (!civ || !active() || !g_fix_civ_rejoin_nation)
+        return false;
+    uint32_t pol = civ::pol_of(civ);
+    if (!pol || pol == 0xFFFFFFFFu)
+        return false;
+    int pid = player_of_pol(pol);
+    if (pid >= 1 && pid < kMaxPlayers)
+        return true;
+    return is_host() && g_saved_nations.is_reserved_pol(pol);
+}
+
+bool is_reserved_city(void* city)
+{
+    if (!city || !active() || !g_fix_civ_rejoin_nation)
+        return false;
+    uint32_t pol = civ::pol_of(city);
+    if (!pol || pol == 0xFFFFFFFFu)
+        return false;
+    int pid = player_of_pol(pol);
+    if (pid >= 1 && pid < kMaxPlayers)
+        return true;
+    return is_host() && g_saved_nations.is_reserved_pol(pol);
+}
+
+bool capital_softlock_fix_enabled() { return g_fix_civ_capital_softlock; }
+
+static std::string player_stable_key(uint8_t pid)
+{
+    std::string k = store::key_of(pid);
+    if (!k.empty())
+        return k;
+    if (C.sess) {
+        std::string nm = C.sess->name_of(pid);
+        if (!nm.empty())
+            return "name:" + nm;
+    }
+    return "";
+}
+
+static int city_building_slot_count(void* city)
+{
+    if (!city || !skg::readable(city, civ::kCitySlots + 8))
+        return 0;
+    uint8_t* sb = F<uint8_t*>(city, civ::kCitySlots);
+    uint8_t* se = F<uint8_t*>(city, civ::kCitySlots + 4);
+    if (!sb || se <= sb)
+        return 0;
+    ptrdiff_t bytes = se - sb;
+    if (bytes < 0 || bytes > 64 * 0x18)
+        return 0;
+    return (int)(bytes / 0x18);
+}
+
+static bool city_is_small(void* city)
+{
+    if (!city || !skg::readable(city, kCitySmallFlag + 1))
+        return false;
+    return F<uint8_t>(city, kCitySmallFlag) != 0;
+}
+
+static const char* civ_color_name(void* c)
+{
+    if (!c || !skg::readable(c, 0x64))
+        return "";
+    uint32_t cid = F<uint32_t>(c, 0x38);
+    float r = F<float>(c, 0x58), g = F<float>(c, 0x5C), b = F<float>(c, 0x60);
+    if ((cid >> 8) == 0x053DBC && std::isfinite(r) && std::isfinite(g) && std::isfinite(b) && r >= 0.0f &&
+        r <= 1.001f && g >= 0.0f && g <= 1.001f && b >= 0.0f && b <= 1.001f && (r + g + b) > 0.01f)
+        return classify_civ_color(r, g, b);
+    return "";
+}
+
+// BUG-1581: ensure a civilization has non-zero vehicle design keys for every locomotion (land/sea/air) of `specialty`.
+// RolloverCivCity (0x00E2BA81) greys out the tank/ship/plane purchase button whenever GetDesignKey(VehicleDesignId) is {0,0,0}.
+static void ensure_civ_vehicle_designs(void* civ, uint8_t pid, int specialty)
+{
+    if (!civ || !valid_native_specialty(specialty) || !civ::a_DesignKey || !civ::a_DesignId || !a_CivSetDesign)
+        return;
+    for (int loco = 0; loco <= 2; loco++) {
+        uint32_t did = (uint32_t)skg::cdecl_call<int>(civ::a_DesignId, specialty, loco);
+        if (!did)
+            continue;
+        uint32_t* cur = thiscall<uint32_t*>(civ::a_DesignKey, civ, (int)did);
+        if (cur && (cur[0] || cur[1] || cur[2]))
+            continue; // already has a design
+        uint32_t pick[3] = {0, 0, 0};
+        // 1. Prefer the player's own design from species line if registered here
+        creations::Key sk = species::design(pid, did);
+        if (!sk.instance && is_guest() && pid == my_id())
+            sk = species::own_design(did);
+        if (sk.instance) {
+            pick[0] = sk.instance;
+            pick[1] = sk.type;
+            pick[2] = sk.group;
+        }
+        // 2. Fallback: copy a valid design of the same VehicleDesignId from host/other live civs on the planet
+        if (!pick[0]) {
+            if (void* orig = orig_player_civ(); orig && orig != civ) {
+                uint32_t* hk = thiscall<uint32_t*>(civ::a_DesignKey, orig, (int)did);
+                if (hk && hk[0] && hk[0] != 0xFFFFFFFFu) {
+                    pick[0] = hk[0];
+                    pick[1] = hk[1];
+                    pick[2] = hk[2];
+                }
+            }
+        }
+        if (!pick[0]) {
+            for (void* other : all_civs()) {
+                if (!other || other == civ)
+                    continue;
+                uint32_t* ok = thiscall<uint32_t*>(civ::a_DesignKey, other, (int)did);
+                if (ok && ok[0] && ok[0] != 0xFFFFFFFFu) {
+                    pick[0] = ok[0];
+                    pick[1] = ok[1];
+                    pick[2] = ok[2];
+                    break;
+                }
+            }
+        }
+        if (pick[0]) {
+            thiscall<void>(a_CivSetDesign, civ, did, pick);
+            if (H && M)
+                H->log(M, SK_INFO,
+                       "civ_rivals: populated missing vehicle design 0x%08X -> %08X for player %u (spec=%d loco=%d, BUG-1581)",
+                       (unsigned)did, (unsigned)pick[0], (unsigned)pid, specialty, loco);
+        }
+    }
+}
+
+// BUG-1581: apply each guest's own vehicle/building designs (from species_line) into the guest's rival cCivilization
+// culture map on the host so host_buy spawns the guest's actual creations instead of reverting to generic NPC vehicles.
+static void host_sync_guest_designs(double now)
+{
+    if (!is_host() || !active() || g_in_save || !a_CivSetDesign || !civ::a_DesignKey)
+        return;
+    if (!g_designs_dirty && now - g_last_design_sync < 1.0)
+        return;
+    g_designs_dirty = false;
+    g_last_design_sync = now;
+    for (uint8_t pid = 1; pid < kMaxPlayers; pid++) {
+        if (!g_nations[pid].assigned)
+            continue;
+        void* gc = civ_by_pol(g_nations[pid].pol_id);
+        if (!gc)
+            continue;
+        for (uint32_t did : species::design_ids(pid)) {
+            creations::Key sk = species::design(pid, did);
+            if (!sk.instance)
+                continue;
+            auto map_key = std::make_pair(pid, did);
+            auto it = g_applied_designs.find(map_key);
+            uint32_t* cur = thiscall<uint32_t*>(civ::a_DesignKey, gc, (int)did);
+            if (it != g_applied_designs.end() && it->second.applied[0] == sk.instance && cur && cur[0] == sk.instance)
+                continue;
+            AppliedDesign rec;
+            if (it != g_applied_designs.end()) {
+                rec = it->second;
+            } else if (cur) {
+                rec.orig[0] = cur[0];
+                rec.orig[1] = cur[1];
+                rec.orig[2] = cur[2];
+            }
+            rec.applied[0] = sk.instance;
+            rec.applied[1] = sk.type;
+            rec.applied[2] = sk.group;
+            thiscall<void>(a_CivSetDesign, gc, did, rec.applied);
+            g_applied_designs[map_key] = rec;
+            g_st.designs_synced++;
+            if (H && M)
+                H->log(M, SK_INFO,
+                       "civ_rivals: synced guest %u design 0x%08X -> %08X into rival nation pol=0x%08X (BUG-1581)",
+                       (unsigned)pid, (unsigned)did, (unsigned)sk.instance, (unsigned)g_nations[pid].pol_id);
+        }
+    }
+}
+
+static void save_guest_designs_strip(bool start)
+{
+    if (!is_host() || g_applied_designs.empty() || !civ::nm() || !civ::a_DesignKey)
+        return;
+    for (const auto& [k, rec] : g_applied_designs) {
+        uint8_t pid = k.first;
+        uint32_t did = k.second;
+        if (pid >= kMaxPlayers || !g_nations[pid].assigned)
+            continue;
+        void* gc = civ_by_pol(g_nations[pid].pol_id);
+        if (!gc)
+            continue;
+        uint32_t* slot = thiscall<uint32_t*>(civ::a_DesignKey, gc, (int)did);
+        if (!slot || !skg::readable(slot, 12))
+            continue;
+        if (start && slot[0] == rec.applied[0]) {
+            memcpy(slot, rec.orig, 12);
+        } else if (!start && slot[0] == rec.orig[0] && slot[1] == rec.orig[1]) {
+            memcpy(slot, rec.applied, 12);
+        }
+    }
+}
+
+// BUG-1581: restore guest-borrowed superweapon tools (+0x470) & timers (+0x490) before save, world change, or teardown.
+static void restore_guest_sw_tools()
+{
+    void* civ = g_guest_sw_borrow.civ;
+    if (!civ)
+        return;
+    bool live = game::mode_id() == modes::kCiv && civ::nm() && skg::readable(civ, kCivSwTimers + 12);
+    if (live) {
+        if (g_guest_sw_borrow.tools) {
+            F<uint32_t>(civ, kCivSwTools) = g_guest_sw_borrow.saved_tools[0];
+            F<uint32_t>(civ, kCivSwTools + 4) = g_guest_sw_borrow.saved_tools[1];
+            F<uint32_t>(civ, kCivSwTools + 8) = g_guest_sw_borrow.saved_tools[2];
+        }
+        if (g_guest_sw_borrow.timers) {
+            F<uint32_t>(civ, kCivSwTimers) = g_guest_sw_borrow.saved_timers[0];
+            F<uint32_t>(civ, kCivSwTimers + 4) = g_guest_sw_borrow.saved_timers[1];
+            F<uint32_t>(civ, kCivSwTimers + 8) = g_guest_sw_borrow.saved_timers[2];
+        }
+    }
+    g_guest_sw_borrow = GuestSwBorrow{};
+}
+
+static void ensure_guest_sw_tools(void* my_civ)
+{
+    if (!g_fix_civ_guest_sw || !my_civ || !is_guest() || !active() || g_in_save)
+        return;
+    if (g_guest_sw_borrow.civ && g_guest_sw_borrow.civ != my_civ)
+        restore_guest_sw_tools();
+    void* orig_pc = orig_player_civ();
+    if (!orig_pc || orig_pc == my_civ)
+        return;
+    if (!skg::readable(my_civ, kCivSwTimers + 12) || !skg::readable(orig_pc, kCivSwTimers + 12))
+        return;
+    if (!g_guest_sw_borrow.tools) {
+        uint32_t t0 = F<uint32_t>(my_civ, kCivSwTools);
+        uint32_t t1 = F<uint32_t>(my_civ, kCivSwTools + 4);
+        uint32_t h0 = F<uint32_t>(orig_pc, kCivSwTools);
+        uint32_t h1 = F<uint32_t>(orig_pc, kCivSwTools + 4);
+        uint32_t h2 = F<uint32_t>(orig_pc, kCivSwTools + 8);
+        if (sw_borrow_needed(false, t0, t1, h0, h1, kSwToolsMinBytes)) {
+            g_guest_sw_borrow.civ = my_civ;
+            g_guest_sw_borrow.saved_tools[0] = t0;
+            g_guest_sw_borrow.saved_tools[1] = t1;
+            g_guest_sw_borrow.saved_tools[2] = F<uint32_t>(my_civ, kCivSwTools + 8);
+            F<uint32_t>(my_civ, kCivSwTools) = h0;
+            F<uint32_t>(my_civ, kCivSwTools + 4) = h1;
+            F<uint32_t>(my_civ, kCivSwTools + 8) = h2;
+            g_guest_sw_borrow.tools = true;
+            g_st.sw_guest_borrows++;
+            if (H && M)
+                H->log(M, SK_INFO, "civ_rivals: borrowed superweapon tools (+0x470) onto guest nation %p (BUG-1581)",
+                       my_civ);
+        }
+    }
+    if (!g_guest_sw_borrow.timers) {
+        uint32_t t0 = F<uint32_t>(my_civ, kCivSwTimers);
+        uint32_t t1 = F<uint32_t>(my_civ, kCivSwTimers + 4);
+        uint32_t h0 = F<uint32_t>(orig_pc, kCivSwTimers);
+        uint32_t h1 = F<uint32_t>(orig_pc, kCivSwTimers + 4);
+        uint32_t h2 = F<uint32_t>(orig_pc, kCivSwTimers + 8);
+        if (sw_borrow_needed(false, t0, t1, h0, h1, kSwTimersMinBytes)) {
+            g_guest_sw_borrow.civ = my_civ;
+            g_guest_sw_borrow.saved_timers[0] = t0;
+            g_guest_sw_borrow.saved_timers[1] = t1;
+            g_guest_sw_borrow.saved_timers[2] = F<uint32_t>(my_civ, kCivSwTimers + 8);
+            F<uint32_t>(my_civ, kCivSwTimers) = h0;
+            F<uint32_t>(my_civ, kCivSwTimers + 4) = h1;
+            F<uint32_t>(my_civ, kCivSwTimers + 8) = h2;
+            g_guest_sw_borrow.timers = true;
+        }
+    }
+}
+
+void on_city_specialty_changed(void* city, void* civ, int new_spec)
+{
+    if (!active() || !city || !valid_native_specialty(new_spec))
+        return;
+    if (civ && a_CivRefreshUnlocks)
+        thiscall<void>(a_CivRefreshUnlocks, civ);
+    int pid = civ ? player_of_pol(civ::pol_of(civ)) : player_of_pol(civ::pol_of(city));
+    if (pid >= 0 && pid < kMaxPlayers)
+        ensure_civ_vehicle_designs(civ ? civ : civ_of_player((uint8_t)pid), (uint8_t)pid, new_spec);
+    if (is_host())
+        g_assign_dirty = true;
+}
+
+void note_local_spend(void* civ, float amount)
+{
+    if (!active() || !civ || !std::isfinite(amount) || amount <= 0.0f)
+        return;
+    g_last_local_spend = {civ, amount, now_s()};
+}
+
 bool is_player_capital(void* city, uint8_t* owner_out)
 {
     if (!city || !active())
@@ -351,6 +706,7 @@ int foreign_city_count(void* civ)
 // ---- Perspective swap restore & apply (R1) ----
 static void restore_perspective()
 {
+    restore_guest_sw_tools();
     if (!g_swap_applied)
         return;
     g_swap_applied = false;
@@ -396,14 +752,28 @@ static void apply_guest_perspective()
         if (c && skg::readable(c, kCivIsPlayer + 1))
             F<uint8_t>(c, kCivIsPlayer) = (c == my_civ) ? 1 : 0;
     }
-    // Sync authoritative wealth for guest's nation (zero NPC budgets so GetMoney == mWealth)
+    // BUG-1581: borrow +0x470 superweapon tools & +0x490 timers onto guest's NPC-origin civ so superweapon
+    // targeting/HUD/firing never dereferences a null vector at 0x00BF18CA.
+    ensure_guest_sw_tools(my_civ);
+
+    // Sync authoritative wealth for guest's nation (zero NPC budgets so GetMoney == mWealth).
+    // BUG-1581: NEVER overwrite mWealth while the city planner is open or a planner spend is in flight,
+    // otherwise every frame snaps mWealth back to pre-spend value ("money didn't spend" in planner!).
+    bool hold_wealth = civ::planner_city() != nullptr;
+    if (!hold_wealth) {
+        for (void* mc : civ::vec_of((uint8_t*)my_civ + civ::kCivCities))
+            if (civ::planner_send_holds(mc)) {
+                hold_wealth = true;
+                break;
+            }
+    }
     const auto& me = g_nations[my_id()];
-    if (std::isfinite(me.wealth) && me.wealth >= 0.0f) {
+    if (!hold_wealth && std::isfinite(me.wealth) && me.wealth >= 0.0f) {
         F<float>(my_civ, kCivWealth) = me.wealth;
         F<float>(my_civ, kCivDomesticBudget) = 0.0f;
         F<float>(my_civ, kCivExpansionBudget) = 0.0f;
     }
-    // Update city mbIsPlayerCity flags
+    // Update city mbIsPlayerCity flags & ensure vehicle designs exist for every owned city specialty (BUG-1581)
     for (void* city : civ::all_cities()) {
         if (!city)
             continue;
@@ -412,6 +782,8 @@ static void apply_guest_perspective()
             thiscall<void>(a_CitySetPlayerOwned, city, own);
         else if (skg::readable(city, kCityIsPlayer + 1))
             F<uint8_t>(city, kCityIsPlayer) = own ? 1 : 0;
+        if (own && skg::readable(city, civ::kCitySpecialty + 4))
+            ensure_civ_vehicle_designs(my_civ, my_id(), F<int>(city, civ::kCitySpecialty));
     }
     // BUG-1563: replicate converted capital specialties from SK_ASSIGN onto the guest's local cities
     if (g_fix_civ_spec_convert) {
@@ -436,6 +808,8 @@ static void apply_guest_perspective()
             int cur_cap = skg::readable(cap_city, 0x29C + 4) ? F<int>(cap_city, 0x29C) : want;
             if (cur_spec != want || cur_cap != want) {
                 apply_city_specialty(cap_city, nc, want);
+                if (i == my_id())
+                    ensure_civ_vehicle_designs(my_civ, my_id(), want);
                 if (cur_spec != want) {
                     g_st.spec_converted++;
                     if (H && M)
@@ -474,8 +848,11 @@ static void reset_state()
     }
     for (int i = 0; i < kMaxPlayers; i++) {
         g_nations[i] = PlayerNation{(uint8_t)i, 0, {}, 0.0f, false};
+        g_slot_key[i].clear();
         g_last_city_counts[i] = 0;
     }
+    g_saved_nations.clear();
+    g_saved_store_serial = 0;
     g_npc_rels.clear();
     g_guest_npc_rels.clear();
     g_orig_host_pol = 0;
@@ -488,6 +865,9 @@ static void reset_state()
     g_draft_applied_ids.clear();
     g_species_applied.clear();
     g_war_captured_from.clear();
+    g_applied_designs.clear();
+    g_designs_dirty = true;
+    g_last_local_spend = LocalSpend{};
 }
 
 static void on_lifecycle_event(const lifecycle::Ctx& c)
@@ -498,8 +878,23 @@ static void on_lifecycle_event(const lifecycle::Ctx& c)
                 if (void* gc = civ_by_pol(g_nations[c.player].pol_id); gc && skg::readable(gc, kCivIsPlayer + 1))
                     F<uint8_t>(gc, kCivIsPlayer) = 0;
             }
+            // BUG-1581: persist player_key -> pol_id across disconnect/reconnect instead of forgetting the nation!
+            if (g_fix_civ_rejoin_nation) {
+                std::string pkey = !g_slot_key[c.player].empty() ? g_slot_key[c.player] : player_stable_key(c.player);
+                if (!pkey.empty() && g_nations[c.player].pol_id) {
+                    g_saved_nations.remember(pkey, g_nations[c.player].pol_id, g_nations[c.player].cap_pos,
+                                             g_nations[c.player].cap_specialty);
+                    if (H && M)
+                        H->log(M, SK_INFO,
+                               "civ_rivals: preserved nation pol=0x%08X for disconnected player %u (key=%s, BUG-1581)",
+                               (unsigned)g_nations[c.player].pol_id, (unsigned)c.player, pkey.c_str());
+                }
+            }
             g_nations[c.player] = PlayerNation{c.player, 0, {}, 0.0f, false};
+            g_slot_key[c.player].clear();
             g_species_applied.erase(c.player);
+            for (auto it = g_applied_designs.begin(); it != g_applied_designs.end();)
+                it = (it->first.first == c.player) ? g_applied_designs.erase(it) : std::next(it);
             g_assign_dirty = true;
         }
         return;
@@ -510,15 +905,69 @@ static void on_lifecycle_event(const lifecycle::Ctx& c)
 LIFECYCLE_HOOK("civ_rivals.lifecycle", lifecycle::kSessionEnd | lifecycle::kWorldChange | lifecycle::kPlayerLeave, -20,
                on_lifecycle_event, false);
 
+// BUG-1581: store persistence for player_key -> rival nation pol_id across host saves/reloads.
+static void load_saved_nations_from_store()
+{
+    if (!g_fix_civ_rejoin_nation || !is_host())
+        return;
+    pstore::Store* w = store::world();
+    if (!w || store::serial() == g_saved_store_serial)
+        return;
+    g_saved_store_serial = store::serial();
+    if (const pstore::Record* r = w->get_world("civ.rivals_nations"); r && r->ver == 1 && !r->data.empty()) {
+        net::Reader rd(r->data.data(), r->data.size());
+        NationMemory loaded;
+        if (read_saved_nations(rd, loaded)) {
+            for (const auto& [k, sv] : loaded.by_key)
+                if (!g_saved_nations.has(k))
+                    g_saved_nations.by_key[k] = sv;
+            if (H && M)
+                H->log(M, SK_INFO, "civ_rivals: loaded %u persisted rival nation claim(s) from world store (BUG-1581)",
+                       (unsigned)loaded.by_key.size());
+        }
+    }
+}
+
+static void save_nations_to_store(pstore::Store& s, int64_t now)
+{
+    if (!g_fix_civ_rejoin_nation || &s != store::world() || game::mode_id() != modes::kCiv)
+        return;
+    if (g_saved_nations.by_key.empty() && !s.get_world("civ.rivals_nations"))
+        return;
+    net::Writer w;
+    write_saved_nations(w, g_saved_nations);
+    s.put_world("civ.rivals_nations", 1, w.data);
+    std::vector<std::string> keys;
+    for (const auto& [k, sv] : g_saved_nations.by_key) {
+        (void)sv;
+        keys.push_back(k);
+    }
+    store::mark_owners(s, "civ.rivals_nation", keys, now);
+}
+
+static bool g_rivals_store_reg = store::add(
+    {"civ.rivals_nations", save_nations_to_store,
+     [](const std::string& from, const std::string& to) {
+         g_saved_nations.adopt(from, to);
+         for (int i = 0; i < kMaxPlayers; i++)
+             if (g_slot_key[i] == from)
+                 g_slot_key[i] = to;
+     },
+     [] { load_saved_nations_from_store(); }});
+
+static bool g_rivals_designs_reg = species::on_change("civ_rivals.designs", [](uint8_t) { g_designs_dirty = true; });
+
 static void on_save_start()
 {
     g_in_save = true;
     restore_perspective();
+    save_guest_designs_strip(true);
 }
 
 static void on_save_end()
 {
     g_in_save = false;
+    save_guest_designs_strip(false);
     if (active() && is_guest())
         apply_guest_perspective();
 }
@@ -560,9 +1009,11 @@ static bool SK_THISCALL h_CityIsPlayer(void* spatial)
 static void SK_THISCALL h_CivAI(void* civ)
 {
     if (active() && civ) {
-        int pid = player_of_pol(civ::pol_of(civ));
-        if (is_host() && pid >= 1 && pid < kMaxPlayers) {
-            // R2: guest-assigned nation on host: skip NPC AI planner/diplomacy/growth/budgets,
+        uint32_t pol = civ::pol_of(civ);
+        int pid = player_of_pol(pol);
+        if (is_host() && ((pid >= 1 && pid < kMaxPlayers) ||
+                          (g_fix_civ_rejoin_nation && g_saved_nations.is_reserved_pol(pol)))) {
+            // R2: guest-assigned (or temporarily disconnected) nation on host: skip NPC AI planner/diplomacy/growth/budgets,
             // run only the 6 s passive city + spice derrick income tick into mWealth (+0x98).
             g_st.ai_blocked++;
             if (a_CivIncomeTick)
@@ -586,7 +1037,58 @@ static bool SK_CDECL h_CanTargetSW(int sw_type, const float* target)
         if (superweapon_blocked_by_capital(me, sw_type, true, pt, g_nations))
             return false;
     }
+    if (active() && is_guest() && g_fix_civ_guest_sw) {
+        void* mc = civ_of_player(my_id());
+        SwToolsBorrow guard(mc);
+        return o_CanTargetSW(sw_type, target);
+    }
     return o_CanTargetSW(sw_type, target);
+}
+
+static void host_broadcast_assign(double now, int only_peer);
+
+// BUG-1581: vanilla Civ diplomacy gift (0x00DCA95C -> SpendMoney + ApplyRelationship(target, sender, 0x0526E4FB, 1.0f))
+// never called AddMoney on the target civilization. Called from tribe_rivals.cpp's shared ApplyRelationship hook
+// to credit the recipient rival player's mWealth directly (or relay to host if initiated by guest).
+void on_rel_apply(uint32_t polA, uint32_t polB, uint32_t event_id, float /*value*/)
+{
+    if (!g_fix_civ_diplo_gift || !active() || event_id != kEventCivDiplomaticGift)
+        return;
+    double now = now_s();
+    if (g_last_local_spend.amount <= 0.0f || now - g_last_local_spend.at > 0.15)
+        return;
+    float amt = g_last_local_spend.amount;
+    int pa = player_of_pol(polA);
+    int pb = player_of_pol(polB);
+    uint8_t me = my_id();
+    int target_pid = -1;
+    if (pa == (int)me && pb >= 0 && pb != (int)me)
+        target_pid = pb;
+    else if (pb == (int)me && pa >= 0 && pa != (int)me)
+        target_pid = pa;
+    if (target_pid < 0 || target_pid >= kMaxPlayers)
+        return;
+    g_last_local_spend.amount = 0.0f; // consume so it cannot double-credit
+    if (is_host()) {
+        host_credit_player((uint8_t)target_pid, amt);
+        g_st.diplo_gifts++;
+        host_broadcast_assign(now, -1);
+        if (H && M)
+            H->log(M, SK_INFO,
+                   "civ_rivals: credited vanilla diplomatic gift of %.0f Sporebucks from host to player %d (BUG-1581)",
+                   amt, target_pid);
+        if (C.notice && C.sess) {
+            char b[160];
+            snprintf(b, sizeof b, "%s gifted %.0f Sporebucks to %s", C.sess->name_of(0).c_str(), amt,
+                     C.sess->name_of((uint8_t)target_pid).c_str());
+            C.notice(b);
+        }
+    } else if (is_guest()) {
+        net::Writer w;
+        write_diplo_gift(w, {(uint8_t)target_pid, amt});
+        if (rivals::send_faction_to(0, rivals::Stage::Civ, kSkDiploGift, w))
+            g_st.gifts_sent++;
+    }
 }
 
 static void SK_THISCALL h_LaunchGlobalSW(void* city)
@@ -694,6 +1196,7 @@ static void host_ensure_assignments(double now)
     void* host_civ = orig_player_civ();
     if (!host_civ || !C.sess)
         return;
+    load_saved_nations_from_store();
     auto host_cities = civ::vec_of((uint8_t*)host_civ + civ::kCivCities);
     if (host_cities.empty())
         return;
@@ -704,6 +1207,7 @@ static void host_ensure_assignments(double now)
     int8_t host_spec8 = valid_native_specialty(host_spec) ? (int8_t)host_spec : (int8_t)-1;
     if (!g_nations[0].assigned || g_nations[0].pol_id != host_pol) {
         g_nations[0] = {0, host_pol, host_cap, F<float>(host_civ, kCivWealth), true, host_spec8};
+        g_slot_key[0] = "host";
         g_assign_dirty = true;
     } else {
         g_nations[0].wealth = F<float>(host_civ, kCivWealth);
@@ -725,7 +1229,7 @@ static void host_ensure_assignments(double now)
         }
     }
 
-    // Build candidate list from free NPC civilizations with at least 1 city
+    // Build candidate list from free NPC civilizations with at least 1 city (including city size metadata, BUG-1581)
     std::vector<BaseCandidate> cands;
     std::map<uint32_t, int> cand_native_spec;
     for (void* c : all_civs()) {
@@ -739,7 +1243,9 @@ static void host_ensure_assignments(double now)
         auto cs = civ::vec_of((uint8_t*)c + civ::kCivCities);
         if (cs.empty())
             continue;
-        cands.push_back({pol, to_vec3(civ::city_pos(cs[0])), (int)cs.size()});
+        int slots = city_building_slot_count(cs[0]);
+        bool small = city_is_small(cs[0]);
+        cands.push_back({pol, to_vec3(civ::city_pos(cs[0])), (int)cs.size(), slots, small});
         cand_native_spec[pol] =
             skg::readable(cs[0], civ::kCitySpecialty + 4) ? F<int>(cs[0], civ::kCitySpecialty) : -1;
     }
@@ -748,35 +1254,57 @@ static void host_ensure_assignments(double now)
     for (const auto& pl : C.sess->players()) {
         if (pl.id == 0 || pl.id >= kMaxPlayers || g_nations[pl.id].assigned)
             continue;
+        std::string pkey = player_stable_key(pl.id);
+        uint32_t pick = 0;
+        bool reclaimed = false;
+        // BUG-1581: first reclaim this player's persisted rival nation if they disconnected & rejoined!
+        if (g_fix_civ_rejoin_nation && !pkey.empty()) {
+            pick = g_saved_nations.find_reclaim(pkey, cands, taken);
+            if (pick)
+                reclaimed = true;
+        }
+
         // BUG-1557 / BUG-1563: determine the guest's desired Civ specialty from its Tribe consequence card
         // (Aggressive->Mil 0, Friendly->Rel 1, Industrious->Eco 2). Prefer a free NPC nation matching it when the
         // guest has its own Rivals Tribe path; if no free NPC matches (or all players finished Tribe with the same
         // card), convert the taken-over capital city specialty to match (rivals.civ_spec_convert).
-        uint32_t pick = 0;
         int want_native = -1;
         uint32_t tcard = 0;
-        bool own_tribe = history::rivals_own_history_enabled() &&
-                         (rivals::stage_is_rivals(rivals::Stage::Tribe) || history::player_has_own_tribe(pl.id));
-        if (history::rivals_own_history_enabled())
-            history::host_sync_now();
-        tcard = history::player_card(pl.id, history::kTribe);
-        if (!tcard && !own_tribe)
-            tcard = history::player_card(0, history::kTribe);
-        int pref_h = history::civ_spec_for_tribe_card(tcard);
-        if (pref_h >= 0)
-            want_native = history::history_spec_to_native_city((uint8_t)(pref_h + 1));
-        if (own_tribe && want_native >= 0) {
-            std::vector<BaseCandidate> matched;
-            for (const auto& bc : cands) {
-                auto it = cand_native_spec.find(bc.pol_id);
-                if (it != cand_native_spec.end() && it->second == want_native)
-                    matched.push_back(bc);
+        if (!reclaimed) {
+            bool own_tribe = history::rivals_own_history_enabled() &&
+                             (rivals::stage_is_rivals(rivals::Stage::Tribe) || history::player_has_own_tribe(pl.id));
+            if (history::rivals_own_history_enabled())
+                history::host_sync_now();
+            tcard = history::player_card(pl.id, history::kTribe);
+            if (!tcard && !own_tribe)
+                tcard = history::player_card(0, history::kTribe);
+            int pref_h = history::civ_spec_for_tribe_card(tcard);
+            if (pref_h >= 0)
+                want_native = history::history_spec_to_native_city((uint8_t)(pref_h + 1));
+
+            // Exclude nations reserved for OTHER disconnected players when unreserved NPCs exist (BUG-1581)
+            std::vector<BaseCandidate> pool;
+            if (g_fix_civ_rejoin_nation) {
+                for (const auto& bc : cands)
+                    if (!g_saved_nations.is_reserved_for_other(bc.pol_id, pkey))
+                        pool.push_back(bc);
             }
-            if (!matched.empty())
-                pick = select_base_nation(host_cap, matched, rivals::base_distance(), taken);
+            if (pool.empty())
+                pool = cands;
+
+            if (own_tribe && want_native >= 0) {
+                std::vector<BaseCandidate> matched;
+                for (const auto& bc : pool) {
+                    auto it = cand_native_spec.find(bc.pol_id);
+                    if (it != cand_native_spec.end() && it->second == want_native)
+                        matched.push_back(bc);
+                }
+                if (!matched.empty())
+                    pick = select_base_nation(host_cap, matched, rivals::base_distance(), taken, g_fix_civ_large_start);
+            }
+            if (!pick)
+                pick = select_base_nation(host_cap, pool, rivals::base_distance(), taken, g_fix_civ_large_start);
         }
-        if (!pick)
-            pick = select_base_nation(host_cap, cands, rivals::base_distance(), taken);
         if (!pick) {
             need_npc_spawn = true;
             continue;
@@ -789,7 +1317,7 @@ static void host_ensure_assignments(double now)
             continue;
         Vec3 cap = to_vec3(civ::city_pos(gcities[0]));
         int cap_native = skg::readable(gcities[0], civ::kCitySpecialty + 4) ? F<int>(gcities[0], civ::kCitySpecialty) : -1;
-        if (g_fix_civ_spec_convert && needs_specialty_conversion(cap_native, want_native)) {
+        if (!reclaimed && g_fix_civ_spec_convert && needs_specialty_conversion(cap_native, want_native)) {
             int old_native = cap_native;
             apply_city_specialty(gcities[0], gc, want_native);
             cap_native = want_native;
@@ -803,38 +1331,44 @@ static void host_ensure_assignments(double now)
         if (hist_spec != history::kCivSpecNone)
             history::set_civ_start_specialty(pl.id, hist_spec);
 
-        // R2 takeover: fold NPC domestic/expansion budgets back into mWealth and enforce baseline floor.
-        // Do NOT set +0x89 (mIsPlayer) = 1 on guest nations on the host: cRelationshipManager::CalculateRelationshipAbsolute
-        // (0x00D05AF4) swaps (polA, polB) and recurses into CalculateRelationship whenever civA->mIsPlayer != 0, so
-        // having two civilizations with +0x89 == 1 causes infinite recursion / stack overflow. Guest AI is disabled
-        // via h_CivAI + h_CreateBuilding + h_BuyTurret + h_SpawnVeh + h_WealthToBudgets instead; on the guest,
-        // apply_guest_perspective() sets ONLY the guest's own civ to +0x89 = 1 and clears the host's civ to 0.
+        // R2 takeover: fold NPC domestic/expansion budgets back into mWealth and enforce baseline floor on fresh takeover
+        // (preserve exact mWealth on rejoin reclaim!). Keep +0x89 (mIsPlayer) == 0 on host to avoid recursive diplomacy crash.
         float w = F<float>(gc, kCivWealth) + F<float>(gc, kCivDomesticBudget) + F<float>(gc, kCivExpansionBudget);
-        if (!std::isfinite(w) || w < kStartingWealthFloor)
+        if (!std::isfinite(w) || (!reclaimed && w < kStartingWealthFloor))
             w = kStartingWealthFloor;
+        else if (w < 0.0f)
+            w = 0.0f;
         F<float>(gc, kCivWealth) = w;
         F<float>(gc, kCivDomesticBudget) = 0.0f;
         F<float>(gc, kCivExpansionBudget) = 0.0f;
         F<uint8_t>(gc, kCivIsPlayer) = 0;
 
-        g_nations[pl.id] = {pl.id, pick, cap, w, true,
-                            valid_native_specialty(cap_native) ? (int8_t)cap_native : (int8_t)-1};
+        int8_t cap_spec8 = valid_native_specialty(cap_native) ? (int8_t)cap_native : (int8_t)-1;
+        g_nations[pl.id] = {pl.id, pick, cap, w, true, cap_spec8};
+        g_slot_key[pl.id] = pkey;
+        if (g_fix_civ_rejoin_nation && !pkey.empty())
+            g_saved_nations.remember(pkey, pick, cap, cap_spec8);
         taken.push_back(pick);
         g_npc_rels.remove_npc(pick); // no longer an NPC nation
         host_apply_guest_species(pl.id, gc);
-        g_st.takeovers++;
+        ensure_civ_vehicle_designs(gc, pl.id, cap_native);
+        g_designs_dirty = true;
+        if (reclaimed)
+            g_st.reclaimed++;
+        else
+            g_st.takeovers++;
         g_assign_dirty = true;
         g_npcrel_dirty = true;
 
         if (H && M)
             H->log(M, SK_INFO,
-                   "civ_rivals: player %u (%s) took over NPC nation pol=0x%08X (dist=%s, d=%.1f m, wealth=%.0f, BUG-1549)",
-                   (unsigned)pl.id, pl.name.c_str(), (unsigned)pick, rivals::distance_name(rivals::base_distance()),
-                   dist3(host_cap, cap), w);
+                   "civ_rivals: player %u (%s) %s NPC nation pol=0x%08X (dist=%s, d=%.1f m, small=%d, slots=%d, wealth=%.0f, %s)",
+                   (unsigned)pl.id, pl.name.c_str(), reclaimed ? "reclaimed" : "took over", (unsigned)pick,
+                   rivals::distance_name(rivals::base_distance()), dist3(host_cap, cap), (int)city_is_small(gcities[0]),
+                   city_building_slot_count(gcities[0]), w, reclaimed ? "BUG-1581" : "BUG-1549");
         if (C.notice) {
-            char b[160];
-            snprintf(b, sizeof b, "%s took command of rival nation 0x%08X", pl.name.c_str(), (unsigned)pick);
-            C.notice(b);
+            std::string msg = format_rival_takeover_notice(pl.name, civ_color_name(gc), cap_native, reclaimed);
+            C.notice(msg);
         }
     }
 
@@ -1108,6 +1642,12 @@ void host_credit_player(uint8_t pid, float amount)
 
 void host_mark_assign_dirty() { g_assign_dirty = true; }
 
+void host_broadcast_assign_now()
+{
+    if (is_host() && active())
+        host_broadcast_assign(now_s());
+}
+
 void host_finalize_sw_spend(uint8_t from, void* civ, float before_wealth, float cost)
 {
     if (!active() || !is_host() || !civ || !skg::readable(civ, kCivExpansionBudget + 4))
@@ -1129,43 +1669,69 @@ void record_sw_refused_funds() { g_st.sw_refused_funds++; }
 
 SwToolsBorrow::SwToolsBorrow(void* target_civ)
 {
-    if (!target_civ || !is_host() || !active())
+    if (!target_civ || !active())
+        return;
+    if (!is_host() && !g_fix_civ_guest_sw)
         return;
     void* host_civ = orig_player_civ();
     if (!host_civ || host_civ == target_civ)
         return;
-    if (!skg::readable(target_civ, kCivSwTools + 12) || !skg::readable(host_civ, kCivSwTools + 12))
+    if (!skg::readable(target_civ, kCivSwTimers + 12) || !skg::readable(host_civ, kCivSwTimers + 12))
         return;
+    civ = target_civ;
     uint32_t t0 = F<uint32_t>(target_civ, kCivSwTools);
     uint32_t t1 = F<uint32_t>(target_civ, kCivSwTools + 4);
     uint32_t h0 = F<uint32_t>(host_civ, kCivSwTools);
     uint32_t h1 = F<uint32_t>(host_civ, kCivSwTools + 4);
     uint32_t h2 = F<uint32_t>(host_civ, kCivSwTools + 8);
-    if (t0 && t1 >= t0 && (t1 - t0) >= 12u * 4u)
-        return; // already populated
-    if (!h0 || h1 < h0 || (h1 - h0) < 12u * 4u)
-        return; // host civ has no tools to lend
-    civ = target_civ;
-    saved[0] = t0;
-    saved[1] = t1;
-    saved[2] = F<uint32_t>(target_civ, kCivSwTools + 8);
-    mark = game::swap_open(game::swap_undo_u32, (uint8_t*)target_civ + kCivSwTools, saved[0], "civ_rivals: sw tools[0]");
-    game::swap_open(game::swap_undo_u32, (uint8_t*)target_civ + kCivSwTools + 4, saved[1], "civ_rivals: sw tools[1]");
-    game::swap_open(game::swap_undo_u32, (uint8_t*)target_civ + kCivSwTools + 8, saved[2], "civ_rivals: sw tools[2]");
-    F<uint32_t>(target_civ, kCivSwTools) = h0;
-    F<uint32_t>(target_civ, kCivSwTools + 4) = h1;
-    F<uint32_t>(target_civ, kCivSwTools + 8) = h2;
-    active_borrow = true;
+    if (sw_borrow_needed(false, t0, t1, h0, h1, kSwToolsMinBytes)) {
+        saved[0] = t0;
+        saved[1] = t1;
+        saved[2] = F<uint32_t>(target_civ, kCivSwTools + 8);
+        mark = game::swap_open(game::swap_undo_u32, (uint8_t*)target_civ + kCivSwTools, saved[0], "civ_rivals: sw tools[0]");
+        game::swap_open(game::swap_undo_u32, (uint8_t*)target_civ + kCivSwTools + 4, saved[1], "civ_rivals: sw tools[1]");
+        game::swap_open(game::swap_undo_u32, (uint8_t*)target_civ + kCivSwTools + 8, saved[2], "civ_rivals: sw tools[2]");
+        F<uint32_t>(target_civ, kCivSwTools) = h0;
+        F<uint32_t>(target_civ, kCivSwTools + 4) = h1;
+        F<uint32_t>(target_civ, kCivSwTools + 8) = h2;
+        active_borrow = true;
+    }
+    uint32_t tm0 = F<uint32_t>(target_civ, kCivSwTimers);
+    uint32_t tm1 = F<uint32_t>(target_civ, kCivSwTimers + 4);
+    uint32_t hm0 = F<uint32_t>(host_civ, kCivSwTimers);
+    uint32_t hm1 = F<uint32_t>(host_civ, kCivSwTimers + 4);
+    uint32_t hm2 = F<uint32_t>(host_civ, kCivSwTimers + 8);
+    if (sw_borrow_needed(false, tm0, tm1, hm0, hm1, kSwTimersMinBytes)) {
+        saved_timers[0] = tm0;
+        saved_timers[1] = tm1;
+        saved_timers[2] = F<uint32_t>(target_civ, kCivSwTimers + 8);
+        mark_timers = game::swap_open(game::swap_undo_u32, (uint8_t*)target_civ + kCivSwTimers, saved_timers[0],
+                                      "civ_rivals: sw timers[0]");
+        game::swap_open(game::swap_undo_u32, (uint8_t*)target_civ + kCivSwTimers + 4, saved_timers[1],
+                        "civ_rivals: sw timers[1]");
+        game::swap_open(game::swap_undo_u32, (uint8_t*)target_civ + kCivSwTimers + 8, saved_timers[2],
+                        "civ_rivals: sw timers[2]");
+        F<uint32_t>(target_civ, kCivSwTimers) = hm0;
+        F<uint32_t>(target_civ, kCivSwTimers + 4) = hm1;
+        F<uint32_t>(target_civ, kCivSwTimers + 8) = hm2;
+        active_timers_borrow = true;
+    }
 }
 
 SwToolsBorrow::~SwToolsBorrow()
 {
-    if (!active_borrow || !civ)
-        return;
-    F<uint32_t>(civ, kCivSwTools) = saved[0];
-    F<uint32_t>(civ, kCivSwTools + 4) = saved[1];
-    F<uint32_t>(civ, kCivSwTools + 8) = saved[2];
-    game::swap_close(mark, 3);
+    if (active_timers_borrow && civ) {
+        F<uint32_t>(civ, kCivSwTimers) = saved_timers[0];
+        F<uint32_t>(civ, kCivSwTimers + 4) = saved_timers[1];
+        F<uint32_t>(civ, kCivSwTimers + 8) = saved_timers[2];
+        game::swap_close(mark_timers, 3);
+    }
+    if (active_borrow && civ) {
+        F<uint32_t>(civ, kCivSwTools) = saved[0];
+        F<uint32_t>(civ, kCivSwTools + 4) = saved[1];
+        F<uint32_t>(civ, kCivSwTools + 8) = saved[2];
+        game::swap_close(mark, 3);
+    }
 }
 
 // ---- R7 & War/Neutral/Ally enforcement ----
@@ -1312,6 +1878,9 @@ void on_city_captured(void* city, uint32_t new_pol)
             uint8_t hist_spec = history::native_city_spec_to_history(cap_type);
             if (hist_spec != history::kCivSpecNone)
                 history::record_civ_outcome((uint8_t)new_pid, hist_spec);
+            if (skg::readable(city, civ::kCitySpecialty + 4))
+                ensure_civ_vehicle_designs(civ_of_player((uint8_t)new_pid), (uint8_t)new_pid,
+                                           F<int>(city, civ::kCitySpecialty));
         }
         if (C.feed && C.sess)
             C.feed(C.sess->name_of((uint8_t)new_pid) + " captured a city");
@@ -1448,6 +2017,31 @@ static void on_faction_msg(uint8_t from, uint8_t subkind, net::Reader& r)
         if (!read_gift(r, g))
             return;
         host_apply_gift(from, g);
+        return;
+    }
+    if (subkind == kSkDiploGift) {
+        if (!g_fix_civ_diplo_gift || !is_host() || from == 0 || from >= kMaxPlayers)
+            return;
+        DiploGiftMsg dg;
+        if (!read_diplo_gift(r, dg))
+            return;
+        void* src = civ_of_player(from);
+        void* dst = civ_of_player(dg.target_pid);
+        if (!src || !dst || !can_apply_diplo_gift(from, dg.target_pid, dg.amount, civ_money(src))) {
+            g_st.gifts_rejected++;
+            return;
+        }
+        if (host_charge_player(from, dg.amount)) {
+            host_credit_player(dg.target_pid, dg.amount);
+            g_st.diplo_gifts++;
+            host_broadcast_assign(now_s());
+            if (C.notice && C.sess) {
+                char b[160];
+                snprintf(b, sizeof b, "%s gifted %.0f Sporebucks to %s", C.sess->name_of(from).c_str(), dg.amount,
+                         C.sess->name_of(dg.target_pid).c_str());
+                C.notice(b);
+            }
+        }
         return;
     }
     if (subkind == SK_DRAFT_APPLY) {
@@ -1746,6 +2340,7 @@ void tick(double now)
     }
     if (is_host()) {
         host_ensure_assignments(now);
+        host_sync_guest_designs(now);
         host_deliver_tribe_draft_payouts();
         host_sync_native_diplomacy(now);
         host_eval_stage_progress(now);
@@ -1903,20 +2498,21 @@ std::string debug(const std::vector<std::string>& a)
         assigned_n += g_nations[i].assigned ? 1 : 0;
 
     snprintf(b, sizeof b,
-             "civ_rivals: fix=%d active=%d assigned=%d swap=%d player_pol=0x%08X api_pol=0x%08X player_money=%.0f "
-             "takeovers=%u ai_blocked=%u swap_hits=%u cap_blocked=%u conv_blocked=%u sw_blocked=%u "
-             "pvp_allowed=%u pvp_blocked=%u war_captures=%u gifts=%u/%u spice=%u "
+             "civ_rivals: fix=%d active=%d assigned=%d saved=%u swap=%d player_pol=0x%08X api_pol=0x%08X player_money=%.0f "
+             "takeovers=%u reclaimed=%u ai_blocked=%u swap_hits=%u cap_blocked=%u conv_blocked=%u sw_blocked=%u sw_borrow=%u "
+             "pvp_allowed=%u pvp_blocked=%u war_captures=%u gifts=%u/%u spice=%u diplo_gifts=%u "
              "inf_buy=%u inf_turn=%u inf_prot=%u inf_smooth=%u inf_trade=%u inf_diplo=%u rel_readbacks=%u "
              "assign_tx=%u assign_rx=%u npcrel_tx=%u npcrel_rx=%u "
              "race_ended=%d draft_started=%d draft_applied=%u draft_payouts=%u transition_ready=%d "
-             "spec_converted=%u sw_spent=%u sw_refused_funds=%u\n",
-             (int)g_fix_rivals_civ, (int)active(), assigned_n, (int)g_swap_applied, (unsigned)cur_pol, (unsigned)api_pol,
-             cur_money, g_st.takeovers, g_st.ai_blocked, g_st.swap_hits, g_st.cap_blocked, g_st.conv_blocked,
-             g_st.sw_blocked, g_st.pvp_allowed, g_st.pvp_blocked, g_st.war_captures, g_st.gifts_done, g_st.gifts_rejected,
-             g_st.spice_gifts, g_st.inf_bought, g_st.inf_turned, g_st.inf_protected, g_st.inf_smoothed, g_st.inf_trade,
-             g_st.inf_diplomacy, g_st.rel_readbacks, g_st.assign_tx, g_st.assign_rx, g_st.npcrel_tx, g_st.npcrel_rx,
-             (int)g_race_ended, (int)g_draft_started, g_st.draft_applied, g_st.draft_payouts, (int)g_transition_ready,
-             g_st.spec_converted, g_st.sw_spent, g_st.sw_refused_funds);
+             "spec_converted=%u sw_spent=%u sw_refused_funds=%u designs_synced=%u\n",
+             (int)g_fix_rivals_civ, (int)active(), assigned_n, (unsigned)g_saved_nations.by_key.size(), (int)g_swap_applied,
+             (unsigned)cur_pol, (unsigned)api_pol, cur_money, g_st.takeovers, g_st.reclaimed, g_st.ai_blocked,
+             g_st.swap_hits, g_st.cap_blocked, g_st.conv_blocked, g_st.sw_blocked, g_st.sw_guest_borrows,
+             g_st.pvp_allowed, g_st.pvp_blocked, g_st.war_captures, g_st.gifts_done, g_st.gifts_rejected,
+             g_st.spice_gifts, g_st.diplo_gifts, g_st.inf_bought, g_st.inf_turned, g_st.inf_protected, g_st.inf_smoothed,
+             g_st.inf_trade, g_st.inf_diplomacy, g_st.rel_readbacks, g_st.assign_tx, g_st.assign_rx, g_st.npcrel_tx,
+             g_st.npcrel_rx, (int)g_race_ended, (int)g_draft_started, g_st.draft_applied, g_st.draft_payouts,
+             (int)g_transition_ready, g_st.spec_converted, g_st.sw_spent, g_st.sw_refused_funds, g_st.designs_synced);
     std::string out = b;
 
     for (int i = 0; i < kMaxPlayers; i++) {

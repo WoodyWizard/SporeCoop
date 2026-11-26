@@ -1,5 +1,6 @@
-// Native unit tests for the persistent shared creations library pure core (library_core.h, BUG-0873).
+// Native unit tests for the persistent shared creations library pure core (library_core.h, BUG-0873, BUG-1583).
 #include "library_core.h"
+#include "species_line_core.h"
 
 #include <cstdio>
 #include <cstring>
@@ -201,12 +202,88 @@ static void test_state_dedup_foreign_retries_and_my_filter()
     CK(st2.entries.count(fail_hash) && !st2.entries[fail_hash].gave_up);
 }
 
+static std::vector<uint8_t> make_pollen_meta(uint32_t version, uint64_t author_id, const std::vector<uint16_t>& author_u16,
+                                             const std::vector<uint16_t>& name_u16)
+{
+    std::vector<uint8_t> d(0x38, 0);
+    auto put_be32 = [&](size_t off, uint32_t v) {
+        d[off + 0] = (uint8_t)(v >> 24);
+        d[off + 1] = (uint8_t)(v >> 16);
+        d[off + 2] = (uint8_t)(v >> 8);
+        d[off + 3] = (uint8_t)(v);
+    };
+    auto push_be32 = [&](uint32_t v) {
+        d.push_back((uint8_t)(v >> 24));
+        d.push_back((uint8_t)(v >> 16));
+        d.push_back((uint8_t)(v >> 8));
+        d.push_back((uint8_t)(v));
+    };
+    put_be32(0x00, version);
+    for (int i = 0; i < 8; i++)
+        d[0x30 + i] = (uint8_t)(author_id >> (56 - 8 * i));
+    push_be32((uint32_t)author_u16.size());
+    for (uint16_t c : author_u16) {
+        d.push_back((uint8_t)(c & 0xFFu));
+        d.push_back((uint8_t)(c >> 8));
+    }
+    push_be32((uint32_t)name_u16.size());
+    for (uint16_t c : name_u16) {
+        d.push_back((uint8_t)(c & 0xFFu));
+        d.push_back((uint8_t)(c >> 8));
+    }
+    return d;
+}
+
+static void test_metadata_names_and_nonempty_fallback()
+{
+    // 1. Offline author (-2 = 0xFFFFFFFFFFFFFFFE) with Cyrillic name "Дед" (U+0414 U+0435 U+0434)
+    auto m_offline = make_pollen_meta(13, 0xFFFFFFFFFFFFFFFEull, {'V', 'l', 'a', 'i', 'd'}, {0x0414, 0x0435, 0x0434});
+    std::string author, name;
+    CK(species::extract_metadata_name(m_offline.data(), m_offline.size(), author, name));
+    CK(author == "Vlaid");
+    CK(name == "Дед");
+
+    // 2. Online EA / Maxis author ID (non -2, previously caused empty '' name in Shared Library, BUG-1583)
+    auto m_online = make_pollen_meta(13, 0x0000000012345678ull, {'M', 'a', 'x', 'i', 's'}, {'K', 'o', 'o', 'k'});
+    CK(species::extract_metadata_name(m_online.data(), m_online.size(), author, name));
+    CK(author == "Maxis");
+    CK(name == "Kook");
+
+    // 3. Fallback creation name is NEVER empty for empty/blank/control-only inputs
+    std::string fb_crt = species::sanitize_creation_name("", 0x40626200u, 0xAABBCCDD11223344ull);
+    CK(!fb_crt.empty() && fb_crt.rfind("Creature #", 0) == 0);
+    std::string fb_ws = species::sanitize_creation_name("   \t\n ", 0x40636200u, 0x1234ull);
+    CK(!fb_ws.empty() && fb_ws.rfind("Building #", 0) == 0);
+    std::string fb_unk = species::sanitize_creation_name("", 0u, 0ull);
+    CK(!fb_unk.empty() && fb_unk == "Creation #1");
+
+    // 4. Clean names (ASCII & Cyrillic) are preserved verbatim (trimmed)
+    CK(species::sanitize_creation_name("  Дед  ", 0x40626200u, 99ull) == "Дед");
+    CK(species::sanitize_creation_name("Sporeling", 0x40626200u, 99ull) == "Sporeling");
+
+    // 5. Ingested library entries with sanitized names survive index roundtrip non-empty
+    LibraryState st;
+    uint64_t h1 = 0xCAFEBABE12345678ull;
+    uint64_t h2 = 0xDEADBEEF87654321ull;
+    CK(st.ingest(h1, 0x40626200u, true, "DERMOGEN", species::sanitize_creation_name("", 0x40626200u, h1), true));
+    CK(st.ingest(h2, 0x40626200u, true, "DERMOGEN", species::sanitize_creation_name("Дед", 0x40626200u, h2), true));
+    CK(!st.entries[h1].name.empty());
+    CK(st.entries[h2].name == "Дед");
+
+    auto raw = encode_index(st.save_index());
+    std::vector<IndexEntry> out;
+    CK(decode_index(raw.data(), raw.size(), out) && out.size() == 2);
+    for (const auto& ie : out)
+        CK(!ie.name.empty());
+}
+
 int main()
 {
     test_png_validation_and_filenames();
     test_index_roundtrip_and_corruption();
     test_wire_codecs();
     test_state_dedup_foreign_retries_and_my_filter();
+    test_metadata_names_and_nonempty_fallback();
     if (g_fail) {
         fprintf(stderr, "library_tests: %d FAILED\n", g_fail);
         return 1;

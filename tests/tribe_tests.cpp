@@ -633,6 +633,70 @@ static void guest_social_befriend()
     CHECK(!guest_mission_action(4, true));
 }
 
+static void bug1580_outfitter_anim_and_cons_cd()
+{
+    printf("outfitter baby guard, MSG_TRIBE_ANIM UDP chunking & native cons ability cooldown (BUG-1580)\n");
+    const bool fix = !g_nofix;
+
+    // 1. Outfitter return / stage re-entry BabyBorn guard
+    CHECK(!allow_baby_born_call(fix, true, false, true, true));   // Guest Outfitter return (FAILS with --nofix)
+    CHECK(!allow_baby_born_call(fix, true, false, false, false)); // Guest stage re-entry in Together
+    CHECK(!allow_baby_born_call(fix, false, false, true, false)); // Host Outfitter return with existing members
+    CHECK(!allow_baby_born_call(fix, false, false, false, true)); // Host stage re-entry in Rivals
+    CHECK(allow_baby_born_call(true, true, true, true, true));    // Real hut-buy message on Guest
+    CHECK(allow_baby_born_call(true, false, true, true, true));   // Real hut-buy message on Host
+    CHECK(allow_baby_born_call(true, false, false, false, false));// Fresh empty tribe first entry in Together
+
+    // 2. MSG_TRIBE_ANIM UDP packet chunking (168 idle entries = 1178 bytes from stream)
+    {
+        std::vector<uint8_t> big(2 + 168 * 7);
+        big[0] = 10; // idle kind
+        big[1] = 168;
+        for (size_t i = 0; i < 168; i++)
+            big[2 + i * 7] = (uint8_t)i;
+        auto chunks = split_anim_payload(big.data(), big.size(), kAnimMaxPayload);
+        CHECK(chunks.size() == 2);
+        size_t total_entries = 0;
+        for (const auto& c : chunks) {
+            CHECK(c.size() <= kAnimMaxPayload);
+            CHECK(c[0] == 10);
+            CHECK(c.size() == 2 + (size_t)c[1] * 7);
+            total_entries += c[1];
+        }
+        CHECK(total_entries == 168);
+        CHECK(chunks[0][2] == 0 && chunks[1][2] == chunks[0][1]);
+    }
+    // 120 phase entries (kind 14, 10 B/entry = 1202 B) splits into <= kAnimMaxPayload chunks
+    {
+        std::vector<uint8_t> ph(2 + 120 * 10, 0x5A);
+        ph[0] = 14;
+        ph[1] = 120;
+        auto chunks = split_anim_payload(ph.data(), ph.size(), kAnimMaxPayload);
+        CHECK(chunks.size() == 2);
+        CHECK(chunks[0].size() <= kAnimMaxPayload && chunks[1].size() <= kAnimMaxPayload);
+        CHECK((size_t)chunks[0][1] + (size_t)chunks[1][1] == 120);
+    }
+    // Small packet stays 1 chunk untouched
+    {
+        uint8_t small[2 + 3 * 7] = {10, 3};
+        auto chunks = split_anim_payload(small, sizeof small, kAnimMaxPayload);
+        CHECK(chunks.size() == 1 && chunks[0].size() == sizeof small);
+    }
+
+    // 3. Native consequence ability cooldown check (+0xC28 vector bounds + +0xBEC/+0xBF8 bitmasks)
+    CHECK(!native_ability_on_cooldown(12, 10, 0xFFFFFFFFu, 0xFFFFFFFFu, 0.0f)); // OOB index -> never false OnCooldown
+    CHECK(!native_ability_on_cooldown(-1, 10, 0xFFFFFFFFu, 0xFFFFFFFFu, 0.0f));
+    CHECK(!native_ability_on_cooldown(5, 10, 0u, 0u, 0.0f)); // stale 0.0f with neither playing nor recharging bit!
+    CHECK(native_ability_on_cooldown(5, 10, 0u, (1u << 5), 0.25f));  // actively recharging
+    CHECK(native_ability_on_cooldown(5, 10, (1u << 5), 0u, 0.0f));   // actively playing
+    CHECK(!native_ability_on_cooldown(5, 10, 0u, (1u << 5), 1.0f));  // finished recharge
+    CHECK(!native_ability_on_cooldown(5, 10, 0u, (1u << 4), 0.0f));  // different ability recharging
+
+    CHECK(consequence_guard_cooldown(60.0f) == 60.0);
+    CHECK(consequence_guard_cooldown(999.0f) == 300.0);
+    CHECK(consequence_guard_cooldown(0.0f) == ConsCooldowns::kMinGuardSec);
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && !strcmp(argv[1], "--nofix");
@@ -654,6 +718,7 @@ int main(int argc, char** argv)
     friendly_fire();
     epic_hostile_and_ufo_stage();
     guest_social_befriend();
+    bug1580_outfitter_anim_and_cons_cd();
     if (g_fail) {
         printf("tribe_tests: %d FAILED\n", g_fail);
         return 1;

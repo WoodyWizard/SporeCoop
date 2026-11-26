@@ -95,6 +95,21 @@ void anim_send(uint8_t to, const net::Writer& w, bool reliable)
     bool has = false;
     std::vector<net::FamilyRev> fam;
     uint8_t type = C.sess->peer_families(to, has, fam) ? wire::tribe_anim::type_for(has, fam, g_anim_msg_fix) : net::MSG_NPC_ANIM;
+    // BUG-1580: Split oversized list-format MSG_TRIBE_ANIM / MSG_NPC_ANIM payloads so unreliable UDP packets never
+    // exceed net::kMaxPacket (1200 B) even with many tribe members.
+    if (w.data.size() > tribe_logic::kAnimMaxPayload) {
+        auto chunks = tribe_logic::split_anim_payload(w.data.data(), w.data.size(), tribe_logic::kAnimMaxPayload);
+        for (const auto& ch : chunks) {
+            net::Writer cw;
+            cw.data = ch;
+            (type == net::MSG_TRIBE_ANIM ? g_anim_sent_new : g_anim_sent_old)++;
+            if (reliable)
+                C.sess->send_reliable_to(to, type, cw);
+            else
+                C.sess->send_unreliable_to(to, type, cw);
+        }
+        return;
+    }
     (type == net::MSG_TRIBE_ANIM ? g_anim_sent_new : g_anim_sent_old)++;
     if (reliable)
         C.sess->send_reliable_to(to, type, w);
@@ -544,6 +559,55 @@ static void SK_THISCALL h_CitizenTeardown(void* c)
     g_left_tribe.erase(c);
     o_CitizenTeardown(c);
 }
+// BUG-1580: Scoped Tribe_IsPlayerOwned override so a guest's rival chieftain executing a consequence ability
+// (Traps 52, Refreshing Storm 53, Flying Fish 54, Fire Bombs 55, Fireworks 56, Beastmaster 57) passes the native
+// spatial->IsPlayerOwned() checks inside BT conditions (0xDAE6F0, 0xDAE760, 0xDAE850) and Ability_Use (0xD1E99E)
+// without interfering with Host HUD, selection, or knockout notifications.
+using TribeIsPlayerOwned_t = bool(SK_THISCALL*)(void*);
+static TribeIsPlayerOwned_t o_TribeIsPlayerOwned = nullptr;
+static void* g_spoof_player_tribe = nullptr;
+static bool SK_THISCALL h_TribeIsPlayerOwned(void* tribe_spatial)
+{
+    if (g_spoof_player_tribe && tribe_spatial && ((uint8_t*)tribe_spatial - 0x120) == g_spoof_player_tribe)
+        return true;
+    return o_TribeIsPlayerOwned(tribe_spatial);
+}
+
+struct ActiveConsAbility {
+    void* chief = nullptr;
+    void* tribe = nullptr;
+    double until = 0.0;
+};
+static ActiveConsAbility g_cons_active[8];
+
+static void* cons_spoof_tribe_for_citizen(void* c)
+{
+    if (!is_host() || !tribe_rivals::active() || !is_citizen(c) || game::is_dead(c))
+        return nullptr;
+    if (!skg::readable((uint8_t*)c + kOwnerTribeOff, 4) || !skg::readable((uint8_t*)c + 0xB50, 4))
+        return nullptr;
+    void* t = F<void*>(c, kOwnerTribeOff);
+    if (!t || t == player_tribe() || !tribe_rivals::is_player_owned_tribe(t))
+        return nullptr;
+    uint8_t* ai = F<uint8_t*>(c, 0xB4C);
+    if (!ai || !skg::readable(ai, 0x620))
+        return nullptr;
+    // Never spoof during chieftain knockout (0x05CA7FA7) so Host's HUD doesn't react to Guest's knockout.
+    if (*(uint32_t*)(ai + 0x1D8) == 0x05CA7FA7u)
+        return nullptr;
+    // Check if citizen has an active Action 22 (0x16 = consequence ability) order in ai+0x60C
+    uint8_t* head = ai + 0x60C;
+    uint8_t* first = *(uint8_t**)head;
+    if (first && first != head && skg::readable(first, 0x10) && *(int*)(first + 8) == 22)
+        return t;
+    double now = H ? H->time_seconds() : 0.0;
+    for (const auto& ac : g_cons_active) {
+        if (ac.chief == c && ac.tribe == t && now < ac.until)
+            return t;
+    }
+    return nullptr;
+}
+
 // behaviour tree tick (shared by every creature kind): skipped for citizen mirrors on guests
 static int SK_CDECL h_BTTick(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t self, uint32_t a5, uint32_t a6,
                              uint32_t a7, uint32_t a8)
@@ -565,7 +629,11 @@ static int SK_CDECL h_BTTick(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,
     if (!is_guest()) // BUG-0531 (diagnostics): does a host member's tree run
         if (HEntry* e = hm_of((void*)self))
             e->data.bt_ticks++;
+    void* prev_spoof = g_spoof_player_tribe;
+    if (void* st = cons_spoof_tribe_for_citizen((void*)self))
+        g_spoof_player_tribe = st;
     int r = o_BTTick(a0, a1, a2, a3, self, a5, a6, a7, a8);
+    g_spoof_player_tribe = prev_spoof;
     if (!g_bt_freeze_at.empty()) // (tests, BUG-1084)
         if (auto it = g_bt_freeze_at.find((void*)self); it != g_bt_freeze_at.end()) {
             uint8_t* ai = F<uint8_t*>((void*)self, 0xB4C);
@@ -1846,6 +1914,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_SetSelected, (void*)h_SetSelected, (void**)&o_SetSelected);
     H->hook_create(M, (void*)a_DoActionForObjects, (void*)h_DoActionForObjects, (void**)&o_DoActionForObjects);
     H->hook_create(M, (void*)a_WalkSelected, (void*)h_WalkSelected, (void**)&o_WalkSelected);
+    if (uintptr_t ipo = H->sym("SporeCoop::Tribe_IsPlayerOwned")) // BUG-1580
+        H->hook_create(M, (void*)ipo, (void*)h_TribeIsPlayerOwned, (void**)&o_TribeIsPlayerOwned);
     if (uintptr_t ca = H->sym("Simulator::cTribeInputStrategy::ChooseInputActionID")) // BUG-0899
         H->hook_create(M, (void*)ca, (void*)h_ChooseAction, (void**)&o_ChooseAction);
     a_RingDraw = H->sym("SporeCoop::TribeTargetRing_Draw"); // BUG-0570 (optional)
@@ -2634,11 +2704,17 @@ static bool take_buy(const net::Vec3& p, uint8_t* from)
     }
     return false;
 }
+static bool g_outfitter_baby_fix = true;
+COOP_FIX("tribe.outfitter_baby", "BUG-1580", g_outfitter_baby_fix,
+         "tribe: block stage re-entry (Outfitter return) TribeStage_BabyBorn calls from spawning extra babies on Host or Guest");
+static uint32_t g_outfitter_babies_blocked = 0;
+
 std::string g_baby_last; // tests: how the last baby went
 static void SK_THISCALL h_BabyBorn(void* stage, float x, float y, float z)
 {
     g_baby_from = (uintptr_t)__builtin_return_address(0);
     static uintptr_t a_msg_ret = H->sym("SporeCoop::TribeStage_BabyBornMsg_Ret");
+    const bool from_hut_msg = !a_msg_ret || g_baby_from == a_msg_ret;
     // BUG-0824: whose purchase this baby is (only a baby of the hut's message; the stage's first baby is nobody's)
     uint8_t buyer = 0xFF;
     bool bought = g_ok && g_baby_pair_fix && g_guest_baby_fix && a_msg_ret && g_baby_from == a_msg_ret && C.sess &&
@@ -2651,6 +2727,22 @@ static void SK_THISCALL h_BabyBorn(void* stage, float x, float y, float z)
         g_baby_last = b;
     }
     bool on = g_ok && g_guest_baby_fix && game::mode_id() == modes::kTribe && stage;
+    // BUG-1580: TribeStage_Enter (0xCD7B21) calls TribeStage_BabyBorn when stage+0x3A3 == 0 (e.g. returning from
+    // Tribal Outfitter). Never allow non-hut-buy calls to send CMD_BABY on Guest or duplicate babies on Host/Guest.
+    if (on) {
+        void* pt = player_tribe();
+        bool has_members = pt && !members(pt).empty();
+        if (!tribe_logic::allow_baby_born_call(g_outfitter_baby_fix, is_guest(), from_hut_msg, has_members,
+                                               tribe_rivals::active())) {
+            if (skg::readable(stage, 0x3A4))
+                F<uint8_t>(stage, 0x3A3) = 1;
+            g_outfitter_babies_blocked++;
+            H->log(M, SK_INFO,
+                   "tribe: blocked non-hut-buy BabyBorn from %p (Outfitter/stage re-entry, count=%u, BUG-1580)",
+                   (void*)g_baby_from, g_outfitter_babies_blocked);
+            return;
+        }
+    }
     if (on && is_guest() && !local_play() && (!g_guest.mirrors.empty() || tribe_rivals::wipe_recovery_active())) {
         if (bought && buyer != C.sess->my_id()) { // BUG-0824: another player's purchase: the host makes it
             g_buys_other++;
@@ -2658,6 +2750,10 @@ static void SK_THISCALL h_BabyBorn(void* stage, float x, float y, float z)
         }
         if (skg::readable(stage, 0x3A4))
             F<uint8_t>(stage, 0x3A3) = 1; // BUG-1571 / BUG-1573: keep Add Baby enabled when guest skips local o_BabyBorn
+        if (tribe_rivals::active() && !tribe_rivals::can_local_buy_baby()) {
+            H->log(M, SK_INFO, "tribe: guest skipped CMD_BABY at pop cap or insufficient food (BUG-1580)");
+            return;
+        }
         net::Writer w;
         w.u8(CMD_BABY); w.u8(0); w.u32(0);
         write_target(w, Target{});
@@ -4209,13 +4305,36 @@ static int chieftain_ability_index_for_type(void* chief, int ab_type)
 
 static bool chieftain_ability_on_native_cd(void* chief, int ab_idx)
 {
-    if (!chief || ab_idx < 0 || ab_idx >= 64 || !skg::readable((uint8_t*)chief + 0xC28, 4))
+    // BUG-1580: Bounds-check against the +0xC28..+0xC2C vector length and check the playing (+0xBEC) / recharging
+    // (+0xBF8) bitmasks so uninitialized/stale 0.0f entries (which cCreatureBase::Update 0xC15540 never recharges)
+    // do not cause permanent false OnCooldown denials.
+    if (!chief || ab_idx < 0 || ab_idx >= 88 || !skg::readable((uint8_t*)chief + 0xBEC, 0x44))
         return false;
     uint8_t* cd = F<uint8_t*>(chief, 0xC28);
-    if (!cd || !skg::readable(cd + ab_idx * 0x10, 8))
+    uint8_t* cd_end = F<uint8_t*>(chief, 0xC2C);
+    if (!cd || !cd_end || cd_end < cd)
         return false;
-    float pct = *(float*)(cd + ab_idx * 0x10 + 4);
-    return std::isfinite(pct) && pct < 0.999f;
+    size_t count = (size_t)(cd_end - cd) / 0x10u;
+    if ((size_t)ab_idx >= count || !skg::readable(cd + (size_t)ab_idx * 0x10u, 8))
+        return false;
+    size_t word = (size_t)ab_idx >> 5;
+    uint32_t playing = F<uint32_t>(chief, 0xBEC + word * 4);
+    uint32_t recharging = F<uint32_t>(chief, 0xBF8 + word * 4);
+    float& pct = *(float*)(cd + (size_t)ab_idx * 0x10u + 4);
+    bool on_cd = tribe_logic::native_ability_on_cooldown(ab_idx, count, playing, recharging, pct);
+    if (!on_cd && (!std::isfinite(pct) || pct < 1.0f))
+        pct = 1.0f; // repair stale 0.0f cooldown slot so PlayAbility (0xC19881) accepts it
+    return on_cd;
+}
+
+static float chieftain_ability_recharge_sec(void* chief, int ab_idx)
+{
+    if (!chief || ab_idx < 0 || !skg::readable(chief, 4))
+        return 0.0f;
+    void* ab = vcall<void*>(chief, 0xB4 / 4, ab_idx);
+    if (!ab || !skg::readable((uint8_t*)ab + 0x9C, 4))
+        return 0.0f;
+    return F<float>(ab, 0x9C);
 }
 
 bool guest_request_consequence_ability(int ab_type)
@@ -4287,12 +4406,22 @@ bool host_consequence_ability(uint8_t from, int ab_type, const net::Vec3& /*pos*
                creat_card, target_tribe, chief, ab_idx);
         return false;
     }
+    // BUG-1580: Spoof Tribe_IsPlayerOwned for the guest's rival tribe during Ability_Use and the ensuing BT window
+    // so Flying Fish (54), Traps (52), Fireworks (56), Storm (53), Fire Bombs (55), and Beastmaster (57) execute
+    // their full native BT actions & VFX on the host.
+    if (from < 8)
+        g_cons_active[from] = {chief, target_tribe, now + 15.0};
+    void* prev_spoof = g_spoof_player_tribe;
+    if (rivals_on && target_tribe && target_tribe != player_tribe())
+        g_spoof_player_tribe = target_tribe;
     skg::cdecl_call<void>(a_AbilityUse, chief, ab_idx);
-    g_cons_cd.mark_used(from, ab_type, now);
+    g_spoof_player_tribe = prev_spoof;
+    double cd_sec = tribe_logic::consequence_guard_cooldown(chieftain_ability_recharge_sec(chief, ab_idx));
+    g_cons_cd.mark_used(from, ab_type, now, cd_sec);
     g_cons_ab_ran++;
     H->log(M, SK_INFO,
-           "tribe: ran guest %u consequence ability %d (%s) on tribe %p chief %p ab_idx=%d (BUG-1564)",
-           (unsigned)from, ab_type, tribe_logic::consequence_ability_name(ab_type), target_tribe, chief, ab_idx);
+           "tribe: ran guest %u consequence ability %d (%s) on tribe %p chief %p ab_idx=%d cd=%.1fs (BUG-1564/BUG-1580)",
+           (unsigned)from, ab_type, tribe_logic::consequence_ability_name(ab_type), target_tribe, chief, ab_idx, cd_sec);
     return true;
 }
 
