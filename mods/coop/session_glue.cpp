@@ -1175,7 +1175,7 @@ void setup_callbacks()
                 feed(text);
                 if (!coop_ui::is_open()) {
                     g_offer_opened_ui = true;
-                    coop_ui::open(true);
+                    coop_ui::open_for_vote();
                 }
                 g_lobby_dirty = true;
                 return;
@@ -1231,7 +1231,7 @@ void setup_callbacks()
             if (started) {
                 g_ready[g_sess.my_id()] = false;
                 g_vote_opened_ui = !coop_ui::is_open();
-                coop_ui::open(true);
+                coop_ui::open_for_vote();
             }
             if (ended && g_vote_opened_ui) {
                 coop_ui::open(false);

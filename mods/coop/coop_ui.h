@@ -131,11 +131,16 @@ bool report_shot_deferred();
 void init(const SkHost* host, SkMod* mod, Api api);
 void tick();     // every frame (inside Present): only schedules UI work outside the frame
 void open(bool on);
+// BUG-1572: auto-open for a vote (superweapon / stage transition); masks host/peer IP addresses while auto-opened
+void open_for_vote();
 // tests (BUG-1139, the warm reset): the window closed and back on the lobby page, as at a cold start (a closed
 // window keeps its page for the next F9)
 void test_reset();
 void open_lobby(); // open on the lobby page (not the settings / space page): a guest asked for its report
 bool is_open();
+// BUG-1572: streamer mode (hide IP addresses in lobby, host hint, LAN list, and recent servers; persisted in coop.ini)
+bool hide_ip();
+void set_hide_ip(bool on);
 // BUG-0599: the window covers (x, y) (screen pixels of the game window): hide it for `secs` so that a click of the
 // mod there reaches the game's window under it (the "game saved" box's OK); false = not open or not there
 bool step_aside(int x, int y, double secs);
@@ -170,5 +175,8 @@ uint32_t text_font();
 // the window speaks Russian (ui lang = ru, or auto on a Russian system)
 bool russian();
 void set_russian(bool ru); // tests (coop.uistate lang): the texts set from now on
+// BUG-1575: 5-language UI (en, ru, hu, es, zh, or auto)
+bool set_lang(const std::string& code);
+std::string lang_code();
 
 } // namespace coop_ui

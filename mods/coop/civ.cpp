@@ -1,6 +1,7 @@
 #include "civ.h"
 #include "civ_internal.h"
 #include "civ_rivals.h"
+#include "i18n.h"
 #include "party_difficulty.h"
 #include "civ_wallet.h"
 #include "own_world.h"
@@ -1971,7 +1972,8 @@ bool SK_THISCALL h_FireSW(void* civ, int type, const float* target)
     // BUG-0117: the vote fires what was asked in it; a request during another vote changes nothing
     std::array<float, 3> p{pos[0], pos[1], pos[2]};
     bool has_target = target != nullptr;
-    if (C.vote && C.vote(C.sess->name_of(C.sess->my_id()) + " wants to fire a superweapon", "the superweapon fires",
+    if (C.vote && C.vote(C.sess->name_of(C.sess->my_id()) + i18n::tr(" wants to fire a superweapon"),
+                         i18n::tr("the superweapon fires"),
                          [civ, type, p, has_target] {
                              {
                                  callguard::Hold sw_bypass(g_sw_bypass);
@@ -2076,7 +2078,7 @@ void host_superweapon_request(uint8_t from, net::Reader& r)
         return;
     }
     std::array<float, 3> p{pos[0], pos[1], pos[2]};
-    if (C.vote(C.sess->name_of(from) + " wants to fire a superweapon", "the superweapon fires", [pc, type, p, from] {
+    if (C.vote(C.sess->name_of(from) + i18n::tr(" wants to fire a superweapon"), i18n::tr("the superweapon fires"), [pc, type, p, from] {
             {
                 callguard::Hold sw_bypass(g_sw_bypass);
                 g_sw_fired = type;

@@ -21,6 +21,7 @@
 #include "dna_ledger.h"
 #include "dna_pace.h"
 #include "host_world.h"
+#include "i18n.h"
 #include "settings_core.h"
 #include "find_core.h"
 #include "net/shared_ledger.h"
@@ -1660,6 +1661,73 @@ static void test_compat()
     CHECK(has_minor(v07152, true, (uint8_t)Family::civ, 1, 0) && !has_minor(v07152, true, (uint8_t)Family::civ, 1, 1));
 }
 
+static void test_i18n_and_privacy()
+{
+    printf("i18n 5-language table & IP privacy masking (BUG-1572, BUG-1575)\n");
+    using namespace i18n;
+    // Language parsing and Windows primary LANGID mapping
+    Lang l = Lang::En;
+    bool is_a = false;
+    CHECK(parse_lang("en", l, is_a) && l == Lang::En && !is_a);
+    CHECK(parse_lang("RU", l, is_a) && l == Lang::Ru && !is_a);
+    CHECK(parse_lang("hu", l, is_a) && l == Lang::Hu && !is_a);
+    CHECK(parse_lang("es", l, is_a) && l == Lang::Es && !is_a);
+    CHECK(parse_lang("zh", l, is_a) && l == Lang::Zh && !is_a);
+    CHECK(parse_lang("zh-CN", l, is_a) && l == Lang::Zh && !is_a);
+    CHECK(parse_lang("auto", l, is_a) && is_a);
+    CHECK(!parse_lang("zz", l, is_a));
+    CHECK(lang_from_win_primary(0x19) == Lang::Ru);
+    CHECK(lang_from_win_primary(0x0E) == Lang::Hu);
+    CHECK(lang_from_win_primary(0x0A) == Lang::Es);
+    CHECK(lang_from_win_primary(0x04) == Lang::Zh);
+    CHECK(lang_from_win_primary(0x09) == Lang::En);
+
+    // IP address masking preserves port(s) and hides host/IPv4/IPv6
+    CHECK(mask_ip_address("192.168.1.5:47810") == "***.***.***.***:47810");
+    CHECK(mask_ip_address("192.168.1.5") == "***.***.***.***");
+    CHECK(mask_ip_address("192.168.1.5:47810, 10.0.0.2:47810") == "***.***.***.***:47810");
+    CHECK(mask_ip_address("[::1]:47810") == "***.***.***.***:47810");
+    CHECK(mask_ip_address("sporecoop.local:47810") == "***.***.***.***:47810");
+    CHECK(mask_ip_address("").empty());
+
+    // Key translation spot checks across all 5 languages
+    CHECK(std::string(tr_lang(Lang::Ru, "live")) == "на лету");
+    CHECK(std::string(tr_lang(Lang::Hu, "Settings")) == "Beállítások");
+    CHECK(std::string(tr_lang(Lang::Es, "Settings")) == "Ajustes");
+    CHECK(std::string(tr_lang(Lang::Zh, "Settings")) == "设置");
+    CHECK(std::string(tr_lang(Lang::En, "Hide IP (streamer mode)")) == "Hide IP (streamer mode)");
+    CHECK(std::string(tr_lang(Lang::Ru, "Hide IP (streamer mode)")) != "Hide IP (streamer mode)");
+
+    // Every setting in settings::kSpecs must have a translation entry for RU, HU, ES, ZH
+    const std::string em_dash = "\xE2\x80\x94";
+    for (int i = 0; i < settings::kCount; i++) {
+        const auto& sp = settings::kDefs[i];
+        auto it = setting_map().find(sp.key);
+        CHECK(it != setting_map().end());
+        if (it == setting_map().end())
+            continue;
+        for (int li = 0; li < 4; li++) {
+            const char* lbl = it->second->label[li];
+            const char* hlp = it->second->help[li];
+            CHECK(lbl && *lbl);
+            CHECK(hlp && *hlp);
+            if (lbl)
+                CHECK(std::string(lbl).find(em_dash) == std::string::npos);
+            if (hlp)
+                CHECK(std::string(hlp).find(em_dash) == std::string::npos);
+        }
+    }
+    // Every UI string entry must be non-empty in all 5 languages and free of U+2014 em dashes
+    for (const auto& e : kStrings) {
+        const char* all[5] = {e.en, e.ru, e.hu, e.es, e.zh};
+        for (const char* s : all) {
+            CHECK(s && *s);
+            if (s)
+                CHECK(std::string(s).find(em_dash) == std::string::npos);
+        }
+    }
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
@@ -1669,6 +1737,7 @@ int main(int argc, char** argv)
     test_dna_ledger();
     test_host_world();
     test_settings();
+    test_i18n_and_privacy();
     test_find();
     test_label_layout();
     test_held_cmds();

@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "fixes.h"
+#include "i18n.h"
 #include "lifecycle.h"
 #include "modes.h"
 #include "net/manifest.h"
@@ -75,7 +76,12 @@ static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
 static bool is_guest() { return C.sess && C.sess->connected() && C.sess->role() == net::Role::Client; }
 static uint8_t my_id() { return C.sess ? C.sess->my_id() : 0; }
 static bool ru() { return C.russian && C.russian(); }
-static const char* tr(const char* en, const char* r) { return ru() ? r : en; }
+static const char* tr(const char* en, const char* r) { return i18n::tr(en, r); }
+static const char* tr_stage(Stage s) { return i18n::tr(stage_name(s, false), stage_name(s, true)); }
+static const char* tr_mode(StageMode m) { return i18n::tr(mode_name(m, false), mode_name(m, true)); }
+static const char* tr_preset(Preset p) { return i18n::tr(preset_name(p, false), preset_name(p, true)); }
+static const char* tr_dist(BaseDistance d) { return i18n::tr(distance_name(d, false), distance_name(d, true)); }
+static const char* tr_rel(Relation r) { return i18n::tr(relation_name(r, false), relation_name(r, true)); }
 
 static std::string name_of(uint8_t id)
 {
@@ -1204,7 +1210,7 @@ std::vector<UiRow> ui_rows()
 
     // Section 1: Stage Mode Table & Settings (11.2)
     snprintf(buf, sizeof buf, "%s: %s", tr("Stage modes preset", "Пресет режимов"),
-             preset_name(g_state.config.preset(), ru()));
+             tr_preset(g_state.config.preset()));
     rows.push_back({buf,
                     host ? (g_state.config.preset() == Preset::AllRivals ? tr("All together", "Все вместе")
                                                                          : tr("All rivals", "Все соперники"))
@@ -1218,7 +1224,7 @@ std::vector<UiRow> ui_rows()
     for (int i = 0; i < kStages; i++) {
         Stage s = (Stage)i;
         bool riv = g_state.config.stage_is_rivals(s);
-        snprintf(buf, sizeof buf, "  %s: %s", stage_name(s, ru()), mode_name(g_state.config.stages[i], ru()));
+        snprintf(buf, sizeof buf, "  %s: %s", tr_stage(s), tr_mode(g_state.config.stages[i]));
         rows.push_back({buf,
                         host ? (riv ? tr("Together", "Вместе") : tr("Rivals", "Соперники")) : "",
                         host ? std::function<void()>([s, riv] {
@@ -1250,7 +1256,7 @@ std::vector<UiRow> ui_rows()
                     kDim});
 
     snprintf(buf, sizeof buf, "%s: %s", tr("Base distance", "Дистанция баз"),
-             distance_name(g_state.config.base_distance, ru()));
+             tr_dist(g_state.config.base_distance));
     rows.push_back({buf,
                     host ? tr("Cycle", "Сменить") : "",
                     host ? std::function<void()>([] {
@@ -1261,6 +1267,7 @@ std::vector<UiRow> ui_rows()
 
     // Section 2: Race Progress & Catch-up Timer (11.5)
     if (connected()) {
+        Stage cur_st = current_stage();
         if (g_state.race.catchup_active) {
             snprintf(buf, sizeof buf, "%s: %s %s (%.0f s)", tr("RACE", "ГОНКА"),
                      name_of(g_state.race.winner).c_str(), tr("won! Catch-up", "победил! Догон"),
@@ -1268,9 +1275,10 @@ std::vector<UiRow> ui_rows()
             rows.push_back({buf, "", nullptr, kYellow});
         } else {
             snprintf(buf, sizeof buf, "%s (%s)", tr("Race progress", "Прогресс гонки"),
-                     stage_name(current_stage(), ru()));
+                     tr_stage(cur_st));
             rows.push_back({buf, "", nullptr, kGold});
         }
+        // BUG-1575: human-readable per-stage race progress instead of raw "(a=X b=Y)" debug counters
         for (const auto& p : C.sess->players()) {
             if (!valid_player(p.id))
                 continue;
@@ -1278,8 +1286,21 @@ std::vector<UiRow> ui_rows()
             char rnk[24] = "";
             if (pr.finish_rank > 0)
                 snprintf(rnk, sizeof rnk, " [#%u]", (unsigned)pr.finish_rank);
-            snprintf(buf, sizeof buf, "  %s: %.1f / %.0f (a=%u b=%u)%s", p.name.c_str(), pr.primary, pr.secondary,
-                     (unsigned)pr.stat_a, (unsigned)pr.stat_b, rnk);
+            if (cur_st == Stage::Tribe) {
+                int need = pr.extra >= 1.0f ? (int)pr.extra : std::max(1, (int)pr.stat_b / 2 + 1);
+                snprintf(buf, sizeof buf, "  %s: %.0f/%d | %s %.0f | %u%s", p.name.c_str(), pr.primary, need,
+                         tr("Food", "Еда"), pr.secondary, (unsigned)pr.stat_a, rnk);
+            } else if (cur_st == Stage::Civ) {
+                snprintf(buf, sizeof buf, "  %s: %.0f/%u | $%.0f%s", p.name.c_str(), pr.primary,
+                         std::max(1u, (unsigned)pr.stat_b), pr.secondary, rnk);
+            } else if (cur_st == Stage::Space) {
+                snprintf(buf, sizeof buf, "  %s: %.0f | $%.0f%s", p.name.c_str(), pr.primary, pr.secondary, rnk);
+            } else if (cur_st == Stage::Cell || cur_st == Stage::Creature) {
+                snprintf(buf, sizeof buf, "  %s: %.0f%% | DNA %.0f%s", p.name.c_str(), pr.primary * 100.0f,
+                         pr.secondary, rnk);
+            } else {
+                snprintf(buf, sizeof buf, "  %s: %.0f%s", p.name.c_str(), pr.primary, rnk);
+            }
             rows.push_back({buf, "", nullptr, pr.finish_rank == 1 ? kGreen : 0});
         }
 
@@ -1302,28 +1323,28 @@ std::vector<UiRow> ui_rows()
                 std::string btn;
                 RelAction act = RelAction::ProposeAlly;
                 if (bn) {
-                    snprintf(buf, sizeof buf, "  %s: %s (war in %.0f s)", p.name.c_str(), relation_name(rel, ru()),
+                    snprintf(buf, sizeof buf, "  %s: %s (war in %.0f s)", p.name.c_str(), tr_rel(rel),
                              bn->remaining_secs);
                 } else if (in_ally) {
-                    snprintf(buf, sizeof buf, "  %s: %s (%s)", p.name.c_str(), relation_name(rel, ru()),
+                    snprintf(buf, sizeof buf, "  %s: %s (%s)", p.name.c_str(), tr_rel(rel),
                              tr("ally offered", "предложен союз"));
                     btn = tr("Accept ally", "Принять союз");
                     act = RelAction::AcceptAlly;
                 } else if (in_peace) {
-                    snprintf(buf, sizeof buf, "  %s: %s (%s)", p.name.c_str(), relation_name(rel, ru()),
+                    snprintf(buf, sizeof buf, "  %s: %s (%s)", p.name.c_str(), tr_rel(rel),
                              tr("peace offered", "предложен мир"));
                     btn = tr("Accept peace", "Принять мир");
                     act = RelAction::AcceptPeace;
                 } else if (rel == Relation::Neutral) {
-                    snprintf(buf, sizeof buf, "  %s: %s", p.name.c_str(), relation_name(rel, ru()));
+                    snprintf(buf, sizeof buf, "  %s: %s", p.name.c_str(), tr_rel(rel));
                     btn = tr("Propose ally", "Союз");
                     act = RelAction::ProposeAlly;
                 } else if (rel == Relation::Ally) {
-                    snprintf(buf, sizeof buf, "  %s: %s", p.name.c_str(), relation_name(rel, ru()));
+                    snprintf(buf, sizeof buf, "  %s: %s", p.name.c_str(), tr_rel(rel));
                     btn = tr("Break ally", "Разорвать");
                     act = RelAction::BreakAlly;
                 } else {
-                    snprintf(buf, sizeof buf, "  %s: %s", p.name.c_str(), relation_name(rel, ru()));
+                    snprintf(buf, sizeof buf, "  %s: %s", p.name.c_str(), tr_rel(rel));
                     btn = tr("Propose peace", "Мир");
                     act = RelAction::ProposePeace;
                 }

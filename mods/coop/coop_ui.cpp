@@ -23,6 +23,7 @@
 #include "space_ext.h"
 #include "history.h"
 #include "history_logic.h"
+#include "i18n.h"
 #include "rivals.h"
 #include "settings.h"
 #include "sui.h"
@@ -42,7 +43,14 @@ static const SkHost* H;
 static SkMod* M;
 static Api A;
 static bool g_ok;      // Spore UI available
-static bool g_ru;      // Russian captions
+static bool g_ru;      // Russian captions (kept in sync with i18n::g_lang == Lang::Ru)
+static uint32_t g_lang_rev = 0, g_lang_applied_rev = 0; // BUG-1575: live UI refresh on language change
+// BUG-1572: mask host/peer IP addresses during vote auto-open and when streamer mode (Hide IP) is enabled
+static bool g_hide_ip_fix = true;
+COOP_FIX("ui.hide_ip", "BUG-1572", g_hide_ip_fix,
+         "ui: mask host/peer IP addresses during vote auto-open and when streamer mode (Hide IP) is enabled");
+static bool g_hide_ip = false;
+static bool g_vote_auto_open = false;
 static bool g_want_open, g_pending, g_dirty = true;
 static double g_last_refresh;
 static std::string g_status;
@@ -105,7 +113,7 @@ static bool g_tip_clicked = false;
 static int g_space_first;  // the first row shown (pages of kSpaceRows rows)
 static int g_rivals_first; // the first row shown on the Rivals / Race page
 
-static const char* T(const char* en, const char* ru) { return g_ru ? ru : en; }
+static const char* T(const char* en, const char* ru) { return i18n::tr(en, ru); }
 
 // ---------------- widgets with cached state ----------------
 struct Cache {
@@ -166,6 +174,8 @@ static float text_width(const std::string& t)
             w += kCyr[cp - 0x410];
         else if (cp == 0x401 || cp == 0x451) // Ё ё
             w += 11;
+        else if (cp >= 0x2E80) // CJK ideographs / punctuation (BUG-1575)
+            w += 16;
         else
             w += 11;
     }
@@ -1548,10 +1558,11 @@ static void refresh_connect()
         bool have = k < (int)games.size();
         if (have) {
             const auto& g = games[k];
+            std::string shown = (g_hide_ip_fix && g_hide_ip) ? i18n::mask_ip_address(g.address) : g.address;
             char b[280];
             snprintf(b, sizeof b, "%s%s  -  %s  -  %d/%d  -  %s",
                      g.locked ? T("[Locked] ", "[Пароль] ") : "",
-                     g.name.c_str(), g.info.c_str(), g.players, g.max_players, g.address.c_str());
+                     g.name.c_str(), g.info.c_str(), g.players, g.max_players, shown.c_str());
             text(D.lan_rows[i], b);
             D.lan_addr[i] = g.address;
             D.lan_locked[i] = g.locked;
@@ -1582,7 +1593,7 @@ static void refresh_connect()
         int k = g_rec_first + i;
         bool have = k < (int)recs.size();
         if (have) {
-            text(D.rec_rows[i], recs[k]);
+            text(D.rec_rows[i], (g_hide_ip_fix && g_hide_ip) ? i18n::mask_ip_address(recs[k]) : recs[k]);
             D.rec_addr[i] = recs[k];
         } else {
             D.rec_addr[i].clear();
@@ -1598,6 +1609,8 @@ static void refresh_connect()
     }
     if (!g_demo_addr.empty())
         hint = g_demo_addr;
+    if (g_hide_ip_fix && g_hide_ip && !hint.empty())
+        hint = i18n::mask_ip_address(hint);
     text(D.host_hint, hint.empty() ? "" : std::string(T("Friends connect to: ", "Друзья подключаются к: ")) + hint);
     std::string up_line, up_btn;
     bool up = A.update && A.update(up_line, up_btn);
@@ -1889,6 +1902,8 @@ static void refresh_lobby()
     std::string addr = A.host_address ? A.host_address() : "";
     if (!g_demo_addr.empty() && !addr.empty())
         addr = g_demo_addr;
+    if (g_hide_ip_fix && !addr.empty() && (g_hide_ip || g_vote_auto_open))
+        addr = i18n::mask_ip_address(addr);
     text(D.address, addr.empty() ? ""
                     : std::string(host ? T("Friends connect to: ", "Друзья подключаются к: ") : T("Host address: ", "Адрес хоста: ")) +
                           addr);
@@ -1916,10 +1931,12 @@ constexpr int kLocalHdr = -10000;
 constexpr int kLocalFps = 10000;
 constexpr int kLocalBorderless = 10001;
 constexpr int kLocalFov = 10002;
+constexpr int kLocalHideIp = 10003; // BUG-1572: streamer mode IP masking
+constexpr int kLocalLang = 10004;   // BUG-1575: 5-language selector (Auto / EN / RU / HU / ES / ZH)
 
 static bool is_local_setting(int id)
 {
-    return id == kLocalFps || id == kLocalBorderless || id == kLocalFov;
+    return id == kLocalFps || id == kLocalBorderless || id == kLocalFov || id == kLocalHideIp || id == kLocalLang;
 }
 
 // the settings page's entries: a group header (-1 - the index of its first setting) or a setting id. "All stages"
@@ -1949,6 +1966,8 @@ static std::vector<int> settings_entries()
         e.push_back(kLocalFps);
         e.push_back(kLocalBorderless);
         e.push_back(kLocalFov);
+        e.push_back(kLocalHideIp);
+        e.push_back(kLocalLang);
     }
     return e;
 }
@@ -1956,9 +1975,7 @@ static std::vector<int> settings_entries()
 // a setting's value as its button shows it: On / Off, a named value (creature.mode: Own / Host's), a number
 static std::string value_label(int id, int v)
 {
-    std::string val = settings::value_text(id, v);
-    return val == "on" ? T("On", "Вкл") : val == "off" ? T("Off", "Выкл") : val == "own" ? T("Own", "Свои")
-           : val == "host" ? T("Host's", "Хоста") : val;
+    return i18n::setting_value(settings::value_text(id, v));
 }
 
 // who may change setting `id` from this window now (settings_core.h can_set: a guest never, a session setting
@@ -2001,9 +2018,33 @@ static void do_set_click(int row)
     if (id == kLocalFov) {
         int nv = A.cycle_fov ? A.cycle_fov() : 0;
         g_set_line = std::string(T("Third-person FOV: ", "Обзор от 3-го лица: ")) +
-                     (nv == 0 ? T("Default", "Обычный") : "+" + std::to_string(nv * 3) + " deg");
+                     (nv == 0 ? T("Default", "Обычный") : "+" + std::to_string(nv * 3) + "\xC2\xB0");
         g_set_line_color = kGreen;
         trace::line("ui", "display.fov -> %d", nv);
+        g_dirty = true;
+        return;
+    }
+    if (id == kLocalHideIp) {
+        set_hide_ip(!g_hide_ip);
+        g_set_line = std::string(T("Hide IP (streamer mode): ", "Скрывать IP (режим стримера): ")) +
+                     (g_hide_ip ? T("On", "Вкл") : T("Off", "Выкл"));
+        g_set_line_color = kGreen;
+        trace::line("ui", "display.hide_ip -> %d", g_hide_ip ? 1 : 0);
+        g_dirty = true;
+        return;
+    }
+    if (id == kLocalLang) {
+        // Cycle: Auto -> En -> Ru -> Hu -> Es -> Zh -> Auto
+        static const char* const kOrder[6] = {"auto", "en", "ru", "hu", "es", "zh"};
+        int cur = i18n::is_auto() ? 0 : ((int)i18n::lang() + 1);
+        int nxt = (cur + 1) % 6;
+        set_lang(kOrder[nxt]);
+        save_str("ui", "lang", kOrder[nxt]);
+        g_set_line = std::string(T("Language: ", "Язык интерфейса: ")) +
+                     (i18n::is_auto() ? std::string(T("Auto", "Авто")) + " (" + i18n::lang_display(i18n::lang()) + ")"
+                                      : std::string(i18n::lang_display(i18n::lang())));
+        g_set_line_color = kGreen;
+        trace::line("ui", "display.lang -> %s", kOrder[nxt]);
         g_dirty = true;
         return;
     }
@@ -2015,11 +2056,11 @@ static void do_set_click(int row)
     if (r != settings::Refusal::None || !settings::set((settings::Id)id, nv, false, &why)) {
         g_set_line = r == settings::Refusal::Guest ? T("Only the host changes the settings", "Настройки меняет только хост")
                      : r == settings::Refusal::SessionStarted
-                         ? T("Locked: a session setting changes only before the start", "Заблокировано: меняется только до начала")
+                         ? T("Locked: a session setting changes only before the start", "Закрыто: меняется только в меню галактики до старта")
                          : std::string(T("Not changed: ", "Не изменено: ")) + why;
         g_set_line_color = kRed;
     } else {
-        g_set_line = std::string(d.label) + ": " + value_label(id, nv);
+        g_set_line = std::string(i18n::setting_label(d.key, d.label)) + ": " + value_label(id, nv);
         g_set_line_color = kGreen;
     }
     trace::line("ui", "setting %s -> %d (%s)", d.key, nv, why.c_str());
@@ -2036,9 +2077,9 @@ static void refresh_settings()
     text(D.set_note, guest ? T("The host decides these settings: you see them here.",
                                "Эти настройки выбирает хост, здесь они видны вам.")
                      : started ? T("Live settings change now; the others are locked in play.",
-                                   "Живые меняются сейчас, остальные заблокированы в игре.")
+                                   "Настройки «на лету» меняются сразу, остальные только в меню галактики.")
                                : T("Click to change. Live settings can change in play too.",
-                                   "Нажмите, чтобы изменить. Живые можно менять и в игре."));
+                                   "Нажмите, чтобы изменить. Настройки «на лету» меняются и в игре."));
     for (int i = 0; i < kSetRows; i++) {
         int k = g_set_first + i;
         bool have = k < n;
@@ -2056,12 +2097,12 @@ static void refresh_settings()
             fit(D.set_label[i], c);
         }
         if (id == kLocalHdr) {
-            text(D.set_label[i], T("Display (this PC)", "Экран (этот ПК)"));
+            text(D.set_label[i], T("Display (this PC)", "Экран и интерфейс (этот ПК)"));
             color(D.set_label[i], kGold);
             continue;
         }
         if (id < 0) {
-            text(D.set_label[i], settings::kDefs[-id - 1].group);
+            text(D.set_label[i], i18n::setting_group(settings::kDefs[-id - 1].group));
             color(D.set_label[i], kGold);
             continue;
         }
@@ -2076,11 +2117,20 @@ static void refresh_settings()
                 text(D.set_label[i], std::string(T("Borderless window", "Окно без рамки")) + (bl ? " *" : ""));
                 color(D.set_label[i], bl ? kYellow : kWhite);
                 text(D.set_btn[i], bl ? T("On", "Вкл") : T("Off", "Выкл"));
-            } else {
+            } else if (id == kLocalFov) {
                 int st = A.fov_step ? A.fov_step() : 0;
                 text(D.set_label[i], std::string(T("Third-person FOV", "Обзор от 3-го лица")) + (st ? " *" : ""));
                 color(D.set_label[i], st ? kYellow : kWhite);
-                text(D.set_btn[i], st == 0 ? T("Default", "Обычный") : "+" + std::to_string(st * 3) + " deg");
+                text(D.set_btn[i], st == 0 ? T("Default", "Обычный") : "+" + std::to_string(st * 3) + "\xC2\xB0");
+            } else if (id == kLocalHideIp) {
+                text(D.set_label[i], std::string(T("Hide IP (streamer mode)", "Скрывать IP (режим стримера)")) + (g_hide_ip ? " *" : ""));
+                color(D.set_label[i], g_hide_ip ? kYellow : kWhite);
+                text(D.set_btn[i], g_hide_ip ? T("On", "Вкл") : T("Off", "Выкл"));
+            } else {
+                bool custom = !i18n::is_auto();
+                text(D.set_label[i], std::string(T("Language", "Язык интерфейса")) + (custom ? " *" : ""));
+                color(D.set_label[i], custom ? kYellow : kWhite);
+                text(D.set_btn[i], i18n::is_auto() ? std::string(T("Auto", "Авто")) : std::string(i18n::lang_display(i18n::lang())));
             }
             enable(D.set_btn[i], true);
             text(D.set_tag[i], T("local", "локально"));
@@ -2090,21 +2140,21 @@ static void refresh_settings()
         const auto& d = settings::kDefs[id];
         int v = settings::get((settings::Id)id);
         bool differs = v != d.def;
-        text(D.set_label[i], std::string(d.label) + (differs ? " *" : ""));
+        text(D.set_label[i], std::string(i18n::setting_label(d.key, d.label)) + (differs ? " *" : ""));
         color(D.set_label[i], differs ? kYellow : kWhite);
         text(D.set_btn[i], value_label(id, v));
         auto r = set_refusal(id);
         enable(D.set_btn[i], r == settings::Refusal::None);
         bool live = settings::is_live((settings::Id)id);
         bool locked = !live && started; // (a guest too: the host's started flag)
-        text(D.set_tag[i], locked                                   ? T("locked", "закрыта")
-                           : live                                   ? T("live", "живая")
-                                                                    : T("session", "сессия"));
+        text(D.set_tag[i], locked                                   ? T("locked", "закрыто")
+                           : live                                   ? T("live", "на лету")
+                                                                    : T("session", "до старта"));
         color(D.set_tag[i], locked ? kRed : live ? kGreen : kDim);
     }
     text(D.set_line, !g_set_line.empty() ? g_set_line
                      : T("* differs from the default. Live: the host can change it in play.",
-                         "* не по умолчанию. Живая: хост меняет её и в игре."));
+                         "* отличается от стандарта. На лету: хост меняет и в игре."));
     color(D.set_line, !g_set_line.empty() ? g_set_line_color : kDim);
     show(D.set_prev, pages > 1);
     show(D.set_next, pages > 1);
@@ -2187,6 +2237,24 @@ static void refresh_rivals()
         text(D.rivals_text[i], rows[k].text);
         color(D.rivals_text[i], rows[k].color ? rows[k].color : kWhite);
         text(D.rivals_button[i], rows[k].button);
+        // BUG-1575: dynamically widen Rivals row button if localized caption (e.g. Russian/Hungarian/Spanish) exceeds 165 px
+        if (!rows[k].button.empty() && rows[k].on_click && D.rivals_button[i]) {
+            float want_w = std::min(230.f, std::max(165.f, std::round(caption_width(rows[k].button) + 42.f)));
+            float bx1 = 720.f - want_w;
+            Rect br = sui::area(D.rivals_button[i]);
+            if (std::abs(br.x1 - bx1) > 0.5f) {
+                br.x1 = bx1;
+                sui::set_area(D.rivals_button[i], br);
+            }
+            if (D.rivals_text[i]) {
+                auto& tc = g_cache[D.rivals_text[i]];
+                float tx2 = bx1 - 8.f;
+                if (std::abs(tc.box.x2 - tx2) > 0.5f) {
+                    tc.box.x2 = tx2;
+                    fit(D.rivals_text[i], tc);
+                }
+            }
+        }
     }
     if (rows.empty())
         text(D.rivals_text[0], T("Nothing here yet", "Пока ничего"));
@@ -2400,10 +2468,29 @@ static std::string tooltip_for(const std::string& name)
         return T("Include your logs and summary in the host's report", "Отправить ваши логи в общий отчёт хоста");
     if (name == "rnosend")
         return T("Decline sending your report this time", "Не отправлять ваш отчёт в этот раз");
-    if (name == "setback" || name == "sback")
+    if (name == "setback" || name == "sback" || name == "rback")
         return T("Return to the co-op lobby", "Вернуться в лобби кооператива");
     if (name == "close")
         return T("Close the co-op window (press F9 to reopen)", "Закрыть окно кооператива (F9 - открыть снова)");
+    // BUG-1575: localized hover tooltips on every Settings page row button (set0..set11)
+    if (name.rfind("set", 0) == 0 && name.size() > 3 && std::isdigit((unsigned char)name[3])) {
+        int row = atoi(name.c_str() + 3);
+        int id = row >= 0 && row < kSetRows ? D.set_id[row] : -1;
+        if (id == kLocalFps)
+            return T("Limit FPS to reduce stutter or GPU load (Auto = game default)", "Ограничить FPS (Авто = стандарт игры)");
+        if (id == kLocalBorderless)
+            return T("Run the game in a borderless fullscreen window", "Запускать игру в окне без рамки");
+        if (id == kLocalFov)
+            return T("Wider camera in 3rd-person stages (Creature, Adventures)", "Увеличить угол обзора в 3-м лице (Существо, Приключения)");
+        if (id == kLocalHideIp)
+            return T("Mask IP addresses in lobby, join list, and during vote popups", "Скрывать IP в лобби, списке серверов и при голосованиях");
+        if (id == kLocalLang)
+            return T("Change the mod interface language (saved in coop.ini)", "Переключить язык интерфейса мода (сохраняется в coop.ini)");
+        if (id >= 0 && id < settings::kCount) {
+            const auto& d = settings::kDefs[id];
+            return i18n::setting_help(d.key, d.help);
+        }
+    }
     return {};
 }
 
@@ -2507,6 +2594,54 @@ static void refresh_tooltip()
     sui::set_visible(D.tip_win, true);
 }
 
+static void refresh_static_labels()
+{
+    if (!D.root)
+        return;
+    // Update static button/header labels on live language switch (BUG-1575) and widen Report button if needed
+    std::string rcap = T("Report a problem", "Сообщить об ошибке");
+    text(D.report_btn, rcap);
+    if (D.report_btn) {
+        float want_w = std::min(290.f, std::max(210.f, std::round(caption_width(rcap) + 44.f)));
+        Rect rr = sui::area(D.report_btn);
+        float rx1 = 720.f - want_w;
+        if (std::abs(rr.x1 - rx1) > 0.5f) {
+            rr.x1 = rx1;
+            sui::set_area(D.report_btn, rr);
+        }
+    }
+    text(D.settings_btn, T("Settings", "Настройки"));
+    text(D.space_btn, T("Space >", "Космос >"));
+    text(D.rivals_btn, T("Rivals >", "Соперники >"));
+    text(D.send_btn, T("Send", "Отправить"));
+    text(D.ask_btn, T("Ask the players for their reports", "Попросить у игроков их отчёты"));
+    text(D.rsend, T("Send", "Отправить"));
+    text(D.rnosend, T("Don't send", "Не отправлять"));
+    text(D.set_title, T("Session settings", "Настройки сессии"));
+    text(D.set_back, T("< Lobby", "< Лобби"));
+    text(D.space_title, T("Your galaxy together", "Галактика вместе"));
+    text(D.space_back, T("< Lobby", "< Лобби"));
+    text(D.rivals_title, T("Rivals & Race", "Соперники и гонка"));
+    text(D.rivals_back, T("< Lobby", "< Лобби"));
+    text(D.stage_hdr, T("Stage", "Этап"));
+    text(D.back_btn, T("< Back", "< Назад"));
+    text(D.lan_more, T("More >", "Ещё >"));
+    text(D.rec_more, T("More >", "Ещё >"));
+    text(D.name_ok, T("Continue", "Далее"));
+    text(D.host_btn, T("Host", "Создать"));
+    text(D.host_pw_lbl, T("Password", "Пароль"));
+    text(D.join_btn, T("Join", "Подключиться"));
+    text(D.join_pw_lbl, T("Password", "Пароль"));
+    if (auto it = g_named.find("rename"); it != g_named.end())
+        text(it->second, T("Change name", "Сменить имя"));
+    if (auto it = g_named.find("gohost"); it != g_named.end())
+        text(it->second, T("Host a game", "Создать игру"));
+    if (auto it = g_named.find("gojoin"); it != g_named.end())
+        text(it->second, T("Join a game", "Подключиться к игре"));
+    if (g_menu_btn)
+        text(g_menu_btn, T("Co-op", "Кооператив"));
+}
+
 static void refresh()
 {
     g_pending = false;
@@ -2520,10 +2655,16 @@ static void refresh()
         g_step = kStepChoose;
     ensure_menu_button();
     pause_menu_tick();
-    if (g_want_open && !D.root)
+    if (g_want_open && !D.root) {
         build_dialog();
+        g_lang_applied_rev = 0; // force initial label sizing (e.g. Report button width for non-English)
+    }
     if (!D.root)
         return;
+    if (g_lang_applied_rev != g_lang_rev + 1) {
+        g_lang_applied_rev = g_lang_rev + 1;
+        refresh_static_labels();
+    }
     if (g_want_open && g_raise) {
         // on top of every UI layer (in game the HUD layers cover the menu layer and take
         // the mouse): a direct child of the main window, brought to the front
@@ -2644,7 +2785,9 @@ void init(const SkHost* host, SkMod* mod, Api api)
     A = std::move(api);
     g_ok = sui::init(H, M);
     std::string lang = load_str("ui", "lang", "auto");
-    g_ru = lang == "ru" || (lang == "auto" && PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_RUSSIAN);
+    set_lang(lang);
+    g_hide_ip = load_str("ui", "hide_ip", "0") == "1";
+    g_vote_auto_open = false;
     if (g_ok) {
         sui::set_state_provider(debug_state);
         sui::register_commands();
@@ -2665,8 +2808,14 @@ void first_start()
 
 void open(bool on)
 {
-    if (g_want_open == on)
+    if (!on)
+        g_vote_auto_open = false;
+    else
+        g_vote_auto_open = false; // explicit open by user/F9: show address unless streamer Hide IP is enabled
+    if (g_want_open == on) {
+        g_dirty = true;
         return;
+    }
     g_want_open = on;
     if (on) {
         g_raise = true;
@@ -2675,6 +2824,30 @@ void open(bool on)
     } else {
         tooltip_clear();
     }
+    g_dirty = true;
+}
+
+void open_for_vote()
+{
+    if (!g_want_open)
+        g_vote_auto_open = true; // BUG-1572: mask IP whenever F9 pops up automatically for a vote
+    if (g_want_open) {
+        g_dirty = true;
+        return;
+    }
+    g_want_open = true;
+    g_raise = true;
+    if (D.root)
+        sui::set_edit_text(D.name_edit, A.name());
+    g_dirty = true;
+}
+
+bool hide_ip() { return g_hide_ip; }
+
+void set_hide_ip(bool on)
+{
+    g_hide_ip = on;
+    save_str("ui", "hide_ip", on ? "1" : "0");
     g_dirty = true;
 }
 
@@ -2936,16 +3109,22 @@ std::string debug_state()
     }
     if (D.address)
         s += "hostaddr '" + sui::caption(D.address) + "'\n";
+    s += "privacy hide_ip=" + std::string(g_hide_ip ? "1" : "0") + " vote_auto=" + (g_vote_auto_open ? "1" : "0") +
+         " lang=" + i18n::lang_code(i18n::lang()) + "\n";
     for (int i = 0; i < kSetRows; i++) // the settings rows on the page now: key, value, editable, tag
         if (D.set_id[i] >= 0 && D.set_btn[i] && sui::visible(D.set_btn[i])) {
             int id = D.set_id[i];
             if (is_local_setting(id)) {
                 const char* key = id == kLocalFps ? "display.frame_target"
                                   : id == kLocalBorderless ? "display.borderless"
-                                                           : "display.fov";
+                                  : id == kLocalFov ? "display.fov"
+                                  : id == kLocalHideIp ? "display.hide_ip"
+                                                       : "display.lang";
                 int val = id == kLocalFps ? (A.frame_target ? A.frame_target() : 0)
                           : id == kLocalBorderless ? (A.borderless && A.borderless() ? 1 : 0)
-                                                   : (A.fov_step ? A.fov_step() : 0);
+                          : id == kLocalFov ? (A.fov_step ? A.fov_step() : 0)
+                          : id == kLocalHideIp ? (g_hide_ip ? 1 : 0)
+                                               : (int)i18n::lang();
                 s += "setting " + std::to_string(i) + " " + key + " " + std::to_string(val) + " " +
                      ((sui::flags(D.set_btn[i]) & sui::kFlagEnabled) ? "1" : "0") + " '" + sui::caption(D.set_tag[i]) +
                      "'\n";
@@ -2978,13 +3157,32 @@ std::string debug_state()
 
 uint32_t text_font() { return g_text_font; }
 
-bool russian() { return g_ru; }
+bool russian() { return i18n::is_ru(); }
 
 void set_russian(bool ru)
 {
-    g_ru = ru;
+    i18n::set_lang(ru ? i18n::Lang::Ru : i18n::Lang::En, false);
+    g_ru = i18n::is_ru();
+    g_lang_rev++;
     g_dirty = true;
 }
+
+bool set_lang(const std::string& code)
+{
+    i18n::Lang l = i18n::Lang::En;
+    bool is_auto = false;
+    if (!i18n::parse_lang(code, l, is_auto))
+        return false;
+    if (is_auto)
+        l = i18n::lang_from_win_primary((uint16_t)PRIMARYLANGID(GetUserDefaultUILanguage()));
+    i18n::set_lang(l, is_auto);
+    g_ru = i18n::is_ru();
+    g_lang_rev++;
+    g_dirty = true;
+    return true;
+}
+
+std::string lang_code() { return i18n::lang_code(i18n::lang()); }
 
 void set_test_color(uint32_t argb)
 {

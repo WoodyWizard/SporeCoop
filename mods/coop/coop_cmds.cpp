@@ -1196,9 +1196,16 @@ int c_uistate(void*, int argc, const char* const* argv, SkOut* out)
         SAY("ui message log %s", coop_ui::g_log_msgs ? "on" : "off");
         return 0;
     }
-    if (argc > 2 && !strcmp(argv[1], "lang")) { // tests: the layout of the texts that change in Russian
-        coop_ui::set_russian(!strcmp(argv[2], "ru"));
-        SAY("ui lang %s (the texts set from now on)", coop_ui::russian() ? "ru" : "en");
+    if (argc > 2 && !strcmp(argv[1], "lang")) { // tests (BUG-1575): en|ru|hu|es|zh|auto
+        if (!coop_ui::set_lang(argv[2]))
+            SAY("ui lang: unknown '%s' (use auto|en|ru|hu|es|zh)", argv[2]);
+        else
+            SAY("ui lang %s (the texts set from now on)", coop_ui::lang_code().c_str());
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "hide_ip")) { // tests (BUG-1572): streamer mode IP masking
+        coop_ui::set_hide_ip(atoi(argv[2]) != 0);
+        SAY("ui hide_ip %d", coop_ui::hide_ip() ? 1 : 0);
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "reset")) { // tests (BUG-1139): closed, on the lobby page, as at a cold start

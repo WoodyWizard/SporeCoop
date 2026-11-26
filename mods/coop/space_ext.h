@@ -30,6 +30,7 @@
 #include <string>
 #include <vector>
 
+#include "i18n.h"
 #include "net/buffer.h"
 #include "net/protocol.h"
 #include "space_logic.h"
@@ -129,7 +130,7 @@ std::string game_key(); // the save file of the game played now (cached per Spac
 // game writes; BUG-0121: the Tribe co-op epic leaves first)
 void on_save(void (*fn)());
 bool russian();           // the co-op window speaks Russian
-inline const char* tr(const char* en, const char* ru) { return russian() ? ru : en; }
+inline const char* tr(const char* en, const char* ru) { return i18n::tr(en, ru); }
 void notice(const std::string& text); // a local toast + chat log line
 // to everybody (the host relays a guest's message to the other guests); a message for one
 // player carries its id in the payload and the others ignore it

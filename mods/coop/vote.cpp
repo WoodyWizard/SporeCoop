@@ -11,6 +11,7 @@
 #include "arrival_rule.h"
 #include "designs.h"
 #include "civ_editors.h"
+#include "i18n.h"
 #include "rivals.h"
 
 namespace coop_core {
@@ -275,9 +276,9 @@ bool start_action_vote(const std::string& text, const std::string& done, std::fu
         g_ready[p.id] = p.id == 0;
     g_lobby_dirty = true;
     broadcast_vote();
-    notice(text + ": press I'm ready (F9)", -1);
+    notice(text + i18n::tr(": press I'm ready (F9)"), -1);
     g_vote_opened_ui = !coop_ui::is_open();
-    coop_ui::open(true);
+    coop_ui::open_for_vote();
     return true;
 }
 
@@ -307,9 +308,9 @@ void start_vote(void* req, const std::string& text)
         g_ready[p.id] = p.id == 0;
     g_lobby_dirty = true;
     broadcast_vote();
-    notice(text + ": press I'm ready (F9)", -1);
+    notice(text + i18n::tr(": press I'm ready (F9)"), -1);
     g_vote_opened_ui = !coop_ui::is_open();
-    coop_ui::open(true);
+    coop_ui::open_for_vote();
 }
 
 SelectUI_t o_SelectUI;

@@ -182,8 +182,10 @@ std::string present_intervals(bool reset)
 struct ID3DXFontVtbl; // we call through raw vtable indices
 typedef HRESULT(WINAPI* D3DXCreateFontW_t)(IDirect3DDevice9*, INT, UINT, UINT, UINT, BOOL, DWORD,
                                            DWORD, DWORD, DWORD, LPCWSTR, void**);
-static void* g_font;   // ID3DXFont*
+static void* g_font;     // ID3DXFont* (Arial)
+static void* g_font_cjk; // ID3DXFont* (Microsoft YaHei / SimSun fallback for CJK text, BUG-1575)
 static bool g_font_failed;
+static bool g_font_cjk_tried;
 
 static void** vt(void* obj) { return *(void***)obj; }
 
@@ -193,6 +195,40 @@ static void font_release()
         ((ULONG(WINAPI*)(void*))vt(g_font)[2])(g_font);
         g_font = nullptr;
     }
+    if (g_font_cjk) {
+        ((ULONG(WINAPI*)(void*))vt(g_font_cjk)[2])(g_font_cjk);
+        g_font_cjk = nullptr;
+    }
+    g_font_cjk_tried = false;
+}
+
+static void font_ensure_cjk()
+{
+    if (g_font_cjk || g_font_cjk_tried || !g_dev)
+        return;
+    g_font_cjk_tried = true;
+    HMODULE dx = GetModuleHandleW(L"d3dx9_27.dll");
+    auto create = dx ? (D3DXCreateFontW_t)(void*)GetProcAddress(dx, "D3DXCreateFontW") : nullptr;
+    if (!create)
+        return;
+    static const wchar_t* const kFaces[] = {L"Microsoft YaHei", L"SimSun", L"Noto Sans CJK SC"};
+    for (const wchar_t* face : kFaces) {
+        if (SUCCEEDED(create(g_dev, 18, 0, FW_BOLD, 1, FALSE, DEFAULT_CHARSET,
+                             OUT_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH,
+                             face, &g_font_cjk)) &&
+            g_font_cjk) {
+            return;
+        }
+        g_font_cjk = nullptr;
+    }
+}
+
+static bool has_cjk(const std::wstring& w)
+{
+    for (wchar_t ch : w)
+        if (ch >= 0x2E80)
+            return true;
+    return false;
 }
 
 static void font_ensure()
@@ -218,13 +254,19 @@ void overlay_text(int x, int y, uint32_t argb, const char* utf8)
     if (!g_overlay_active || !g_font || !utf8)
         return;
     std::wstring w = widen(utf8);
+    void* use_font = g_font;
+    if (has_cjk(w)) {
+        font_ensure_cjk();
+        if (g_font_cjk)
+            use_font = g_font_cjk;
+    }
     RECT r = {x, y, x + 2000, y + 400};
     typedef INT(WINAPI * DrawTextW_t)(void*, void*, LPCWSTR, INT, RECT*, DWORD, D3DCOLOR);
-    auto draw = (DrawTextW_t)vt(g_font)[15];
+    auto draw = (DrawTextW_t)vt(use_font)[15];
     // drop shadow for readability
     RECT rs = {x + 1, y + 1, x + 2001, y + 401};
-    draw(g_font, nullptr, w.c_str(), -1, &rs, DT_NOCLIP, (argb & 0xFF000000u));
-    draw(g_font, nullptr, w.c_str(), -1, &r, DT_NOCLIP, argb);
+    draw(use_font, nullptr, w.c_str(), -1, &rs, DT_NOCLIP, (argb & 0xFF000000u));
+    draw(use_font, nullptr, w.c_str(), -1, &r, DT_NOCLIP, argb);
 }
 
 // ---- overlay shapes (since 0.3.15): filled triangles in screen pixels, drawn in the overlay pass ----
@@ -732,6 +774,8 @@ static HRESULT WINAPI h_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp)
     tri_release(); // a state block holds no D3DPOOL_DEFAULT resource, but is made anew after a Reset anyway
     if (g_font)
         ((HRESULT(WINAPI*)(void*))vt(g_font)[16])(g_font); // OnLostDevice
+    if (g_font_cjk)
+        ((HRESULT(WINAPI*)(void*))vt(g_font_cjk)[16])(g_font_cjk);
     HRESULT hr = o_Reset(dev, pp);
     if (SUCCEEDED(hr) && fixed(g_fix_trireset) && g_tri_failed) { // BUG-1026: the shapes get another try
         g_tri_failed = false;
@@ -744,6 +788,8 @@ static HRESULT WINAPI h_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp)
     }
     if (g_font && SUCCEEDED(hr))
         ((HRESULT(WINAPI*)(void*))vt(g_font)[17])(g_font); // OnResetDevice
+    if (g_font_cjk && SUCCEEDED(hr))
+        ((HRESULT(WINAPI*)(void*))vt(g_font_cjk)[17])(g_font_cjk);
     fire(SK_EV_DEVICE_RESET, dev);
     SKLOG(SK_INFO, "device Reset -> 0x%08lX (%ux%u)", hr, pp ? pp->BackBufferWidth : 0,
           pp ? pp->BackBufferHeight : 0);

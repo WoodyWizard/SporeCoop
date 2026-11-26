@@ -5,6 +5,7 @@
 #include <cstdio>
 
 #include "coop_ui.h"
+#include "i18n.h"
 #include "fixes.h"
 #include "game.h"
 #include "settings.h"
@@ -119,7 +120,7 @@ std::string saved_line()
     std::string t = ago_text(store::since_save(), coop_ui::russian());
     if (!g_clock.running())
         return t;
-    return t + (coop_ui::russian() ? " (автосохранение)" : " (autosave on)");
+    return t + i18n::tr(" (autosave on)", " (автосохранение)");
 }
 
 static int command(void*, int argc, const char* const* argv, SkOut* out)
