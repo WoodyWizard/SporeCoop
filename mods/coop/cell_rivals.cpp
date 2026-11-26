@@ -12,6 +12,13 @@ bool g_fix_cell_rivals = true;
 COOP_FIX("rivals.cell", "BUG-1546", g_fix_cell_rivals,
          "cell: Rivals mode (per-player evolution bar and DNA, war-gated PvP bites with meat drops, no knockout/revive, catch-up timer and Cell part draft)");
 
+bool g_fix_rivals_wscale_solo_safe = true;
+COOP_FIX("cell.rivals_wscale_solo_safe", "BUG-1568", g_fix_rivals_wscale_solo_safe,
+         "cell: skip over-scaled rival puppet collisions during Cell Rivals wscale divergence and clamp fluid grid viewbox float32 rounding overflow (0x00E4E384)");
+
+extern bool scale_solo_active();
+extern float last_host_scale();
+
 struct RivalPlayer {
     int32_t food = 0;
     int32_t dna = 0;
@@ -37,10 +44,14 @@ struct RivalsStats {
     uint32_t draft_unlocks_applied = 0;
     uint32_t payouts_sent = 0;
     uint32_t payouts_applied = 0;
+    uint32_t wscale_puppet_pairs_skipped = 0;
+    uint32_t wscale_puppets_clamped = 0;
+    uint32_t fluid_box_clamps = 0;
 };
 
 static RivalPlayer g_rp[rivals::kMaxPlayers];
 static RivalsStats g_rv;
+static uint8_t g_overscaled_puppets_mask = 0;
 static double g_last_prog_send = -100.0;
 static cell_rivals_logic::ProgressMsg g_last_sent_prog{};
 static bool g_sent_prog_once = false;
@@ -78,6 +89,7 @@ static void rivals_reset_session()
     g_unlock_scheduled = false;
     g_queued_creature_dna = 0;
     g_paid_creature_dna = 0;
+    g_overscaled_puppets_mask = 0;
 }
 
 SESSION_STATE(
@@ -95,6 +107,60 @@ bool rivals_active()
 {
     return g_fix_cell_rivals && C.sess && C.sess->connected() && rivals::active_in_mode(modes::kCell);
 }
+
+// BUG-1568: detect over-scaled rival puppets whose physical collision with our avatar would apply massive separation
+// impulses when players diverge in Cell world_scale (e.g. host surging to wscale=15000 while guest is at 0.5).
+bool rivals_wscale_puppet_unsafe(uint8_t* pup)
+{
+    if (!g_fix_rivals_wscale_solo_safe || !rivals_active() || !in_cell() || !pup || !modes::cell_is_puppet(pup))
+        return false;
+    int owner = C.puppet_owner ? C.puppet_owner(pup) : -1;
+    if (owner >= 0 && owner < 8 && (g_overscaled_puppets_mask & (uint8_t)(1u << owner)))
+        return true;
+    uint8_t* av = avatar();
+    float own_sz = av ? F<float>(av, kSize) : 0.55f;
+    float pup_sz = std::max(F<float>(pup, kSize), F<float>(pup, kTargetSize));
+    return cell_rivals_logic::puppet_scale_collision_unsafe(true, true, scale_solo_active(), owner == 0, own_sz, pup_sz,
+                                                            last_host_scale(), world_scale());
+}
+
+void rivals_clamp_overscaled_puppets()
+{
+    g_overscaled_puppets_mask = 0;
+    if (!g_fix_rivals_wscale_solo_safe || !rivals_active() || !in_cell() || !C.puppets)
+        return;
+    uint8_t* av = avatar();
+    if (!av)
+        return;
+    float own_sz = F<float>(av, kSize);
+    float own_sc = world_scale();
+    float host_sc = last_host_scale();
+    bool solo = scale_solo_active();
+    for (auto& p : C.puppets()) {
+        if (p.id < 0 || p.id >= 8 || !p.cell)
+            continue;
+        uint8_t* pup = (uint8_t*)p.cell;
+        if (!modes::cell_is_puppet(pup))
+            continue;
+        float raw_sz = F<float>(pup, kSize);
+        float raw_tsz = F<float>(pup, kTargetSize);
+        float max_sz = std::max(raw_sz, raw_tsz);
+        if (!cell_rivals_logic::puppet_scale_collision_unsafe(true, true, solo, p.id == 0, own_sz, max_sz, host_sc,
+                                                              own_sc))
+            continue;
+        g_overscaled_puppets_mask |= (uint8_t)(1u << p.id);
+        float clamped_sz = cell_rivals_logic::clamp_puppet_size_for_scale(own_sz, raw_sz);
+        float clamped_tsz = cell_rivals_logic::clamp_puppet_size_for_scale(own_sz, raw_tsz);
+        if (clamped_sz != raw_sz || clamped_tsz != raw_tsz) {
+            F<float>(pup, kSize) = clamped_sz;
+            F<float>(pup, kTargetSize) = clamped_tsz;
+            g_rv.wscale_puppets_clamped++;
+        }
+    }
+}
+
+void rivals_note_puppet_pair_skip() { g_rv.wscale_puppet_pairs_skipped++; }
+void rivals_note_fluid_box_clamp() { g_rv.fluid_box_clamps++; }
 
 static std::string player_name(uint8_t id)
 {
@@ -797,16 +863,18 @@ std::string rivals_status_line()
 {
     cell_rivals_logic::ProgressMsg pm{};
     bool has = read_local_progress(pm);
-    char b[360];
+    char b[460];
     snprintf(b, sizeof b,
              "cell_rivals: fix=%d active=%d food=%d bar=%.2f dna=%d parts=%04X pvp_out=%u pvp_in=%u pvp_blocked=%u "
              "pvp_kills=%u meat_drops=%u meat_chunks=%u rollbacks=%u/%u draft_starts=%u draft_unlocks=%u/%u "
-             "queued_dna=%d paid_dna=%d\n",
+             "queued_dna=%d paid_dna=%d wscale_safe=%d puppet_skips=%u puppets_clamped=%u fluid_clamps=%u\n",
              (int)g_fix_cell_rivals, (int)rivals_active(), has ? pm.food : -1,
              has ? cell_rivals_logic::bar_fraction(pm.food) : 0.0f, has ? pm.dna : -1,
              has ? (unsigned)pm.parts_mask : 0u, g_rv.pvp_out, g_rv.pvp_in, g_rv.pvp_blocked, g_rv.pvp_kills,
              g_rv.meat_drops, g_rv.meat_chunks, g_rv.rollbacks_out, g_rv.rollbacks_in, g_rv.draft_starts,
-             g_rv.draft_unlocks_sent, g_rv.draft_unlocks_applied, (int)g_queued_creature_dna, (int)g_paid_creature_dna);
+             g_rv.draft_unlocks_sent, g_rv.draft_unlocks_applied, (int)g_queued_creature_dna, (int)g_paid_creature_dna,
+             (int)g_fix_rivals_wscale_solo_safe, g_rv.wscale_puppet_pairs_skipped, g_rv.wscale_puppets_clamped,
+             g_rv.fluid_box_clamps);
     return b;
 }
 
@@ -817,6 +885,18 @@ std::string rivals_debug(const std::vector<std::string>& a)
         int dmg = atoi(a[3].c_str());
         bool ok = rivals_send_pvp_hit(tid, dmg, 4, true);
         return ok ? "rivals pvp hit sent\n" : "rivals pvp hit blocked\n";
+    }
+    if (a.size() >= 4 && a[1] == "tpabs") {
+        uint8_t* av = in_cell() ? avatar() : nullptr;
+        if (!av)
+            return "no cell avatar\n";
+        float x = (float)atof(a[2].c_str()), y = (float)atof(a[3].c_str());
+        if (!std::isfinite(x) || !std::isfinite(y))
+            return "invalid coords\n";
+        stop_at(av, {x, y, 0.f});
+        char b[96];
+        snprintf(b, sizeof b, "moved to (%.1f %.1f)\n", x, y);
+        return b;
     }
     if (a.size() >= 2 && a[1] == "payout") {
         if (!is_host())

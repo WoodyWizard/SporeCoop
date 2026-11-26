@@ -14,6 +14,9 @@ static float g_last_host_scale = 0.f;
 static bool g_scale_solo = false;
 static void solo_start();
 
+bool scale_solo_active() { return g_scale_solo; }
+float last_host_scale() { return g_last_host_scale; }
+
 SESSION_STATE(
     "cell.guest_rivals", nullptr,
     [] {

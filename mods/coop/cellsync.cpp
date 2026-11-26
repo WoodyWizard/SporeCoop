@@ -1,4 +1,5 @@
 #include "cellsync_internal.h"
+#include "cell_rivals_logic.h"
 #include "own_progress.h"
 #include "rivals.h"
 #include "effects.h"
@@ -779,6 +780,59 @@ LIFECYCLE_STATE("cell.food_queue", lifecycle::kSession | lifecycle::kWorld, &g_f
 
 
 
+// BUG-1568: Cell Rivals wscale divergence collision guard and fluid grid ViewBoxes float32 overflow guard (0x00E4E384).
+extern bool g_fix_rivals_wscale_solo_safe;
+extern bool rivals_wscale_puppet_unsafe(uint8_t* pup);
+extern void rivals_note_puppet_pair_skip();
+extern void rivals_note_fluid_box_clamp();
+
+static void SK_CDECL h_PairSafe(uint8_t* a, uint8_t* b, float dt)
+{
+    if (g_fix_rivals_wscale_solo_safe && in_cell() && a && b) {
+        uint8_t* av = avatar();
+        uint8_t* pup = (a == av && modes::cell_is_puppet(b)) ? b : (b == av && modes::cell_is_puppet(a)) ? a : nullptr;
+        if (pup && rivals_wscale_puppet_unsafe(pup)) {
+            g_n.pairs_skipped++;
+            rivals_note_puppet_pair_skip();
+            return;
+        }
+    }
+    h_Pair(a, b, dt);
+}
+
+using FluidStep_t = void(SK_CDECL*)(float);
+static FluidStep_t o_FluidStep;
+static uintptr_t a_FluidStep;
+
+static uintptr_t resolve_fluid_step()
+{
+    uintptr_t sim = H ? H->sym("Simulator::Cell::SimUpdate") : 0;
+    if (!sim || !skg::readable((void*)(sim + 0xC5), 5))
+        return 0;
+    const uint8_t* call_site = (const uint8_t*)(sim + 0xC5);
+    if (call_site[0] != 0xE8)
+        return 0;
+    int32_t rel = 0;
+    memcpy(&rel, call_site + 1, 4);
+    uintptr_t target = (uintptr_t)((intptr_t)(sim + 0xCA) + rel);
+    // Verify 0x00E59EE0 prologue: mov eax, [0x016B3C04]; fld dword ptr [esp+4]
+    static constexpr uint8_t kPrologue[9] = {0xA1, 0x04, 0x3C, 0x6B, 0x01, 0xD9, 0x44, 0x24, 0x04};
+    if (!skg::readable((void*)target, sizeof kPrologue) || memcmp((const void*)target, kPrologue, sizeof kPrologue) != 0)
+        return 0;
+    return target;
+}
+
+static void SK_CDECL h_FluidStep(float dt)
+{
+    if (g_fix_rivals_wscale_solo_safe && in_cell()) {
+        if (float* vb = view_boxes(); vb && skg::readable(vb, 6 * sizeof(float))) {
+            if (cell_rivals_logic::sanitize_fluid_viewbox(vb[0], vb[3], vb[1], vb[4]))
+                rivals_note_fluid_box_clamp();
+        }
+    }
+    o_FluidStep(dt);
+}
+
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -860,7 +914,10 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     } else
         a_ViewBoxes = 0;
     if (a_Pair)
-        H->hook_create(M, (void*)a_Pair, (void*)h_Pair, (void**)&o_Pair);
+        H->hook_create(M, (void*)a_Pair, (void*)h_PairSafe, (void**)&o_Pair);
+    a_FluidStep = resolve_fluid_step();
+    if (a_FluidStep)
+        H->hook_create(M, (void*)a_FluidStep, (void*)h_FluidStep, (void**)&o_FluidStep);
     if (a_Wipe)
         H->hook_create(M, (void*)a_Wipe, (void*)h_Wipe, (void**)&o_Wipe);
     if (a_NoAttack)

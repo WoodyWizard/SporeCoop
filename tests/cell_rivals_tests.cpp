@@ -399,6 +399,100 @@ static void test_catchup_wscale_policy()
     CHECK(!should_use_local_pool(true, 0.25f, 1.0f, true), "rejoins host pool once converged to 0.25x");
 }
 
+static void test_wscale_solo_safety_and_fluid_viewbox()
+{
+    printf("cell_rivals: wscale rival puppet collision guard & 0x00E4E384 fluid viewbox clamp (BUG-1568)\n");
+    using namespace cell_rivals_logic;
+    // Normal same-level and 1-level-apart Cell Rivals War PvP remains allowed
+    CHECK(!puppet_scale_collision_unsafe(true, true, false, true, 0.55f, 0.55f, 0.5f, 0.5f),
+          "same-scale host puppet collision allowed");
+    CHECK(!puppet_scale_collision_unsafe(true, true, false, true, 0.82f, 2.46f, 1.5f, 0.5f),
+          "1-level-apart (3x) host puppet collision allowed");
+    CHECK(!puppet_scale_collision_unsafe(true, true, false, false, 0.82f, 0.273f, 0.5f, 1.5f),
+          "1-level-apart (0.33x) guest puppet collision allowed");
+
+    // Fix OFF or Together mode never blocks
+    CHECK(!puppet_scale_collision_unsafe(false, true, true, true, 0.55f, 500.0f, 15000.0f, 0.5f),
+          "fix OFF disables puppet collision guard");
+    CHECK(!puppet_scale_collision_unsafe(true, false, true, true, 0.55f, 500.0f, 15000.0f, 0.5f),
+          "Together mode does not trigger Rivals puppet guard");
+
+    // Diverged wscale / solo mode / giant puppet blocks collision
+    CHECK(puppet_scale_collision_unsafe(true, true, true, true, 0.55f, 0.55f, 4.722f, 0.5f),
+          "scale_solo blocks host puppet collision even if size already clamped");
+    CHECK(puppet_scale_collision_unsafe(true, true, false, true, 0.55f, 1.0f, 4.722f, 0.5f),
+          "diverged host_scale blocks host puppet collision before solo flips");
+    CHECK(puppet_scale_collision_unsafe(true, true, false, false, 0.55f, 500.0f, 0.5f, 0.5f),
+          "giant 500m non-host rival puppet blocked");
+    CHECK(puppet_scale_collision_unsafe(true, true, false, false, 0.55f, 20.0f, 0.5f, 0.5f),
+          "abs size > 15m rival puppet blocked");
+    CHECK(puppet_scale_collision_unsafe(true, true, false, false, 0.55f, 5.0f, 0.5f, 0.5f),
+          "size ratio > 8x rival puppet blocked");
+    CHECK(puppet_scale_collision_unsafe(true, true, false, false, 0.83f, 0.05f, 0.5f, 0.5f),
+          "size ratio < 0.125x microscopic rival puppet blocked");
+    CHECK(puppet_scale_collision_unsafe(true, true, false, false, 0.55f, std::numeric_limits<float>::quiet_NaN(), 0.5f, 0.5f),
+          "NaN puppet size blocked");
+
+    // Clamping over-scaled puppet size
+    CHECK(std::fabs(clamp_puppet_size_for_scale(0.55f, 500.0f) - 4.4f) < 1e-4f,
+          "500m puppet clamped to 8x own_size (4.4m)");
+    CHECK(std::fabs(clamp_puppet_size_for_scale(3.0f, 500.0f) - 15.0f) < 1e-4f,
+          "large own_size still capped at kPuppetCollisionMaxAbsSize (15m)");
+    CHECK(std::fabs(clamp_puppet_size_for_scale(0.55f, 0.55f) - 0.55f) < 1e-5f,
+          "normal puppet size unchanged by clamp");
+
+    // 0x00E4E384 fluid viewbox float32 rounding overflow clamp
+    auto make_box = [](float cx, float cy, float& x0, float& x1, float& y0, float& y1) {
+        x0 = cx - 10.0f;
+        x1 = cx + 10.0f;
+        y0 = cy - 7.5f;
+        y1 = cy + 7.5f;
+    };
+    auto grid_cells = [](float x0, float x1, float y0, float y1) {
+        const float eps = 1.52587890625e-5f;
+        int rx = (int)std::ceil((x1 - x0) * 0.05000000074505806f - eps);
+        int ry = (int)std::ceil((y1 - y0) * 0.06666667014360428f - eps);
+        return (2 * rx + 1) * (2 * ry + 1);
+    };
+
+    // Normal coordinates untouched
+    {
+        float x0, x1, y0, y1;
+        make_box(60.3f, 217.9f, x0, x1, y0, y1);
+        CHECK(!sanitize_fluid_viewbox(x0, x1, y0, y1), "normal coords (60.3, 217.9) untouched");
+        CHECK(grid_cells(x0, x1, y0, y1) == 9, "normal coords yield 9 grid cells");
+    }
+    // Exact crash coordinates from campaign_rivals (8187.9, 10249.0): raw overflows to 15 cells, sanitized stays <= 9
+    {
+        float x0, x1, y0, y1;
+        make_box(8187.9f, 10249.0f, x0, x1, y0, y1);
+        CHECK(grid_cells(x0, x1, y0, y1) == 15, "raw (8187.9, 10249.0) reproduces 15-cell overflow (0x0F)");
+        CHECK(sanitize_fluid_viewbox(x0, x1, y0, y1), "sanitize clamps (8187.9, 10249.0)");
+        CHECK((x1 - x0) <= 20.0f && (y1 - y0) <= 15.0f, "sanitized spans <= 20x15");
+        CHECK(grid_cells(x0, x1, y0, y1) == 9, "sanitized (8187.9, 10249.0) fits 9-int stack buffer");
+    }
+    // Y-axis overflow near 4096 and extreme coordinates (1e6, -1e6)
+    {
+        float x0, x1, y0, y1;
+        make_box(100.0f, 4088.7f, x0, x1, y0, y1);
+        CHECK(grid_cells(x0, x1, y0, y1) == 15, "raw Y=4088.7 overflows to 15 cells");
+        CHECK(sanitize_fluid_viewbox(x0, x1, y0, y1), "sanitize clamps Y=4088.7");
+        CHECK(grid_cells(x0, x1, y0, y1) == 9, "sanitized Y=4088.7 fits 9 cells");
+    }
+    {
+        float x0, x1, y0, y1;
+        make_box(1000000.0f, -1000000.0f, x0, x1, y0, y1);
+        sanitize_fluid_viewbox(x0, x1, y0, y1);
+        CHECK((x1 - x0) <= 20.0f && (y1 - y0) <= 15.0f && grid_cells(x0, x1, y0, y1) <= 9,
+              "extreme 1e6 coordinates stay within 9 cells");
+    }
+    // Non-finite input safely returns false
+    {
+        float x0 = std::numeric_limits<float>::quiet_NaN(), x1 = 10.0f, y0 = 0.0f, y1 = 15.0f;
+        CHECK(!sanitize_fluid_viewbox(x0, x1, y0, y1), "NaN viewbox safely ignored");
+    }
+}
+
 int main()
 {
     test_progress_and_parts();
@@ -412,6 +506,7 @@ int main()
     test_3p_4p_draft_filter_and_resolution();
     test_poison_cloud_pvp_attribution();
     test_catchup_wscale_policy();
+    test_wscale_solo_safety_and_fluid_viewbox();
     printf("cell_rivals_tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

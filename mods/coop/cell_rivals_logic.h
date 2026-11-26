@@ -207,6 +207,73 @@ inline bool should_use_local_pool(bool cell_rivals_active, float host_scale, flo
     return r > kScaleDivergeHigh || r < kScaleDivergeLow;
 }
 
+// BUG-1568: during Cell Rivals wscale divergence (e.g. host advances to food=1000 wscale=4.7..15000 while a rival
+// guest is still at wscale=0.5), cell_drive scales the rival's puppet by peer_scale/own_scale (up to 999 m wide).
+// Allowing HandleCollisionPair between our avatar and that over-scaled War rival puppet creates a huge penetration
+// contact that blasts our avatar across the map (~660 m/s), where float32 precision loss in ViewBoxes at |x|>=8182.4
+// or |y|>=4088.7 overflows 0x00E4E320's 9-int stack buffer (0xC0000005 storm at 0x00E4E384).
+constexpr float kPuppetCollisionMaxRatio = 8.0f;
+constexpr float kPuppetCollisionMinRatio = 0.125f;
+constexpr float kPuppetCollisionMaxAbsSize = 15.0f;
+constexpr float kFluidViewMaxWidth = 20.0f;
+constexpr float kFluidViewMaxHeight = 15.0f;
+constexpr float kFluidInvCols = 0.05000000074505806f; // 1/20 at 0x01483AE8
+constexpr float kFluidInvRows = 0.06666667014360428f; // 1/15 at 0x01483AEC
+constexpr float kFluidEps = 1.52587890625e-5f;        // 2^-16 at 0x01483AF4
+
+inline bool puppet_scale_collision_unsafe(bool fix_on, bool cell_rivals_active, bool scale_solo, bool puppet_is_host,
+                                          float own_size, float puppet_size, float host_scale, float own_scale)
+{
+    if (!fix_on || !cell_rivals_active)
+        return false;
+    if (puppet_is_host && (scale_solo || scale_diverged(host_scale, own_scale)))
+        return true;
+    if (!std::isfinite(own_size) || !std::isfinite(puppet_size) || own_size <= 1e-4f || puppet_size <= 1e-4f)
+        return true;
+    if (puppet_size > kPuppetCollisionMaxAbsSize)
+        return true;
+    float r = puppet_size / own_size;
+    return !std::isfinite(r) || r > kPuppetCollisionMaxRatio || r < kPuppetCollisionMinRatio;
+}
+
+inline float clamp_puppet_size_for_scale(float own_size, float puppet_size)
+{
+    if (!std::isfinite(own_size) || own_size <= 1e-4f)
+        return std::isfinite(puppet_size) ? std::clamp(puppet_size, 0.1f, kPuppetCollisionMaxAbsSize) : 0.55f;
+    float hi = std::min(kPuppetCollisionMaxAbsSize, own_size * kPuppetCollisionMaxRatio);
+    float lo = std::max(0.05f, own_size * kPuppetCollisionMinRatio);
+    if (lo > hi)
+        lo = hi;
+    if (!std::isfinite(puppet_size))
+        return own_size;
+    return std::clamp(puppet_size, lo, hi);
+}
+
+// BUG-1568: Spore's Cell fluid grid helper 0x00E4E210 computes half_cols = ceil((maxX - minX) * 0.05 - 2^-16) and
+// half_rows = ceil((maxY - minY) * (1/15) - 2^-16) into a fixed 9-int (3x3) stack buffer in 0x00E4E320.
+// When |cam.x| >= 8182.4 or |cam.y| >= 4088.7, float32 rounding makes (cam+10)-(cam-10) > 20.0 or (cam+7.5)-(cam-7.5) >
+// 15.0, pushing half_cols/half_rows to 2 (15 or 25 ints) and smashing 0x00E4E320's stack (0x00E4E384 crash).
+// Shrinking max by 1+ ULP so max-min <= 20.0 / 15.0 keeps 0x00E4E210 strictly <= 9 cells at any finite coordinate.
+inline bool sanitize_fluid_viewbox(float& min_x, float& max_x, float& min_y, float& max_y)
+{
+    auto clamp_axis = [](float& lo, float& hi, float max_span, float inv_cells) -> bool {
+        if (!std::isfinite(lo) || !std::isfinite(hi) || !(hi > lo))
+            return false;
+        if ((hi - lo) * inv_cells - kFluidEps <= 1.0f)
+            return false;
+        float cand = lo + max_span;
+        if (!std::isfinite(cand) || cand > hi)
+            cand = hi;
+        for (int i = 0; i < 8 && ((cand - lo) > max_span || (cand - lo) * inv_cells - kFluidEps > 1.0f) && cand > lo; i++)
+            cand = std::nextafter(cand, lo);
+        hi = cand;
+        return true;
+    };
+    bool cx = clamp_axis(min_x, max_x, kFluidViewMaxWidth, kFluidInvCols);
+    bool cy = clamp_axis(min_y, max_y, kFluidViewMaxHeight, kFluidInvRows);
+    return cx || cy;
+}
+
 // ---- Policy gates (11.3.1) ----
 inline bool can_pvp_damage(bool cell_rivals_active, bool war_between_pair, bool friendly_fire_on)
 {

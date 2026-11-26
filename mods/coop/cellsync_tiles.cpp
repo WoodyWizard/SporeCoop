@@ -664,10 +664,13 @@ static bool g_fix_rescale_origin = true;
 COOP_FIX("cell.rescale_origin", "BUG-1394", g_fix_rescale_origin,
          "cell: keep WorldScaleStep recentering at (0,0,0) when a connected peer's camera is >1000 m from origin");
 
+extern void rivals_clamp_overscaled_puppets();
+
 void SK_CDECL h_WorldScale(float dt)
 {
     g_last_dt = dt;
     g_sim_frame++;
+    rivals_clamp_overscaled_puppets(); // BUG-1568: clamp over-scaled rival puppets before UpdateCells/Collisions
     own_probe("step start");
     stack_tick();
     auto flush = [] {
