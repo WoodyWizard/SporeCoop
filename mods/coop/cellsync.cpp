@@ -1,5 +1,6 @@
 #include "cellsync_internal.h"
 #include "cell_rivals_logic.h"
+#include "i18n.h"
 #include "own_progress.h"
 #include "rivals.h"
 #include "effects.h"
@@ -537,7 +538,11 @@ bool crowded(uint8_t* a, float r)
     return false;
 }
 static double g_ko_sent;
-constexpr float kKoOpacity = 0.35f;
+constexpr float kKoOpacity = 0.65f; // BUG-1574: 0.35 made knocked-out cells look invisible against pool water
+static bool g_ko_vis_fix = true;
+COOP_FIX("cell.ko_visibility", "BUG-1574", g_ko_vis_fix,
+         "cell: keep knocked-out cells clearly visible (0.65 opacity instead of nearly invisible 0.35)");
+inline float ko_opacity() { return g_ko_vis_fix ? kKoOpacity : 0.35f; }
 
 // a one-shot game effect on a cell (names from the game: cell_death_oneshot, cell_hatch_ice, ...)
 void effect(uint8_t* c, const char* name)
@@ -613,7 +618,7 @@ static void on_ko(int id, uint8_t state, float left, float hold)
     // the puppets of other stages are not cells
     uint8_t* c = in_cell() ? puppet_cell(id) : nullptr;
     if (state == KO_OUT && expired && g_fix_ko_grace && c)
-        F<float>(c, kOpacity) = kKoOpacity; // the same knockout after a gap: no second death effect
+        F<float>(c, kOpacity) = ko_opacity(); // the same knockout after a gap: no second death effect
     else if (state == KO_OUT) {
         effect(c, "cell_death_oneshot");
         k.fx += c != nullptr;
@@ -666,7 +671,7 @@ bool go_down(uint8_t* c)
         effect(c, "cell_death_oneshot");
         send_ko(KO_OUT, (float)kDownTime, 0);
         if (C.notice)
-            C.notice(C.my_name() + " is knocked out: swim right next to them within 10 s");
+            C.notice(C.my_name() + i18n::tr(" is knocked out: swim right next to them within 10 s"));
     }
     F<int>(c, kHp) = 1;
     F<uint8_t>(c, kDead) = 0;
@@ -685,7 +690,7 @@ static void downed_tick(uint8_t* a, double now, double dt)
     }
     F<int>(a, kHp) = 1;
     F<uint8_t>(a, kInvuln) = 1;
-    F<float>(a, kOpacity) = kKoOpacity;
+    F<float>(a, kOpacity) = ko_opacity();
     stop_at(a, down_pos());
     float d = 0;
     std::string helper = nearest_partner(revive_dist(a), nullptr, &d, true);
@@ -701,7 +706,7 @@ static void downed_tick(uint8_t* a, double now, double dt)
         effect(a, "cell_hatch_ice");
         send_ko(KO_REVIVED, 0, 1);
         if (C.notice)
-            C.notice(helper + " revived " + C.my_name());
+            C.notice(helper + i18n::tr(" revived ") + C.my_name());
         return;
     }
     if (now - g_down_since < kDownTime)
@@ -715,7 +720,7 @@ static void downed_tick(uint8_t* a, double now, double dt)
         send_ko(KO_UP, 0, 0);
         g_n.ko_deaths++;
         if (C.notice)
-            C.notice(C.my_name() + " was not revived in time");
+            C.notice(C.my_name() + i18n::tr(" was not revived in time"));
         {
             callguard::Hold ko_dying(g_ko_dying);
             h_KillCell(a, avatar_idx(), F<void*>(a, kRes), false, 0, 0.f);
@@ -737,7 +742,8 @@ static void downed_tick(uint8_t* a, double now, double dt)
     effect(a, "cell_egg_L0_autohatch");
     send_ko(KO_RESPAWNED, 0, 0);
     if (C.notice)
-        C.notice(C.my_name() + " respawned small" + (partner.empty() ? "" : " next to " + partner));
+        C.notice(C.my_name() + i18n::tr(" respawned small") +
+                 (partner.empty() ? "" : (std::string(i18n::tr(" next to ")) + partner)));
 }
 
 // the resource's cell type (+0xB4: 2 solid, 3 plant, 5 poison, ...) and ai.type (docs/re/cell.md 1:
@@ -999,7 +1005,7 @@ static void symbiosis_tick(double now)
     for (auto& [id, k] : g_ko) {
         uint8_t* c = k.state == KO_OUT || k.fx_at > 0 ? puppet_cell(id) : nullptr;
         if (k.state == KO_OUT && c)
-            F<float>(c, kOpacity) = kKoOpacity;
+            F<float>(c, kOpacity) = ko_opacity();
         if (k.fx_at > 0 && now >= k.fx_at) {
             k.fx_at = 0;
             // BUG-1243: the respawn's hatch (cell_egg_L0_autohatch) blacks out this player's screen and draws the egg

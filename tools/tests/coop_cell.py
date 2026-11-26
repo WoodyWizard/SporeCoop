@@ -101,12 +101,12 @@ def main():
     g4, go4 = pool(guest)
     print(' ', go4.splitlines()[0])
     ck(g4['downed'] == 1 and g4['hp'] == 1, f'a lethal bite knocks the guest out (downed {g4["downed"]}, hp {g4["hp"]})')
-    ck('avatar_opacity=0.35' in go4, 'the knocked out cell is translucent for its owner')
+    ck('avatar_opacity=0.65' in go4, 'the knocked out cell is translucent for its owner (BUG-1574)')
     hk = host.call('coop.pool')['out']
     m = re.search(r'ko\[1\]=(\d) left=([\d.]+) hold=([\d.]+) op=([\d.-]+)', hk)
     print(' ', m.group(0) if m else hk)
     ck(m and m.group(1) == '1' and 0 < float(m.group(2)) < 10, 'the host sees the guest knocked out with a countdown')
-    ck(m and m.group(4) == '0.35', 'and its cell translucent')
+    ck(m and m.group(4) == '0.65', 'and its cell translucent (BUG-1574)')
     shot(host, 'ko_host.png')
     shot(guest, 'ko_guest.png')
     # the partner comes right next to it: revive

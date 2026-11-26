@@ -10,7 +10,7 @@ next refresh replayed its death effect. The fix keeps it to its own deadline (`l
 states keep coming (the guest stays in the host's partners, so the window is exact).
 
 1. The guest is knocked out far from the host (no revive).
-2. Host: kodrop 2.6. The host's game draws the guest's cell translucent (op 0.35) in every sample
+2. Host: kodrop 2.6. The host's game draws the guest's cell translucent (op 0.65, BUG-1574) in every sample
    through the gap and 1 s after it, and no second death effect plays (`fx` of `ko[1]`).
 3. Host: kodrop 3, and 2.5 s into it the host takes a lethal bite: its only partner is knocked out,
    so the host is not knocked out (the game's own death runs, BUG-0131).
@@ -51,7 +51,7 @@ def sample(host, secs, label):
         k = ko_line(out)
         rows.append((round(time.time() - t0, 2), puppet_op(out), k[0] if k else None, k[2] if k else None))
         time.sleep(0.1)
-    bad = [r for r in rows if r[1] is None or abs(r[1] - 0.35) > 0.02 or r[2] != 1]
+    bad = [r for r in rows if r[1] is None or abs(r[1] - 0.65) > 0.02 or r[2] != 1]
     print(f'  {label}: {len(rows)} samples, {len(bad)} not knocked out; first bad {bad[:3]}')
     return rows, bad
 

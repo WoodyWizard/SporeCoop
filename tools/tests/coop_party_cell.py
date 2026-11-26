@@ -6,7 +6,7 @@ from Alice and stay side by side (`coop.pool tp <dx> <dy> <id>`: next to that pl
 
 1. KO relayed: Carol takes a lethal bite (the host's `coop.pool hurt`): her game knocks her out
    (a partner can help). The host AND the other guest draw her translucent (`ko[<Carol>]=1`, the
-   game's opacity of her puppet < 0.6).
+   game's opacity of her puppet < 0.8).
 2. Revive between guests: Bob stays right next to her: her game revives her (`revives` +1, up
    again), and Alice's and Bob's games draw her opaque again.
 3. Two knocked out at once (#110, BUG-0131): Carol is knocked out again, then Bob: both lie side by
@@ -57,7 +57,7 @@ def main():
         alice.call(f'coop.pool hurt {cid} 50')
         ck(wait(lambda: num(pool(carol), 'downed') == 1, 5), '[ko] Carol\'s game knocks her out')
         for v in (alice, bob):
-            st = wait(lambda: (lambda k: k if k[0] == 1 and k[1] is not None and 0 <= k[1] < 0.6 else None)(ko(pool(v), cid)), 4)
+            st = wait(lambda: (lambda k: k if k[0] == 1 and k[1] is not None and 0.4 <= k[1] < 0.8 else None)(ko(pool(v), cid)), 4)
             ck(st, f'[ko] {v.name}\'s game draws Carol knocked out (translucent): {ko(pool(v), cid)}')
 
         # 2. Bob next to her revives her
