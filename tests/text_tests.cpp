@@ -5,9 +5,12 @@
 #include <cstring>
 #include <string>
 
+#include "i18n.h"
 #include "net/buffer.h"
 #include "net/utf8.h"
 #include "notify_text.h"
+#include "settings_core.h"
+#include "tooltip_wrap.h"
 #include "trace_rate.h"
 #include "typed_text.h"
 
@@ -153,6 +156,71 @@ static void test_locked_typing()
     CHECK(enter && t == "x");
 }
 
+// BUG-1584: UTF-8 multi-line tooltip wrapper & 5-language settings tooltip completeness
+static void test_tooltip_wrap()
+{
+    printf("settings tooltips: multi-line UTF-8 wrap & 5-language completeness (BUG-1584)\n");
+    // Explicit newline header + ASCII word wrap
+    bool trunc = false;
+    auto lines = tooltip_wrap::wrap("Friendly fire (live)\n"
+                                    "on: players can hurt each other in Together stages; off: no friendly fire",
+                                    260.f, 6, &trunc);
+    CHECK(!trunc && lines.size() >= 3 && lines[0] == "Friendly fire (live)");
+    for (const auto& ln : lines) {
+        CHECK(utf8::valid(ln));
+        CHECK(tooltip_wrap::measure(ln) <= 260.f);
+    }
+
+    // Russian Cyrillic UTF-8 wrapping (never splits a multi-byte sequence)
+    auto ru = tooltip_wrap::wrap("Общая дипломатия (до старта)\n"
+                                 "Вкл: войны, союзы и репутация с ИИ-империями синхронизируются на всех игроков.",
+                                 320.f, 6, &trunc);
+    CHECK(!trunc && ru.size() >= 3 && ru[0] == "Общая дипломатия (до старта)");
+    for (const auto& ln : ru) {
+        CHECK(utf8::valid(ln));
+        CHECK(tooltip_wrap::measure(ln) <= 320.f);
+    }
+
+    // CJK wrapping without spaces
+    std::string cjk_text = "独立资金 (开局前)\n"
+                           "开: 每位玩家拥有独立孢币账户、独立支付开销并收取各自城市收入，适合对手模式。关: 共享国库。";
+    auto zh = tooltip_wrap::wrap(cjk_text, 240.f, 6, &trunc);
+    CHECK(!trunc && zh.size() >= 3);
+    for (const auto& ln : zh) {
+        CHECK(utf8::valid(ln));
+        CHECK(tooltip_wrap::measure(ln) <= 240.f);
+    }
+
+    // Truncation adds "..." within max_px
+    auto cut = tooltip_wrap::wrap("Title\nWord1 Word2 Word3 Word4 Word5 Word6 Word7 Word8 Word9 Word10", 140.f, 2, &trunc);
+    CHECK(trunc && cut.size() == 2 && cut[1].size() >= 3 && cut[1].substr(cut[1].size() - 3) == "...");
+    CHECK(utf8::valid(cut[1]) && tooltip_wrap::measure(cut[1]) <= 140.f);
+
+    // Single-line flattening for coop.ui state
+    CHECK(tooltip_wrap::single_line("Title (live)\nLine 1\r\nLine 2") == "Title (live) | Line 1 | Line 2");
+
+    // Every session setting in all 5 languages has a non-empty detailed description that fits 7 lines at 650 px without truncation
+    const i18n::Lang langs[5] = {i18n::Lang::En, i18n::Lang::Ru, i18n::Lang::Hu, i18n::Lang::Es, i18n::Lang::Zh};
+    for (int id = 0; id < settings::kCount; id++) {
+        const auto& d = settings::kDefs[id];
+        for (i18n::Lang l : langs) {
+            std::string title = i18n::setting_label(d.key, d.label, l);
+            std::string help = i18n::setting_help(d.key, d.help, l);
+            CHECK(!title.empty() && utf8::valid(title));
+            CHECK(!help.empty() && utf8::valid(help));
+            if (l != i18n::Lang::En)
+                CHECK(help != d.help); // every setting must actually be translated in RU/HU/ES/ZH
+            bool t = false;
+            auto w = tooltip_wrap::wrap(title + " (scope)\n" + help, 590.f, 8, &t);
+            if (t || w.size() < 2)
+                printf("  setting %s lang=%s lines=%zu trunc=%d\n", d.key, i18n::lang_code(l), w.size(), (int)t);
+            CHECK(!t && w.size() >= 2 && w.size() <= 8);
+            for (const auto& ln : w)
+                CHECK(utf8::valid(ln));
+        }
+    }
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && !strcmp(argv[1], "--old")) {
@@ -168,6 +236,7 @@ int main(int argc, char** argv)
     test_wrap_fields();
     test_trace_rate();
     test_locked_typing();
+    test_tooltip_wrap();
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;
 }

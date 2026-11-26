@@ -27,6 +27,7 @@
 #include "rivals.h"
 #include "settings.h"
 #include "sui.h"
+#include "tooltip_wrap.h"
 #include "typed_text.h"
 #include "world.h"
 #include "fixes.h"
@@ -105,7 +106,17 @@ COOP_FIX("core.lan_pages", "BUG-0183", g_lan_pages_fix, "ui: every network game 
 // BUG-0874: native Spore-style tooltips on co-op window buttons after 0.8 s mouse rest
 static bool g_tooltips_fix = true;
 COOP_FIX("ui.tooltips", "BUG-0874", g_tooltips_fix, "ui: show Spore-style hover tooltips on co-op window buttons after 0.8 s rest");
+// BUG-1584: whole-row hover and multi-line wrapped detailed tooltips for every setting row (0.35 s delay)
+static bool g_settings_tooltips_fix = true;
+COOP_FIX("ui.settings_tooltips", "BUG-1584", g_settings_tooltips_fix,
+         "ui: whole-row hover and multi-line wrapped detailed tooltips for every setting row");
 static constexpr double kTooltipDelay = 0.8;
+static constexpr double kSettingTooltipDelay = 0.35;
+static constexpr int kTipMaxLines = 8;
+static bool is_setting_tip(const std::string& name)
+{
+    return name.rfind("set", 0) == 0 && name.size() > 3 && std::isdigit((unsigned char)name[3]);
+}
 static int g_tip_mx = -99999, g_tip_my = -99999;
 static double g_tip_rest_since = 0;
 static std::string g_tip_hover_btn, g_tip_shown_btn, g_tip_shown_text;
@@ -145,41 +156,7 @@ static float text_width(const std::string& t)
             n += (ch & 0xC0) != 0x80;
         return n * 9.3f + 30;
     }
-    // the advance of each glyph of the dialog font in pixels at 1440x1080 (measured: 12 against 4 copies of each
-    // glyph in a label, docs/08-ui.md#ui-text-width); ASCII 32..126, then Cyrillic U+0410..U+044F
-    static const unsigned char kAscii[95] = {
-        6, 7, 7, 11, 11, 13, 13, 4, 7, 7, 8, 11, 7, 7, 7, 7, 11, 11, 11,
-        11, 11, 11, 11, 11, 11, 11, 7, 7, 11, 11, 11, 8, 16, 12, 11, 12, 12, 11,
-        11, 13, 13, 5, 10, 12, 11, 14, 13, 13, 11, 13, 12, 10, 12, 13, 12, 17, 11,
-        13, 11, 7, 7, 7, 11, 11, 7, 10, 11, 10, 11, 11, 7, 10, 11, 6, 7, 10,
-        6, 16, 11, 11, 11, 11, 8, 8, 8, 11, 11, 16, 11, 10, 10, 7, 5, 7, 11};
-    static const unsigned char kCyr[64] = {
-        12, 11, 11, 10, 14, 11, 18, 11, 13, 14, 12, 13, 15, 13, 13, 13, 11, 12, 12, 12, 15, 12, 13, 12,
-        18, 18, 15, 16, 12, 12, 18, 12, 10, 11, 10, 9, 12, 11, 15, 9, 11, 11, 10, 11, 14, 11, 11, 11,
-        11, 10, 9, 10, 15, 11, 11, 11, 15, 16, 12, 14, 10, 10, 15, 11};
-    float w = 0;
-    for (size_t i = 0; i < t.size();) {
-        unsigned char ch = (unsigned char)t[i];
-        uint32_t cp = ch;
-        int n = ch < 0x80 ? 1 : (ch >> 5) == 6 ? 2 : (ch >> 4) == 14 ? 3 : 4;
-        if (n > 1) {
-            cp = ch & (0x3F >> (n - 1));
-            for (int k = 1; k < n && i + k < t.size(); k++)
-                cp = (cp << 6) | ((unsigned char)t[i + k] & 0x3F);
-        }
-        i += n;
-        if (cp >= 32 && cp < 127)
-            w += kAscii[cp - 32];
-        else if (cp >= 0x410 && cp < 0x450)
-            w += kCyr[cp - 0x410];
-        else if (cp == 0x401 || cp == 0x451) // Ё ё
-            w += 11;
-        else if (cp >= 0x2E80) // CJK ideographs / punctuation (BUG-1575)
-            w += 16;
-        else
-            w += 11;
-    }
-    return w + 30;
+    return tooltip_wrap::measure(t) + 30.f;
 }
 float caption_width(const std::string& t) { return text_width(t) - 30; }
 
@@ -409,6 +386,7 @@ struct Dialog {
     Win rec_rows[3] = {};
     std::string rec_addr[3];
     Win tip_win = nullptr;       // BUG-0874: native Spore-style hover tooltip overlay
+    Win tip_lines[kTipMaxLines] = {}; // BUG-1584: child line labels for multi-line wrapped tooltips
     void* tip_drawable = nullptr;
     // lobby page
     std::vector<Win> page_lobby;
@@ -1515,6 +1493,14 @@ static void build_dialog()
         sui::set_flag(D.tip_win, sui::kFlagIgnoreMouse, true);
         sui::set_flag(D.tip_win, sui::kFlagAlwaysInFront, true);
         sui::set_visible(D.tip_win, false);
+        for (int i = 0; i < kTipMaxLines; i++) {
+            D.tip_lines[i] = sui::label(D.tip_win, {14.f, 8.f + i * 20.f, 206.f, 28.f + i * 20.f}, "", D.font_body,
+                                        i == 0 ? kGold : 0xFFF2F8FF, sui::kAlignLeft);
+            if (D.tip_lines[i]) {
+                sui::set_flag(D.tip_lines[i], sui::kFlagIgnoreMouse, true);
+                sui::set_visible(D.tip_lines[i], false);
+            }
+        }
     }
     for (Win w : common)
         (void)w;
@@ -2492,24 +2478,49 @@ static std::string tooltip_for(const std::string& name)
         return T("Return to the co-op lobby", "Вернуться в лобби кооператива");
     if (name == "close")
         return T("Close the co-op window (press F9 to reopen)", "Закрыть окно кооператива (F9 - открыть снова)");
-    // BUG-1575: localized hover tooltips on every Settings page row button (set0..set11)
-    if (name.rfind("set", 0) == 0 && name.size() > 3 && std::isdigit((unsigned char)name[3])) {
+    // BUG-1575, BUG-1584: detailed multi-line localized hover tooltips on every Settings row (label, value button, tag)
+    if (is_setting_tip(name)) {
         int row = atoi(name.c_str() + 3);
         int id = row >= 0 && row < kSetRows ? D.set_id[row] : -1;
-        if (id == kLocalFps)
-            return T("Limit FPS to reduce stutter or GPU load (Auto = game default)", "Ограничить FPS (Авто = стандарт игры)");
-        if (id == kLocalBorderless)
-            return T("Run the game in a borderless fullscreen window", "Запускать игру в окне без рамки");
-        if (id == kLocalFov)
-            return T("Wider camera in 3rd-person stages (Creature, Adventures)", "Увеличить угол обзора в 3-м лице (Существо, Приключения)");
-        if (id == kLocalHideIp)
-            return T("Mask IP addresses in lobby, join list, and during vote popups", "Скрывать IP в лобби, списке серверов и при голосованиях");
-        if (id == kLocalLang)
-            return T("Change the mod interface language (saved in coop.ini)", "Переключить язык интерфейса мода (сохраняется в coop.ini)");
-        if (id >= 0 && id < settings::kCount) {
+        std::string title, scope, help;
+        if (id == kLocalFps) {
+            title = T("Frame rate cap", "Ограничение FPS");
+            scope = T("local", "локально");
+            help = T("Cap the game's frame rate (60-240 FPS) to reduce stutter, GPU heat, and physics quirks. Auto uses Spore's default cap. Saved on this PC only.",
+                     "Ограничивает частоту кадров игры (60-240 FPS), снижая нагрев видеокарты, фризы и проблемы физики. Авто: стандартное ограничение Spore. Сохраняется локально.");
+        } else if (id == kLocalBorderless) {
+            title = T("Borderless window", "Окно без рамки");
+            scope = T("local", "локально");
+            help = T("On: stretches Spore into a borderless fullscreen window for instant Alt-Tab without minimizing or flicker. Off: normal game display mode. Local to this PC.",
+                     "Вкл: запускает Spore в окне без рамки на весь экран для мгновенного Alt-Tab без сворачивания и мерцаний. Выкл: стандартный режим окна игры. Только для этого ПК.");
+        } else if (id == kLocalFov) {
+            title = T("Third-person FOV", "Обзор от 3-го лица");
+            scope = T("local", "локально");
+            help = T("Widens the 3rd-person camera field of view (+3 to +18 deg) in Creature and Galactic Adventures stages. Default keeps Spore's original camera angle. Local to this PC.",
+                     "Увеличивает угол обзора камеры от 3-го лица (+3..+18°) на этапах Существо и Приключения. Обычный: стандартный угол камеры Spore. Применяется только на этом ПК.");
+        } else if (id == kLocalHideIp) {
+            title = T("Hide IP (streamer mode)", "Скрывать IP (режим стримера)");
+            scope = T("local", "локально");
+            help = T("On: hides IP addresses as ***.***.***.*** in the lobby, join list, and during vote popups (ideal for streams and recordings). Off: shows real IP addresses.",
+                     "Вкл: скрывает IP-адреса в виде ***.***.***.*** в лобби, списке серверов и при автооткрытии голосований (удобно для стримов и записей). Выкл: показываются реальные IP.");
+        } else if (id == kLocalLang) {
+            title = T("Language", "Язык интерфейса");
+            scope = T("local", "локально");
+            help = T("Switch the SporeCoop interface language between Auto (system language), English, Russian, Hungarian, Spanish, and Chinese. Saved in coop.ini.",
+                     "Переключает язык интерфейса SporeCoop: Авто (язык системы), English, Русский, Magyar, Español или Китайский. Выбор сохраняется в coop.ini и применяется сразу.");
+        } else if (id >= 0 && id < settings::kCount) {
             const auto& d = settings::kDefs[id];
-            return i18n::setting_help(d.key, d.help);
+            bool live = settings::is_live((settings::Id)id);
+            bool locked = !live && settings::started();
+            title = i18n::setting_label(d.key, d.label);
+            scope = locked ? T("locked", "закрыто") : live ? T("live", "на лету") : T("session", "до старта");
+            help = i18n::setting_help(d.key, d.help);
         }
+        if (help.empty())
+            return {};
+        if (!g_settings_tooltips_fix || title.empty())
+            return help;
+        return title + " (" + scope + ")\n" + help;
     }
     return {};
 }
@@ -2543,13 +2554,32 @@ static void tooltip_tick(double now, bool clicked)
     bool have_move = mouse::last_move(mx, my);
     std::string hit;
     if (have_move) {
-        for (const auto& [name, w] : g_named) {
-            if (!w || !sui::visible(w) || tooltip_for(name).empty())
-                continue;
-            Rect r = sui::screen_rect(w);
-            if (mx >= r.x1 && mx < r.x2 && my >= r.y1 && my < r.y2) {
-                hit = name;
-                break;
+        // BUG-1584: on the Settings page, hovering anywhere on a setting row (name, value button, or scope tag)
+        // maps to set0..set11 so players can read each setting's detailed description effortlessly.
+        if (g_settings_tooltips_fix && g_settings_page) {
+            for (int i = 0; i < kSetRows; i++) {
+                if (D.set_id[i] < 0 || !D.set_btn[i] || !sui::visible(D.set_btn[i]))
+                    continue;
+                Rect rb = sui::screen_rect(D.set_btn[i]);
+                float x1 = (D.set_label[i] && sui::visible(D.set_label[i])) ? sui::screen_rect(D.set_label[i]).x1 : rb.x1;
+                float x2 = rb.x2;
+                if (D.set_tag[i] && sui::visible(D.set_tag[i]))
+                    x2 = std::max(x2, sui::screen_rect(D.set_tag[i]).x2);
+                if (mx >= x1 && mx < x2 && my >= rb.y1 && my < rb.y2) {
+                    hit = "set" + std::to_string(i);
+                    break;
+                }
+            }
+        }
+        if (hit.empty()) {
+            for (const auto& [name, w] : g_named) {
+                if (!w || !sui::visible(w) || tooltip_for(name).empty())
+                    continue;
+                Rect r = sui::screen_rect(w);
+                if (mx >= r.x1 && mx < r.x2 && my >= r.y1 && my < r.y2) {
+                    hit = name;
+                    break;
+                }
             }
         }
     }
@@ -2577,8 +2607,9 @@ static void tooltip_tick(double now, bool clicked)
         }
         return;
     }
+    const double delay = (g_settings_tooltips_fix && is_setting_tip(g_tip_hover_btn)) ? kSettingTooltipDelay : kTooltipDelay;
     if (!g_tip_hover_btn.empty() && !g_tip_clicked && g_tip_shown_btn.empty() &&
-        (now - g_tip_rest_since >= kTooltipDelay)) {
+        (now - g_tip_rest_since >= delay)) {
         g_tip_shown_btn = g_tip_hover_btn;
         g_tip_shown_text = tooltip_for(g_tip_shown_btn);
         g_dirty = true;
@@ -2589,8 +2620,14 @@ static void refresh_tooltip()
 {
     if (!D.tip_win)
         return;
+    auto hide_tip_lines = [&] {
+        for (int i = 0; i < kTipMaxLines; i++)
+            if (D.tip_lines[i])
+                sui::set_visible(D.tip_lines[i], false);
+    };
     if (!g_tooltips_fix || !g_want_open || !D.root || !sui::visible(D.root) || g_tip_shown_btn.empty() ||
         g_tip_shown_text.empty()) {
+        hide_tip_lines();
         sui::set_visible(D.tip_win, false);
         return;
     }
@@ -2598,18 +2635,60 @@ static void refresh_tooltip()
     if (it == g_named.end() || !it->second || !sui::visible(it->second)) {
         g_tip_shown_btn.clear();
         g_tip_shown_text.clear();
+        hide_tip_lines();
         sui::set_visible(D.tip_win, false);
         return;
     }
     Rect br = sui::area(it->second);
-    float tw = std::min(kW - 24.f, std::max(140.f, std::round(caption_width(g_tip_shown_text) + 38.f)));
-    float th = 32.f;
-    float tx = std::max(12.f, std::min(kW - 12.f - tw, (br.x1 + br.x2 - tw) * 0.5f));
+    bool want_multi = g_settings_tooltips_fix &&
+                      (g_tip_shown_text.find('\n') != std::string::npos || tooltip_wrap::measure(g_tip_shown_text) > kW - 62.f);
+    std::vector<std::string> lines = want_multi ? tooltip_wrap::wrap(g_tip_shown_text, 590.f, kTipMaxLines) : std::vector<std::string>{};
+    if (lines.size() <= 1) {
+        hide_tip_lines();
+        float tw = std::min(kW - 24.f, std::max(140.f, std::round(caption_width(g_tip_shown_text) + 38.f)));
+        float th = 32.f;
+        float tx = std::max(12.f, std::min(kW - 12.f - tw, (br.x1 + br.x2 - tw) * 0.5f));
+        float ty = br.y1 - th - 6.f;
+        if (ty < 40.f)
+            ty = br.y2 + 6.f;
+        sui::set_area(D.tip_win, {tx, ty, tx + tw, ty + th});
+        sui::set_caption(D.tip_win, g_tip_shown_text);
+        sui::bring_to_front(D.root, D.tip_win);
+        sui::set_visible(D.tip_win, true);
+        return;
+    }
+    // BUG-1584: multi-line wrapped 9-slice tooltip card with generous margins inside the glowing capsule border
+    // and flush-left child labels (gold header on Settings rows).
+    float max_w = 0.f;
+    for (const auto& ln : lines)
+        max_w = std::max(max_w, tooltip_wrap::measure(ln));
+    float tw = std::min(kW - 20.f, std::max(340.f, std::round(max_w + 78.f)));
+    float th = 30.f + (float)lines.size() * 20.f;
+    bool is_set = is_setting_tip(g_tip_shown_btn);
+    float tx = is_set ? std::round((kW - tw) * 0.5f)
+                      : std::max(12.f, std::min(kW - 12.f - tw, (br.x1 + br.x2 - tw) * 0.5f));
     float ty = br.y1 - th - 6.f;
-    if (ty < 40.f)
+    if (ty < 108.f)
         ty = br.y2 + 6.f;
+    if (ty + th > kH - 12.f)
+        ty = std::max(44.f, kH - 12.f - th);
     sui::set_area(D.tip_win, {tx, ty, tx + tw, ty + th});
-    sui::set_caption(D.tip_win, g_tip_shown_text);
+    sui::set_caption(D.tip_win, "");
+    for (int i = 0; i < kTipMaxLines; i++) {
+        if (!D.tip_lines[i])
+            continue;
+        if (i < (int)lines.size()) {
+            float x1 = 22.f;
+            float x2 = std::min(tw - 22.f, x1 + tooltip_wrap::measure(lines[i]) + 30.f);
+            float y1 = 14.f + (float)i * 20.f;
+            sui::set_area(D.tip_lines[i], {x1, y1, x2, y1 + 20.f});
+            sui::set_label_color(D.tip_lines[i], (i == 0 && is_set) ? kGold : 0xFFF2F8FF);
+            sui::set_caption(D.tip_lines[i], lines[i]);
+            sui::set_visible(D.tip_lines[i], true);
+        } else {
+            sui::set_visible(D.tip_lines[i], false);
+        }
+    }
     sui::bring_to_front(D.root, D.tip_win);
     sui::set_visible(D.tip_win, true);
 }
@@ -3091,12 +3170,14 @@ std::string debug_state()
                  cap.c_str());
         s += b;
     }
-    if (D.tip_win) { // BUG-0874: hover tooltip state for UI tests
+    if (D.tip_win) { // BUG-0874, BUG-1584: hover tooltip state for UI tests (flattened to single line, no 256-byte truncation)
         Rect tr = sui::screen_rect(D.tip_win);
         bool tvis = sui::visible(D.tip_win) && D.root && sui::visible(D.root);
-        snprintf(b, sizeof b, "tooltip %.0f %.0f %.0f %.0f %d '%s'\n", tr.x1, tr.y1, tr.x2, tr.y2, (int)tvis,
-                 tvis ? g_tip_shown_text.c_str() : "");
+        snprintf(b, sizeof b, "tooltip %.0f %.0f %.0f %.0f %d '", tr.x1, tr.y1, tr.x2, tr.y2, (int)tvis);
         s += b;
+        if (tvis)
+            s += tooltip_wrap::single_line(g_tip_shown_text);
+        s += "'\n";
     }
     if (A.recent_servers) {
         auto recs = A.recent_servers();

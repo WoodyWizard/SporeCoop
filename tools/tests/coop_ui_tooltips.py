@@ -50,6 +50,71 @@ def main():
     host, guest = start('creature')
     ck = Checks()
     hui = Ui(host, 'host')
+    suf = '_off' if os.environ.get('SPORE_FIX_OFF') else ''
+
+    # ---- 0. BUG-1584: whole-row hover + multi-line detailed tooltip on Settings page (RU, 0.35 s delay) ----
+    host.call('coop.uistate lang ru')
+    host.call('coop.uistate 1')
+    st_lob = hui.wait(lambda s: s.get('open') == '1' and s.get('settings', {}).get('vis'), 15, 'host lobby')
+    if st_lob and st_lob.get('settings', {}).get('vis'):
+        hui.click('settings')
+        st_set = hui.wait(lambda s: s.get('page') == 'settings' and s.get('set1', {}).get('vis'), 15, 'settings page')
+        if st_set and st_set.get('window') and st_set.get('set1', {}).get('vis'):
+            wx1 = st_set['window']['rect'][0]
+            # Hover the LEFT setting name label (far left of the value button at wx1+466)
+            lx = wx1 + 150
+            ly = center(st_set['set1']['rect'])[1]
+            host.call('move 4 540')
+            time.sleep(0.25)
+            host.call(f'move {lx} {ly}')
+            t_set = time.time()
+            s_set = None
+            while time.time() - t_set < 1.2:
+                cur = ui_state(host)
+                if cur.get('tooltip', {}).get('vis'):
+                    s_set = cur
+                    break
+                time.sleep(0.08)
+            if s_set is None:
+                s_set = ui_state(host)
+            tip_s = s_set.get('tooltip', {})
+            th_s = (tip_s['rect'][3] - tip_s['rect'][1]) if tip_s.get('rect') else 0
+            print(f'  settings label hover ({time.time() - t_set:.2f}s): btn={s_set.get("tooltip_btn")} h={th_s} tip={tip_s!r}', flush=True)
+            ck(tip_s.get('vis') and s_set.get('tooltip_btn') == 'set1' and th_s > 48 and ' | ' in tip_s.get('text', ''),
+               f'RU local setting label hover shows multi-line detailed tooltip (h={th_s}, tip={tip_s!r})')
+            shot(host, f'ui_tooltip_setting_local_ru{suf}.png')
+
+            # Page 2: session setting with long detailed description (e.g. DNA / progress)
+            if st_set.get('setnext', {}).get('vis'):
+                hui.click('setnext')
+                time.sleep(0.35)
+                st_p2 = ui_state(host)
+                pick = next((f'set{i}' for i in range(12) if st_p2.get(f'set{i}', {}).get('vis')), None)
+                if pick:
+                    ly2 = center(st_p2[pick]['rect'])[1]
+                    host.call('move 4 540')
+                    time.sleep(0.2)
+                    host.call(f'move {lx} {ly2}')
+                    t_p2 = time.time()
+                    s_p2 = None
+                    while time.time() - t_p2 < 1.2:
+                        cur = ui_state(host)
+                        if cur.get('tooltip', {}).get('vis'):
+                            s_p2 = cur
+                            break
+                        time.sleep(0.08)
+                    if s_p2 is None:
+                        s_p2 = ui_state(host)
+                    tip_p2 = s_p2.get('tooltip', {})
+                    th_p2 = (tip_p2['rect'][3] - tip_p2['rect'][1]) if tip_p2.get('rect') else 0
+                    print(f'  settings p2 label hover ({time.time() - t_p2:.2f}s): btn={s_p2.get("tooltip_btn")} h={th_p2} tip={tip_p2!r}', flush=True)
+                    ck(tip_p2.get('vis') and s_p2.get('tooltip_btn') == pick and th_p2 > 48 and ' | ' in tip_p2.get('text', ''),
+                       f'RU session setting label hover shows multi-line detailed tooltip (h={th_p2}, tip={tip_p2!r})')
+                    shot(host, f'ui_tooltip_setting_session_ru{suf}.png')
+            host.call('move 4 540')
+            time.sleep(0.25)
+            hui.click('setback')
+            time.sleep(0.25)
 
     # Leave session so host opens on the Host step (where the Host button lives)
     host.call('coop.leave')
@@ -102,7 +167,6 @@ def main():
         s_en = ui_state(host)
     tip_en = s_en.get('tooltip', {})
     print(f'  at {time.time() - t_move:.2f}s (EN): btn={s_en.get("tooltip_btn")} tip={tip_en!r}', flush=True)
-    suf = '_off' if os.environ.get('SPORE_FIX_OFF') else ''
     ck(tip_en.get('vis') and s_en.get('tooltip_btn') == 'host' and 'Start hosting' in tip_en.get('text', ''),
        f'EN tooltip visible over Host after 1.0 s (btn={s_en.get("tooltip_btn")}, tip={tip_en!r})')
     shot(host, f'ui_tooltip_host_en{suf}.png')
