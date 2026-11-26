@@ -377,6 +377,57 @@ struct GuestEmigMachine {
     }
 };
 
+// ---------------- R5: Clean Relinquish & Null-Empire Invariants (BUG-1567) ----------------
+// When a Space Rivals guest relinquishes the host's original home star (mEmpireID = 0xFFFFFFFF),
+// leaving star/planet tech level at 5 violates Spore's invariant (tech 5 => non-null GetEmpire):
+// Galaxy-view hover/click faults at 0x0106CA9F / 0x00FDC5FD ([NULL+0x84]), and EnterSolarSystem
+// calls GetEmpireForStar -> AddStarOwnership -> UpdateAndGetColor with mHomeStarID == 0xFFFFFFFF,
+// crashing at 0x00BB0F22 (FindStars reading NULL+0x3C).
+constexpr uint32_t kRelinquishedTechLevel = 1u;      // TechLevel::Creature (non-empire)
+constexpr uint32_t kEmpirePaletteBase = 0x53DBCF3u;  // Spore's 12 empire palette IDs
+constexpr uint32_t kEmpirePaletteCount = 12u;
+
+struct RelinquishedStarState {
+    uint32_t empire_id = 0xFFFFFFFFu;
+    uint32_t star_tech = 0;
+    uint32_t star_flags = 0;
+    std::vector<uint32_t> planet_techs;
+};
+
+inline bool is_orphaned_tech5_star(uint32_t empire_id, uint32_t star_tech)
+{
+    return empire_id == 0xFFFFFFFFu && star_tech == 5u;
+}
+
+inline void apply_clean_relinquish(RelinquishedStarState& st, bool clean_fix)
+{
+    st.empire_id = 0xFFFFFFFFu;
+    st.star_flags &= ~0x7u;
+    if (!clean_fix)
+        return;
+    for (uint32_t& pt : st.planet_techs)
+        if (pt == 5u)
+            pt = kRelinquishedTechLevel;
+    if (st.star_tech == 5u)
+        st.star_tech = kRelinquishedTechLevel;
+}
+
+inline uint32_t pick_color_fallback_home_star(uint32_t cur_home_star_id, bool cur_home_valid,
+                                              const std::vector<uint32_t>& owned_star_ids)
+{
+    if (cur_home_valid && cur_home_star_id != 0 && cur_home_star_id != 0xFFFFFFFFu)
+        return cur_home_star_id;
+    for (uint32_t sid : owned_star_ids)
+        if (sid != 0 && sid != 0xFFFFFFFFu)
+            return sid;
+    return 0xFFFFFFFFu;
+}
+
+inline uint32_t fallback_empire_palette_id(uint32_t pol_id)
+{
+    return kEmpirePaletteBase + (pol_id % kEmpirePaletteCount);
+}
+
 // ---------------- R7: Homeworld Inviolability Table ----------------
 struct ProtectedHome {
     uint8_t player_id = 0;

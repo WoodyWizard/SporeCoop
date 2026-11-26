@@ -2223,6 +2223,134 @@ static bool __fastcall planet_owned_guard(void* planet, void*)
     return owned;
 }
 
+// BUG-1567: two Space null-empire / unset-homestar engine faults observed in Space Rivals (and possible in any save
+// with an orphaned tech-5 star or an empire colored before SetHomeStar):
+// 1. SpaceGameUI cursor updater (0x0106C960, called by SpaceGameUI_Update+0xA9) and cAppModeSpace Galaxy click handler
+//    (0x00FDC5F3, cAppModeSpace_OnGalaxyEntered+0x1A13) both call cStarManager::GetEmpire(star->mEmpireID) when
+//    ctx == 2 and star->mTechLevel == 5, then dereference [emp + 0x84] (0x0106CA9F / 0x00FDC5FD) with no null check
+//    before calling MissionManager::HasMissionFor(pol, starID) (0x00AE9B90). Returning a sentinel whose +0x84 holds
+//    0xFFFFFFFE (non-wildcard, unlike 0xFFFFFFFF which 0x00AE9480 treats as wildcard) makes 0x00AE9B90 return false
+//    and avoids the 65 Hz fault storm while still letting Galaxy clicks work normally.
+// 2. cStarManager::GetEmpireForStar (0x00BB14D0) calls cEmpire::AddStarOwnership (0x00C34300) BEFORE
+//    cEmpire::SetHomeStar (0x00C30D70). When the star already has a tech-5 planet with cCivData, AddStarOwnership
+//    calls 0x00C73940 -> cEmpire::UpdateAndGetColor (0x00C32E30) while emp->mHomeStarID (+0xB0) is still 0xFFFFFFFF.
+//    UpdateAndGetColor skips GetStarRecord, passes NULL to cStarRecord::GetPosition() -> 0x0000003C, and crashes in
+//    cStarManager::FindStars -> 0x00BB0F22. Guard UpdateAndGetColor by temporarily supplying an owned star from
+//    emp->mStars (+0x88) (or assigning a valid palette ID if mStars is empty) before calling the original.
+using SmGetFn = void*(__cdecl*)();
+using SmGetEmpireFn = void*(__thiscall*)(void*, uint32_t);
+using SmGetStarFn = void*(__thiscall*)(void*, uint32_t);
+using EmpireUpdateColorFn = void*(__thiscall*)(void*, void*);
+
+static SmGetFn g_sm_get_fn;
+static SmGetEmpireFn g_sm_get_empire_orig;
+static SmGetStarFn g_sm_get_star_fn;
+static EmpireUpdateColorFn g_update_color_orig;
+static uintptr_t g_galaxy_cursor_ra;
+static uintptr_t g_galaxy_click_ra;
+static std::atomic<unsigned> g_galaxy_null_empire_guarded{0};
+static std::atomic<unsigned> g_empire_color_guarded{0};
+
+static bool g_galaxy_null_empire_fix = true;
+COOP_FIX_UNSAFE("space.null_empire_galaxy", "BUG-1567", g_galaxy_null_empire_fix,
+                "gamefixes: SpaceGameUI Galaxy cursor (0x106CA9F) and cAppModeSpace click (0xFDC5FD) handle null GetEmpire on tech-5 stars");
+static bool g_empire_color_homestar_fix = true;
+COOP_FIX_UNSAFE("space.empire_color_homestar", "BUG-1567", g_empire_color_homestar_fix,
+                "gamefixes: cEmpire::UpdateAndGetColor (0xC32E30) handles unset or missing mHomeStarID instead of crashing at 0xBB0F22");
+
+// Sentinel read only at +0x84 by 0x0106CA9F / 0x00FDC5FD; 0xFFFFFFFE never matches any political ID or 0xFFFFFFFF wildcard.
+alignas(16) static uint32_t g_null_empire_sentinel[0x90 / 4];
+
+static bool verify_rel32_call(uintptr_t call_site, uintptr_t expected_target)
+{
+    if (!readable((const void*)call_site, 5))
+        return false;
+    const uint8_t* p = (const uint8_t*)call_site;
+    if (p[0] != 0xE8)
+        return false;
+    int32_t rel = 0;
+    memcpy(&rel, p + 1, 4);
+    return (uintptr_t)(call_site + 5 + rel) == expected_target;
+}
+
+static uintptr_t follow_rel32_call(uintptr_t call_site)
+{
+    if (!readable((const void*)call_site, 5))
+        return 0;
+    const uint8_t* p = (const uint8_t*)call_site;
+    if (p[0] != 0xE8)
+        return 0;
+    int32_t rel = 0;
+    memcpy(&rel, p + 1, 4);
+    return (uintptr_t)(call_site + 5 + rel);
+}
+
+static void* __fastcall sm_get_empire_guard(void* sm, void*, uint32_t eid)
+{
+    void* emp = g_sm_get_empire_orig(sm, eid);
+    if (!emp && g_galaxy_null_empire_fix) {
+        uintptr_t ra = (uintptr_t)__builtin_return_address(0);
+        if ((g_galaxy_cursor_ra && ra == g_galaxy_cursor_ra) || (g_galaxy_click_ra && ra == g_galaxy_click_ra)) {
+            unsigned n = ++g_galaxy_null_empire_guarded;
+            if (n <= 8)
+                H->log(M, SK_WARN,
+                       "game fixes: guarded null cStarManager::GetEmpire(0x%08X) in Galaxy view (ra=%08X, BUG-1567, #%u)",
+                       eid, (unsigned)ra, n);
+            return g_null_empire_sentinel;
+        }
+    }
+    return emp;
+}
+
+static void* __fastcall empire_update_color_guard(void* emp, void*, void* out_color)
+{
+    if (g_empire_color_homestar_fix && readable(emp, 0xB4)) {
+        uint32_t color_id = *(uint32_t*)((uint8_t*)emp + 0x10);
+        if (color_id - 0x53DBCF3u > 0xBu) {
+            uint32_t home_sid = *(uint32_t*)((uint8_t*)emp + 0xB0);
+            void* sm = g_sm_get_fn ? g_sm_get_fn() : nullptr;
+            void* home_star = (sm && g_sm_get_star_fn && home_sid != 0xFFFFFFFFu)
+                                  ? g_sm_get_star_fn(sm, home_sid)
+                                  : nullptr;
+            if (!home_star) {
+                uint32_t fallback_sid = 0xFFFFFFFFu;
+                void** sb = *(void***)((uint8_t*)emp + 0x88);
+                void** se = *(void***)((uint8_t*)emp + 0x8C);
+                if (sb && se > sb && (size_t)(se - sb) <= 4096 && readable(sb, (size_t)(se - sb) * 4)) {
+                    for (void** it = sb; it < se; ++it) {
+                        if (readable(*it, 0x74)) {
+                            uint32_t sid = *(uint32_t*)((uint8_t*)(*it) + 0x70);
+                            if (sid && sid != 0xFFFFFFFFu && sm && g_sm_get_star_fn && g_sm_get_star_fn(sm, sid)) {
+                                fallback_sid = sid;
+                                break;
+                            }
+                        }
+                    }
+                }
+                unsigned n = ++g_empire_color_guarded;
+                if (fallback_sid != 0xFFFFFFFFu) {
+                    if (n <= 8)
+                        H->log(M, SK_WARN,
+                               "game fixes: cEmpire::UpdateAndGetColor had unset mHomeStarID=%08X; using owned star %u (BUG-1567, #%u)",
+                               home_sid, fallback_sid, n);
+                    *(uint32_t*)((uint8_t*)emp + 0xB0) = fallback_sid;
+                    void* ret = g_update_color_orig(emp, out_color);
+                    *(uint32_t*)((uint8_t*)emp + 0xB0) = home_sid;
+                    return ret;
+                }
+                uint32_t pol = *(uint32_t*)((uint8_t*)emp + 0x84);
+                uint32_t pal = 0x53DBCF3u + (pol % 12u);
+                if (n <= 8)
+                    H->log(M, SK_WARN,
+                           "game fixes: cEmpire::UpdateAndGetColor had unset mHomeStarID=%08X and no owned stars; using palette %08X (BUG-1567, #%u)",
+                           home_sid, pal, n);
+                *(uint32_t*)((uint8_t*)emp + 0x10) = pal;
+            }
+        }
+    }
+    return g_update_color_orig(emp, out_color);
+}
+
 // tests (BUG-1544): `coop.empirecontact` status; `coop.empirecontact orphan <planet_hex>` marks a planet on an unowned
 // star as tech 5 (reproducing GitHub #222's save state); `coop.empirecontact probe <planet_hex>` calls
 // Simulator::GetMainSpeciesImageKey on that planet record.
@@ -2260,8 +2388,14 @@ static int c_empirecontact(void*, int argc, const char* const* argv, SkOut* out)
                       g_planet_ui_guarded.load());
         return 0;
     }
-    H->out_printf(out, "empirecontact: hooked=%d fix=%d guarded=%u ui_guarded=%u\n", (int)hooked,
-                  (int)g_empire_contact_fix, g_empire_contact_guarded.load(), g_planet_ui_guarded.load());
+    bool galaxy_hooked = g_sm_get_empire_orig != nullptr && (g_galaxy_cursor_ra != 0 || g_galaxy_click_ra != 0);
+    bool color_hooked = g_update_color_orig != nullptr;
+    H->out_printf(out,
+                  "empirecontact: hooked=%d fix=%d guarded=%u ui_guarded=%u galaxy_hooked=%d galaxy_fix=%d "
+                  "galaxy_guarded=%u color_hooked=%d color_fix=%d color_guarded=%u\n",
+                  (int)hooked, (int)g_empire_contact_fix, g_empire_contact_guarded.load(), g_planet_ui_guarded.load(),
+                  (int)galaxy_hooked, (int)g_galaxy_null_empire_fix, g_galaxy_null_empire_guarded.load(),
+                  (int)color_hooked, (int)g_empire_color_homestar_fix, g_empire_color_guarded.load());
     return 0;
 }
 
@@ -2486,8 +2620,54 @@ void init(const SkHost* host, SkMod* mod)
         g_planet_owned_orig = nullptr;
     H->log(M, SK_INFO, "game fixes: null empire contact guard %s, SpaceGameUI badge guard %s (BUG-1544)",
            emp_contact ? "on" : "off", planet_ui ? "on" : "off");
+    // BUG-1567: Galaxy-view null cStarManager::GetEmpire guard (0x0106CA9F / 0x00FDC5FD) and
+    // cEmpire::UpdateAndGetColor unset-mHomeStarID guard (0x00BB0F22).
+    memset(g_null_empire_sentinel, 0, sizeof g_null_empire_sentinel);
+    g_null_empire_sentinel[0x84 / 4] = 0xFFFFFFFEu;
+    g_sm_get_fn = (SmGetFn)H->sym("Simulator::cStarManager::Get");
+    g_sm_get_star_fn = (SmGetStarFn)H->sym("Simulator::cStarManager::GetStarRecord");
+    uintptr_t sm_get_emp = H->sym("Simulator::cStarManager::GetEmpire");
+    uintptr_t on_gal_enter = H->sym("SporeCoop::cAppModeSpace_OnGalaxyEntered");
+    if (sm_get_emp && g_space_ui_update) {
+        uintptr_t cur_fn = follow_rel32_call(g_space_ui_update + 0xA9); // 0x01074479 -> 0x0106C960
+        if (cur_fn && verify_rel32_call(cur_fn + 0x137, sm_get_emp) &&
+            readable((const void*)(cur_fn + 0x13F), 6) &&
+            memcmp((const void*)(cur_fn + 0x13F), "\x8B\x80\x84\x00\x00\x00", 6) == 0)
+            g_galaxy_cursor_ra = cur_fn + 0x13C; // 0x0106CA9C
+    }
+    if (sm_get_emp && on_gal_enter) {
+        uintptr_t call_site = on_gal_enter + 0x1A13; // 0x00FDC5F3
+        if (verify_rel32_call(call_site, sm_get_emp) &&
+            readable((const void*)(call_site + 0xA), 6) &&
+            memcmp((const void*)(call_site + 0xA), "\x8B\x8F\x84\x00\x00\x00", 6) == 0)
+            g_galaxy_click_ra = call_site + 5; // 0x00FDC5F8
+    }
+    bool gal_null_emp = sm_get_emp && (g_galaxy_cursor_ra || g_galaxy_click_ra) &&
+                        H->hook_create(M, (void*)sm_get_emp, (void*)&sm_get_empire_guard,
+                                       (void**)&g_sm_get_empire_orig) == 0;
+    if (!gal_null_emp)
+        g_sm_get_empire_orig = nullptr;
+    uintptr_t upd_col = 0;
+    if (uintptr_t add_star = H->sym("Simulator::cEmpire::AddStarOwnership")) {
+        // Verified call chain: AddStarOwnership+0x11F (0xC3441F) -> ConvertPlanetOwner (0xC73940) -> +0x9E (0xC739DE) -> UpdateAndGetColor (0xC32E30).
+        uintptr_t conv_fn = follow_rel32_call(add_star + 0x11F);
+        uintptr_t cand = conv_fn ? follow_rel32_call(conv_fn + 0x9E) : 0;
+        if (cand && readable((const void*)cand, 0x14) &&
+            memcmp((const void*)cand, "\x81\xEC\x84\x00\x00\x00", 6) == 0 &&
+            memcmp((const void*)(cand + 0x0A), "\x8B\x45\x10\x8D\x88\x0D\x43\xC2\xFA", 9) == 0)
+            upd_col = cand;
+    }
+    bool emp_col_home = upd_col && g_sm_get_fn && g_sm_get_star_fn &&
+                        H->hook_create(M, (void*)upd_col, (void*)&empire_update_color_guard,
+                                       (void**)&g_update_color_orig) == 0;
+    if (!emp_col_home)
+        g_update_color_orig = nullptr;
+    H->log(M, SK_INFO,
+           "game fixes: Galaxy null-empire guard %s (cursor_ra=%08X click_ra=%08X), UpdateAndGetColor homestar guard %s (BUG-1567)",
+           gal_null_emp ? "on" : "off", (unsigned)g_galaxy_cursor_ra, (unsigned)g_galaxy_click_ra,
+           emp_col_home ? "on" : "off");
     H->command_add(M, "coop.empirecontact",
-                   "coop.empirecontact [orphan <planet_hex> | probe <planet_hex>] - null empire IsContactedByPlayer guard (BUG-1544)",
+                   "coop.empirecontact [orphan <planet_hex> | probe <planet_hex>] - null empire IsContactedByPlayer / Galaxy / UpdateAndGetColor guards (BUG-1544, BUG-1567)",
                    c_empirecontact, nullptr, SK_CMD_MAIN_THREAD);
 }
 

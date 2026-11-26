@@ -46,6 +46,14 @@ static bool g_space_rivals_fix = true;
 COOP_FIX("rivals.space", "BUG-1550", g_space_rivals_fix,
          "space rivals: guest homeworld emigration, inviolable homeworlds, NPC empire influence, race stats and core finale");
 
+// BUG-1567: relinquishing the host's original home star previously cleared only mEmpireID (+0x54 = 0xFFFFFFFF)
+// while leaving star mTechLevel (+0x4C) and planet mTechLevel (+0x194) at 5 and keeping the star in SpaceNearStars.
+// When space.allies is off (Rivals preset) or before mirror apply, Galaxy hover/click faults at 0x0106CA9F/0x00FDC5FD
+// and Jump -> EnterSolarSystem crashes at 0x00BB0F22 (GetEmpireForStar -> AddStarOwnership -> UpdateAndGetColor).
+static bool g_relinquish_clean_fix = true;
+COOP_FIX("rivals.space_relinquish_clean", "BUG-1567", g_relinquish_clean_fix,
+         "space rivals: relinquishing host homeworld clears star/planet tech level 5 and rebuilds near-stars");
+
 template <typename T>
 static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
 static bool readable(const void* p, size_t n) { return p && !IsBadReadPtr(p, n); }
@@ -55,7 +63,8 @@ static uintptr_t a_StarMgr, a_GetEmpire, a_RequirePlanets, a_GetPlanets, a_Playe
     a_ActivePlanetRec, a_ActiveStarRec, a_AddMoney, a_AddStar, a_AddPlanet, a_SetHomePlanet, a_PlanetTech,
     a_FillPlanet, a_GameAlloc, a_CityName, a_CityCtor, a_AddCityData, a_Context, a_SpacePlayerData, a_SpaceGame,
     a_PlayerUFOGet, a_RelMgr, a_ApplyRel, a_CalcRel, a_MakeContact, a_ToolMgr, a_GetTool, a_AddItemByKey,
-    a_OnUseTool, a_DestroyPlanet, a_CaptureSystem, a_TransferStar, a_SetCaptureProgress, a_DestroyCity, a_NounMgr;
+    a_OnUseTool, a_DestroyPlanet, a_CaptureSystem, a_TransferStar, a_SetCaptureProgress, a_DestroyCity, a_NounMgr,
+    a_NearRebuild, a_NearVt;
 
 // ---- R7 Hook originals ----
 using OnUseTool_t = bool(SK_THISCALL*)(void*, void*, const float*, int);
@@ -907,6 +916,26 @@ static void ensure_city_count(void* rec, uint32_t pol, uint16_t want)
     }
 }
 
+static void clear_loaded_planet_pol(void* rec)
+{
+    void* sm = star_mgr();
+    if (!sm || !rec)
+        return;
+    for (void* p : ptr_vec((uint8_t*)sm + 0x50, 64))
+        if (readable(p, 0x140) && F<void*>(p, 0x13C) == rec && readable((uint8_t*)p + 0xD4, 0x34))
+            vcall<void>((uint8_t*)p + 0xD4, 0x48 / 4, 0xFFFFFFFFu); // cGameData::SetPoliticalID
+}
+
+static void rebuild_near_stars()
+{
+    if (!a_NearRebuild || !a_NearVt || !a_SpaceGame || !spaceext::in_space())
+        return;
+    void* sg = cdecl_call<void*>(a_SpaceGame);
+    void* ns = readable(sg, 0x34) ? F<void*>(sg, 0x30) : nullptr;
+    if (readable(ns, 0x84) && F<uintptr_t>(ns, 0) == a_NearVt)
+        thiscall<void>(a_NearRebuild, ns);
+}
+
 static bool relinquish_host_home_now()
 {
     if (!g_my_emig.valid() || !g_my_emig.orig_home_star || !g_my_emig.orig_home_planet)
@@ -923,13 +952,33 @@ static bool relinquish_host_home_now()
     remove_colony_from_spd(orig_rec);
     F<uint32_t>(orig_star, 0x54) = 0xFFFFFFFFu;
     F<uint32_t>(orig_star, 0x5C) &= ~0x7u;
+    if (g_relinquish_clean_fix) {
+        // BUG-1567: lower tech 5 -> 1 on orig_star and its tech-5 planets directly (without calling
+        // cPlanetRecord_SetTechLevel(1), which would destroy cCivData needed by space_allies::add_planet's
+        // keep_host_home path when space.allies is enabled), clear loaded cPlanet pol, and rebuild near-stars.
+        for (void* pr : planets_of(orig_star)) {
+            if (!readable(pr, 0x198))
+                continue;
+            if (F<uint32_t>(pr, 0x194) == 5u) {
+                if (pr != orig_rec)
+                    remove_colony_from_spd(pr);
+                F<uint32_t>(pr, 0x194) = kRelinquishedTechLevel;
+                clear_loaded_planet_pol(pr);
+            }
+        }
+        if (F<uint32_t>(orig_star, 0x4C) == 5u)
+            F<uint32_t>(orig_star, 0x4C) = kRelinquishedTechLevel;
+        rebuild_near_stars();
+    }
     g_relinquished_host_home_star = g_my_emig.orig_home_star;
     g_relinquished_host_home_planet = g_my_emig.orig_home_planet;
     g_homes.set(0, g_my_emig.orig_home_star, g_my_emig.orig_home_planet);
     g_emig_sm.host_relinquished = true;
     if (H && M)
-        H->log(M, SK_INFO, "space_rivals: guest relinquished host home star %u planet %08X for rival mirror",
-               g_my_emig.orig_home_star, g_my_emig.orig_home_planet);
+        H->log(M, SK_INFO,
+               "space_rivals: guest relinquished host home star %u planet %08X for rival mirror (clean=%d star_tech=%u planet_tech=%u)",
+               g_my_emig.orig_home_star, g_my_emig.orig_home_planet, (int)g_relinquish_clean_fix,
+               F<uint32_t>(orig_star, 0x4C), F<uint32_t>(orig_rec, 0x194));
     return true;
 }
 
@@ -1799,14 +1848,14 @@ static std::string status()
     uint16_t hcities = (hp && hp != 0xFFFFFFFFu) ? count_cities_on(planet_record(hp), my_pol()) : 0;
     char buf[512];
     snprintf(buf, sizeof buf,
-             "space_rivals: fix=%d active=%d hooks=%d home_star=%u home_planet=%08X home_cities=%u "
+             "space_rivals: fix=%d relinq_fix=%d active=%d hooks=%d home_star=%u home_planet=%08X home_cities=%u "
              "emigrated=%d relinq_host=%08X teleported=%d homes=%u buster_blocked=%u capture_blocked=%u "
              "inf_applied=%u draft_payouts=%u finale_awarded=%d finale_first=%u finale_winner=%u",
-             (int)g_space_rivals_fix, (int)active(), (int)g_hooks_ok, hs == 0xFFFFFFFFu ? 0u : hs,
-             hp == 0xFFFFFFFFu ? 0u : hp, (unsigned)hcities, (int)(g_emig_sm.applied_planet != 0),
-             g_relinquished_host_home_planet, (int)g_emig_sm.teleported, (unsigned)g_homes.homes.size(),
-             g_buster_blocked, g_capture_blocked, g_inf_applied, g_draft_payouts, (int)g_finale.awarded,
-             (unsigned)g_finale.first_player, (unsigned)g_finale.winner);
+             (int)g_space_rivals_fix, (int)g_relinquish_clean_fix, (int)active(), (int)g_hooks_ok,
+             hs == 0xFFFFFFFFu ? 0u : hs, hp == 0xFFFFFFFFu ? 0u : hp, (unsigned)hcities,
+             (int)(g_emig_sm.applied_planet != 0), g_relinquished_host_home_planet, (int)g_emig_sm.teleported,
+             (unsigned)g_homes.homes.size(), g_buster_blocked, g_capture_blocked, g_inf_applied, g_draft_payouts,
+             (int)g_finale.awarded, (unsigned)g_finale.first_player, (unsigned)g_finale.winner);
     return buf;
 }
 
@@ -1949,6 +1998,34 @@ static std::string debug(const std::vector<std::string>& a)
         }
         return out.empty() ? "no race stats\n" : out;
     }
+    if (a[0] == "star" && a.size() >= 2) {
+        uint32_t sid = (uint32_t)strtoul(a[1].c_str(), nullptr, 0);
+        void* star = spacecoop::star_record(sid);
+        if (!readable(star, 0x74))
+            return "no star\n";
+        uint32_t owner = F<uint32_t>(star, 0x54);
+        uint32_t stech = F<uint32_t>(star, 0x4C);
+        uint32_t sflags = F<uint32_t>(star, 0x5C);
+        uint32_t max_ptech = 0;
+        uint32_t p0_id = 0;
+        size_t civs = 0;
+        for (void* pr : planets_of(star)) {
+            if (!readable(pr, 0x198))
+                continue;
+            uint32_t pt = F<uint32_t>(pr, 0x194);
+            size_t cn = ptr_vec((uint8_t*)pr + 0x15C, 64).size();
+            if (pt >= max_ptech && (cn > 0 || p0_id == 0)) {
+                max_ptech = pt;
+                p0_id = F<uint32_t>(pr, 0x184);
+                civs = cn;
+            }
+        }
+        char b[220];
+        snprintf(b, sizeof b,
+                 "star=%u owner=%08X star_tech=%u flags=%08X planet=%08X planet_tech=%u civs=%u relinq_fix=%d\n",
+                 sid, owner, stech, sflags, p0_id, max_ptech, (unsigned)civs, (int)g_relinquish_clean_fix);
+        return b;
+    }
     if (a[0] == "test_core") {
         uint8_t pid = a.size() >= 2 ? (uint8_t)atoi(a[1].c_str()) : spaceext::my_id();
         on_core_entered(pid);
@@ -2002,6 +2079,8 @@ static bool init(const SkHost* h, SkMod* m)
     a_SetCaptureProgress = S("Simulator::cCity::SetCaptureProgress");
     a_DestroyCity = S("Simulator::cSimPlanetHighLOD::DestroyCity");
     a_NounMgr = S("Simulator::cGameNounManager::Get");
+    a_NearRebuild = S("SporeCoop::SpaceNearStars_Rebuild");
+    a_NearVt = S("SporeCoop::SpaceNearStars_vftable");
 
     bool ok = true;
     if (a_OnUseTool)
