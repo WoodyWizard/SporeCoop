@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-25
+
+Independent evolution and full Rivals isolation update closing remaining shared/host-coupled progression, design, ability, drama, and editor behaviors across all stages.
+
+### Added
+- **Mid-Game Starting Evolutionary Path & Space Philosophy Picker** (`history.midgame_pick`, `session 1.5` `MSG_PLAYER_HISTORY` `K_PICK`): when joining a world started past Cell (Creature, Tribe, Civilization, or Space), guests can choose their own prior-stage consequence cards or pick any of the 10 native Spore Space philosophies (Warrior, Trader, Scientist, Shaman, Bard, Zealot, Diplomat, Ecologist, Knight, Wanderer) via `coop.history pick` or the compact "Starting Path (Mid-Game)" controls on the F9 Rivals tab, updating their own `cPlayer` cards and native `cEmpire +0x58` archetype without altering the host and persisting across rejoins. (BUG-1565)
+- **Tribe Guest Consequence Abilities & Creature-to-Tribe Pack Pet Transfer** (`tribe.guest_consequence`, `rivals.tribe_pack_pets`): routed all 6 Tribe consequence abilities (Traps, Refreshing Storm, Flying Fish, Fire Bombs, Fireworks, Beastmaster) from guests to the host validated against each player's own Cell/Creature consequence cards and per-player cooldowns; in Tribe Rivals, each player's Creature-stage recruited pack species now transfer into real domesticated pets at their own village on `Creature -> Tribe`. (BUG-1564)
+- **Civ Rivals Guaranteed Capital Specialty Conversion** (`rivals.civ_spec_convert`): when no free NPC nation matches a guest's Tribe consequence card specialty on Civ Rivals entry, the taken-over NPC nation and its capital city (`cCity::SetSpecialty`, `+0x29C`, `Civilization_RefreshUnlocks`) are automatically converted on both host and guest to match the player's Military, Economic, or Religious path, opening the matching vehicle editor in `civ_arrival`. (BUG-1563)
+
+### Fixed
+- **Rivals Designs Isolation & Space Jump Guard** (`rivals.designs_isolate`, `rivals.space_jump_ally`): stopped `designs.cpp` from overwriting rival guests' Tribe outfits or Civ/Space designs when the host edits their own creations, allowed guests to use their own Tribal Outfitter/editors cleanly in Rivals, and restricted Space `Jump to` (and squadron jump buttons) in Space Rivals to `Ally` players only so players cannot teleport straight into Neutral or War rival star systems. (BUG-1562)
+- **Civ Rivals Guest Superweapon Crash & Budget Spend** (`rivals.civ_sw_spend`): fixed a host crash (`0xC0000005` at `0x00BF18CA` in `GetSuperweaponTool`) caused by uninitialized `mSuperweaponTools` (`+0x470`) on NPC `cCivilization` objects via RAII `SwToolsBorrow`, and validated/deducted guest superweapon costs directly from `mWealth` without NPC budget refills. (BUG-1563)
+- **Rivals Drama Isolation & No Guest Reload on Host Creature Editor** (`rivals.drama_isolate`, `rivals.editor_no_reload`): isolated guest `Summon Flock` from the host's pack in Creature Rivals, stopped relaying host meteors and rain storms onto rivals, blocked unfair `creature_attack` raids on converted Tribe Rivals villages, stopped pausing rivals on host pauses/captions, and skipped redundant post-Creature-Editor `MSG_WORLD` reload shares in Creature Rivals so rival guests keep playing uninterrupted at their own nest with their own DNA while seeing the host's evolved species live. (BUG-1566)
+
 ## [0.8.0.2] - 2026-11-25
 
 Rivals mode quality-of-life improvements and community-reported co-op fixes from Discord and GitHub.
