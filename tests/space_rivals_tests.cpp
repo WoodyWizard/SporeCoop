@@ -381,6 +381,54 @@ static void test_space_npc_ui_list()
     CHECK(capped.size() == kMaxSpaceNpcUiEntries, "UI list capped at kMaxSpaceNpcUiEntries");
 }
 
+static void test_relinquish_clean_and_color_fallback()
+{
+    printf("space_rivals: clean relinquish tech-5 clearing and UpdateAndGetColor fallback (BUG-1567)\n");
+    using namespace spacerivals;
+
+    // Without clean_fix: star & planets remain tech 5 while empire_id == 0xFFFFFFFF (orphaned tech-5 state).
+    RelinquishedStarState dirty;
+    dirty.empire_id = 0x80000001u;
+    dirty.star_tech = 5u;
+    dirty.star_flags = 0x15u;
+    dirty.planet_techs = {5u, 1u, 5u, 0u};
+    apply_clean_relinquish(dirty, false);
+    CHECK(dirty.empire_id == 0xFFFFFFFFu && (dirty.star_flags & 7u) == 0u, "legacy relinquish clears owner and home bits");
+    CHECK(is_orphaned_tech5_star(dirty.empire_id, dirty.star_tech), "legacy relinquish leaves orphaned tech-5 star");
+    CHECK(dirty.planet_techs[0] == 5u && dirty.planet_techs[2] == 5u, "legacy relinquish leaves tech-5 planets");
+
+    // With clean_fix: star & tech-5 planets drop to kRelinquishedTechLevel (1); lower-tech planets untouched.
+    RelinquishedStarState clean;
+    clean.empire_id = 0x80000001u;
+    clean.star_tech = 5u;
+    clean.star_flags = 0x15u;
+    clean.planet_techs = {5u, 2u, 5u, 0u};
+    apply_clean_relinquish(clean, true);
+    CHECK(clean.empire_id == 0xFFFFFFFFu && clean.star_flags == 0x10u, "clean relinquish clears owner and home bits only");
+    CHECK(!is_orphaned_tech5_star(clean.empire_id, clean.star_tech), "clean relinquish never leaves orphaned tech-5 star");
+    CHECK(clean.star_tech == kRelinquishedTechLevel, "star tech lowered to Creature (1)");
+    CHECK(clean.planet_techs[0] == kRelinquishedTechLevel && clean.planet_techs[1] == 2u &&
+              clean.planet_techs[2] == kRelinquishedTechLevel && clean.planet_techs[3] == 0u,
+          "only tech-5 planets lowered to 1; non-empire planets preserved");
+
+    // UpdateAndGetColor fallback home star selection
+    CHECK(pick_color_fallback_home_star(9093181u, true, {9351184u}) == 9093181u,
+          "valid current mHomeStarID preserved");
+    CHECK(pick_color_fallback_home_star(0xFFFFFFFFu, false, {0u, 0xFFFFFFFFu, 9093181u, 9351184u}) == 9093181u,
+          "unset mHomeStarID falls back to first valid owned star");
+    CHECK(pick_color_fallback_home_star(9093181u, false, {9351184u}) == 9351184u,
+          "dangling mHomeStarID falls back to owned star");
+    CHECK(pick_color_fallback_home_star(0xFFFFFFFFu, false, {}) == 0xFFFFFFFFu,
+          "no owned stars yields 0xFFFFFFFF (palette fallback)");
+
+    // Palette fallback stays within Spore's 12 valid palette IDs (0x53DBCF3..0x53DBCFE)
+    for (uint32_t i = 0; i < 24; i++) {
+        uint32_t pal = fallback_empire_palette_id(0x80000000u + i);
+        CHECK(pal >= kEmpirePaletteBase && pal < kEmpirePaletteBase + kEmpirePaletteCount,
+              "fallback palette id in Spore 12-color range");
+    }
+}
+
 int main()
 {
     test_r5_emigration_filtering_and_scoring();
@@ -390,6 +438,7 @@ int main()
     test_civ_to_space_liftoff_state_machine();
     test_space_influence_scaling_and_draft_payout();
     test_space_npc_ui_list();
+    test_relinquish_clean_and_color_fallback();
     printf("space_rivals_tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }
