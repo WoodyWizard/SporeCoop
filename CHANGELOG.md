@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.8.2.1] - 2026-11-26
+
+Critical Tribe Rivals hotfix fixing NPC village hut conquest and stage progression blocked by the Game Over message guard.
+
+### Fixed
+- **Tribe Rivals NPC Hut Destruction Did Not Conquer Village or Advance Stage** (`rivals.tribe_npc_hut_conquest`): scoped the `TribeGame_GoalListener` (`0x00CD81F0`) `0x058BADDD` (`HutDestroyed`) Game Over guard in `mods/coop/tribe_rivals.cpp` to check `data + 0x08` (`victim cTribe*`) and only block player-owned tribes; free NPC tribe hut destructions now pass through to native `cTribe_SetConquered`, complete missions/totem progress, spawn subsequent waves, attribute conquest to the exact attacker tribe (`data + 0x18`), and allow Tribe Rivals to advance cleanly to Civilization. (BUG-1585)
+
 ## [0.8.2] - 2026-11-26
 
 Major Rivals mode stability, gameplay, and UI polish release fixing every issue surfaced during a full 4-hour Rivals stream and host log audit across Creature, Tribe, Civilization, Space, and Shared Library.
