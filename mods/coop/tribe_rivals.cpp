@@ -66,6 +66,10 @@ static bool g_tribe_082_fix = true;
 COOP_FIX("rivals.tribe_fixes_082", "BUG-1580", g_tribe_082_fix,
          "tribe: enforce 6/9/12 pop cap, real o_Form growth check, Host+Guest species/diet sync, persisted pol assignment, rival alliance exclusion from NPC victory, guest tool sell, night-sleep/peace aggro guard, and chieftain KO recovery");
 
+static bool g_npc_hut_conquest_fix = true;
+COOP_FIX("rivals.tribe_npc_hut_conquest", "BUG-1585", g_npc_hut_conquest_fix,
+         "tribe: only block 0x058BADDD HutDestroyed Game Over for player-owned tribes in Tribe Rivals so destroying NPC huts still conquers them and advances Tribe stage");
+
 // ---- Game addresses (verified GOG 2024 dc04aee5, docs/re/tribe.md#tribe-rivals-re) ----
 static uintptr_t a_SetPlayerTribe = 0;
 static uintptr_t a_PlannerUpdate = 0;
@@ -672,19 +676,37 @@ static int SK_THISCALL h_ToolTD(void* comb, float dmg, uint32_t pol, int type, c
     return o_ToolTD(comb, dmg, pol, type, pos, att);
 }
 
-// BUG-1571: Block native TRG_PRE_PopDestroyed / TRG_PRE_HutDestroyed Game Over handler in TribeGame_GoalListener
-// (0x00CD81F0) while Tribe Rivals is active, on both host and guest, so a full tribe wipe triggers respawn instead
-// of hiding the HUD and reloading the save.
+// BUG-1571 & BUG-1585: Block native TRG_PRE_PopDestroyed Game Over (0x05C80207) and player-only TRG_PRE_HutDestroyed
+// Game Over (0x058BADDD) in TribeGame_GoalListener (0x00CD81F0) while Tribe Rivals is active.
+// 0x058BADDD carries data+0x08 = victim cTribe* and data+0x18 = attacker cTribe*, and runs cTribe_SetConquered(victim, true)
+// for every conquered NPC village before checking victim->IsPlayerOwned(); pass NPC villages through so destroying an NPC
+// hut conquers it, awards totem progress, spawns subsequent waves, and advances Tribe stage!
+static uint8_t g_conquer_hint_owner = kNoOwner;
 using GoalListener_t = bool(SK_THISCALL*)(void*, uint32_t, void*);
 static GoalListener_t o_TribeGoalListener = nullptr;
 static bool SK_THISCALL h_TribeGoalListener(void* self, uint32_t msg_id, void* data)
 {
     if (wipe_recovery_active() && (msg_id == kMsgPopDestroyed || msg_id == kMsgHutDestroyed)) {
-        g_pop_gameover_blocked++;
-        if (H && M)
-            H->log(M, SK_INFO, "tribe_rivals: blocked native Tribe Game Over msg 0x%08X (#%u, BUG-1571)", msg_id,
-                   g_pop_gameover_blocked);
-        return false;
+        void* victim = (msg_id == kMsgHutDestroyed && data && skg::readable(data, 0x0C)) ? F<void*>(data, 0x08) : nullptr;
+        bool victim_is_player = victim && (victim == tribe::player_tribe() || is_player_owned_tribe(victim));
+        if (should_block_tribe_goal_msg(true, msg_id, victim_is_player, g_npc_hut_conquest_fix)) {
+            g_pop_gameover_blocked++;
+            if (H && M)
+                H->log(M, SK_INFO, "tribe_rivals: blocked native Tribe Game Over msg 0x%08X victim=%p (#%u, BUG-1571/BUG-1585)",
+                       msg_id, victim, g_pop_gameover_blocked);
+            return false;
+        }
+        // NPC hut destruction: preserve exact attacker tribe owner for h_SetConquered attribution
+        uint8_t prev_hint = g_conquer_hint_owner;
+        if (msg_id == kMsgHutDestroyed && data && skg::readable(data, 0x1C)) {
+            void* att_tribe = F<void*>(data, 0x18);
+            uint8_t ao = owner_of_tribe(att_tribe);
+            if (rivals::valid_player(ao))
+                g_conquer_hint_owner = ao;
+        }
+        bool res = o_TribeGoalListener(self, msg_id, data);
+        g_conquer_hint_owner = prev_hint;
+        return res;
     }
     return o_TribeGoalListener(self, msg_id, data);
 }
@@ -798,19 +820,21 @@ static void SK_THISCALL h_SetConquered(void* t, bool conquered)
         }
         if (is_host() && o == kNoOwner && t) {
             uint32_t np = tribe_pol(t);
-            // Attribute conquest to player whose members are closest to the village
-            net::Vec3 vp = tribe::tribe_pos(t);
-            uint8_t best_p = 0;
-            float best_d = 1e9f;
-            for (int p = 0; p < rivals::kMaxPlayers; p++) {
-                void* pt = tribe_of_player((uint8_t)p);
-                if (!pt)
-                    continue;
-                for (void* m : tribe::members(pt)) {
-                    float d = net::dist(game::position(m), vp);
-                    if (d < best_d) {
-                        best_d = d;
-                        best_p = (uint8_t)p;
+            // Attribute conquest to exact 0x058BADDD attacker tribe owner (BUG-1585), falling back to closest player member
+            uint8_t best_p = rivals::valid_player(g_conquer_hint_owner) ? g_conquer_hint_owner : 0;
+            if (!rivals::valid_player(g_conquer_hint_owner)) {
+                net::Vec3 vp = tribe::tribe_pos(t);
+                float best_d = 1e9f;
+                for (int p = 0; p < rivals::kMaxPlayers; p++) {
+                    void* pt = tribe_of_player((uint8_t)p);
+                    if (!pt)
+                        continue;
+                    for (void* m : tribe::members(pt)) {
+                        float d = net::dist(game::position(m), vp);
+                        if (d < best_d) {
+                            best_d = d;
+                            best_p = (uint8_t)p;
+                        }
                     }
                 }
             }
@@ -2995,6 +3019,29 @@ std::string debug_cmd(const std::vector<std::string>& a)
         char b[96];
         snprintf(b, sizeof b, "%s: pid=%u species=%08X\n", ok ? "ok" : "error", (unsigned)pid,
                  g_owned[pid].swapped_key[0]);
+        return b;
+    }
+
+    if (a[1] == "hit_npc_hut" && a.size() >= 5 && is_host()) {
+        uint8_t att_p = (uint8_t)atoi(a[2].c_str());
+        uint32_t np = (uint32_t)strtoul(a[3].c_str(), nullptr, 0);
+        float dmg = (float)atof(a[4].c_str());
+        void* at = tribe_of_player(att_p);
+        void* vt = find_tribe_by_pol_or_pos(np, 0.f, 0.f, 0.f);
+        if (!at || !vt || is_player_owned_tribe(vt) || !skg::readable(vt, 0x36C))
+            return "error: npc tribe missing\n";
+        void* hut = F<void*>(vt, 0x368);
+        if (!hut || !skg::readable(hut, 0x160))
+            return "error: npc hut missing\n";
+        auto ams = tribe::members(at);
+        void* att_comb = !ams.empty() ? (uint8_t*)ams[0] + 0x5A8 : nullptr;
+        float before = F<float>(hut, 0x120 + 0x38);
+        static const float zero[3] = {0, 0, 0};
+        vcall<int>((uint8_t*)hut + 0x120, 0x18 / 4, dmg, tribe_pol(at), 0, zero, att_comb);
+        float after = F<float>(hut, 0x120 + 0x38);
+        char b[128];
+        snprintf(b, sizeof b, "npc_hut pol=%08X hp %.2f -> %.2f conquered=%d pop_go_blocked=%u rel=%s\n", np, before,
+                 after, (int)tribe_conquered(vt), g_pop_gameover_blocked, npc_rel_name(g_npc_rels.get(att_p, np)));
         return b;
     }
 

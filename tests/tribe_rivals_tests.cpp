@@ -705,6 +705,22 @@ static void test_bug1580_alliance_buy_influence_sell_and_ko()
     }
 }
 
+static void test_bug1585_npc_hut_conquest_goal_listener()
+{
+    printf("BUG-1585: TribeGame_GoalListener blocks only player HutDestroyed, never NPC hut conquest\n");
+    CHECK(!should_block_tribe_goal_msg(false, kTribeMsgPopDestroyed, true, true));
+    CHECK(!should_block_tribe_goal_msg(false, kTribeMsgHutDestroyed, true, true));
+    CHECK(!should_block_tribe_goal_msg(false, kTribeMsgHutDestroyed, false, true));
+    CHECK(should_block_tribe_goal_msg(true, kTribeMsgPopDestroyed, true, true));
+    CHECK(should_block_tribe_goal_msg(true, kTribeMsgPopDestroyed, false, true));
+    CHECK(should_block_tribe_goal_msg(true, kTribeMsgHutDestroyed, true, true));
+    CHECK(!should_block_tribe_goal_msg(true, kTribeMsgHutDestroyed, false, true));
+    CHECK(!should_block_tribe_goal_msg(true, 0x05CC2589u, true, true));
+    CHECK(!should_block_tribe_goal_msg(true, 0x05CC2589u, false, true));
+    // Fix OFF reproduces the 0.8.2 bug where NPC HutDestroyed was wrongly swallowed
+    CHECK(should_block_tribe_goal_msg(true, kTribeMsgHutDestroyed, false, false));
+}
+
 int main()
 {
     test_pick_rival_tribe();
@@ -726,6 +742,7 @@ int main()
     test_bug1580_species_sync();
     test_bug1580_persisted_assign_and_destroyed_exclusion();
     test_bug1580_alliance_buy_influence_sell_and_ko();
+    test_bug1585_npc_hut_conquest_goal_listener();
     if (g_fail) {
         printf("tribe_rivals_tests: %d FAILED\n", g_fail);
         return 1;

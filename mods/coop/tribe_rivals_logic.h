@@ -439,6 +439,25 @@ inline bool can_conquer_tribe(bool rivals_active, uint8_t tribe_owner)
     return true;
 }
 
+// BUG-1585: TribeGame_GoalListener (0x00CD81F0) receives 0x058BADDD (kMsgHutDestroyed) for EVERY tribe whose main hut
+// reaches 0 HP (data+0x08 = victim cTribe*), calling cTribe_SetConquered(victim, true) first and only playing
+// TRG_PRE_HutDestroyed Game Over when victim->IsPlayerOwned() is true. Blocking 0x058BADDD for NPC tribes prevented
+// conquering any NPC village, adding totem pieces, spawning waves, or advancing Tribe stage!
+constexpr uint32_t kTribeMsgPopDestroyed = 0x05C80207u;
+constexpr uint32_t kTribeMsgHutDestroyed = 0x058BADDDu;
+
+inline bool should_block_tribe_goal_msg(bool wipe_recovery_on, uint32_t msg_id, bool victim_is_player,
+                                        bool npc_conquest_fix)
+{
+    if (!wipe_recovery_on)
+        return false;
+    if (msg_id == kTribeMsgPopDestroyed)
+        return true;
+    if (msg_id == kTribeMsgHutDestroyed)
+        return npc_conquest_fix ? victim_is_player : true;
+    return false;
+}
+
 // ---------------- BUG-1554 & BUG-1571: Host order routing (War PvP, Immunity vs Together friendly fire) ----------------
 enum class OrderDecision : uint8_t {
     AllowNative = 0,     // pass through to cCreatureCitizen::DoAction

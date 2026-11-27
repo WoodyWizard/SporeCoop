@@ -155,6 +155,28 @@ def main():
     ck(ib2_after > ib2_before,
        f'host 5-min PvP shield blocked guest attack ({hm2_out}, immune_blocked {ib2_before}->{ib2_after})')
 
+    # 4. Phase 3 (BUG-1585): Destroying a free NPC tribe's hut MUST NOT be blocked by h_TribeGoalListener!
+    # It must run cTribe_SetConquered (+0x556=1), mark the NPC conquered for the attacker, and NOT increment pop_go_blocked.
+    npc_pol = None
+    for _ in range(15):
+        m_npc = re.search(r'npc pol=([0-9A-Fa-f]+) .*?rels=\[p0=([^,\]]+),p1=([^\]]+)\]', tr_out(host))
+        if m_npc and m_npc.group(2) != 'Conquered' and m_npc.group(3) != 'Conquered':
+            npc_pol = m_npc.group(1)
+            break
+        host.call('coop.tribe rivals form_npc')
+        time.sleep(0.8)
+    ck(npc_pol is not None, f'free NPC tribe present for BUG-1585 hut conquest check (pol={npc_pol})')
+    if npc_pol:
+        pb_before = parse_int(tr_out(host), 'pop_go_blocked')
+        npc_hit = (host.call(f'coop.tribe rivals hit_npc_hut 0 0x{npc_pol} 99999').get('out') or '').strip()
+        time.sleep(1.2)
+        st_p3 = tr_out(host)
+        pb_after = parse_int(st_p3, 'pop_go_blocked')
+        conq_in_status = re.search(rf'npc pol={npc_pol}\b.*?p0=Conquered', st_p3, re.I) is not None
+        print(f'  Phase 3 BUG-1585 NPC hut conquest: hit=[{npc_hit}] pop_go_blocked={pb_before}->{pb_after} status_conq={conq_in_status}', flush=True)
+        ck('conquered=1' in npc_hit and conq_in_status and pb_after == pb_before,
+           f'destroying free NPC hut conquered it without triggering player Game Over block (hit=[{npc_hit}], pop_go_blocked {pb_before}->{pb_after}, status_conq={conq_in_status})')
+
     ck.faults(host=host, guest=guest)
     return ck.result()
 
