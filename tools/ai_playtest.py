@@ -179,9 +179,10 @@ STAGE_PLAYBOOKS = {
     'editor': (
         'EDITOR PLAYBOOK:\n'
         '- You are currently inside a Spore Editor (Cell / Creature / Building / Vehicle / Outfitter)!\n'
-        '- Take a `screenshot` + `Read` it: optionally drag 1 part onto your creation or click a paint/part tab to test '
-        'editor stability, then click the green checkmark (`click_hud("editor_done")` or bottom-right check) to save & '
-        'exit cleanly back to live gameplay! Watch closely for stuck saves or broken models on exit.'
+        '- Take a `screenshot` + `Read` it (1:1 native pixel coordinates): drag 1 part from the left palette onto the '
+        'creation, then click the green checkmark (`click_hud("editor_done")`) to save & exit back to live gameplay.\n'
+        '- If the editor refuses to save (e.g. empty creation) or you want to abort back to the stage, click the red X '
+        'cancel button (`click_hud("editor_cancel")`) and confirm `Yes`/`Cancel` via `click_ui` so you never get stuck!'
     ),
 }
 

@@ -89,6 +89,7 @@ STAGE_FIXED_HUD_1440 = {
     },
     'editor': {
         'editor_done': (1412, 1054),
+        'editor_cancel': (1368, 1054),
     },
     'space': {
         'planner_done': (1412, 1054),
@@ -931,12 +932,12 @@ class SporeMcpEngine:
         path = os.path.join(run_dir, 'shots', fname)
         r = sl.call(f'shot {path}')
         if r.get('ok') and os.path.exists(path):
-            try:
-                recompress_png(path, 0.5)
-            except Exception:
-                pass
+            # Keep 1:1 native screen coordinates (scale=1.0) so multimodal agents reading the PNG
+            # can pass exact pixel coordinates directly to click_screen / drag_screen without 2x offset errors.
+            ui = _parse_uistate(sl.out('coop.uistate'))
+            screen_wh = ui.get('screen') or [1440, 1080]
             self._record_action(player, 'screenshot', fname)
-            return {'ok': True, 'path': path}
+            return {'ok': True, 'path': path, 'screen': screen_wh, 'coord_scale': 1.0}
         return {'ok': False, 'error': r.get('out') or 'screenshot failed'}
 
     # ---------------- Automated Bug Oracle & Bug Bundler ----------------
@@ -1040,14 +1041,17 @@ class SporeMcpEngine:
                             self.anomalies.append(rec)
                         new_found.append(rec)
 
-            # 4. Stuck pause check (non-empty pause reasons unchanged for >25s during gameplay stage)
+            # 4. Stuck pause check (non-empty pause reasons unchanged for >25s during gameplay stage;
+            # allow up to 90s when only the City/Tribe Planner pause 04BF38A6 is active so active building isn't flagged)
             in_gameplay = mode in ('cell', 'creature', 'tribe', 'civ', 'space')
             has_pause = bool(pauses and 'none' not in pauses.lower() and re.search(r'[1-9]', pauses))
+            planner_only_pause = has_pause and ('04BF38A6=' in pauses) and ('04BF38A4=' not in pauses)
+            pause_limit = 90.0 if planner_only_pause else 25.0
             if in_gameplay and has_pause:
                 if pauses != sl.last_pause_sig:
                     sl.last_pause_sig = pauses
                     sl.pause_since = now
-                elif now - sl.pause_since >= 25.0:
+                elif now - sl.pause_since >= pause_limit:
                     key = f'stuck_pause:{name}:{pauses[:40]}'
                     if key not in self._anomaly_keys:
                         self._anomaly_keys.add(key)
