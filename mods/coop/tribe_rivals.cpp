@@ -70,6 +70,10 @@ static bool g_npc_hut_conquest_fix = true;
 COOP_FIX("rivals.tribe_npc_hut_conquest", "BUG-1585", g_npc_hut_conquest_fix,
          "tribe: only block 0x058BADDD HutDestroyed Game Over for player-owned tribes in Tribe Rivals so destroying NPC huts still conquers them and advances Tribe stage");
 
+static bool g_tribe_sell_cast_fix = true;
+COOP_FIX("rivals.tribe_sell_cast", "BUG-1586", g_tribe_sell_cast_fix,
+         "tribe: cast cSpatialObject via vtable +0xB8 (not +0x0C) in h_CommunityEditorSell so selling a tool hut on Guest never corrupts the tool or crashes");
+
 // ---- Game addresses (verified GOG 2024 dc04aee5, docs/re/tribe.md#tribe-rivals-re) ----
 static uintptr_t a_SetPlayerTribe = 0;
 static uintptr_t a_PlannerUpdate = 0;
@@ -784,13 +788,17 @@ static void SK_THISCALL h_StageAddGoal(void* self, int kind, void* tribe)
     o_StageAddGoal(self, kind, tribe);
 }
 
-// BUG-1580: Relay guest Tribe tool-hut sells to host so worldobj sync does not recreate the sold hut and food refunds cleanly.
+// BUG-1580 & BUG-1586: Relay guest Tribe tool-hut sells to host so worldobj sync does not recreate the sold hut and food refunds cleanly.
+// spatial is a cSpatialObject* whose Cast(typeId) lives at vtable +0xB8 (verified in CommunityEditor_Sell 0x00D09D70),
+// NOT +0x0C (which corrupted/freed the cTribeTool and crashed Guest in CommunityEditor_Drop / GetToolByType).
 using CommunityEditorSell_t = void(SK_THISCALL*)(void*, void*);
 static CommunityEditorSell_t o_CommunityEditorSell = nullptr;
 static void SK_THISCALL h_CommunityEditorSell(void* editor, void* spatial)
 {
     if (g_tribe_082_fix && active() && is_guest() && spatial && !IsBadReadPtr(spatial, 4)) {
-        void* gd = vcall<void*>(spatial, 0xC / 4, (uint32_t)0x17F243Bu);
+        void* gd = g_tribe_sell_cast_fix
+                       ? vcall<void*>(spatial, kSpatialCastVtableSlot, kTribeToolTypeId)
+                       : vcall<void*>(spatial, 0xC / 4, (uint32_t)0x17F243Bu);
         if (gd && game::listed(gd, kToolNoun) && skg::readable(gd, 0x1FC)) {
             void* tt = F<void*>(gd, 0x1F8);
             int kind = tribe::tool_type(gd);
@@ -798,8 +806,9 @@ static void SK_THISCALL h_CommunityEditorSell(void* editor, void* spatial)
                 net::Writer w;
                 write_food_sync(w, {CustomOp::SellTool, my_id(), kind, 0});
                 rivals::send_faction_to(0, rivals::Stage::Tribe, wire::rivals_faction::SK_STAGE_CUSTOM, w);
+                g_tools_sold++;
                 if (H && M)
-                    H->log(M, SK_INFO, "tribe_rivals: guest requested sell of tool hut kind=%d (BUG-1580)", kind);
+                    H->log(M, SK_INFO, "tribe_rivals: guest requested sell of tool hut kind=%d (BUG-1580/BUG-1586)", kind);
             }
         }
     }
@@ -3019,6 +3028,46 @@ std::string debug_cmd(const std::vector<std::string>& a)
         char b[96];
         snprintf(b, sizeof b, "%s: pid=%u species=%08X\n", ok ? "ok" : "error", (unsigned)pid,
                  g_owned[pid].swapped_key[0]);
+        return b;
+    }
+
+    if (a[1] == "test_sell" && is_guest()) {
+        int want_kind = a.size() >= 3 ? atoi(a[2].c_str()) : 1;
+        void* mt = tribe_of_player(my_id());
+        if (!mt || !o_CommunityEditorSell)
+            return "error: no guest tribe or sell hook\n";
+        void* tool = nullptr;
+        for (void* tl : tribe::tribe_tools(mt)) {
+            if (tribe::tool_type(tl) == want_kind) {
+                tool = tl;
+                break;
+            }
+        }
+        if (!tool) {
+            net::Vec3 p = tribe::tribe_pos(mt);
+            p.x += 5.0f;
+            tool = tribe::make_tool_in(mt, want_kind, p);
+        }
+        if (!tool)
+            return "error: no tool to sell\n";
+        void* sp = vcall<void*>(tool, 0x0C / 4, kSpatialObjectTypeId);
+        if (!sp)
+            return "error: spatial cast failed\n";
+        uint8_t dummy_editor[0x80] = {}; // +0x40 == nullptr so o_CommunityEditorSell exits cleanly after hook inspection
+        uint32_t before = g_tools_sold;
+        h_CommunityEditorSell(dummy_editor, sp);
+        bool removed = tribe::remove_tool(tool);
+        // Probe cTribe::GetToolByType path (iterate tribe tools & call vt+0x58) to prove zero dangling tool pointers
+        int scanned = 0;
+        for (void* tl : tribe::tribe_tools(mt)) {
+            if (tl) {
+                (void)tribe::tool_type(tl);
+                scanned++;
+            }
+        }
+        char b[128];
+        snprintf(b, sizeof b, "ok: kind=%d sold=%u->%u removed=%d scanned=%d\n", want_kind, before, g_tools_sold,
+                 (int)removed, scanned);
         return b;
     }
 

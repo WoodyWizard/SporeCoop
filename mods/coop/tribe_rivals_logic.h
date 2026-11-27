@@ -667,6 +667,18 @@ inline bool can_buy_influence(bool rivals_active, bool is_host_role, bool has_tr
     return rivals_active && is_host_role && has_tribe && price >= 0 && food >= price;
 }
 
+// BUG-1586: CommunityEditor_Sell (0x00D09D70) receives a cSpatialObject* whose Cast(typeId) is at vtable +0xB8
+// (not +0x0C, which is on Object/cGameData; calling +0x0C on cSpatialObject corrupted/freed the cTribeTool and
+// crashed Guest in CommunityEditor_Drop / cTribe::GetToolByType).
+constexpr size_t kSpatialCastVtableSlot = 0xB8 / 4;
+constexpr uint32_t kTribeToolTypeId = 0x0116D858u;
+constexpr uint32_t kSpatialObjectTypeId = 0x01186577u;
+
+inline size_t community_sell_cast_slot(bool fix_on)
+{
+    return fix_on ? kSpatialCastVtableSlot : (0x0C / 4);
+}
+
 inline int32_t tool_sell_refund(int tool_type)
 {
     if (tool_type < kMinToolKind || tool_type > kMaxToolKind)

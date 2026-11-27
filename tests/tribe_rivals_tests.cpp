@@ -719,6 +719,12 @@ static void test_bug1585_npc_hut_conquest_goal_listener()
     CHECK(!should_block_tribe_goal_msg(true, 0x05CC2589u, false, true));
     // Fix OFF reproduces the 0.8.2 bug where NPC HutDestroyed was wrongly swallowed
     CHECK(should_block_tribe_goal_msg(true, kTribeMsgHutDestroyed, false, false));
+
+    // BUG-1586: CommunityEditor_Sell receives cSpatialObject* whose Cast(typeId) is at vtable +0xB8 (slot 46), not +0x0C
+    CHECK(community_sell_cast_slot(true) == (0xB8 / 4));
+    CHECK(community_sell_cast_slot(false) == (0x0C / 4));
+    CHECK(kTribeToolTypeId == 0x0116D858u);
+    CHECK(kSpatialObjectTypeId == 0x01186577u);
 }
 
 int main()

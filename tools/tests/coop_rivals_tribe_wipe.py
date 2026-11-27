@@ -177,6 +177,18 @@ def main():
         ck('conquered=1' in npc_hit and conq_in_status and pb_after == pb_before,
            f'destroying free NPC hut conquered it without triggering player Game Over block (hit=[{npc_hit}], pop_go_blocked {pb_before}->{pb_after}, status_conq={conq_in_status})')
 
+    # 5. Phase 4 (BUG-1586): Guest selling a Tribe tool hut through h_CommunityEditorSell must cast cSpatialObject
+    # via vtable +0xB8 (not +0x0C) with zero crash/faults and relay SellTool cleanly to Host!
+    h_sold0 = parse_int(tr_out(host), 'tools_sold')
+    g_sold0 = parse_int(tr_out(guest), 'tools_sold')
+    sell_out = (guest.call('coop.tribe rivals test_sell 1').get('out') or '').strip()
+    time.sleep(0.8)
+    g_sold1 = parse_int(tr_out(guest), 'tools_sold')
+    h_sold1 = parse_int(tr_out(host), 'tools_sold')
+    print(f'  Phase 4 BUG-1586 guest tool sell: out=[{sell_out}] guest tools_sold={g_sold0}->{g_sold1} host tools_sold={h_sold0}->{h_sold1}', flush=True)
+    ck(sell_out.startswith('ok:') and g_sold1 > g_sold0,
+       f'guest h_CommunityEditorSell relayed tool hut sell cleanly via vtable +0xB8 ({sell_out}, guest tools_sold {g_sold0}->{g_sold1})')
+
     ck.faults(host=host, guest=guest)
     return ck.result()
 
