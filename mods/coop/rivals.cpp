@@ -1064,13 +1064,22 @@ uint8_t report_stage_complete(uint8_t player_id)
                 g_state.chronicle.history.back().player_key = store::key_of(player_id);
             }
         }
-        char b[160];
-        if (rank == 1 && g_state.race.catchup_active)
-            snprintf(b, sizeof b, "%s wins the %s stage! %.0f s left to catch up", name_of(player_id).c_str(),
-                     stage_name(g_state.race.stage), cu);
-        else
+        char b[200];
+        if (rank == 1 && g_state.race.catchup_active) {
+            if (g_state.race.stage == Stage::Tribe) {
+                const auto& wp = g_state.race.players[player_id];
+                int need = wp.extra >= 1.0f ? (int)wp.extra : std::max(1, (int)wp.stat_b / 2 + 1);
+                snprintf(b, sizeof b, "%s %s %s (%.0f/%d, >50%% NPC)! %.0f %s", name_of(player_id).c_str(),
+                         tr("wins the", "побеждает на этапе"), tr_stage(g_state.race.stage), wp.primary, need, cu,
+                         tr("s left to catch up", "с на завершение"));
+            } else {
+                snprintf(b, sizeof b, "%s wins the %s stage! %.0f s left to catch up", name_of(player_id).c_str(),
+                         stage_name(g_state.race.stage), cu);
+            }
+        } else {
             snprintf(b, sizeof b, "%s finished the %s stage (#%u)", name_of(player_id).c_str(),
                      stage_name(g_state.race.stage), (unsigned)rank);
+        }
         if (is_host()) {
             host_broadcast(true);
             emit_notice(b);
@@ -1421,7 +1430,7 @@ std::vector<UiRow> ui_rows()
                 snprintf(rnk, sizeof rnk, " [#%u]", (unsigned)pr.finish_rank);
             if (cur_st == Stage::Tribe) {
                 int need = pr.extra >= 1.0f ? (int)pr.extra : std::max(1, (int)pr.stat_b / 2 + 1);
-                snprintf(buf, sizeof buf, "  %s: %.0f/%d | %s %.0f | %u%s", p.name.c_str(), pr.primary, need,
+                snprintf(buf, sizeof buf, "  %s: %.0f/%d (>50%% NPC) | %s %.0f | %u%s", p.name.c_str(), pr.primary, need,
                          tr("Food", "Еда"), pr.secondary, (unsigned)pr.stat_a, rnk);
             } else if (cur_st == Stage::Civ) {
                 snprintf(buf, sizeof buf, "  %s: %.0f/%u | $%.0f%s", p.name.c_str(), pr.primary,

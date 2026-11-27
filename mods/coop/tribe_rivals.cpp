@@ -1567,9 +1567,10 @@ static std::vector<rivals::UiRow> on_extra_ui_rows()
         return rows;
     uint8_t me = my_id();
     void* mt = tribe_of_player(me);
-    char b[160];
-    snprintf(b, sizeof b, "Tribe Rivals: own food=%d, NPCs=%u (need %d)", mt ? tribe_food(mt) : 0, g_last_npc_count,
-             g_last_win_needed);
+    char b[180];
+    snprintf(b, sizeof b, "%s: %s=%d | NPC=%u (%s: %d, >50%% NPC)",
+             i18n::tr("Tribe Rivals", "Племя Rivals"), i18n::tr("own food", "своя еда"),
+             mt ? tribe_food(mt) : 0, g_last_npc_count, i18n::tr("goal", "цель"), g_last_win_needed);
     rows.push_back({b, "", {}, 0});
     if (wipe_recovery_active()) {
         double now = H ? H->time_seconds() : 0.0;
