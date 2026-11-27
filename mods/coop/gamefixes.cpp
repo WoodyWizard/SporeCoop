@@ -2493,6 +2493,62 @@ static int c_boneguard(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// BUG-1589 (Discord SporeCoop-report-20261127-061420.zip): Guest in Civilization stage crashed during
+// world reset / leaving to galaxy menu to load host's Civ world at cCity::GetBoundingRadius+6 (GOG 0x00BD95C6,
+// Steam 0x00E395C6, read of 0x0000025C with eax=0). cCity::GetBoundingRadius (cCity spatial vtable +0x70)
+// unconditionally reads [city_spatial + 0x204] (cCity::mpCityWalls = city + 0x324) and loads [walls + 0x25C]
+// without a null check; when UTFWin rollover/modal teardown (0x00B7CC70 -> 0x00B7CCC3) queries a city after
+// GalaxyMenu_SimReset nulled mpCityWalls, it faults. Return 0.0f when mpCityWalls is null or unreadable.
+static bool g_city_walls_null_fix = true;
+COOP_FIX("game.city_walls_null", "BUG-1589", g_city_walls_null_fix,
+         "game: guard cCity::GetBoundingRadius against null mpCityWalls (+0x324) during Civ world reset / teardown");
+using CityRadiusFn = float(__thiscall*)(void*);
+static CityRadiusFn g_city_radius_orig = nullptr;
+static uintptr_t g_city_radius_addr = 0;
+static std::atomic<unsigned> g_city_radius_guarded{0};
+
+static float __fastcall city_radius_guard(void* city_spatial, void*)
+{
+    if (g_city_walls_null_fix) {
+        if (!city_spatial || !readable((uint8_t*)city_spatial + 0x204, 4)) {
+            unsigned n = ++g_city_radius_guarded;
+            if (n <= 8)
+                H->log(M, SK_WARN,
+                       "game fixes: guarded unreadable city spatial in cCity::GetBoundingRadius (spatial=%p, BUG-1589, #%u)",
+                       city_spatial, n);
+            return 0.0f;
+        }
+        void* walls = *(void**)((uint8_t*)city_spatial + 0x204);
+        if (!walls || !readable((uint8_t*)walls + 0x25C, 4)) {
+            unsigned n = ++g_city_radius_guarded;
+            if (n <= 8)
+                H->log(M, SK_WARN,
+                       "game fixes: guarded null/unreadable mpCityWalls in cCity::GetBoundingRadius (spatial=%p walls=%p mode=%08X, BUG-1589, #%u)",
+                       city_spatial, walls, game::mode_id(), n);
+            return 0.0f;
+        }
+    }
+    return g_city_radius_orig(city_spatial);
+}
+
+static int c_cityradius(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc > 1 && !strcmp(argv[1], "probe")) {
+        if (!g_city_radius_addr) {
+            H->out_printf(out, "cityradius: cCity_GetBoundingRadius missing\n");
+            return 1;
+        }
+        std::vector<uint8_t> fake_spatial(0x220, 0); // +0x204 mpCityWalls == nullptr
+        float r = skg::thiscall<float>(g_city_radius_addr, fake_spatial.data());
+        H->out_printf(out, "cityradius probe: r=%.2f fix=%d guarded=%u\n", r, (int)g_city_walls_null_fix,
+                      g_city_radius_guarded.load());
+        return 0;
+    }
+    H->out_printf(out, "cityradius: hooked=%d fix=%d guarded=%u\n", (int)(g_city_radius_orig != nullptr),
+                  (int)g_city_walls_null_fix, g_city_radius_guarded.load());
+    return 0;
+}
+
 void frame()
 {
     fxcut_frame();
@@ -2777,6 +2833,16 @@ void init(const SkHost* host, SkMod* mod)
     H->command_add(M, "coop.boneguard",
                    "coop.boneguard [probe] - cCreatureBase::GetBoneTransform / AttachToBone null +0xB54/+0x17C guard (BUG-1576)",
                    c_boneguard, nullptr, SK_CMD_MAIN_THREAD);
+    uintptr_t cr = H->sym("SporeCoop::cCity_GetBoundingRadius");
+    g_city_radius_addr = cr;
+    bool city_r = cr && H->hook_create(M, (void*)cr, (void*)&city_radius_guard, (void**)&g_city_radius_orig) == 0;
+    if (!city_r)
+        g_city_radius_orig = nullptr;
+    H->log(M, SK_INFO, "game fixes: cCity::GetBoundingRadius null mpCityWalls guard %s (BUG-1589)",
+           city_r ? "on" : "off");
+    H->command_add(M, "coop.cityradius",
+                   "coop.cityradius [probe] - cCity::GetBoundingRadius null mpCityWalls (+0x324) guard (BUG-1589)",
+                   c_cityradius, nullptr, SK_CMD_MAIN_THREAD);
 }
 
 void shutdown()
@@ -2819,7 +2885,8 @@ std::string status()
            std::to_string(g_cell_fluid_guarded.load()) + ", null empire contacts guarded " +
            std::to_string(g_empire_contact_guarded.load()) + " (SpaceGameUI badges " +
            std::to_string(g_planet_ui_guarded.load()) + "), creature bone nulls guarded " +
-           std::to_string(g_bone_xf_guarded.load()) + "/" + std::to_string(g_bone_attach_guarded.load()) + ", " +
+           std::to_string(g_bone_xf_guarded.load()) + "/" + std::to_string(g_bone_attach_guarded.load()) +
+           ", city walls nulls guarded " + std::to_string(g_city_radius_guarded.load()) + ", " +
            reset_status() + "\n";
 }
 
