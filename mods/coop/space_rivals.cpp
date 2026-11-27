@@ -83,7 +83,8 @@ static uintptr_t a_StarMgr, a_GetEmpire, a_RequirePlanets, a_GetPlanets, a_Playe
     a_PlayerUFOGet, a_RelMgr, a_ApplyRel, a_CalcRel, a_MakeContact, a_ToolMgr, a_GetTool, a_AddItemByKey,
     a_OnUseTool, a_DestroyPlanet, a_CaptureSystem, a_TransferStar, a_SetCaptureProgress, a_DestroyCity, a_NounMgr,
     a_NearRebuild, a_NearVt, a_GetAllCities, a_GetAllVehicles, a_DestroyInstance, a_VehicleRemove,
-    a_CityChangeOwner, a_CitySetPlayerOwned, a_CombatantSetHealth, a_MissionMgr, a_SetFlightSchool, a_SetMission201;
+    a_CityChangeOwner, a_CitySetPlayerOwned, a_CivByPol, a_CombatantSetHealth, a_MissionMgr, a_SetFlightSchool,
+    a_SetMission201;
 
 // ---- R7 Hook originals ----
 using OnUseTool_t = bool(SK_THISCALL*)(void*, void*, const float*, int);
@@ -316,18 +317,29 @@ static void* my_civ_on(void* rec, uint32_t pol)
 {
     if (!readable(rec, 0x168))
         return nullptr;
-    for (void* cd : ptr_vec((uint8_t*)rec + 0x15C, 32))
-        if (readable(cd, 0x50) && F<uint32_t>(cd, 0x14) == pol)
-            return cd;
-    return nullptr;
+    void* best = nullptr;
+    size_t best_cities = 0;
+    for (void* cd : ptr_vec((uint8_t*)rec + 0x15C, 32)) {
+        if (!readable(cd, 0x50) || F<uint32_t>(cd, 0x14) != pol)
+            continue;
+        size_t n = ptr_vec((uint8_t*)cd + 0x3C, 64).size();
+        if (!best || n > best_cities) {
+            best = cd;
+            best_cities = n;
+        }
+    }
+    return best;
 }
 
 static uint16_t count_cities_on(void* rec, uint32_t pol)
 {
-    void* cd = my_civ_on(rec, pol);
-    if (!cd)
+    if (!readable(rec, 0x168))
         return 0;
-    return (uint16_t)ptr_vec((uint8_t*)cd + 0x3C, 64).size();
+    size_t total = 0;
+    for (void* cd : ptr_vec((uint8_t*)rec + 0x15C, 32))
+        if (readable(cd, 0x50) && F<uint32_t>(cd, 0x14) == pol)
+            total += ptr_vec((uint8_t*)cd + 0x3C, 64).size();
+    return (uint16_t)std::min<size_t>(total, 0xFFFFu);
 }
 
 static void erase_from_vec(void* vec, void* p)
@@ -526,7 +538,8 @@ static void restore_protected_city_hp(void* city)
             return;
         float max_hp = F<float>(bld, 0x14C);
         float floor_hp = r7_city_hp_floor(max_hp);
-        if (F<int>(bld, 0x154) == 2) // ruin state -> active
+        // cSimPlanetHighLOD::Update triggers DestroyCity on any non-zero cCombatant::GetState (+0x154).
+        if (F<int>(bld, 0x154) != 0)
             F<int>(bld, 0x154) = 0;
         float cur_hp = F<float>(bld, 0x158);
         if (!std::isfinite(cur_hp) || cur_hp < floor_hp) {
@@ -1239,16 +1252,24 @@ static void host_cleanup_homeworld_civ_leftovers_task(void*)
     }
 
     uint32_t cities_unified = 0;
-    if (a_GetAllCities && a_CityChangeOwner) {
+    // cCity::ChangeOwner (0x00BE8A20) unconditionally dereferences oldCiv = [city+0x590] and
+    // newCiv = GetCivilizationByPoliticalID(nm, mp) inside cCivilization::AddCity.
+    void* host_civ = a_CivByPol ? thiscall<void*>(a_CivByPol, nm, mp) : nullptr;
+    if (a_GetAllCities && a_CityChangeOwner && host_civ) {
         callguard::Hold guard(g_emigrating_guard);
         void* cvec = thiscall<void*>(a_GetAllCities, nm);
         auto cities = ptr_vec(cvec, 64);
         for (void* c : cities) {
-            if (!readable(c, 0x340))
+            if (!readable(c, 0x594))
                 continue;
             uint32_t cp = F<uint32_t>(c, 0x30);
             if (!should_unify_civ_city(cp, mp))
                 continue;
+            if (!F<void*>(c, 0x590))
+                continue;
+            // Set city+0x2E2 so ChangeOwner (0x00BE8E72) runs City_SetPartsOwner (0x00BE4C80)
+            // and switches buildings and turrets away from the rival polity.
+            F<uint8_t>(c, 0x2E2) = 1;
             thiscall<void>(a_CityChangeOwner, c, mp, 0, 0);
             if (a_CitySetPlayerOwned)
                 thiscall<void>(a_CitySetPlayerOwned, c, (uint32_t)1);
@@ -1256,12 +1277,32 @@ static void host_cleanup_homeworld_civ_leftovers_task(void*)
         }
     }
 
-    // Ensure homeworld cPlanetRecord cCivData entries match host polity.
-    if (void* rec = planet_record(hp); readable(rec, 0x164)) {
-        for (void* cd : ptr_vec((uint8_t*)rec + 0x15C, 32)) {
-            if (readable(cd, 0x18) && should_unify_civ_city(F<uint32_t>(cd, 0x14), mp))
-                F<uint32_t>(cd, 0x14) = mp;
+    // Ensure homeworld cPlanetRecord has a host cCivData without creating duplicate pol == mp entries.
+    // In Space mode, ChangeOwner (0x00BE8AAB -> 0x00BD9130) already moves cCityData into the host cCivData,
+    // leaving emptied foreign entries behind; overwriting those with mp would duplicate pol == mp.
+    if (void* rec = planet_record(hp); readable(rec, 0x168)) {
+        auto civs = ptr_vec((uint8_t*)rec + 0x15C, 32);
+        bool has_host_civ_data = false;
+        void* adopt_cand = nullptr;
+        size_t adopt_cities = 0;
+        for (void* cd : civs) {
+            if (!readable(cd, 0x48))
+                continue;
+            uint32_t cd_pol = F<uint32_t>(cd, 0x14);
+            if (cd_pol == mp) {
+                has_host_civ_data = true;
+                break;
+            }
+            if (should_unify_civ_city(cd_pol, mp)) {
+                size_t nc = ptr_vec((uint8_t*)cd + 0x3C, 64).size();
+                if (nc > 0 && (!adopt_cand || nc > adopt_cities)) {
+                    adopt_cand = cd;
+                    adopt_cities = nc;
+                }
+            }
         }
+        if (!has_host_civ_data && adopt_cand)
+            F<uint32_t>(adopt_cand, 0x14) = mp;
     }
 
     g_civ_vehicles_swept += veh_removed;
@@ -2500,6 +2541,7 @@ static bool init(const SkHost* h, SkMod* m)
     a_VehicleRemove = S("SporeCoop::Vehicle_Remove");
     a_CityChangeOwner = S("Simulator::cCity::ChangeOwner");
     a_CitySetPlayerOwned = S("SporeCoop::City_SetIsPlayerOwned");
+    a_CivByPol = S("Simulator::cGameNounManager::GetCivilizationByPoliticalID");
     a_CombatantSetHealth = S("Simulator::cCombatant::SetHealth");
     a_MissionMgr = S("Simulator::cMissionManager::Get");
     a_SetFlightSchool = S("SporeCoop::MissionManager_SetFlightSchoolFinished");

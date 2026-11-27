@@ -254,6 +254,8 @@ unit-lint:
 	python3 tools/re_lint.py
 	python3 tools/docs_lint.py
 	python3 tools/glyph_lint.py
+	python3 tools/static_guard_lint.py
+	python3 tools/static_guard_lint.py --self-test
 	python3 tools/tickets.py check
 	python3 tools/ci_lint.py
 	python3 tools/ratchet_lint.py

@@ -627,6 +627,22 @@ static void* tribe_of_target_obj(void* o)
                 return t;
         return nullptr;
     }
+    if (noun == 0x018C431Cu && skg::readable((uint8_t*)o + 0x128, 4)) { // cGameBundle on a tribe's food mat
+        void* cont = F<void*>(o, 0x128);
+        for (void* t : all_tribes()) {
+            if (!t || !skg::readable((uint8_t*)t + 0x20C, 0x10))
+                continue;
+            if (cont && cont == (uint8_t*)t + 0x20C)
+                return t;
+            void** b = F<void**>(t, 0x210);
+            void** e = F<void**>(t, 0x214);
+            if (b && e > b && (e - b) <= 64 && skg::readable(b, (size_t)(e - b) * sizeof(void*)))
+                for (void** it = b; it < e; ++it)
+                    if (*it == o)
+                        return t;
+        }
+        return nullptr;
+    }
     void* t = noun == kTribeNoun        ? o
               : noun == 0x1E4DAAEu      ? F<void*>(o, 0x230)          // cTribeHut (docs/re/tribe.md "Raids on buildings")
               : noun == 0x18C8F0Cu      ? F<void*>(o, 0x1F8)          // cTribeTool

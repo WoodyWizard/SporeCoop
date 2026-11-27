@@ -579,12 +579,24 @@ struct ActiveConsAbility {
     double until = 0.0;
 };
 static ActiveConsAbility g_cons_active[8];
+LIFECYCLE_STATE("tribe.cons_active", lifecycle::kSession | lifecycle::kWorld, nullptr,
+                [] {
+                    for (auto& ac : g_cons_active)
+                        ac = ActiveConsAbility{};
+                },
+                []() -> size_t {
+                    size_t n = 0;
+                    for (const auto& ac : g_cons_active)
+                        if (ac.chief || ac.tribe)
+                            n++;
+                    return n;
+                });
 
 static void* cons_spoof_tribe_for_citizen(void* c)
 {
     if (!is_host() || !tribe_rivals::active() || !is_citizen(c) || game::is_dead(c))
         return nullptr;
-    if (!skg::readable((uint8_t*)c + kOwnerTribeOff, 4) || !skg::readable((uint8_t*)c + 0xB50, 4))
+    if (!skg::readable((uint8_t*)c + kOwnerTribeOff, 4) || !skg::readable((uint8_t*)c + 0xB4C, 4))
         return nullptr;
     void* t = F<void*>(c, kOwnerTribeOff);
     if (!t || t == player_tribe() || !tribe_rivals::is_player_owned_tribe(t))
@@ -3953,6 +3965,11 @@ bool ff_on() { return g_ff_fix && settings::on(settings::kFriendlyFire); }
 bool g_guest_social_fix = true;
 COOP_FIX("tribe.guest_social", "BUG-1561", g_guest_social_fix,
          "tribe: guests can start, see, and play Tribal social performances to befriend NPC villages (including without the host's chieftain)");
+// BUG-1587: Extend guest social instruments & meter UI to Tribe Rivals (per-player SocialSession sync + AbilityBar rebuild).
+bool g_rivals_social_fix = true;
+COOP_FIX("tribe.rivals_social", "BUG-1587", g_rivals_social_fix,
+         "tribe: enable guest musical instruments, social performance meter UI, and per-player SocialSession sync in Tribe Rivals");
+static bool guest_social_allowed() { return g_guest_social_fix && (!tribe_rivals::active() || g_rivals_social_fix); }
 static uint32_t g_guest_social_choose_over = 0;
 
 static int SK_CDECL h_ChooseAction(void* obj, const void* pos)
@@ -3960,19 +3977,22 @@ static int SK_CDECL h_ChooseAction(void* obj, const void* pos)
     int r = o_ChooseAction(obj, pos);
     if (int rv = tribe_rivals::override_choose_action(obj, r); rv != 0) // WP-R4 (BUG-1548)
         return rv > 0 ? rv : 0;
-    if (r == 0x2B && active() && !tribe_rivals::active()) { // BUG-1561
+    if (r == 0x2B && active() && guest_social_allowed()) { // BUG-1561 / BUG-1587
         void* pt = player_tribe();
         if (pt) {
             uint8_t my = C.sess->my_id();
             void* leader = skg::readable((uint8_t*)pt + 0x11C, 4) ? F<void*>(pt, 0x11C) : nullptr;
-            bool owns_leader = leader && owner_of(leader) == my;
+            bool owns_leader = leader && !game::is_dead(leader) && owner_of(leader) == my;
             bool own_sel = false;
             for (void* m : members(pt))
                 if (F<uint8_t>(m, kSelectedOff) && owner_of(m) == my && !game::is_dead(m)) {
                     own_sel = true;
                     break;
                 }
-            int nr = tribe_logic::choose_social_override(g_guest_social_fix, true, false, r, own_sel, owns_leader, is_guest());
+            // In Rivals, override 0x2B only if the guest has no living chieftain; in Together, always allow guests.
+            bool allow_without_leader = !tribe_rivals::active() || !owns_leader;
+            int nr = tribe_logic::choose_social_override(g_guest_social_fix, true, !allow_without_leader, r, own_sel,
+                                                         owns_leader, is_guest());
             if (nr != r) {
                 g_guest_social_choose_over++;
                 return nr;
@@ -4483,25 +4503,28 @@ static bool member_instrument_ready(void* c, uint32_t slot, int* out_ab_idx = nu
     if (!skg::readable(tbl, 6 * sizeof(void*)) || !tbl[slot])
         return false;
     int ab_idx = skg::cdecl_call<int>(a_CreatureAbilityIndex, c, tbl[slot]);
-    if (ab_idx < 0 || ab_idx >= 64)
+    if (ab_idx < 0 || ab_idx >= 64 || !skg::readable((uint8_t*)c + 0xC28, 8))
         return false;
     uint8_t* cd = F<uint8_t*>(c, 0xC28);
-    if (!cd || !skg::readable(cd + ab_idx * 0x10, 8))
+    uint8_t* cd_end = F<uint8_t*>(c, 0xC2C);
+    if (!cd || !cd_end || cd_end < cd || (size_t)ab_idx >= (size_t)(cd_end - cd) / 0x10u ||
+        !skg::readable(cd + (size_t)ab_idx * 0x10u, 8))
         return false;
     if (out_ab_idx)
         *out_ab_idx = ab_idx;
-    return *(float*)(cd + ab_idx * 0x10 + 4) >= 1.0f;
+    return *(float*)(cd + (size_t)ab_idx * 0x10u + 4) >= 1.0f;
 }
 
 // Host: execute a guest's instrument play (slot 3/4/5 -> tools 4/5/6) on their performing members in BT 0xB46E8803
 bool host_social_play(uint8_t from, uint32_t slot, const std::vector<uint16_t>& ids)
 {
-    if (!g_guest_social_fix || from == 0 || !is_host() || tribe_rivals::active() || game::mode_id() != modes::kTribe)
+    if (!guest_social_allowed() || from == 0 || !is_host() || game::mode_id() != modes::kTribe)
         return false;
     int want_tool = tribe_logic::instrument_tool_for_slot(slot);
     if (!want_tool || !a_SessionGet || !a_BTPostStimulus || !a_TribeAbilities || !a_CreatureAbilityIndex)
         return false;
-    void* pt = player_tribe();
+    const bool rivals_on = tribe_rivals::active();
+    void* pt = rivals_on ? tribe_rivals::tribe_of_player(from) : player_tribe();
     if (!pt)
         return false;
     std::vector<void*> cands;
@@ -4510,14 +4533,15 @@ bool host_social_play(uint8_t from, uint32_t slot, const std::vector<uint16_t>& 
         for (uint16_t id : ids) {
             HEntry* hm = g_host.members.find(id);
             void* c = hm ? hm->ref.p : nullptr;
-            if (c && hm->data.owner == from && game::alive(game::LiveRef{c, hm->ref.serial, kMemberNoun}) &&
-                !game::is_dead(c) && F<void*>(c, kOwnerTribeOff) == pt)
+            if (c && (hm->data.owner == from || rivals_on) &&
+                game::alive(game::LiveRef{c, hm->ref.serial, kMemberNoun}) && !game::is_dead(c) &&
+                F<void*>(c, kOwnerTribeOff) == pt)
                 cands.push_back(c);
         }
     }
     if (cands.empty()) {
         for (void* c : members(pt))
-            if (owner_of(c) == from && !game::is_dead(c))
+            if ((owner_of(c) == from || rivals_on) && !game::is_dead(c))
                 cands.push_back(c);
     }
     int fired = 0;
@@ -4568,9 +4592,14 @@ static bool g_gsoc_ui_open = false;
 static uint8_t g_gsoc_ui_outcome = 0;
 static double g_gsoc_ui_end_at = -1.0;
 static bool g_gsoc_ui_task_queued = false;
-static double g_hsoc_sent_at = -100.0;
-static bool g_hsoc_was_active = false;
-static uint8_t g_hsoc_last_can = 0, g_hsoc_last_out = 0;
+struct HostSocialEdge {
+    double sent_at = -100.0;
+    bool was_active = false;
+    uint8_t last_can = 0;
+    uint8_t last_out = 0;
+};
+static HostSocialEdge g_hsoc_shared;
+static HostSocialEdge g_hsoc_riv[8];
 
 static void* tribe_social_ui()
 {
@@ -4638,7 +4667,7 @@ static void tribe_social_ui_apply_task(void*)
         return;
     }
     double now = H ? H->time_seconds() : 0.0;
-    bool want_open = g_guest_social_fix && is_guest() && active() && !tribe_rivals::active() &&
+    bool want_open = guest_social_allowed() && is_guest() && active() &&
                      (g_gsoc.active || (g_gsoc_ui_end_at > 0.0 && now < g_gsoc_ui_end_at));
     if (want_open) {
         if (!g_gsoc_ui_open) {
@@ -4680,9 +4709,9 @@ static void tribe_social_clear(bool hide_ui)
     g_gsoc = GuestTribeSocial{};
     g_gsoc_ui_end_at = -1.0;
     g_gsoc_ui_outcome = 0;
-    g_hsoc_was_active = false;
-    g_hsoc_last_can = 0;
-    g_hsoc_last_out = 0;
+    g_hsoc_shared = HostSocialEdge{};
+    for (auto& e : g_hsoc_riv)
+        e = HostSocialEdge{};
     if (hide_ui && g_gsoc_ui_open)
         queue_tribe_social_ui();
     else if (!hide_ui)
@@ -4691,12 +4720,8 @@ static void tribe_social_clear(bool hide_ui)
 LIFECYCLE_STATE("tribe.guest_social", lifecycle::kSession | lifecycle::kWorld, &g_guest_social_fix,
                 [] { tribe_social_clear(true); }, []() -> size_t { return g_gsoc.active ? 1 : 0; });
 
-static void tribe_social_host_tick(double now)
+static void tribe_social_send_for_tribe(double now, void* pt, uint8_t target_pid, bool rivals_on, HostSocialEdge& st)
 {
-    if (!g_guest_social_fix || !is_host() || !C.sess || !C.sess->connected() || tribe_rivals::active() ||
-        !a_SessionGet || game::mode_id() != modes::kTribe)
-        return;
-    void* pt = player_tribe();
     if (!pt)
         return;
     uint8_t* ss = nullptr;
@@ -4704,7 +4729,9 @@ static void tribe_social_host_tick(double now)
     std::vector<GuestTribePerf> perfs;
     for (void* c : members(pt)) {
         uint8_t o = owner_of(c);
-        uint8_t* ai = o < 0xFE ? F<uint8_t*>(c, 0xB4C) : nullptr;
+        if (rivals_on && o >= 0xFE)
+            o = target_pid;
+        uint8_t* ai = (o < 0xFE && skg::readable((uint8_t*)c + 0xB4C, 4)) ? F<uint8_t*>(c, 0xB4C) : nullptr;
         if (!ai || !skg::readable(ai, 0x604) || F<uint32_t>(ai, 0x1D8) != 0xB46E8803u)
             continue;
         uint8_t* blk = F<uint8_t*>(ai, 0x600);
@@ -4750,15 +4777,15 @@ static void tribe_social_host_tick(double now)
                 rel_level = 3;
         }
     }
-    bool edge = (active_now != g_hsoc_was_active) || (can_play != g_hsoc_last_can) || (outcome != g_hsoc_last_out);
-    if (!active_now && !g_hsoc_was_active)
+    bool edge = (active_now != st.was_active) || (can_play != st.last_can) || (outcome != st.last_out);
+    if (!active_now && !st.was_active)
         return;
-    if (!edge && now - g_hsoc_sent_at < 0.1)
+    if (!edge && now - st.sent_at < 0.1)
         return;
-    g_hsoc_was_active = active_now;
-    g_hsoc_last_can = can_play;
-    g_hsoc_last_out = outcome;
-    g_hsoc_sent_at = now;
+    st.was_active = active_now;
+    st.last_can = can_play;
+    st.last_out = outcome;
+    st.sent_at = now;
     net::Writer w;
     w.u8(tribe_logic::kAnimTribeSocial);
     w.u8(active_now ? 1 : 0);
@@ -4775,10 +4802,31 @@ static void tribe_social_host_tick(double now)
         w.u8(p.tool);
         w.u8(p.ready);
     }
-    for (auto& pl : C.sess->players())
-        if (pl.id != 0)
-            C.sess->send_reliable_to(pl.id, net::MSG_TRIBE_ANIM, w);
+    if (rivals_on) {
+        C.sess->send_reliable_to(target_pid, net::MSG_TRIBE_ANIM, w);
+    } else {
+        for (auto& pl : C.sess->players())
+            if (pl.id != 0)
+                C.sess->send_reliable_to(pl.id, net::MSG_TRIBE_ANIM, w);
+    }
     g_guest_social_tx++;
+}
+
+static void tribe_social_host_tick(double now)
+{
+    if (!guest_social_allowed() || !is_host() || !C.sess || !C.sess->connected() || !a_SessionGet ||
+        game::mode_id() != modes::kTribe)
+        return;
+    if (tribe_rivals::active()) {
+        for (const auto& pl : C.sess->players()) {
+            if (pl.id == 0 || pl.id >= 8)
+                continue;
+            void* gt = tribe_rivals::tribe_of_player(pl.id);
+            tribe_social_send_for_tribe(now, gt, pl.id, true, g_hsoc_riv[pl.id]);
+        }
+        return;
+    }
+    tribe_social_send_for_tribe(now, player_tribe(), 0, false, g_hsoc_shared);
 }
 
 static void on_tribe_social_msg(net::Reader& r)
@@ -4795,7 +4843,7 @@ static void on_tribe_social_msg(net::Reader& r)
         p.ready = r.u8();
         perfs.push_back(p);
     }
-    if (!r.ok() || !g_guest_social_fix || tribe_rivals::active() || game::mode_id() != modes::kTribe)
+    if (!r.ok() || !guest_social_allowed() || game::mode_id() != modes::kTribe)
         return;
     g_guest_social_rx++;
     g_gsoc.active = act != 0;
@@ -4812,7 +4860,7 @@ static void on_tribe_social_msg(net::Reader& r)
 
 static void tribe_social_guest_tick(double now)
 {
-    if (!g_guest_social_fix || !is_guest() || !active() || tribe_rivals::active() || game::mode_id() != modes::kTribe)
+    if (!guest_social_allowed() || !is_guest() || !active() || game::mode_id() != modes::kTribe)
         return;
     if (g_gsoc.active && now - g_gsoc.rx_at > 2.5) {
         g_gsoc.active = false;
@@ -4824,20 +4872,21 @@ static void tribe_social_guest_tick(double now)
         else if (void* ui = tribe_social_ui())
             F<float>(ui, 0x68) = std::clamp(g_gsoc.progress, 0.f, 1.f);
     }
-    // Ensure AbilityBar row 0 has instrument slots populated whenever player tribe owns instrument racks
+    // Ensure AbilityBar row 0 has instrument slots populated for every owned instrument rack type (4/5/6).
     static double s_bar_check = 0;
     if (now - s_bar_check >= 0.5 && a_BarPtr && a_BarRebuild) {
         s_bar_check = now;
         uint8_t* bar = *(uint8_t**)a_BarPtr;
         void* pt = player_tribe();
         if (bar && pt && skg::readable(bar, 0xD8)) {
-            bool has_inst_rack = false;
+            uint32_t owned_inst_mask = 0;
             for (void* tool : tribe_tools(pt))
-                if (int tt = tool_type(tool); tt >= 4 && tt <= 6) {
-                    has_inst_rack = true;
-                    break;
-                }
-            if (has_inst_rack && *(int*)(bar + 0) < 0 && *(int*)(bar + 8) < 0 && *(int*)(bar + 16) < 0)
+                if (int tt = tool_type(tool); tt >= 4 && tt <= 6)
+                    owned_inst_mask |= (1u << (tt - 4));
+            int want_slots = (int)((owned_inst_mask & 1u) != 0) + (int)((owned_inst_mask & 2u) != 0) +
+                             (int)((owned_inst_mask & 4u) != 0);
+            int have_slots = (int)(*(int*)(bar + 0) >= 0) + (int)(*(int*)(bar + 8) >= 0) + (int)(*(int*)(bar + 16) >= 0);
+            if (want_slots > have_slots)
                 queue_bar_rebuild();
         }
     }
@@ -4905,7 +4954,7 @@ static int SK_CDECL h_BarStatus(int idx)
             return 0xB;
         }
     }
-    if (g_guest_social_fix && is_guest() && active() && !tribe_rivals::active() && g_gsoc.active) {
+    if (guest_social_allowed() && is_guest() && active() && g_gsoc.active) {
         int slot = tribe_instrument_slot(idx);
         if (slot >= 3 && slot <= 5) {
             std::vector<uint16_t> ids;
@@ -4926,7 +4975,7 @@ static bool on_tribe_bar_use(int idx)
             return true;
         }
     }
-    if (!g_guest_social_fix || !is_guest() || !active() || tribe_rivals::active() || !g_gsoc.active)
+    if (!guest_social_allowed() || !is_guest() || !active() || !g_gsoc.active)
         return false;
     int slot = tribe_instrument_slot(idx);
     if (slot < 3 || slot > 5)

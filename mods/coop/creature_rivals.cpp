@@ -602,7 +602,9 @@ static void ensure_herd_populated(void* herd, void* sp, uint8_t pid)
         return;
     void** mb = field<void**>(herd, 0x40);
     void** me = field<void**>(herd, 0x44);
-    int count = (mb && me >= mb && (me - mb) <= 64) ? (int)(me - mb) : 0;
+    int count = (mb && me > mb && (me - mb) <= 64 && readable(mb, (size_t)(me - mb) * sizeof(void*)))
+                    ? (int)(me - mb)
+                    : 0;
     int alive_members = 0;
     void* av = game::avatar();
     for (int i = 0; i < count; i++) {
@@ -668,7 +670,9 @@ static void swap_herd_species(void* herd, void* sp, uint8_t pid)
     // Swap existing live members in herd+0x40..+0x44 to guest's species
     void** mb = field<void**>(herd, 0x40);
     void** me = field<void**>(herd, 0x44);
-    int count = (mb && me > mb && (me - mb) <= 64) ? (int)(me - mb) : 0;
+    int count = (mb && me > mb && (me - mb) <= 64 && readable(mb, (size_t)(me - mb) * sizeof(void*)))
+                    ? (int)(me - mb)
+                    : 0;
     void* av = game::avatar();
     for (int i = 0; i < count; i++) {
         void* m = mb[i];
@@ -1187,7 +1191,7 @@ bool on_guest_impress(uint8_t player, const uint32_t key[3], void* npc, float dn
     uint32_t ally_need = 3, friendly_need = 2;
     if (npc && readable(npc, 0xE88)) {
         void* tun = field<void*>(npc, 0xE84);
-        if (tun && readable((uint8_t*)tun + 0x410, 4)) {
+        if (tun && readable((uint8_t*)tun + 0x408, 8)) {
             uint32_t a = field<uint32_t>(tun, 0x40C);
             uint32_t f = field<uint32_t>(tun, 0x408);
             if (a >= 1 && a <= 10)
@@ -1248,7 +1252,7 @@ static bool inspect_species_profile_stats(void* sp, uint32_t inst, species::Crea
 {
     out = species::CreatureStageStats{};
     out.instance = inst;
-    if (!sp || !readable((uint8_t*)sp + 0x570, 4))
+    if (!sp || !readable((uint8_t*)sp + 0x56C, 4))
         return false;
     float bhp = field<float>(sp, 0x56C);
     if (std::isfinite(bhp) && bhp >= 0.0f && bhp <= 500.0f)
@@ -1401,7 +1405,10 @@ static void sync_rival_hostility()
             if (hostile) {
                 void** mb = field<void**>(rh, 0x40);
                 void** me_end = field<void**>(rh, 0x44);
-                int cnt = (mb && me_end > mb && (me_end - mb) <= 64) ? (int)(me_end - mb) : 0;
+                int cnt = (mb && me_end > mb && (me_end - mb) <= 64 &&
+                           readable(mb, (size_t)(me_end - mb) * sizeof(void*)))
+                              ? (int)(me_end - mb)
+                              : 0;
                 for (int i = 0; i < cnt; i++) {
                     void* m = mb[i];
                     if (m && game::listed(m, 0x18EB45Eu) && game::impressed(m))
@@ -1482,12 +1489,25 @@ bool override_relationship(void* a, void* b, int& rel_out)
         return false;
     callguard::Hold hold(g_in_rel_hook);
 
-    void* ea = a ? a : (g_pvp_symmetry_fix ? game::avatar() : nullptr);
-    void* eb = b ? b : (g_pvp_symmetry_fix ? game::avatar() : nullptr);
+    // Only substitute game::avatar() when exactly one creature is null and the non-null side is not our own avatar;
+    // never substitute for (nullptr, nullptr) species-only lookups (e.g. egg-steal cursor / friendly-nest check).
+    void* av = g_pvp_symmetry_fix ? game::avatar() : nullptr;
+    bool substituted = false;
+    void* ea = a;
+    void* eb = b;
+    if (av && (a == nullptr) != (b == nullptr)) {
+        if (!ea && eb != av) {
+            ea = av;
+            substituted = true;
+        } else if (!eb && ea != av) {
+            eb = av;
+            substituted = true;
+        }
+    }
     if (ea && eb && readable(ea, game::kHerdOff + 4) && readable(eb, game::kHerdOff + 4)) {
         uint8_t pa = creature_player_owner(ea);
         uint8_t pb = creature_player_owner(eb);
-        if (pa != 255 && pb != 255) {
+        if (pa != 255 && pb != 255 && (!substituted || pa != pb)) {
             bool ff = g_pvp_symmetry_fix && settings::on(settings::kFriendlyFire);
             rel_out = resolve_player_pair_relation(pa, pb, rivals::at_war(pa, pb), rivals::allied(pa, pb), ff);
             return true;
@@ -2196,7 +2216,9 @@ int command(void*, int argc, const char* const* argv, SkOut* out)
         if (herd && readable(herd, 0x220)) {
             void** mb = field<void**>(herd, 0x40);
             void** me = field<void**>(herd, 0x44);
-            int cnt = (mb && me >= mb && (me - mb) <= 64) ? (int)(me - mb) : 0;
+            int cnt = (mb && me > mb && (me - mb) <= 64 && readable(mb, (size_t)(me - mb) * sizeof(void*)))
+                          ? (int)(me - mb)
+                          : 0;
             for (int i = 0; i < cnt; i++) {
                 if (mb[i] && game::listed(mb[i], 0x18EB45Eu) && !game::is_dead(mb[i]) && mb[i] != game::avatar()) {
                     member = mb[i];

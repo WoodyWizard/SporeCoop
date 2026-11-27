@@ -28,6 +28,7 @@ void tick(double now);
 
 // R1/R2 nation & capital lookups
 void* civ_of_player(uint8_t pid);
+void* my_civ();
 int player_of_pol(uint32_t pol);
 bool is_guest_nation(void* civ);
 bool is_guest_city(void* city);
@@ -52,8 +53,9 @@ void record_sw_refused_funds();
 void on_city_specialty_changed(void* city, void* civ, int new_spec);
 void note_local_spend(void* civ, float amount);
 
-// RAII guard: temporarily lends host player civ's superweapon tool (+0x470) & timer (+0x490) vectors to an
-// NPC-origin guest civ (NPC civs have mIsPlayer==0 so 0x00BF7020 never populates +0x470, crashing at 0x00BF18CA).
+// RAII guard: temporarily lends host player civ's superweapon tool (+0x470) vector and a per-civ isolated
+// timer (+0x490) buffer to an NPC-origin guest civ (NPC civs have mIsPlayer==0 so 0x00BF7020 never populates
+// +0x470, crashing at 0x00BF18CA; timers are isolated per civ so host and guest cooldowns never cross-contaminate).
 struct SwToolsBorrow {
     void* civ = nullptr;
     uint32_t saved[3] = {};

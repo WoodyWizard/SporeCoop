@@ -199,7 +199,7 @@ static std::string read_meta_utf16(const uint8_t* meta, size_t off)
     if (!beg || !end || end <= beg)
         return {};
     size_t n = (size_t)(end - beg);
-    if (n > 128 || !skg::readable(beg, n * 2))
+    if (n > 256 || !skg::readable(beg, n * 2))
         return {};
     std::string out;
     out.reserve(n);
@@ -246,7 +246,7 @@ static bool decode_png_info(const std::wstring& path, uint32_t& out_group, std::
         return false;
     }
 
-    // Initialize ThumbnailMetadata[0x90] strings at +0x28/+0x40/+0x50/+0x60 to static empty sentinel (cap - begin == 2).
+    // Initialize ThumbnailMetadata[0x90] strings at +0x28 (author), +0x40 (name), +0x50, +0x60 to static empty sentinel (cap - begin == 2).
     static uint16_t kEmptyW[2] = {0, 0};
     alignas(16) uint8_t meta[0x90] = {};
     constexpr size_t kStrOffs[4] = {0x28, 0x40, 0x50, 0x60};
@@ -262,7 +262,8 @@ static bool decode_png_info(const std::wstring& path, uint32_t& out_group, std::
     if (ok) {
         out_group = *(uint32_t*)(meta + 0x08);
         if (out_name && g_lib_names_fix) {
-            std::string nm = read_meta_utf16(meta, 0x28);
+            // +0x28 is authorName, +0x40 is creationName (verified in ImportPNG 0x005FC458 -> cAssetMetadata::SetAll)
+            std::string nm = read_meta_utf16(meta, 0x40);
             if (!nm.empty())
                 *out_name = std::move(nm);
         }

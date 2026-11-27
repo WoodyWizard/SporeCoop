@@ -1362,17 +1362,18 @@ static void SK_THISCALL h_AddMoney(void* civ, float amount, int difficulty)
     // BUG-1478: a guest in another Civ world of its own keeps its own income
     bool in_civ = game::mode_id() == modes::kCiv, guest = is_guest(), holds = guest_holds();
     if (civlogic::guest_income_blocked(g_applying, guest, holds, guest && in_civ && civ == player_civ(), amount)) {
-        // BUG-1581: in Civ Rivals, planner sales/refunds (buildings & turrets) must update the guest's local planner
-        // wealth so net_spend sent on planner close is exact (host stays authoritative via kCmdPlannerSync).
-        bool rivals_planner_refund = civ_rivals::active() && a_PlannerMoneyAddRet && ret == a_PlannerMoneyAddRet &&
-                                     planner_city() != nullptr;
-        if (!rivals_planner_refund &&
-            !civlogic::planner_refund_passes(g_fix_planner_closed, ret == a_PlannerMoneyAddRet,
-                                             g_fix_planner_closed && planner_refund_ours((void*)ret))) {
+        // BUG-1532 / BUG-1581: allow city planner sell-back refunds (buildings & turrets) on guests in both Civ Rivals
+        // and Together mode when atomic planner sync is enabled so local mWealth updates accurately (shared.cpp /
+        // civ_wallet syncs it in Together mode; kCmdPlannerSync settles net_spend authoritatively on host in Rivals).
+        bool ours_refund = g_fix_planner_closed && planner_refund_ours((void*)ret);
+        bool sync_planner_refund = (civ_rivals::active() || g_fix_planner_sync) && a_PlannerMoneyAddRet &&
+                                   ret == a_PlannerMoneyAddRet && planner_city() != nullptr;
+        if (!sync_planner_refund &&
+            !civlogic::planner_refund_passes(g_fix_planner_closed, ret == a_PlannerMoneyAddRet, ours_refund)) {
             g_n.income_blocked++;
             return;
         }
-        g_planner_refunds++; // BUG-1532: the sell-back of a building this guest's planner added and did not send
+        g_planner_refunds++;
         H->log(M, SK_INFO, "civ: planner: a building/turret sell refund %.0f goes through (BUG-1532/BUG-1581)", amount);
     }
     bool passive = !g_applying && in_civ && is_host() && civ && is_passive_income_ret(ret) && civ == player_civ() &&
@@ -1413,7 +1414,7 @@ static SpendMoney_t o_SpendMoney;
 static void SK_THISCALL h_SpendMoney(void* civ, float amount)
 {
     o_SpendMoney(civ, amount);
-    if (civ && amount > 0.0f && civ_rivals::active())
+    if (civ && amount > 0.0f && civ_rivals::active() && civ == civ_rivals::my_civ())
         civ_rivals::note_local_spend(civ, amount);
 }
 
@@ -2268,14 +2269,69 @@ void boost_tick(double now)
 }
 
 // superweapons are fired by a vote of all players
-using FireSW_t = bool(SK_THISCALL*)(void*, int, const float*);
+// Verified GOG 2024 0x00BF8BB0 (cCivilization::FireSuperweapon): returns void (both native callers ignore eax).
+using FireSW_t = void(SK_THISCALL*)(void*, int, const float*);
 static FireSW_t o_FireSW;
 static bool g_sw_bypass;
 CALL_GUARD("civ.sw_bypass", g_sw_bypass); // BUG-1047
 // BUG-0117: the vote's weapon and target are its own (captured), not statics a second request
 // overwrote
 int g_sw_last_req = -1, g_sw_fired = -1; // host: last guest request, weapon type the last guest vote fired
-bool SK_THISCALL h_FireSW(void* civ, int type, const float* target)
+
+// Call native FireSuperweapon (void) and detect deterministically whether it actually fired by observing
+// the exact post-launch mutations at 0x00BF8DB1..0x00BF8E2F: mWealth (+0x98) spend, cooldown timer
+// restart at (+0x490)[type] (cGameTime +0x08..+0x18), or global superweapon flag (+0x4CC) for types 2/5/8.
+static bool fire_sw_checked(void* civ, int type, const float* target)
+{
+    if (!o_FireSW || !civ)
+        return false;
+    constexpr uintptr_t kCivSwTimersOff = 0x490;
+    constexpr uintptr_t kCivGlobalSwUsedOff = 0x4CC;
+    bool has_wealth = skg::readable(civ, kCivWealth + sizeof(float));
+    float wealth_before = has_wealth ? F<float>(civ, kCivWealth) : 0.0f;
+    bool has_global = skg::readable(civ, kCivGlobalSwUsedOff + 1);
+    uint8_t global_before = has_global ? F<uint8_t>(civ, kCivGlobalSwUsedOff) : 0;
+
+    void* timer_ptr = nullptr;
+    uint64_t accum_before = 0, start_before = 0;
+    uint8_t running_before = 0;
+    if (type >= 0 && type < 12 && skg::readable(civ, kCivSwTimersOff + 8)) {
+        uint32_t tb = F<uint32_t>(civ, kCivSwTimersOff);
+        uint32_t te = F<uint32_t>(civ, kCivSwTimersOff + 4);
+        size_t need = (size_t)(type + 1) * 32u;
+        if (tb && te >= tb && (size_t)(te - tb) >= need) {
+            void* tp = (void*)(uintptr_t)(tb + (uint32_t)type * 32u);
+            if (skg::readable(tp, 32)) {
+                timer_ptr = tp;
+                accum_before = F<uint64_t>(tp, 0x08);
+                start_before = F<uint64_t>(tp, 0x10);
+                running_before = F<uint8_t>(tp, 0x18);
+            }
+        }
+    }
+
+    o_FireSW(civ, type, target);
+
+    bool wealth_spent = false;
+    if (has_wealth && skg::readable(civ, kCivWealth + sizeof(float))) {
+        float wealth_after = F<float>(civ, kCivWealth);
+        if (std::isfinite(wealth_before) && std::isfinite(wealth_after) && wealth_after < wealth_before - 0.5f)
+            wealth_spent = true;
+    }
+    bool global_used = has_global && !global_before && skg::readable(civ, kCivGlobalSwUsedOff + 1) &&
+                       F<uint8_t>(civ, kCivGlobalSwUsedOff) != 0;
+    bool timer_started = false;
+    if (timer_ptr && skg::readable(timer_ptr, 32)) {
+        uint64_t accum_after = F<uint64_t>(timer_ptr, 0x08);
+        uint64_t start_after = F<uint64_t>(timer_ptr, 0x10);
+        uint8_t running_after = F<uint8_t>(timer_ptr, 0x18);
+        if (running_after != 0 && (running_before == 0 || start_after != start_before || accum_after != accum_before))
+            timer_started = true;
+    }
+    return wealth_spent || timer_started || global_used;
+}
+
+static bool fire_sw_impl(void* civ, int type, const float* target)
 {
     // BUG-1549 R7 / BUG-1581: in Civ Rivals, superweapons cannot target rival capitals, and rivals do not vote.
     // On a guest, always relay CMD_SUPER to host without calling native o_FireSW on the NPC-origin guest civ.
@@ -2283,7 +2339,7 @@ bool SK_THISCALL h_FireSW(void* civ, int type, const float* target)
         if (civ_rivals::block_superweapon(C.sess->my_id(), type, target))
             return false;
         if (is_host()) {
-            bool ok = o_FireSW(civ, type, target);
+            bool ok = fire_sw_checked(civ, type, target);
             civ_rivals::host_broadcast_assign_now();
             return ok;
         }
@@ -2303,14 +2359,14 @@ bool SK_THISCALL h_FireSW(void* civ, int type, const float* target)
     }
     // F3 (BUG-0768): civ.superweapon_vote off: the host's (and a guest's own) superweapon fires at once
     if (g_sw_bypass || !active() || C.sess->players().size() < 2)
-        return o_FireSW(civ, type, target);
+        return fire_sw_checked(civ, type, target);
     if (is_host() && !settings::on(settings::kCivSwVote)) {
         g_n.sw_unvoted++;
-        return o_FireSW(civ, type, target);
+        return fire_sw_checked(civ, type, target);
     }
     float pos[3] = {target ? target[0] : 0, target ? target[1] : 0, target ? target[2] : 0};
     if (is_guest() && !guest_holds()) // BUG-1478: a guest in another Civ world of its own fires its own
-        return o_FireSW(civ, type, target);
+        return fire_sw_checked(civ, type, target);
     if (is_guest()) { // the host asks everybody
         net::Writer w;
         w.u8(5 /* CMD_SUPER */);
@@ -2339,13 +2395,23 @@ bool SK_THISCALL h_FireSW(void* civ, int type, const float* target)
     return false;
 }
 
+static void SK_THISCALL h_FireSW_detour(void* civ, int type, const float* target)
+{
+    fire_sw_impl(civ, type, target);
+}
+
+bool SK_THISCALL h_FireSW(void* civ, int type, const float* target)
+{
+    return fire_sw_impl(civ, type, target);
+}
+
 // BUG-1468: a guest's superweapon is paid from its own money (civ.own_money; FireSuperweapon takes its cost from
 // mWealth +0x98 itself, docs/re/civ.md): the game's own check refuses it when that money is short
 static uint32_t g_sw_paid_own, g_sw_short_own; // tests
 static void sw_fire_for(uint8_t from, void* pc, int type, const float* pos)
 {
     civ_wallet::PayAs pay(from);
-    bool fired = o_FireSW(pc, type, pos);
+    bool fired = fire_sw_checked(pc, type, pos);
     if (!pay.paying())
         return;
     (fired ? g_sw_paid_own : g_sw_short_own)++;
@@ -2395,7 +2461,7 @@ void host_superweapon_request(uint8_t from, net::Reader& r)
             {
                 callguard::Hold sw_bypass(g_sw_bypass);
                 civ_rivals::SwToolsBorrow tools_borrow(pc);
-                fired = o_FireSW(pc, type, pos);
+                fired = fire_sw_checked(pc, type, pos);
             }
             if (!fired) {
                 if (C.sess) {
@@ -2699,7 +2765,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         {"Simulator::cCity::AddCaptureDamage", (void*)h_AddCapture, (void**)&o_AddCapture},
         {"Simulator::cCity::ConvertCitizens", (void*)h_Convert, (void**)&o_Convert},
         {"Simulator::cCity::OnAttacked", (void*)h_OnAttacked, (void**)&o_OnAttacked},
-        {"Simulator::cCivilization::FireSuperweapon", (void*)h_FireSW, (void**)&o_FireSW},
+        {"Simulator::cCivilization::FireSuperweapon", (void*)h_FireSW_detour, (void**)&o_FireSW},
     };
     for (auto& o : opts)
         if (uintptr_t a = H->sym(o.name))
@@ -2748,6 +2814,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 }
 
 static bool host_handle_extra_cmd(uint8_t from, net::Reader& r);
+static void host_drain_held_planner_syncs();
 
 void tick(double now)
 {
@@ -2769,9 +2836,10 @@ void tick(double now)
         if (!host_handle_extra_cmd(c.from, r))
             host_command(c.from, r);
     });
-    if (is_host())
+    if (is_host()) {
+        host_drain_held_planner_syncs();
         host_tick(now);
-    else if (is_guest()) {
+    } else if (is_guest()) {
         planner_out_tick(now); // BUG-1417
         guest_tick(now);
     }
@@ -3015,6 +3083,309 @@ static bool g_fix_space_build_route = true;
 COOP_FIX("civ.space_build_route", "BUG-1480", g_fix_space_build_route,
          "civ: a guest's colony building that reaches the host in an editor or a load is kept until the host is on that planet");
 
+// Together-mode build refund helper (mirrors civ_host.cpp refund_build for kCmdPlannerSync failures/rejections).
+static void together_refund_build(uint8_t from, float paid, const char* why)
+{
+    if (!C.sess || from == C.sess->my_id())
+        return;
+    if (const fix::Info* fi = fix::find("civ.build_refund"); fi && fi->on && !*fi->on)
+        return;
+    void* pc = player_civ();
+    float back = civlogic::refund_amount(paid, 100000.f);
+    bool own = back > 0.f && civ_wallet::host_refund(from, back);
+    if (own) {
+        g_n.build_refunds++;
+        g_build_refunded += back;
+    } else if (pc && back > 0.f && o_AddMoney) {
+        o_AddMoney(pc, back, 0);
+        g_n.build_refunds++;
+        g_build_refunded += back;
+    }
+    char t[200];
+    snprintf(t, sizeof t, "the host's game could not build your building (%s)%s", why && *why ? why : "refused",
+             back > 0.f ? (own ? ": its price is back in your money" : ": its price is back in the shared money") : "");
+    net::Writer nw;
+    nw.str8(t);
+    C.sess->send_reliable_to(from, net::MSG_NOTICE, nw);
+    H->log(M, SK_INFO, "civ: planner sync building of player %u not built here (%s): %.0f back to the money (BUG-0807/BUG-1581)",
+           (unsigned)from, why ? why : "", back);
+}
+
+struct HeldPlannerSync {
+    uint8_t from = 0;
+    void* city = nullptr;
+    civ_rivals_logic::PlannerSyncMsg msg;
+};
+static std::vector<HeldPlannerSync> g_held_planner_syncs;
+
+static void host_apply_planner_sync(uint8_t from, void* city, const civ_rivals_logic::PlannerSyncMsg& msg, bool from_held)
+{
+    bool riv = civ_rivals::active();
+    if (from_held && (!city || !city_listed(city)))
+        city = nullptr;
+    if (riv && city && civ_rivals::player_of_pol(pol_of(city)) == from)
+        g_city_owner[city] = from;
+    uint8_t co = city ? owner_of_city(city) : 0xFF;
+
+    auto sum_added_cost = [&]() -> float {
+        float sum = 0.0f;
+        for (const auto& ab : msg.added)
+            if (std::isfinite(ab.price) && ab.price > 0.0f)
+                sum += ab.price;
+        int want_t = (int)msg.turret_delta + (int)msg.removed_turrets.size();
+        if (want_t > 0)
+            sum += (float)std::min(32, want_t) * civ_rivals_logic::kDefaultTurretCost;
+        return sum;
+    };
+
+    if (!city || (co != from && co != kShared)) {
+        if (riv) {
+            civ_rivals::host_broadcast_assign_now();
+        } else {
+            float max_add = sum_added_cost();
+            float paid = (msg.net_spend > 0.5f) ? std::min(msg.net_spend, max_add)
+                                                : ((msg.removed.empty() && msg.removed_turrets.empty()) ? max_add : 0.0f);
+            if (paid > 0.5f)
+                together_refund_build(from, paid,
+                                      !city ? "the city is not in the host's game" : "the city belongs to another player now");
+        }
+        g_n.cmds_rejected++;
+        H->log(M, SK_INFO, "civ: rejected planner sync for city %u from player %u (owner=%u) (BUG-1581)",
+               (unsigned)msg.ci, (unsigned)from, (unsigned)co);
+        return;
+    }
+
+    if (!from_held && planner_holds(city)) {
+        if (g_held_planner_syncs.size() < 64)
+            g_held_planner_syncs.push_back({from, city, msg});
+        g_n.planner_held++;
+        g_n.cmds_done++;
+        H->log(M, SK_INFO, "civ: held planner sync for city %u from player %u while host planner is open (BUG-1581)",
+               (unsigned)msg.ci, (unsigned)from);
+        return;
+    }
+
+    auto find_bld = [&](uint32_t noun, const civ_rivals_logic::Vec3& want) -> void* {
+        net::Vec3 wp{want.x, want.y, want.z};
+        void* best = nullptr;
+        float bd = 15.0f;
+        void* fb = nullptr;
+        float fbd = 40.0f;
+        for (void* bl : vec_of((uint8_t*)city + kCityBuildings)) {
+            if (!bl || game::noun_id(bl) != noun)
+                continue;
+            net::Vec3 bp{};
+            if (!game::object_position(bl, bp))
+                continue;
+            float d = net::dist(bp, wp);
+            if (d < bd) {
+                bd = d;
+                best = bl;
+            }
+            if (d < fbd) {
+                fbd = d;
+                fb = bl;
+            }
+        }
+        return best ? best : fb;
+    };
+
+    std::vector<const civ_rivals_logic::PlannerMoveItem*> to_rebuild;
+    float applied_add_cost = 0.0f, applied_rem_refund = 0.0f;
+    int blds_removed_ok = 0, blds_moved_ok = 0, blds_added_ok = 0;
+    int turrets_removed_ok = 0, turrets_added_ok = 0;
+
+    // 1. Apply removals and moves first (these never cost money and establish verified refund credit).
+    {
+        callguard::Hold applying(g_applying);
+        for (const auto& rb : msg.removed) {
+            if (void* b = find_bld(rb.noun, rb.pos)) {
+                float pr = rb.price > 0.0f ? rb.price : vcall<float>(b, 0x5C / 4);
+                if (std::isfinite(pr) && pr > 0.0f)
+                    applied_rem_refund += pr;
+                thiscall<void>(a_DestroyBuilding, city, b);
+                blds_removed_ok++;
+            }
+        }
+        // Destroy all moved buildings before rebuilding at new spots so slot swaps succeed
+        for (const auto& mv : msg.moved) {
+            if (void* b = find_bld(mv.noun, mv.from)) {
+                thiscall<void>(a_DestroyBuilding, city, b);
+                to_rebuild.push_back(&mv);
+            }
+        }
+    }
+    g_build_from = from;
+    for (const auto* mv : to_rebuild) {
+        if (build_in_city(city, mv->noun, {mv->to.x, mv->to.y, mv->to.z}, false))
+            blds_moved_ok++;
+        else
+            build_in_city(city, mv->noun, {mv->from.x, mv->from.y, mv->from.z}, false);
+    }
+    g_build_from = -1;
+
+    if (a_AddTurret && a_RemoveTurret) {
+        callguard::Hold applying(g_applying);
+        for (const auto& tp : msg.removed_turrets) {
+            auto ts = turrets_of(city);
+            void* best = nullptr;
+            float bd = 12.0f;
+            net::Vec3 want{tp.x, tp.y, tp.z};
+            for (auto& [t, p] : ts) {
+                float d = net::dist(p, want);
+                if (d < bd) {
+                    bd = d;
+                    best = t;
+                }
+            }
+            if (!best && !ts.empty())
+                best = ts.back().first;
+            if (best) {
+                thiscall<void>(a_RemoveTurret, city, best, 0);
+                turrets_removed_ok++;
+            }
+        }
+    }
+
+    float max_refund = applied_rem_refund + (float)turrets_removed_ok * civ_rivals_logic::kDefaultTurretCost;
+    int want_add_turrets = (a_AddTurret && a_RemoveTurret)
+                               ? std::max(0, std::min(32, (int)msg.turret_delta + turrets_removed_ok))
+                               : 0;
+    float planned_add_blds = 0.0f;
+    for (const auto& ab : msg.added)
+        if (std::isfinite(ab.price) && ab.price > 0.0f)
+            planned_add_blds += ab.price;
+    float planned_max_spend = planned_add_blds + (float)want_add_turrets * civ_rivals_logic::kDefaultTurretCost;
+    float planned_delta = civ_rivals_logic::clamp_planner_net_spend(msg.net_spend, planned_max_spend, max_refund);
+
+    // 2. In Rivals mode, verify affordability BEFORE spawning any new buildings or turrets.
+    bool abort_additions = false;
+    if (riv && planned_delta > 0.5f) {
+        void* pc = civ_rivals::civ_of_player(from);
+        float cur_w = pc ? civ_rivals::civ_money(pc) : 0.0f;
+        if (!pc || cur_w + 0.5f < planned_delta) {
+            abort_additions = true;
+            if (pc && max_refund > 0.5f)
+                o_AddMoney(pc, max_refund, 0);
+            if (C.sess) {
+                char notice[128];
+                snprintf(notice, sizeof notice, "planner: not enough Sporebucks (need %.0f, have %.0f)",
+                         planned_delta, cur_w);
+                net::Writer nw;
+                nw.str8(notice);
+                C.sess->send_reliable_to(from, net::MSG_NOTICE, nw);
+            }
+            g_n.cmds_rejected++;
+            H->log(M, SK_INFO,
+                   "civ: aborted planner additions for player %u city %u: need %.0f, have %.0f (refunded %.0f for removals)",
+                   (unsigned)from, (unsigned)msg.ci, planned_delta, cur_w, max_refund);
+        }
+    }
+
+    // 3. Apply new buildings and turrets if affordable (or Together mode, where guest already paid locally).
+    std::vector<void*> spawned_blds;
+    std::unordered_set<void*> prev_turrets;
+    if (!abort_additions) {
+        g_build_from = from;
+        for (const auto& ab : msg.added) {
+            if (void* b = build_in_city(city, ab.noun, {ab.pos.x, ab.pos.y, ab.pos.z}, false)) {
+                float pr = ab.price > 0.0f ? ab.price : vcall<float>(b, 0x5C / 4);
+                if (std::isfinite(pr) && pr > 0.0f)
+                    applied_add_cost += pr;
+                blds_added_ok++;
+                spawned_blds.push_back(b);
+            } else if (!riv) {
+                together_refund_build(from, ab.price, g_build_fail);
+            }
+        }
+        g_build_from = -1;
+
+        if (want_add_turrets > 0 && a_AddTurret && a_RemoveTurret) {
+            if (riv) {
+                for (auto& [t, p] : turrets_of(city)) {
+                    (void)p;
+                    prev_turrets.insert(t);
+                }
+            }
+            callguard::Hold applying(g_applying);
+            for (int i = 0; i < want_add_turrets; i++) {
+                if (o_AddTurret(city))
+                    turrets_added_ok++;
+                else
+                    break;
+            }
+            if (!riv && turrets_added_ok < want_add_turrets) {
+                float unpaid = (float)(want_add_turrets - turrets_added_ok) * civ_rivals_logic::kDefaultTurretCost;
+                together_refund_build(from, unpaid, "no free turret slot");
+            }
+        }
+    }
+
+    // 4. Rivals authoritative settlement: charge net delta (rolling back additions if charge still fails) or credit net refund.
+    if (riv && !abort_additions) {
+        float max_spend = applied_add_cost + (float)turrets_added_ok * civ_rivals_logic::kDefaultTurretCost;
+        float failed_add = std::max(0.0f, planned_max_spend - max_spend);
+        float effective_spend = msg.net_spend - failed_add;
+        float delta = civ_rivals_logic::clamp_planner_net_spend(effective_spend, max_spend, max_refund);
+        if (delta > 0.5f) {
+            if (!civ_rivals::host_charge_player(from, delta)) {
+                callguard::Hold applying(g_applying);
+                for (void* b : spawned_blds)
+                    thiscall<void>(a_DestroyBuilding, city, b);
+                if (turrets_added_ok > 0 && a_RemoveTurret) {
+                    for (auto& [t, p] : turrets_of(city)) {
+                        (void)p;
+                        if (!prev_turrets.count(t))
+                            thiscall<void>(a_RemoveTurret, city, t, 0);
+                    }
+                }
+                blds_added_ok = 0;
+                turrets_added_ok = 0;
+                if (void* pc = civ_rivals::civ_of_player(from); pc && max_refund > 0.5f)
+                    o_AddMoney(pc, max_refund, 0);
+                if (C.sess) {
+                    char notice[128];
+                    snprintf(notice, sizeof notice, "planner: not enough Sporebucks (need %.0f)", delta);
+                    net::Writer nw;
+                    nw.str8(notice);
+                    C.sess->send_reliable_to(from, net::MSG_NOTICE, nw);
+                }
+                abort_additions = true;
+                g_n.cmds_rejected++;
+                H->log(M, SK_INFO,
+                       "civ: rolled back planner additions for player %u city %u: host_charge_player(%.0f) failed",
+                       (unsigned)from, (unsigned)msg.ci, delta);
+            }
+        } else if (delta < -0.5f) {
+            if (void* pc = civ_rivals::civ_of_player(from))
+                o_AddMoney(pc, -delta, 0);
+        }
+    }
+
+    if (turrets_added_ok || turrets_removed_ok) {
+        g_turret_sent.erase(city);
+        host_send_turrets(msg.ci, city, H->time_seconds());
+    }
+    if (riv)
+        civ_rivals::host_broadcast_assign_now();
+    if (!abort_additions)
+        g_n.cmds_done++;
+    H->log(M, SK_INFO,
+           "civ: planner sync applied for player %u city %u: -%d ~%d +%d blds, +%d/-%d turrets (BUG-1581)",
+           (unsigned)from, (unsigned)msg.ci, blds_removed_ok, blds_moved_ok, blds_added_ok,
+           turrets_added_ok, turrets_removed_ok);
+}
+
+static void host_drain_held_planner_syncs()
+{
+    if (g_held_planner_syncs.empty() || planner_city())
+        return;
+    auto held = std::move(g_held_planner_syncs);
+    g_held_planner_syncs.clear();
+    for (const auto& h : held)
+        host_apply_planner_sync(h.from, h.city, h.msg, true);
+}
+
 // BUG-1581: handle WP-3 extended host commands (kCmdPlannerSync, kCmdSellVehicle) and refresh Civ Rivals
 // city ownership before legacy CMD_BUILD / CMD_BUY in host_command. Returns true if consumed.
 static bool host_handle_extra_cmd(uint8_t from, net::Reader& r)
@@ -3033,136 +3404,7 @@ static bool host_handle_extra_cmd(uint8_t from, net::Reader& r)
             g_n.cmds_rejected++;
             return true;
         }
-        bool riv = civ_rivals::active();
-        void* city = host_city(msg.ci);
-        if (riv && city && civ_rivals::player_of_pol(pol_of(city)) == from)
-            g_city_owner[city] = from;
-        uint8_t co = city ? owner_of_city(city) : 0xFF;
-        if (!city || (co != from && co != kShared) || planner_holds(city)) {
-            if (riv)
-                civ_rivals::host_broadcast_assign_now();
-            g_n.cmds_rejected++;
-            H->log(M, SK_INFO, "civ: rejected planner sync for city %u from player %u (owner=%u) (BUG-1581)",
-                   (unsigned)msg.ci, (unsigned)from, (unsigned)co);
-            return true;
-        }
-        auto find_bld = [&](uint32_t noun, const civ_rivals_logic::Vec3& want) -> void* {
-            net::Vec3 wp{want.x, want.y, want.z};
-            void* best = nullptr;
-            float bd = 15.0f;
-            void* fb = nullptr;
-            float fbd = 40.0f;
-            for (void* bl : vec_of((uint8_t*)city + kCityBuildings)) {
-                if (!bl || game::noun_id(bl) != noun)
-                    continue;
-                net::Vec3 bp{};
-                if (!game::object_position(bl, bp))
-                    continue;
-                float d = net::dist(bp, wp);
-                if (d < bd) {
-                    bd = d;
-                    best = bl;
-                }
-                if (d < fbd) {
-                    fbd = d;
-                    fb = bl;
-                }
-            }
-            return best ? best : fb;
-        };
-
-        std::vector<const civ_rivals_logic::PlannerMoveItem*> to_rebuild;
-        float applied_add_cost = 0.0f, applied_rem_refund = 0.0f;
-        int blds_removed_ok = 0, blds_moved_ok = 0, blds_added_ok = 0;
-        int turrets_removed_ok = 0, turrets_added_ok = 0;
-        {
-            callguard::Hold applying(g_applying);
-            for (const auto& rb : msg.removed) {
-                if (void* b = find_bld(rb.noun, rb.pos)) {
-                    float pr = rb.price > 0.0f ? rb.price : vcall<float>(b, 0x5C / 4);
-                    if (std::isfinite(pr) && pr > 0.0f)
-                        applied_rem_refund += pr;
-                    thiscall<void>(a_DestroyBuilding, city, b);
-                    blds_removed_ok++;
-                }
-            }
-            // Destroy all moved buildings before rebuilding at new spots so slot swaps succeed
-            for (const auto& mv : msg.moved) {
-                if (void* b = find_bld(mv.noun, mv.from)) {
-                    thiscall<void>(a_DestroyBuilding, city, b);
-                    to_rebuild.push_back(&mv);
-                }
-            }
-        }
-        g_build_from = from;
-        for (const auto* mv : to_rebuild) {
-            if (build_in_city(city, mv->noun, {mv->to.x, mv->to.y, mv->to.z}, false))
-                blds_moved_ok++;
-            else
-                build_in_city(city, mv->noun, {mv->from.x, mv->from.y, mv->from.z}, false);
-        }
-        for (const auto& ab : msg.added) {
-            if (void* b = build_in_city(city, ab.noun, {ab.pos.x, ab.pos.y, ab.pos.z}, false)) {
-                float pr = ab.price > 0.0f ? ab.price : vcall<float>(b, 0x5C / 4);
-                if (std::isfinite(pr) && pr > 0.0f)
-                    applied_add_cost += pr;
-                blds_added_ok++;
-            }
-        }
-        g_build_from = -1;
-
-        if (a_AddTurret && a_RemoveTurret) {
-            callguard::Hold applying(g_applying);
-            for (const auto& tp : msg.removed_turrets) {
-                auto ts = turrets_of(city);
-                void* best = nullptr;
-                float bd = 12.0f;
-                net::Vec3 want{tp.x, tp.y, tp.z};
-                for (auto& [t, p] : ts) {
-                    float d = net::dist(p, want);
-                    if (d < bd) {
-                        bd = d;
-                        best = t;
-                    }
-                }
-                if (!best && !ts.empty())
-                    best = ts.back().first;
-                if (best) {
-                    thiscall<void>(a_RemoveTurret, city, best, 0);
-                    turrets_removed_ok++;
-                }
-            }
-            int want_add = (int)msg.turret_delta + turrets_removed_ok;
-            for (int i = 0; i < want_add && i < 32; i++) {
-                if (o_AddTurret(city))
-                    turrets_added_ok++;
-                else
-                    break;
-            }
-        }
-
-        if (riv) {
-            float max_spend = applied_add_cost + (float)turrets_added_ok * civ_rivals_logic::kDefaultTurretCost;
-            float max_refund = applied_rem_refund + (float)turrets_removed_ok * civ_rivals_logic::kDefaultTurretCost;
-            float delta = civ_rivals_logic::clamp_planner_net_spend(msg.net_spend, max_spend, max_refund);
-            if (delta > 0.5f) {
-                civ_rivals::host_charge_player(from, delta);
-            } else if (delta < -0.5f) {
-                if (void* pc = civ_rivals::civ_of_player(from))
-                    o_AddMoney(pc, -delta, 0);
-            }
-        }
-        if (turrets_added_ok || turrets_removed_ok) {
-            g_turret_sent.erase(city);
-            host_send_turrets(msg.ci, city, H->time_seconds());
-        }
-        if (riv)
-            civ_rivals::host_broadcast_assign_now();
-        g_n.cmds_done++;
-        H->log(M, SK_INFO,
-               "civ: planner sync applied for player %u city %u: -%d ~%d +%d blds, +%d/-%d turrets (BUG-1581)",
-               (unsigned)from, (unsigned)msg.ci, blds_removed_ok, blds_moved_ok, blds_added_ok,
-               turrets_added_ok, turrets_removed_ok);
+        host_apply_planner_sync(from, host_city(msg.ci), msg, false);
         return true;
     }
 
@@ -3293,6 +3535,7 @@ static void clear_coop_tables(bool restore_speed)
     g_bfix_seen.clear();
     g_ui_city = nullptr;
     g_held_builds.clear();
+    g_held_planner_syncs.clear();
     g_shots.clear(); // BUG-0477
     g_shots_in.clear();
     g_turret_shooters.clear();

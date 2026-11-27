@@ -299,14 +299,15 @@ static int drop_rival_meat(const net::Vec3& pos, int victim_level)
         if (donor) {
             void* holder = nullptr;
             uint8_t* res = skg::cdecl_call<uint8_t*>(a_GetData, F<void*>(donor, kRes), &holder);
-            if (res) {
+            void* loot_ref = (res && skg::readable(res + 0xD4, 4)) ? F<void*>(res, 0xD4) : nullptr;
+            if (loot_ref && skg::readable(loot_ref, 0x10)) {
                 float p3[3] = {pos.x, pos.y, pos.z};
-                uint32_t buf[64] = {};
+                uint32_t buf[256] = {};
                 int n = 0;
                 o_SpawnLoot(F<void*>(donor, kRes), donor + kModelKey, fg_query(), p3,
-                            std::max(0.5f, F<float>(donor, kSize)), lvl, res + 0xD4, 1.f / 30.f, buf, &n);
+                            std::max(0.5f, F<float>(donor, kSize)), lvl, loot_ref, 1.f / 30.f, buf, &n);
                 spawned = n;
-                for (int i = 0; i < n && i < 64; i++) {
+                for (int i = 0; i < n && i < 256; i++) {
                     g_loot_recent.push_back({buf[i], now});
                     g_n.loot_cells++;
                 }

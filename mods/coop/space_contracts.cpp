@@ -783,6 +783,8 @@ std::string offer(uint8_t type, const std::string& arg)
         return "only the host offers contracts";
     if (!spaceext::in_space())
         return "not in space";
+    if (g_rivals_world_fix && (spacerivals::active() || spaceext::rivals()))
+        return "contracts are disabled in Rivals mode";
     if (g.state == S_OFFERED || g.state == S_ACTIVE)
         return "a contract is running (coop.space contracts cancel)";
     Contract c;
@@ -1321,9 +1323,12 @@ LIFECYCLE_HOOK(
     "space_contracts.world", lifecycle::kWorldChange, -35,
     [](const lifecycle::Ctx&) {
         if (g_rivals_world_fix && (g.state != S_NONE || g_wave_on || g_next_offer != 0)) {
+            bool had_contract = g.state != S_NONE;
             if (H && M)
                 H->log(M, SK_INFO, "contracts: world changed, clearing contract state id=%u (BUG-1582)", g.id);
             reset_state();
+            if (had_contract && H && host() && connected())
+                publish();
         }
     },
     false);

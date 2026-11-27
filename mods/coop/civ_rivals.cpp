@@ -8,8 +8,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -126,6 +128,8 @@ using CivAI_t = void(SK_THISCALL*)(void*);
 using CanTargetSW_t = bool(SK_CDECL*)(int, const float*);
 using LaunchGlobalSW_t = void(SK_THISCALL*)(void*);
 using TradeDelivery_t = float(SK_THISCALL*)(void*, uint32_t, float, void*);
+using CivDtor_t = void(SK_THISCALL*)(void*);
+using CivScalarDtor_t = void*(SK_THISCALL*)(void*, uint32_t);
 
 static GetPlayerCiv_t o_GetPlayerCiv = nullptr;
 static GetPlayerPol_t o_GetPlayerPol = nullptr;
@@ -134,6 +138,9 @@ static CivAI_t o_CivAI = nullptr;
 static CanTargetSW_t o_CanTargetSW = nullptr;
 static LaunchGlobalSW_t o_LaunchGlobalSW = nullptr;
 static TradeDelivery_t o_TradeDelivery = nullptr;
+static CivDtor_t o_CivDtor = nullptr;
+static CivScalarDtor_t o_CivScalarDtor = nullptr;
+static bool g_civ_dtor_hook_tried = false;
 
 // ---- Runtime state ----
 static bool g_inited = false;
@@ -165,15 +172,27 @@ static std::set<uint8_t> g_species_applied;
 static std::set<std::pair<uint8_t, uint32_t>> g_war_captured_from; // (winner, loser)
 static uint16_t g_last_city_counts[kMaxPlayers] = {};
 
-// Guest persistent borrow of orig_player_civ() +0x470 tools and +0x490 timers while perspective swap is active (BUG-1581).
+// Guest persistent borrow of orig_player_civ() +0x470 tools and per-civ isolated +0x490 timers while perspective swap
+// is active (BUG-1581). Always un-aliased in h_CivDtor before ~cCivilization frees +0x490/+0x470.
 struct GuestSwBorrow {
     void* civ = nullptr;
+    void* source_civ = nullptr;
     uint32_t saved_tools[3] = {};
     uint32_t saved_timers[3] = {};
+    uint32_t borrowed_tools_begin = 0;
+    uint32_t borrowed_timers_begin = 0;
     bool tools = false;
     bool timers = false;
 };
 static GuestSwBorrow g_guest_sw_borrow;
+
+// Per-civilization isolated cGameTime[12] cooldown buffer (stride 0x20, 384 bytes) for any NPC-origin civ whose
+// native +0x490 vector is empty, so host and guest cooldowns never alias or cross-contaminate.
+struct IsolatedSwTimers {
+    alignas(16) uint8_t buf[12 * 32] = {};
+};
+static std::unordered_map<void*, std::unique_ptr<IsolatedSwTimers>> g_isolated_sw_timers;
+static std::vector<std::pair<SwToolsBorrow*, void*>> g_active_sw_borrows; // (guard, source_civ)
 
 // Recent SpendMoney observation for pairing with vanilla diplomacy gift ApplyRelationship (0x0526E4FB, BUG-1581).
 struct LocalSpend {
@@ -345,6 +364,13 @@ void* civ_of_player(uint8_t pid)
     if (pid >= kMaxPlayers || !g_nations[pid].assigned)
         return nullptr;
     return civ_by_pol(g_nations[pid].pol_id);
+}
+
+void* my_civ()
+{
+    if (!active())
+        return nullptr;
+    return civ_of_player(my_id());
 }
 
 int player_of_pol(uint32_t pol)
@@ -574,20 +600,21 @@ static void save_guest_designs_strip(bool start)
     }
 }
 
-// BUG-1581: restore guest-borrowed superweapon tools (+0x470) & timers (+0x490) before save, world change, or teardown.
+// BUG-1581: restore guest-borrowed superweapon tools (+0x470) & isolated timers (+0x490) before save, world change,
+// or cCivilization teardown. Never gate on mode_id() == kCiv: ~cCivilization runs synchronously during mode transitions
+// and exit, where mode_id() may already have changed.
 static void restore_guest_sw_tools()
 {
     void* civ = g_guest_sw_borrow.civ;
     if (!civ)
         return;
-    bool live = game::mode_id() == modes::kCiv && civ::nm() && skg::readable(civ, kCivSwTimers + 12);
-    if (live) {
-        if (g_guest_sw_borrow.tools) {
+    if (skg::readable(civ, kCivSwTimers + 12)) {
+        if (g_guest_sw_borrow.tools && F<uint32_t>(civ, kCivSwTools) == g_guest_sw_borrow.borrowed_tools_begin) {
             F<uint32_t>(civ, kCivSwTools) = g_guest_sw_borrow.saved_tools[0];
             F<uint32_t>(civ, kCivSwTools + 4) = g_guest_sw_borrow.saved_tools[1];
             F<uint32_t>(civ, kCivSwTools + 8) = g_guest_sw_borrow.saved_tools[2];
         }
-        if (g_guest_sw_borrow.timers) {
+        if (g_guest_sw_borrow.timers && F<uint32_t>(civ, kCivSwTimers) == g_guest_sw_borrow.borrowed_timers_begin) {
             F<uint32_t>(civ, kCivSwTimers) = g_guest_sw_borrow.saved_timers[0];
             F<uint32_t>(civ, kCivSwTimers + 4) = g_guest_sw_borrow.saved_timers[1];
             F<uint32_t>(civ, kCivSwTimers + 8) = g_guest_sw_borrow.saved_timers[2];
@@ -596,16 +623,121 @@ static void restore_guest_sw_tools()
     g_guest_sw_borrow = GuestSwBorrow{};
 }
 
+static void unalias_sw_on_dtor(void* civ)
+{
+    if (!civ)
+        return;
+    if (g_guest_sw_borrow.civ && (civ == g_guest_sw_borrow.civ || civ == g_guest_sw_borrow.source_civ))
+        restore_guest_sw_tools();
+    for (auto& [b, src] : g_active_sw_borrows) {
+        if (!b || !b->civ)
+            continue;
+        if (b->civ == civ || src == civ) {
+            if (skg::readable(b->civ, kCivSwTimers + 12)) {
+                if (b->active_timers_borrow) {
+                    F<uint32_t>(b->civ, kCivSwTimers) = b->saved_timers[0];
+                    F<uint32_t>(b->civ, kCivSwTimers + 4) = b->saved_timers[1];
+                    F<uint32_t>(b->civ, kCivSwTimers + 8) = b->saved_timers[2];
+                }
+                if (b->active_borrow) {
+                    F<uint32_t>(b->civ, kCivSwTools) = b->saved[0];
+                    F<uint32_t>(b->civ, kCivSwTools + 4) = b->saved[1];
+                    F<uint32_t>(b->civ, kCivSwTools + 8) = b->saved[2];
+                }
+            }
+            b->civ = nullptr;
+        }
+    }
+    g_isolated_sw_timers.erase(civ);
+}
+
+static void SK_THISCALL h_CivDtor(void* civ)
+{
+    unalias_sw_on_dtor(civ);
+    o_CivDtor(civ);
+}
+
+static void* SK_THISCALL h_CivScalarDtor(void* civ, uint32_t flags)
+{
+    unalias_sw_on_dtor(civ);
+    return o_CivScalarDtor(civ, flags);
+}
+
+// Resolve cCivilization::~cCivilization (GOG 2024 0x00BF3830) via the live vtable slot 2 deleting destructor thunk
+// (0x00BF4470: push esi; mov esi, ecx; call 0x00BF3830), falling back to hooking slot 2 directly.
+static bool ensure_civ_dtor_hook(void* civ)
+{
+    if (o_CivDtor || o_CivScalarDtor)
+        return true;
+    if (g_civ_dtor_hook_tried || !H || !M || !civ || !skg::readable(civ, sizeof(uintptr_t)))
+        return false;
+    uintptr_t vt = F<uintptr_t>(civ, 0);
+    if (!vt || !skg::readable((void*)vt, 3 * sizeof(uintptr_t)))
+        return false;
+    uintptr_t thunk = ((const uintptr_t*)vt)[2];
+    if (!thunk || !skg::readable((void*)thunk, 8))
+        return false;
+    g_civ_dtor_hook_tried = true;
+    const uint8_t* p = (const uint8_t*)thunk;
+    if (p[0] == 0x56 && p[1] == 0x8B && p[2] == 0xF1 && p[3] == 0xE8) {
+        int32_t rel = 0;
+        memcpy(&rel, p + 4, 4);
+        uintptr_t dtor = thunk + 8 + (uintptr_t)(intptr_t)rel;
+        if (skg::readable((void*)dtor, 8) &&
+            H->hook_create(M, (void*)dtor, (void*)h_CivDtor, (void**)&o_CivDtor) == 0 && o_CivDtor) {
+            H->log(M, SK_INFO, "civ_rivals: hooked cCivilization::~cCivilization at %p via vtable thunk %p",
+                   (void*)dtor, (void*)thunk);
+            return true;
+        }
+    }
+    if (H->hook_create(M, (void*)thunk, (void*)h_CivScalarDtor, (void**)&o_CivScalarDtor) == 0 && o_CivScalarDtor) {
+        H->log(M, SK_INFO, "civ_rivals: hooked cCivilization deleting dtor thunk at %p", (void*)thunk);
+        return true;
+    }
+    H->log(M, SK_WARN, "civ_rivals: failed to hook cCivilization dtor from vtable %p", (void*)vt);
+    return false;
+}
+
+// Allocate or reuse a per-civ isolated cGameTime[12] buffer initialized from an existing cGameTime template
+// (preserving vtable at +0x00 and clock function pointer at +0x1C with idle state: running=0, elapsed=0, start=0).
+static uint32_t get_isolated_sw_timers(void* target_civ, void* template_civ)
+{
+    if (!target_civ || !template_civ)
+        return 0;
+    auto it = g_isolated_sw_timers.find(target_civ);
+    if (it != g_isolated_sw_timers.end() && it->second)
+        return (uint32_t)(uintptr_t)it->second->buf;
+    if (!skg::readable(template_civ, kCivSwTimers + 12))
+        return 0;
+    uint32_t hm0 = F<uint32_t>(template_civ, kCivSwTimers);
+    uint32_t hm1 = F<uint32_t>(template_civ, kCivSwTimers + 4);
+    if (!sw_vec_valid(hm0, hm1, kSwTimersMinBytes) || !skg::readable((void*)(uintptr_t)hm0, 32))
+        return 0;
+    uint8_t tmpl[32];
+    memcpy(tmpl, (const void*)(uintptr_t)hm0, 32);
+    // Reset accumulated (+0x08..+0x0F), start (+0x10..+0x17), running (+0x18), and padding (+0x04..+0x07, +0x19..+0x1B).
+    memset(tmpl + 4, 0, 24);
+    auto entry = std::make_unique<IsolatedSwTimers>();
+    for (int i = 0; i < 12; i++)
+        memcpy(entry->buf + i * 32, tmpl, 32);
+    uint32_t addr = (uint32_t)(uintptr_t)entry->buf;
+    g_isolated_sw_timers[target_civ] = std::move(entry);
+    return addr;
+}
+
 static void ensure_guest_sw_tools(void* my_civ)
 {
     if (!g_fix_civ_guest_sw || !my_civ || !is_guest() || !active() || g_in_save)
         return;
-    if (g_guest_sw_borrow.civ && g_guest_sw_borrow.civ != my_civ)
-        restore_guest_sw_tools();
     void* orig_pc = orig_player_civ();
     if (!orig_pc || orig_pc == my_civ)
         return;
+    if (g_guest_sw_borrow.civ && (g_guest_sw_borrow.civ != my_civ || g_guest_sw_borrow.source_civ != orig_pc))
+        restore_guest_sw_tools();
     if (!skg::readable(my_civ, kCivSwTimers + 12) || !skg::readable(orig_pc, kCivSwTimers + 12))
+        return;
+    // Never alias +0x470/+0x490 persistently without ~cCivilization hooked to un-alias before free/Release.
+    if (!ensure_civ_dtor_hook(orig_pc))
         return;
     if (!g_guest_sw_borrow.tools) {
         uint32_t t0 = F<uint32_t>(my_civ, kCivSwTools);
@@ -615,9 +747,11 @@ static void ensure_guest_sw_tools(void* my_civ)
         uint32_t h2 = F<uint32_t>(orig_pc, kCivSwTools + 8);
         if (sw_borrow_needed(false, t0, t1, h0, h1, kSwToolsMinBytes)) {
             g_guest_sw_borrow.civ = my_civ;
+            g_guest_sw_borrow.source_civ = orig_pc;
             g_guest_sw_borrow.saved_tools[0] = t0;
             g_guest_sw_borrow.saved_tools[1] = t1;
             g_guest_sw_borrow.saved_tools[2] = F<uint32_t>(my_civ, kCivSwTools + 8);
+            g_guest_sw_borrow.borrowed_tools_begin = h0;
             F<uint32_t>(my_civ, kCivSwTools) = h0;
             F<uint32_t>(my_civ, kCivSwTools + 4) = h1;
             F<uint32_t>(my_civ, kCivSwTools + 8) = h2;
@@ -633,16 +767,19 @@ static void ensure_guest_sw_tools(void* my_civ)
         uint32_t t1 = F<uint32_t>(my_civ, kCivSwTimers + 4);
         uint32_t h0 = F<uint32_t>(orig_pc, kCivSwTimers);
         uint32_t h1 = F<uint32_t>(orig_pc, kCivSwTimers + 4);
-        uint32_t h2 = F<uint32_t>(orig_pc, kCivSwTimers + 8);
         if (sw_borrow_needed(false, t0, t1, h0, h1, kSwTimersMinBytes)) {
-            g_guest_sw_borrow.civ = my_civ;
-            g_guest_sw_borrow.saved_timers[0] = t0;
-            g_guest_sw_borrow.saved_timers[1] = t1;
-            g_guest_sw_borrow.saved_timers[2] = F<uint32_t>(my_civ, kCivSwTimers + 8);
-            F<uint32_t>(my_civ, kCivSwTimers) = h0;
-            F<uint32_t>(my_civ, kCivSwTimers + 4) = h1;
-            F<uint32_t>(my_civ, kCivSwTimers + 8) = h2;
-            g_guest_sw_borrow.timers = true;
+            if (uint32_t iso = get_isolated_sw_timers(my_civ, orig_pc)) {
+                g_guest_sw_borrow.civ = my_civ;
+                g_guest_sw_borrow.source_civ = orig_pc;
+                g_guest_sw_borrow.saved_timers[0] = t0;
+                g_guest_sw_borrow.saved_timers[1] = t1;
+                g_guest_sw_borrow.saved_timers[2] = F<uint32_t>(my_civ, kCivSwTimers + 8);
+                g_guest_sw_borrow.borrowed_timers_begin = iso;
+                F<uint32_t>(my_civ, kCivSwTimers) = iso;
+                F<uint32_t>(my_civ, kCivSwTimers + 4) = iso + (uint32_t)kSwTimersMinBytes;
+                F<uint32_t>(my_civ, kCivSwTimers + 8) = iso + (uint32_t)kSwTimersMinBytes;
+                g_guest_sw_borrow.timers = true;
+            }
         }
     }
 }
@@ -662,7 +799,7 @@ void on_city_specialty_changed(void* city, void* civ, int new_spec)
 
 void note_local_spend(void* civ, float amount)
 {
-    if (!active() || !civ || !std::isfinite(amount) || amount <= 0.0f)
+    if (!active() || !civ || civ != my_civ() || !std::isfinite(amount) || amount <= 0.0f)
         return;
     g_last_local_spend = {civ, amount, now_s()};
 }
@@ -868,6 +1005,7 @@ static void reset_state()
     g_applied_designs.clear();
     g_designs_dirty = true;
     g_last_local_spend = LocalSpend{};
+    g_isolated_sw_timers.clear();
 }
 
 static void on_lifecycle_event(const lifecycle::Ctx& c)
@@ -1055,20 +1193,20 @@ void on_rel_apply(uint32_t polA, uint32_t polB, uint32_t event_id, float /*value
     if (!g_fix_civ_diplo_gift || !active() || event_id != kEventCivDiplomaticGift)
         return;
     double now = now_s();
-    if (g_last_local_spend.amount <= 0.0f || now - g_last_local_spend.at > 0.15)
+    if (g_last_local_spend.amount <= 0.0f || !g_last_local_spend.civ || now - g_last_local_spend.at > 0.15)
         return;
-    float amt = g_last_local_spend.amount;
+    // Native 0x00DCA956..0x00DCA988 calls SpendMoney(sender) then ApplyRelationship(target=polA, sender=polB, ...).
     int pa = player_of_pol(polA);
     int pb = player_of_pol(polB);
     uint8_t me = my_id();
-    int target_pid = -1;
-    if (pa == (int)me && pb >= 0 && pb != (int)me)
-        target_pid = pb;
-    else if (pb == (int)me && pa >= 0 && pa != (int)me)
-        target_pid = pa;
-    if (target_pid < 0 || target_pid >= kMaxPlayers)
+    if (pb != (int)me || pa < 0 || pa >= kMaxPlayers || pa == (int)me)
         return;
-    g_last_local_spend.amount = 0.0f; // consume so it cannot double-credit
+    void* sender_civ = civ_by_pol(polB);
+    if (!sender_civ || g_last_local_spend.civ != sender_civ)
+        return;
+    float amt = g_last_local_spend.amount;
+    int target_pid = pa;
+    g_last_local_spend = LocalSpend{}; // consume so it cannot double-credit
     if (is_host()) {
         host_credit_player((uint8_t)target_pid, amt);
         g_st.diplo_gifts++;
@@ -1678,6 +1816,7 @@ SwToolsBorrow::SwToolsBorrow(void* target_civ)
         return;
     if (!skg::readable(target_civ, kCivSwTimers + 12) || !skg::readable(host_civ, kCivSwTimers + 12))
         return;
+    ensure_civ_dtor_hook(host_civ);
     civ = target_civ;
     uint32_t t0 = F<uint32_t>(target_civ, kCivSwTools);
     uint32_t t1 = F<uint32_t>(target_civ, kCivSwTools + 4);
@@ -1700,36 +1839,49 @@ SwToolsBorrow::SwToolsBorrow(void* target_civ)
     uint32_t tm1 = F<uint32_t>(target_civ, kCivSwTimers + 4);
     uint32_t hm0 = F<uint32_t>(host_civ, kCivSwTimers);
     uint32_t hm1 = F<uint32_t>(host_civ, kCivSwTimers + 4);
-    uint32_t hm2 = F<uint32_t>(host_civ, kCivSwTimers + 8);
     if (sw_borrow_needed(false, tm0, tm1, hm0, hm1, kSwTimersMinBytes)) {
-        saved_timers[0] = tm0;
-        saved_timers[1] = tm1;
-        saved_timers[2] = F<uint32_t>(target_civ, kCivSwTimers + 8);
-        mark_timers = game::swap_open(game::swap_undo_u32, (uint8_t*)target_civ + kCivSwTimers, saved_timers[0],
-                                      "civ_rivals: sw timers[0]");
-        game::swap_open(game::swap_undo_u32, (uint8_t*)target_civ + kCivSwTimers + 4, saved_timers[1],
-                        "civ_rivals: sw timers[1]");
-        game::swap_open(game::swap_undo_u32, (uint8_t*)target_civ + kCivSwTimers + 8, saved_timers[2],
-                        "civ_rivals: sw timers[2]");
-        F<uint32_t>(target_civ, kCivSwTimers) = hm0;
-        F<uint32_t>(target_civ, kCivSwTimers + 4) = hm1;
-        F<uint32_t>(target_civ, kCivSwTimers + 8) = hm2;
-        active_timers_borrow = true;
+        if (uint32_t iso = get_isolated_sw_timers(target_civ, host_civ)) {
+            saved_timers[0] = tm0;
+            saved_timers[1] = tm1;
+            saved_timers[2] = F<uint32_t>(target_civ, kCivSwTimers + 8);
+            mark_timers = game::swap_open(game::swap_undo_u32, (uint8_t*)target_civ + kCivSwTimers, saved_timers[0],
+                                          "civ_rivals: sw timers[0]");
+            game::swap_open(game::swap_undo_u32, (uint8_t*)target_civ + kCivSwTimers + 4, saved_timers[1],
+                            "civ_rivals: sw timers[1]");
+            game::swap_open(game::swap_undo_u32, (uint8_t*)target_civ + kCivSwTimers + 8, saved_timers[2],
+                            "civ_rivals: sw timers[2]");
+            F<uint32_t>(target_civ, kCivSwTimers) = iso;
+            F<uint32_t>(target_civ, kCivSwTimers + 4) = iso + (uint32_t)kSwTimersMinBytes;
+            F<uint32_t>(target_civ, kCivSwTimers + 8) = iso + (uint32_t)kSwTimersMinBytes;
+            active_timers_borrow = true;
+        }
     }
+    if (active_borrow || active_timers_borrow)
+        g_active_sw_borrows.push_back({this, host_civ});
 }
 
 SwToolsBorrow::~SwToolsBorrow()
 {
-    if (active_timers_borrow && civ) {
-        F<uint32_t>(civ, kCivSwTimers) = saved_timers[0];
-        F<uint32_t>(civ, kCivSwTimers + 4) = saved_timers[1];
-        F<uint32_t>(civ, kCivSwTimers + 8) = saved_timers[2];
+    if (active_borrow || active_timers_borrow) {
+        auto it = std::find_if(g_active_sw_borrows.begin(), g_active_sw_borrows.end(),
+                               [this](const auto& p) { return p.first == this; });
+        if (it != g_active_sw_borrows.end())
+            g_active_sw_borrows.erase(it);
+    }
+    if (active_timers_borrow) {
+        if (civ && skg::readable(civ, kCivSwTimers + 12)) {
+            F<uint32_t>(civ, kCivSwTimers) = saved_timers[0];
+            F<uint32_t>(civ, kCivSwTimers + 4) = saved_timers[1];
+            F<uint32_t>(civ, kCivSwTimers + 8) = saved_timers[2];
+        }
         game::swap_close(mark_timers, 3);
     }
-    if (active_borrow && civ) {
-        F<uint32_t>(civ, kCivSwTools) = saved[0];
-        F<uint32_t>(civ, kCivSwTools + 4) = saved[1];
-        F<uint32_t>(civ, kCivSwTools + 8) = saved[2];
+    if (active_borrow) {
+        if (civ && skg::readable(civ, kCivSwTools + 12)) {
+            F<uint32_t>(civ, kCivSwTools) = saved[0];
+            F<uint32_t>(civ, kCivSwTools + 4) = saved[1];
+            F<uint32_t>(civ, kCivSwTools + 8) = saved[2];
+        }
         game::swap_close(mark, 3);
     }
 }

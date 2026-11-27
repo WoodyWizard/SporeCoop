@@ -74,6 +74,10 @@ static bool g_tribe_sell_cast_fix = true;
 COOP_FIX("rivals.tribe_sell_cast", "BUG-1586", g_tribe_sell_cast_fix,
          "tribe: cast cSpatialObject via vtable +0xB8 (not +0x0C) in h_CommunityEditorSell so selling a tool hut on Guest never corrupts the tool or crashes");
 
+static bool g_tribe_alliance_sync_fix = true;
+COOP_FIX("rivals.tribe_alliance_sync", "BUG-1587", g_tribe_alliance_sync_fix,
+         "tribe: track guest NPC alliances in host_eval_tick, sync SK_NPC_RELS immediately on social/gift events, and update guest native Tribe progress bar (+0x10F0/+0x10F4)");
+
 // ---- Game addresses (verified GOG 2024 dc04aee5, docs/re/tribe.md#tribe-rivals-re) ----
 static uintptr_t a_SetPlayerTribe = 0;
 static uintptr_t a_PlannerUpdate = 0;
@@ -117,6 +121,7 @@ constexpr uint32_t kCitizenNoun = 0x18EB4B7u;
 constexpr uint32_t kHutNoun = 0x1E4DAAEu;
 constexpr uint32_t kToolNoun = 0x18C8F0Cu;
 constexpr uint32_t kFoodMatNoun = 0x0629BAFEu; // BUG-1573: cTribe +0x260 mpFoodMat (action 0x21 RaidFood)
+constexpr uint32_t kGameBundleNoun = 0x018C431Cu; // cGameBundle food bundle on a tribe's food mat (container at +0x128)
 constexpr uint32_t kRelEventSocial = 0x0530CF07u;
 constexpr uint32_t kRelEventGift = 0x0530CF02u;
 constexpr uint32_t kMsgPopDestroyed = 0x05C80207u; // BUG-1571: TribeGame_GoalListener PopDestroyed -> TRG_PRE_PopDestroyed
@@ -715,6 +720,27 @@ static bool SK_THISCALL h_TribeGoalListener(void* self, uint32_t msg_id, void* d
     return o_TribeGoalListener(self, msg_id, data);
 }
 
+static void* tribe_of_bundle(void* gd)
+{
+    if (!gd || !skg::readable((uint8_t*)gd + 0x128, 4))
+        return nullptr;
+    void* cont = F<void*>(gd, 0x128);
+    for (void* t : tribe::all_tribes()) {
+        if (!t || !skg::readable((uint8_t*)t + 0x20C, 0x10))
+            continue;
+        if (cont && cont == (uint8_t*)t + 0x20C)
+            return t;
+        void** b = F<void**>(t, 0x210);
+        void** e = F<void**>(t, 0x214);
+        if (b && e > b && (e - b) <= 64 && skg::readable(b, (size_t)(e - b) * sizeof(void*))) {
+            for (void** it = b; it < e; ++it)
+                if (*it == gd)
+                    return t;
+        }
+    }
+    return nullptr;
+}
+
 static void* resolve_tribe_from_obj(void* obj)
 {
     if (!obj || IsBadReadPtr(obj, 4))
@@ -738,6 +764,8 @@ static void* resolve_tribe_from_obj(void* obj)
             if (t && skg::readable(t, 0x264) && F<void*>(t, 0x260) == gd)
                 return t;
     }
+    if (noun == kGameBundleNoun)
+        return tribe_of_bundle(gd);
     return nullptr;
 }
 
@@ -880,6 +908,9 @@ static void apply_rel_internal(void* mgr, uint32_t polA, uint32_t polB, NpcRel w
     (void)o_ApplyRel(mgr, polA, polB, kRelEventSocial, delta);
 }
 
+static void host_sync_npc_rels_to_guests();
+static double g_last_pvp_social_hint = 0.0;
+
 static float SK_THISCALL h_ApplyRel(void* mgr, uint32_t polA, uint32_t polB, uint32_t eventId, float scale)
 {
     float res = o_ApplyRel(mgr, polA, polB, eventId, scale);
@@ -897,6 +928,18 @@ static float SK_THISCALL h_ApplyRel(void* mgr, uint32_t polA, uint32_t polB, uin
             g_npc_rels.set(actor, polA, next);
             if (actor != 0 && prev != NpcRel::Allied && next == NpcRel::Allied)
                 history::record_tribe_outcome(actor, true);
+            if (g_tribe_alliance_sync_fix && next != prev)
+                host_sync_npc_rels_to_guests();
+        } else if (g_tribe_alliance_sync_fix && rivals::valid_player(actor) && rivals::valid_player(target_owner) &&
+                   actor != target_owner && !rivals::allied(actor, target_owner)) {
+            double now = H ? H->time_seconds() : 0.0;
+            if (now - g_last_pvp_social_hint >= 8.0) {
+                g_last_pvp_social_hint = now;
+                if (tribe::C.notice)
+                    tribe::C.notice(i18n::tr(
+                        "To ally with another player in Rivals, use the Rivals Diplomacy panel.",
+                        "Чтобы заключить союз с другим игроком в Соперниках, используйте панель дипломатии Rivals."));
+            }
         }
     }
     if (!g_in_internal_rel)
@@ -938,8 +981,9 @@ int override_choose_action(void* target_obj, int vanilla_action)
         return 0;
     uint32_t noun = game::noun_id(gd);
     uint8_t me = my_id();
-    // BUG-1580: On Guest in Tribe Rivals, if vanilla ChooseInputActionID returned 0 on a wild animal or an
-    // unconquered NPC tribe hut/tool/citizen while guest has own living selected members, allow attack/raid cleanly.
+    // BUG-1580 / P1-1: On Guest in Tribe Rivals, if vanilla ChooseInputActionID returned 0 on a wild animal or an
+    // unconquered NPC tribe hut/tool/citizen while guest has own living selected members, allow hunt/attack/raid cleanly.
+    // Verified: cCreatureCitizen size is 0x1038; IsSelected lives at +0x12C (spatial +0xC0 + 0x6C, tribe::kSelectedOff).
     auto guest_has_selected = [&]() -> bool {
         if (!is_guest())
             return false;
@@ -947,14 +991,21 @@ int override_choose_action(void* target_obj, int vanilla_action)
         if (!mt)
             return false;
         for (void* m : tribe::members(mt))
-            if (m && !game::is_dead(m) && skg::readable((uint8_t*)m + 0x109C, 1) && F<uint8_t>(m, 0x109C))
+            if (m && !game::is_dead(m) && skg::readable((uint8_t*)m + 0x12C, 1) && F<uint8_t>(m, 0x12C))
                 return true;
         return false;
     };
+    auto tribe_ui_mode = [&]() -> int {
+        void* tui = a_TribeUiGet ? skg::cdecl_call<void*>(a_TribeUiGet) : nullptr;
+        return (tui && skg::readable((uint8_t*)tui + 0x390, 4)) ? F<int>(tui, 0x390) : 1;
+    };
     if (g_tribe_082_fix && is_guest() && vanilla_action == 0 && noun == 0x18EB45Eu && !game::is_dead(gd)) {
         void* mt = tribe_of_player(me);
-        if (mt && !tribe::is_domesticated_animal(gd, mt) && guest_has_selected())
-            return 0x0A;
+        if (mt && !tribe::is_domesticated_animal(gd, mt) && guest_has_selected()) {
+            // Verified ChooseInputActionID (0x00CCFA6C..0x00CCFABA): attack mode -> 0x0B (Hunt), social -> 0x29 (Tame)
+            int mode = tribe_ui_mode();
+            return mode == 0 ? 0x29 : 0x0B;
+        }
         return 0;
     }
     void* target_tribe = nullptr;
@@ -971,13 +1022,15 @@ int override_choose_action(void* target_obj, int vanilla_action)
                 break;
             }
         }
+    } else if (g_tribe_polish_fix && noun == kGameBundleNoun) {
+        target_tribe = tribe_of_bundle(gd);
     }
     if (!target_tribe)
         return 0;
     uint8_t to = owner_of_tribe(target_tribe);
     if (!rivals::valid_player(to)) {
         if (g_tribe_082_fix && is_guest() && vanilla_action == 0 && !tribe_conquered(target_tribe) &&
-            guest_has_selected()) {
+            tribe_ui_mode() == 1 && guest_has_selected()) {
             if (noun == kHutNoun || noun == kToolNoun)
                 return 0x0C;
             if (noun == kCitizenNoun && !game::is_dead(gd))
@@ -990,18 +1043,18 @@ int override_choose_action(void* target_obj, int vanilla_action)
     if (!rivals::at_war(me, to) || is_immune(to)) {
         // Block hostile actions (0x0A attack, 0x0C raid, 0x21 raid food) on Neutral / Allied / immune rival tribes
         if (vanilla_action == 0x0A || vanilla_action == 0x0C || vanilla_action == 0x21) {
-            if (noun == kFoodMatNoun)
+            if (noun == kFoodMatNoun || noun == kGameBundleNoun)
                 g_foodmat_blocked++;
             return -1;
         }
         return 0;
     }
-    // At War and target not immune: allow attack on rival citizen, raid on rival hut/tool/food mat
+    // At War and target not immune: allow attack on rival citizen, raid on rival hut/tool/food mat/bundle
     if (noun == kCitizenNoun && !game::is_dead(gd))
         return 0x0A;
     if (noun == kHutNoun || noun == kToolNoun)
         return 0x0C;
-    if (g_tribe_polish_fix && noun == kFoodMatNoun)
+    if (g_tribe_polish_fix && (noun == kFoodMatNoun || noun == kGameBundleNoun))
         return 0x21;
     return 0;
 }
@@ -1610,17 +1663,29 @@ static void on_faction_message(uint8_t from, uint8_t subkind, net::Reader& r)
         g_guest_npc_rels = std::move(list);
         g_last_npc_count = (uint32_t)g_guest_npc_rels.size();
         g_last_win_needed = g_last_npc_count > 0 ? (int)g_last_npc_count / 2 + 1 : 1;
+        int my_subjugated = 0;
         void* my_t = tribe_of_player(my_id());
         void* mgr = rel_mgr();
         uint32_t mp = tribe_pol(my_t);
-        if (my_t && mgr && mp) {
-            for (const auto& e : g_guest_npc_rels) {
+        for (const auto& e : g_guest_npc_rels) {
+            if (e.rel == NpcRel::Allied || e.rel == NpcRel::Conquered)
+                my_subjugated++;
+            if (my_t && mgr && mp) {
                 void* nt = find_tribe_by_pol_or_pos(e.npc_pol, e.x, e.y, e.z);
                 if (nt && nt != my_t) {
                     uint32_t np = tribe_pol(nt);
                     if (np)
                         apply_rel_internal(mgr, np, mp, e.rel);
                 }
+            }
+        }
+        // BUG-1587: Reflect guest's own allied/conquered NPC count on the native Tribe progress bar (+0x10F0/+0x10F4).
+        if (g_tribe_alliance_sync_fix) {
+            void* nm = game::noun_manager();
+            void* cp = (nm && skg::readable((uint8_t*)nm + 0x74, 4)) ? F<void*>(nm, 0x74) : nullptr;
+            if (cp && skg::readable((uint8_t*)cp + 0x10F0, 8)) {
+                *(float*)((uint8_t*)cp + 0x10F0) = (float)my_subjugated;
+                *(float*)((uint8_t*)cp + 0x10F4) = (float)std::max(1, g_last_win_needed);
             }
         }
         return;
@@ -2203,6 +2268,7 @@ static void host_eval_tick(double now)
     void* mgr = rel_mgr();
     auto ts = tribe::all_tribes();
     std::vector<uint32_t> npc_pols;
+    bool rels_changed = false;
     for (void* t : ts) {
         if (is_player_owned_tribe(t))
             continue;
@@ -2210,21 +2276,34 @@ static void host_eval_tick(double now)
         if (!np)
             continue;
         npc_pols.push_back(np);
-        // Sync live game state for host (p=0) if conquered or relation changed natively
+        // Sync live game state for all players if conquered or relation changed natively to Allied (BUG-1587)
         if (tribe_conquered(t) && g_npc_rels.get(0, np) != NpcRel::Conquered) {
             bool someone = false;
             for (int p = 0; p < rivals::kMaxPlayers; p++)
                 if (g_npc_rels.get((uint8_t)p, np) == NpcRel::Conquered)
                     someone = true;
-            if (!someone)
+            if (!someone) {
                 g_npc_rels.mark_conquered(0, np);
-        } else if (mgr && g_owned[0].pol && g_npc_rels.get(0, np) != NpcRel::Conquered) {
-            int lvl = rel_level_of(mgr, rel_value(mgr, np, g_owned[0].pol));
-            // Only raise natively if game's own social/gift pushed it to Allied
-            if (lvl >= 4 && g_npc_rels.get(0, np) != NpcRel::Allied)
-                g_npc_rels.set(0, np, NpcRel::Allied);
+                rels_changed = true;
+            }
+        } else if (mgr) {
+            int max_p = g_tribe_alliance_sync_fix ? rivals::kMaxPlayers : 1;
+            for (int p = 0; p < max_p; p++) {
+                if (!g_owned[p].pol || g_npc_rels.get((uint8_t)p, np) == NpcRel::Conquered)
+                    continue;
+                int lvl = rel_level_of(mgr, rel_value(mgr, np, g_owned[p].pol));
+                // Only raise natively if game's own social/gift pushed it to Allied
+                if (lvl >= 4 && g_npc_rels.get((uint8_t)p, np) != NpcRel::Allied) {
+                    g_npc_rels.set((uint8_t)p, np, NpcRel::Allied);
+                    if (p != 0)
+                        history::record_tribe_outcome((uint8_t)p, true);
+                    rels_changed = true;
+                }
+            }
         }
     }
+    if (rels_changed && g_tribe_alliance_sync_fix)
+        host_sync_npc_rels_to_guests();
     bool present[rivals::kMaxPlayers] = {};
     for (const auto& pl : S->players())
         if (rivals::valid_player(pl.id))
@@ -2466,7 +2545,7 @@ static void host_tribe_ai_and_peace_tick(double now)
         if (!pt)
             continue;
         for (void* c : tribe::members(pt)) {
-            if (!c || citizen_knocked_out(c) || !skg::readable((uint8_t*)c + 0xB50, 4))
+            if (!c || citizen_knocked_out(c) || !skg::readable((uint8_t*)c + 0xB4C, 4))
                 continue;
             uint8_t* ai = F<uint8_t*>(c, 0xB4C);
             if (!ai || !skg::readable(ai, 0x620))
@@ -2502,9 +2581,9 @@ static void host_tribe_ai_and_peace_tick(double now)
                         cancel_hostile = true;
                 }
             }
-            if (!cancel_hostile && skg::readable((uint8_t*)c + 0xE80, 4)) {
+            if (!cancel_hostile && skg::readable((uint8_t*)c + 0xE7C, 4)) {
                 void* comb = F<void*>(c, 0xE7C);
-                if (comb && !IsBadReadPtr(comb, 4)) {
+                if (comb && skg::readable(comb, 4) && skg::readable(*(void**)comb, 0x10)) {
                     void* obj = vcall<void*>(comb, 0x0C / 4);
                     void* tt = resolve_tribe_from_obj(obj);
                     uint8_t to = owner_of_tribe(tt);
