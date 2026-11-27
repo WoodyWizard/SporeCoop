@@ -78,6 +78,10 @@ static bool g_tribe_alliance_sync_fix = true;
 COOP_FIX("rivals.tribe_alliance_sync", "BUG-1587", g_tribe_alliance_sync_fix,
          "tribe: track guest NPC alliances in host_eval_tick, sync SK_NPC_RELS immediately on social/gift events, and update guest native Tribe progress bar (+0x10F0/+0x10F4)");
 
+static bool g_fix_tribe_guest_camera = true;
+COOP_FIX("rivals.tribe_guest_camera", "BUG-1592", g_fix_tribe_guest_camera,
+         "tribe: center guest camera on their own tribe hut after perspective swap in Tribe Rivals");
+
 // ---- Game addresses (verified GOG 2024 dc04aee5, docs/re/tribe.md#tribe-rivals-re) ----
 static uintptr_t a_SetPlayerTribe = 0;
 static uintptr_t a_PlannerUpdate = 0;
@@ -115,6 +119,8 @@ static uintptr_t a_CreateHerd = 0;
 static uintptr_t a_HerdEnable = 0;
 static uintptr_t a_CreatureCreate = 0;
 static uintptr_t a_GetDomHerd = 0;
+static uintptr_t a_SimCamGet = 0;
+static uintptr_t a_SimCamGoTo = 0;
 
 constexpr uint32_t kTribeNoun = 0x18C6D19u;
 constexpr uint32_t kCitizenNoun = 0x18EB4B7u;
@@ -344,6 +350,7 @@ static uint32_t g_orig_pt_serial = 0;
 static void* g_my_tribe = nullptr;
 static uint32_t g_my_tribe_serial = 0;
 static bool g_swapped = false;
+static bool g_camera_centered = false;
 static bool g_save_temp_unswapped = false;
 static std::vector<NpcRelEntry> g_guest_npc_rels;
 
@@ -1288,6 +1295,21 @@ static void apply_guest_perspective()
         }
     } else {
         g_swapped = true;
+    }
+    // BUG-1592: center the guest's camera on their own assigned tribe hut once upon entering Tribe Rivals.
+    if (g_fix_tribe_guest_camera && g_swapped && !g_camera_centered && a_SimCamGet && a_SimCamGoTo) {
+        float pt[3] = {mine->x, mine->y, mine->z};
+        if (std::isfinite(pt[0]) && std::isfinite(pt[1]) && std::isfinite(pt[2]) &&
+            (pt[0] != 0.0f || pt[1] != 0.0f || pt[2] != 0.0f)) {
+            void* cam = skg::cdecl_call<void*>(a_SimCamGet);
+            if (cam && skg::readable(cam, 0x394)) {
+                thiscall<void>(a_SimCamGoTo, cam, pt, true, true);
+                g_camera_centered = true;
+                if (H && M)
+                    H->log(M, SK_INFO, "tribe_rivals: centered guest camera on own tribe (%.1f, %.1f, %.1f, BUG-1592)",
+                           pt[0], pt[1], pt[2]);
+            }
+        }
     }
     // BUG-1580: Sync species slot & diet on Guest for own tribe and all rival tribes immediately after perspective swap.
     guest_sync_species();
@@ -2737,6 +2759,7 @@ static void reset_runtime(bool restore_game)
     } else {
         g_swapped = false;
     }
+    g_camera_centered = false;
     for (int i = 0; i < rivals::kMaxPlayers; i++) {
         g_owned[i] = OwnedTribe{};
         g_guest_sp[i] = GuestSpeciesState{};
@@ -2876,6 +2899,8 @@ void init(const SkHost* host, SkMod* mod, net::Session* sess)
     a_CreatureCreate = H->sym("Simulator::cCreatureAnimal::Create");
     a_GetDomHerd = H->sym("Simulator::cTribe::GetDomesticatedAnimalsHerd");
     a_TribeGoalListener = H->sym("SporeCoop::TribeGame_GoalListener");
+    a_SimCamGet = H->sym("SporeCoop::SimCamera_Get");
+    a_SimCamGoTo = H->sym("SporeCoop::SimCamera_GoToPoint");
 
     if (a_PlannerUpdate)
         H->hook_create(M, (void*)a_PlannerUpdate, (void*)h_PlannerUpdate, (void**)&o_PlannerUpdate);

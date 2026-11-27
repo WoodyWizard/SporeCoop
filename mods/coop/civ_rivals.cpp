@@ -92,6 +92,11 @@ static bool g_fix_civ_capital_softlock = true;
 COOP_FIX("rivals.civ_capital_softlock", "BUG-1581", g_fix_civ_capital_softlock,
          "civ: repel NPC sieges on protected player capitals so capitals are not softlocked in permanent ruins");
 
+// BUG-1592: center the guest camera on their own assigned capital city on entering Civ Rivals.
+static bool g_fix_civ_guest_camera = true;
+COOP_FIX("rivals.civ_guest_camera", "BUG-1592", g_fix_civ_guest_camera,
+         "civ: center guest camera on their own capital city after perspective swap in Civ Rivals");
+
 // ---- Game addresses ----
 static uintptr_t a_GetPlayerCiv = 0;
 static uintptr_t a_GetPlayerPol = 0;
@@ -114,6 +119,9 @@ static uintptr_t a_RelCalcAbs = 0;
 static uintptr_t a_RelApply = 0;
 static uintptr_t a_GameCivGet = 0;
 static uintptr_t a_GameCivShowWon = 0;
+static uintptr_t a_SimCamGet = 0;
+static uintptr_t a_SimCamGoTo = 0;
+static uintptr_t a_CityCenterPt = 0;
 
 constexpr uint32_t kRelDelta = 0x530CF07; // raw delta relationship event (wsync.cpp)
 constexpr uintptr_t kCivWealth = 0x98;
@@ -163,6 +171,7 @@ static NpcRelationTable g_npc_rels;
 static std::map<uint32_t, float> g_guest_npc_rels; // guest's received per-player NPC relations
 static bool g_swap_applied = false;
 static bool g_spec_hint_shown = false;
+static bool g_camera_centered = false;
 static uint32_t g_orig_host_pol = 0;
 static bool g_assign_dirty = false;
 static bool g_npcrel_dirty = false;
@@ -976,7 +985,28 @@ static void apply_guest_perspective()
         if (H && M)
             H->log(M, SK_INFO, "civ_rivals: guest perspective swapped to nation pol=0x%08X (civ=%p wealth=%.0f, BUG-1549)",
                    (unsigned)my_pol, my_civ, me.wealth);
-        if (g_fix_civ_spec_pick && !g_spec_hint_shown && can_pick_my_specialty() && C.notice) {
+        // BUG-1592: center the guest's camera on their own assigned capital city once upon entering Civ Rivals.
+        if (g_fix_civ_guest_camera && !g_camera_centered && a_SimCamGet && a_SimCamGoTo) {
+            float pt[3] = {me.cap_pos.x, me.cap_pos.y, me.cap_pos.z};
+            auto my_cities = civ::vec_of((uint8_t*)my_civ + civ::kCivCities);
+            if (!my_cities.empty() && my_cities[0] && a_CityCenterPt &&
+                skg::readable((uint8_t*)my_cities[0] + 0x324, 4) && F<void*>(my_cities[0], 0x324)) {
+                thiscall<float*>(a_CityCenterPt, my_cities[0], pt);
+            }
+            if (std::isfinite(pt[0]) && std::isfinite(pt[1]) && std::isfinite(pt[2]) &&
+                (pt[0] != 0.0f || pt[1] != 0.0f || pt[2] != 0.0f)) {
+                void* cam = skg::cdecl_call<void*>(a_SimCamGet);
+                if (cam && skg::readable(cam, 0x394)) {
+                    thiscall<void>(a_SimCamGoTo, cam, pt, true, true);
+                    g_camera_centered = true;
+                    if (H && M)
+                        H->log(M, SK_INFO, "civ_rivals: centered guest camera on own capital (%.1f, %.1f, %.1f, BUG-1592)",
+                               pt[0], pt[1], pt[2]);
+                }
+            }
+        }
+        // BUG-1590, BUG-1595: local-only toast via C.feed (never C.notice, which broadcasts to all peers).
+        if (g_fix_civ_spec_pick && !g_spec_hint_shown && can_pick_my_specialty() && C.feed) {
             g_spec_hint_shown = true;
             int sp = my_capital_specialty();
             const char* sp_nm = i18n::tr(civ_specialty_name(sp), civ_specialty_name_ru(sp));
@@ -986,7 +1016,7 @@ static void apply_guest_perspective()
                      sp_nm[0] ? sp_nm : i18n::tr("Unknown", "Неизвестно"),
                      i18n::tr("Choose Military / Religious / Economic in F9 -> Rivals (before 2nd city)",
                               "Выбрать Военную / Религиозную / Торговую можно в F9 -> Соперники (до 2-го города)"));
-            C.notice(nb);
+            C.feed(nb);
         }
     }
 }
@@ -994,6 +1024,8 @@ static void apply_guest_perspective()
 static void reset_state()
 {
     restore_perspective();
+    g_spec_hint_shown = false;
+    g_camera_centered = false;
     // On host, restore mIsPlayerOwned = 0 on guest-assigned nations if leaving session/mode
     if (is_host() && game::mode_id() == modes::kCiv && civ::nm()) {
         void* orig_pc = orig_player_civ();
@@ -1716,10 +1748,10 @@ static void host_eval_stage_progress(double now)
         pr.player_id = (uint8_t)i;
         pr.present = true;
         pr.primary = (float)cc.non_cap_cities[i];
-        pr.secondary = (float)need;
+        pr.secondary = cc.wealth[i]; // BUG-1594: money (matches rivals_logic.h PlayerProgress contract)
         pr.stat_a = (uint16_t)cc.total_cities[i];
         pr.stat_b = g_npc_rels.allied_count((uint8_t)i);
-        pr.extra = cc.wealth[i];
+        pr.extra = (float)need; // BUG-1594: target non-capital cities needed to win
         rivals::set_player_progress((uint8_t)i, pr);
     }
 
@@ -2579,6 +2611,9 @@ void init()
     a_RelApply = H->sym("Simulator::cRelationshipManager::ApplyRelationship");
     a_GameCivGet = H->sym("SporeCoop::GameCiv_Get");
     a_GameCivShowWon = H->sym("SporeCoop::GameCiv_ShowPlanetWon");
+    a_SimCamGet = H->sym("SporeCoop::SimCamera_Get");
+    a_SimCamGoTo = H->sym("SporeCoop::SimCamera_GoToPoint");
+    a_CityCenterPt = H->sym("SporeCoop::City_CenterPoint");
 
     if (a_GetPlayerCiv)
         H->hook_create(M, (void*)a_GetPlayerCiv, (void*)h_GetPlayerCiv, (void**)&o_GetPlayerCiv);

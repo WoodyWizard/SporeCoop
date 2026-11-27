@@ -48,13 +48,17 @@ SERVER_INFO = {'name': 'sporecoop-mcp', 'version': '0.1.0'}
 
 # Common dialog / modal captions scanned during observe() (EN + RU)
 DIALOG_CAPTIONS = (
-    'OK', 'Accept', 'Decline', 'Yes', 'No', 'Cancel', 'Continue', 'Done', 'Save', 'Close',
-    'Military', 'Religious', 'Economic', 'Alas',
+    'OK', 'Accept', 'Decline', 'Yes', 'No', 'Cancel', 'Continue',
+    'Alas',
     'I accept your offer! Start shipments immediately!',
     'We happily accept your surrender.',
     'Agreed. Bye for now.',
-    'Принять', 'Отклонить', 'Да', 'Нет', 'Отмена', 'Продолжить', 'Готово', 'Сохранить', 'Закрыть',
-    'Военная', 'Религиозная', 'Торговая',
+    'Принять', 'Отклонить', 'Да', 'Нет', 'Отмена', 'Продолжить',
+)
+# Captions that also exist on persistent/background HUD chrome and should only be reported when a modal dialog is up
+MODAL_ONLY_DIALOG_CAPTIONS = (
+    'Done', 'Save', 'Close', 'Military', 'Religious', 'Economic',
+    'Готово', 'Сохранить', 'Закрыть', 'Военная', 'Религиозная', 'Торговая',
 )
 
 # Error patterns scanned in recent SporeKit logs by the Oracle
@@ -116,6 +120,7 @@ def _parse_uistate(raw):
         'status': '',
         'session': '',
         'rows': [],
+        'rivals_rows': [],
         'buttons': [],
         'chat': [],
         'pause_buttons': [],
@@ -140,6 +145,16 @@ def _parse_uistate(raw):
             cols = [p for p in rest.split("'")[1::2]]
             if cols:
                 st['rows'].append(cols)
+        elif key == 'rrow':
+            idx_tok = rest.split(' ', 1)[0]
+            cols = [p for p in rest.split("'")[1::2]]
+            if idx_tok.isdigit() and cols:
+                ridx = int(idx_tok)
+                rtxt = cols[0]
+                rbtn = cols[1] if len(cols) > 1 else ''
+                st['rivals_rows'].append({'index': ridx, 'text': rtxt, 'button': rbtn})
+        elif key == 'rpage':
+            st['rivals_page'] = rest.strip()
         elif key == 'chat':
             st['chat'].append(rest.strip("'"))
         elif key in ('status', 'session', 'world', 'creation', 'hostaddr'):
@@ -166,6 +181,8 @@ def _parse_uistate(raw):
                         'x': (x1 + x2) // 2,
                         'y': (y1 + y2) // 2,
                     })
+    if st['rivals_rows'] and not st['rows']:
+        st['rows'] = [[r['text'], r['button']] if r['button'] else [r['text']] for r in st['rivals_rows']]
     st['chat'] = st['chat'][-10:]
     return st
 
@@ -468,7 +485,10 @@ class SporeMcpEngine:
 
         # Check visible modal / dialog captions so agents immediately spot popups
         visible_dialogs = []
-        for cap in DIALOG_CAPTIONS:
+        captions_to_scan = list(DIALOG_CAPTIONS)
+        if uistate.get('modal') == '1' or uistate.get('pause_buttons'):
+            captions_to_scan.extend(MODAL_ONLY_DIALOG_CAPTIONS)
+        for cap in captions_to_scan:
             found = _parse_uifind(sl.out(f'coop.ui find "{cap}"'))
             for cx, cy, vis in found:
                 if vis:
@@ -507,18 +527,29 @@ class SporeMcpEngine:
         if not cap_lo:
             return {'ok': False, 'error': 'caption is required'}
 
-        # 1. Check visible buttons in F9 Co-op Window (`coop.uistate`)
+        # 1. Check visible buttons in F9 Co-op Window (`coop.uistate`): exact caption/widget match first, then substring
         ui = _parse_uistate(sl.out('coop.uistate'))
+        exact_btn = None
+        sub_btn = None
         for b in ui['buttons']:
             bcap = (b.get('caption') or '').strip().lower()
             wname = (b.get('widget') or '').strip().lower()
-            if bcap == cap_lo or wname == cap_lo or (cap_lo and cap_lo in bcap):
-                sl.call(f'move {b["x"]} {b["y"]}')
-                time.sleep(0.15)
-                r = sl.call(f'click {b["x"]} {b["y"]} {btn}')
-                self._record_action(player, 'click_ui', f'f9 "{caption}" at ({b["x"]},{b["y"]})')
-                return {'ok': bool(r.get('ok')), 'source': 'f9_uistate', 'matched': b['caption'] or b['widget'],
-                        'x': b['x'], 'y': b['y']}
+            if bcap == cap_lo or wname == cap_lo:
+                exact_btn = b
+                break
+            if sub_btn is None and cap_lo and cap_lo in bcap:
+                sub_btn = b
+        chosen_btn = exact_btn or sub_btn
+        if chosen_btn is not None:
+            sl.call(f'move {chosen_btn["x"]} {chosen_btn["y"]}')
+            time.sleep(0.15)
+            r = sl.call(f'click {chosen_btn["x"]} {chosen_btn["y"]} {btn}')
+            time.sleep(0.3)
+            self._record_action(player, 'click_ui', f'f9 "{caption}" at ({chosen_btn["x"]},{chosen_btn["y"]})')
+            return {'ok': bool(r.get('ok')), 'source': 'f9_uistate',
+                    'matched': chosen_btn['caption'] or chosen_btn['widget'],
+                    'widget': chosen_btn['widget'],
+                    'x': chosen_btn['x'], 'y': chosen_btn['y']}
 
         # 2. Check pause menu buttons in uistate
         for b in ui['pause_buttons']:
@@ -554,7 +585,23 @@ class SporeMcpEngine:
         if not ui['open']:
             return {'ok': False, 'error': 'F9 window is not open; press_key(player, "f9") first'}
 
-        # Match text widgets (e.g. rivals_text[i] / rtextN) or pair row text with button at similar Y coordinate
+        # 1. Match parsed `rrow <i> '<text>' '<button>'` -> widget `rbtn<i>` (real coop.uistate Rivals format)
+        by_widget = {b.get('widget'): b for b in ui['buttons']}
+        for rr in ui.get('rivals_rows', []):
+            rtxt = (rr.get('text') or '').lower()
+            rbtn_cap = (rr.get('button') or '').lower()
+            if needle in rtxt or (rbtn_cap and needle in rbtn_cap):
+                b = by_widget.get(f'rbtn{rr["index"]}')
+                if b:
+                    sl.call(f'move {b["x"]} {b["y"]}')
+                    time.sleep(0.15)
+                    r = sl.call(f'click {b["x"]} {b["y"]} left')
+                    time.sleep(0.3)
+                    self._record_action(player, 'click_f9_row', f'"{text_contains}" -> "{b["caption"]}" ({b["x"]},{b["y"]})')
+                    return {'ok': bool(r.get('ok')), 'row_text': rr['text'], 'button': b['caption'],
+                            'widget': b['widget'], 'x': b['x'], 'y': b['y']}
+
+        # 2. Match text widgets (e.g. rivals_text[i] / rtextN) or pair row text with button at similar Y coordinate
         text_widgets = [b for b in ui['buttons'] if needle in (b.get('caption') or '').lower()]
         # Find action buttons (excluding the text label itself) sharing the same row Y (within 18 px)
         for tw in text_widgets:
@@ -567,18 +614,23 @@ class SporeMcpEngine:
                 sl.call(f'move {btn["x"]} {btn["y"]}')
                 time.sleep(0.15)
                 r = sl.call(f'click {btn["x"]} {btn["y"]} left')
+                time.sleep(0.3)
                 self._record_action(player, 'click_f9_row', f'"{text_contains}" -> "{btn["caption"]}" ({btn["x"]},{btn["y"]})')
                 return {'ok': bool(r.get('ok')), 'row_text': tw['caption'], 'button': btn['caption'],
                         'x': btn['x'], 'y': btn['y']}
 
-        # Direct button caption match fallback
-        for b in ui['buttons']:
-            if needle in (b.get('caption') or '').lower():
-                sl.call(f'move {b["x"]} {b["y"]}')
-                time.sleep(0.15)
-                r = sl.call(f'click {b["x"]} {b["y"]} left')
-                self._record_action(player, 'click_f9_row', f'direct "{b["caption"]}" ({b["x"]},{b["y"]})')
-                return {'ok': bool(r.get('ok')), 'button': b['caption'], 'x': b['x'], 'y': b['y']}
+        # 3. Direct button caption match fallback (exact match before substring)
+        for exact_only in (True, False):
+            for b in ui['buttons']:
+                bcap = (b.get('caption') or '').strip().lower()
+                if (bcap == needle) if exact_only else (needle in bcap):
+                    sl.call(f'move {b["x"]} {b["y"]}')
+                    time.sleep(0.15)
+                    r = sl.call(f'click {b["x"]} {b["y"]} left')
+                    time.sleep(0.3)
+                    self._record_action(player, 'click_f9_row', f'direct "{b["caption"]}" ({b["x"]},{b["y"]})')
+                    return {'ok': bool(r.get('ok')), 'button': b['caption'], 'widget': b['widget'],
+                            'x': b['x'], 'y': b['y']}
 
         return {'ok': False, 'error': f'No matching F9 row button for "{text_contains}"'}
 

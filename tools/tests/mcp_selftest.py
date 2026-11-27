@@ -60,15 +60,19 @@ class FakeConsole:
             return {'ok': True, 'out': 'civ_rivals: fix=1 active=1 assigned=4 spec_picked=0'}
         if line == 'coop.uistate':
             if not self.f9_open:
-                return {'ok': True, 'out': 'open=0'}
+                return {'ok': True, 'out': 'open=0 modal=0'}
             return {
                 'ok': True,
                 'out': '\n'.join([
-                    'open=1 page=rivals',
+                    'open=1 page=rivals modal=0',
                     "status 'Ready'",
                     "chat 'Alice: hi'",
-                    "rtext0 40 120 500 144 1 '  Military (tanks / conquer)'",
+                    'rpage first=0 rows=12',
+                    "rrow 0 '  Military (tanks / conquer)' 'Choose'",
+                    "rrow 1 '  Alice: Neutral' 'Declare war'",
                     "rbtn0 550 120 710 144 1 'Choose'",
+                    "rbtn1 550 150 710 174 1 'Declare war'",
+                    "rnext 650 548 720 588 1 '>'",
                 ]),
             }
         if line == 'coop.targets objs':
@@ -76,6 +80,8 @@ class FakeConsole:
         if line.startswith('coop.ui find '):
             if '"OK"' in line:
                 return {'ok': True, 'out': '- 0x1 id=0x1 cmd=0 fl=0x1 [500 300 600 340]'}
+            if '"Done"' in line or '"Save"' in line:
+                return {'ok': True, 'out': '- 0x2 id=0x2 cmd=0 fl=0x1 [350 400 420 430]'}
             return {'ok': True, 'out': 'no window'}
         if line.startswith('key f9'):
             self.f9_open = not self.f9_open
@@ -111,17 +117,24 @@ def test_mcp_protocol_and_tools():
         names = {t['name'] for t in r_list['result']['tools']}
         assert {'observe', 'click_ui', 'click_f9_row', 'click_target', 'report_bug', 'check_anomalies'} <= names
 
-        # 2. observe + click_ui + press_key(f9) + click_f9_row + click_target
+        # 2. observe + click_ui + press_key(f9) + click_f9_row (rrow -> rbtnN) + click_target
         obs = eng.observe('guest1')
         assert obs['ok'] and obs['stage'] == 'civ' and len(obs['screen_targets']) == 2
         assert any(d['caption'] == 'OK' for d in obs['visible_dialogs'])
+        # Background HUD Done/Save must NOT be reported as visible_dialogs when modal=0
+        assert not any(d['caption'] in ('Done', 'Save') for d in obs['visible_dialogs'])
 
         ok_click = eng.click_ui('guest1', 'OK')
         assert ok_click['ok'] and ok_click['source'] == 'native_ui' and ok_click['x'] == 550
 
         eng.press_key('guest1', 'f9')
+        obs_f9 = eng.observe('guest1')
+        assert len(obs_f9['f9_window']['rivals_rows']) == 2
+        assert len(obs_f9['f9_window']['rows']) == 2
         row_click = eng.click_f9_row('guest1', 'Military')
         assert row_click['ok'] and row_click['button'] == 'Choose' and row_click['x'] == 630
+        row_click2 = eng.click_f9_row('guest1', 'Alice')
+        assert row_click2['ok'] and row_click2['button'] == 'Declare war' and row_click2['widget'] == 'rbtn1'
 
         tgt_click = eng.click_target('guest1', 'hut1', button='right')
         assert tgt_click['ok'] and tgt_click['target']['x'] == 510

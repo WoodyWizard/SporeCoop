@@ -24,6 +24,8 @@ static volatile uint32_t g_key_presses[256];
 static volatile int g_move_x, g_move_y;
 static volatile bool g_moved;
 static WheelFn g_wheel_fn;
+static KeyFn g_key_fn;
+static bool g_swallow_keyup[256];
 
 bool g_window_input = true;
 COOP_FIX("input.window", "BUG-0429 BUG-0713", g_window_input,
@@ -50,9 +52,26 @@ static LRESULT CALLBACK proc(int code, WPARAM wp, LPARAM lp)
             if (g_last_own)
                 g_own_armed = false;
         }
-        if ((m->message == WM_KEYDOWN || m->message == WM_SYSKEYDOWN) && !(m->lParam & (1 << 30)) && m->wParam < 256 &&
-            ours(m->hwnd))
-            g_key_presses[m->wParam] = g_key_presses[m->wParam] + 1;
+        if ((m->message == WM_KEYDOWN || m->message == WM_SYSKEYDOWN) && m->wParam < 256 && ours(m->hwnd)) {
+            bool repeat = (m->lParam & (1 << 30)) != 0;
+            if (!repeat && g_key_fn && g_key_fn((int)m->wParam, true)) {
+                g_swallow_keyup[m->wParam] = true;
+                ((MSG*)lp)->message = WM_NULL;
+                return CallNextHookEx(g_hook, code, wp, lp);
+            }
+            if (repeat && g_swallow_keyup[m->wParam]) {
+                ((MSG*)lp)->message = WM_NULL;
+                return CallNextHookEx(g_hook, code, wp, lp);
+            }
+            if (!repeat)
+                g_key_presses[m->wParam] = g_key_presses[m->wParam] + 1;
+        }
+        if ((m->message == WM_KEYUP || m->message == WM_SYSKEYUP) && m->wParam < 256 && ours(m->hwnd) &&
+            g_swallow_keyup[m->wParam]) {
+            g_swallow_keyup[m->wParam] = false;
+            ((MSG*)lp)->message = WM_NULL;
+            return CallNextHookEx(g_hook, code, wp, lp);
+        }
         if (m->message == WM_MOUSEMOVE && ours(m->hwnd)) {
             POINT p{(short)LOWORD(m->lParam), (short)HIWORD(m->lParam)};
             if (m->hwnd != g_wnd)
@@ -61,8 +80,14 @@ static LRESULT CALLBACK proc(int code, WPARAM wp, LPARAM lp)
             g_move_y = p.y;
             g_moved = true;
         }
-        if (m->message == WM_CHAR && ours(m->hwnd) && g_chars.size() < 256)
-            g_chars.push_back((char16_t)m->wParam);
+        if (m->message == WM_CHAR && ours(m->hwnd)) {
+            if (m->wParam == VK_ESCAPE && g_swallow_keyup[VK_ESCAPE]) {
+                ((MSG*)lp)->message = WM_NULL;
+                return CallNextHookEx(g_hook, code, wp, lp);
+            }
+            if (g_chars.size() < 256)
+                g_chars.push_back((char16_t)m->wParam);
+        }
         if (m->message == WM_MOUSEWHEEL && ours(m->hwnd) && g_wheel_fn) {
             int delta = (short)HIWORD(m->wParam);
             uint16_t keys = (uint16_t)LOWORD(m->wParam);
@@ -84,12 +109,15 @@ void install(const void* game_window)
 void shutdown()
 {
     g_wheel_fn = nullptr;
+    g_key_fn = nullptr;
+    memset(g_swallow_keyup, 0, sizeof g_swallow_keyup);
     if (g_hook)
         UnhookWindowsHookEx(g_hook);
     g_hook = nullptr;
 }
 
 void set_wheel_handler(WheelFn fn) { g_wheel_fn = fn; }
+void set_key_handler(KeyFn fn) { g_key_fn = fn; }
 
 uint32_t clicks() { return g_clicks; }
 

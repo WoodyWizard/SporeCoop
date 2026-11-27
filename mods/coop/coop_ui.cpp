@@ -82,6 +82,10 @@ COOP_FIX("core.ui_give_clamp", "BUG-1518", g_give_clamp_fix,
          "ui: the give and jump buttons keep clear of the creation label with long names (the name is cut with ...)");
 constexpr float kGiveMinX1 = 400.f, kJumpMinX1 = 240.f;
 static bool g_f9_down;
+static bool g_esc_close_fix = true;
+COOP_FIX("core.ui_esc_close", "BUG-1591", g_esc_close_fix,
+         "ui: Escape closes the open F9 co-op window without opening Spore's pause menu");
+static volatile bool g_esc_close_pending;
 static bool g_lb_down;      // the left mouse button in the last frame (the Co-op item during the menu intro)
 static uint32_t g_lb_seen;  // mouse::clicks() handled (BUG-0145)
 static double g_skip_since; // the Co-op item was clicked during the menu intro: open once it is over
@@ -2278,9 +2282,10 @@ static void refresh_rivals()
         text(D.rivals_text[i], rows[k].text);
         color(D.rivals_text[i], rows[k].color ? rows[k].color : kWhite);
         text(D.rivals_button[i], rows[k].button);
-        // BUG-1575: dynamically widen Rivals row button if localized caption (e.g. Russian/Hungarian/Spanish) exceeds 165 px
+        // BUG-1575, BUG-1593: dynamically widen Rivals row button with full native border padding (+58 px, up to 280 px)
+        // so captions like "Propose peace" and "Buy +25 (50 food)" never wrap onto two lines or overflow vertically.
         if (!rows[k].button.empty() && rows[k].on_click && D.rivals_button[i]) {
-            float want_w = std::min(230.f, std::max(165.f, std::round(caption_width(rows[k].button) + 42.f)));
+            float want_w = std::min(280.f, std::max(165.f, std::round(caption_width(rows[k].button) + 58.f)));
             float bx1 = 720.f - want_w;
             Rect br = sui::area(D.rivals_button[i]);
             if (std::abs(br.x1 - bx1) > 0.5f) {
@@ -2294,6 +2299,12 @@ static void refresh_rivals()
                     tc.box.x2 = tx2;
                     fit(D.rivals_text[i], tc);
                 }
+            }
+        } else if (D.rivals_text[i]) {
+            auto& tc = g_cache[D.rivals_text[i]];
+            if (std::abs(tc.box.x2 - 720.f) > 0.5f) {
+                tc.box.x2 = 720.f;
+                fit(D.rivals_text[i], tc);
             }
         }
     }
@@ -3041,6 +3052,16 @@ bool step_aside(int x, int y, double secs)
 int input_lock_now() { return input_lock(); }
 bool game_modal_up() { return game_modal() != nullptr; }
 
+// BUG-1591: swallow VK_ESCAPE while the F9 co-op window is open (and no native game modal is on top) so Escape
+// closes only the F9 window instead of also opening Spore's native Pause Menu underneath.
+static bool on_window_key(int vk, bool down)
+{
+    if (!g_esc_close_fix || !down || vk != VK_ESCAPE || !g_want_open || g_esc_close_pending || game_modal())
+        return false;
+    g_esc_close_pending = true;
+    return true;
+}
+
 void tick()
 {
     if (!g_ok)
@@ -3048,6 +3069,11 @@ void tick()
     // F9: show/hide the co-op window anywhere in the game. BUG-0713: a press the game window took (mouse.h), not
     // the physical key: F9 in another program toggled the window (input.window off: the old polling)
     mouse::install((HWND)H->game_window());
+    mouse::set_key_handler(on_window_key);
+    if (g_esc_close_pending) {
+        g_esc_close_pending = false;
+        open(false);
+    }
     static uint32_t s_f9_seen = mouse::key_presses(VK_F9);
     bool f9_press = mouse::key_pressed(VK_F9, s_f9_seen);
     bool f9 = mouse::g_window_input ? f9_press : (GetAsyncKeyState(VK_F9) & 0x8000) != 0;
@@ -3128,6 +3154,8 @@ void tick()
 
 void shutdown()
 {
+    mouse::set_key_handler(nullptr);
+    g_esc_close_pending = false;
     g_shot_hide = false;
     g_shot_hidden_applied = false;
     g_shot_tag.clear();

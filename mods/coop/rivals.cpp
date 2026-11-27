@@ -1433,8 +1433,9 @@ std::vector<UiRow> ui_rows()
                 snprintf(buf, sizeof buf, "  %s: %.0f/%d (>50%% NPC) | %s %.0f | %u%s", p.name.c_str(), pr.primary, need,
                          tr("Food", "Еда"), pr.secondary, (unsigned)pr.stat_a, rnk);
             } else if (cur_st == Stage::Civ) {
-                snprintf(buf, sizeof buf, "  %s: %.0f/%u | $%.0f%s", p.name.c_str(), pr.primary,
-                         std::max(1u, (unsigned)pr.stat_b), pr.secondary, rnk);
+                int need = pr.extra >= 1.0f ? (int)pr.extra : std::max(1, (int)pr.stat_b);
+                snprintf(buf, sizeof buf, "  %s: %.0f/%d | $%.0f%s", p.name.c_str(), pr.primary, need, pr.secondary,
+                         rnk);
             } else if (cur_st == Stage::Space) {
                 snprintf(buf, sizeof buf, "  %s: %.0f | $%.0f%s", p.name.c_str(), pr.primary, pr.secondary, rnk);
             } else if (cur_st == Stage::Cell || cur_st == Stage::Creature) {

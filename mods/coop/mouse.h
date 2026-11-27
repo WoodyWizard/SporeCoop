@@ -52,4 +52,9 @@ void forget_move();
 using WheelFn = bool (*)(int delta, uint16_t keys);
 void set_wheel_handler(WheelFn fn);
 
+// BUG-1591: key handler for WM_KEYDOWN / WM_SYSKEYDOWN on the game window (vk = virtual key, down = true).
+// Return true to swallow the keypress (and its matching WM_KEYUP / Escape WM_CHAR, converted to WM_NULL).
+using KeyFn = bool (*)(int vk, bool down);
+void set_key_handler(KeyFn fn);
+
 } // namespace mouse
