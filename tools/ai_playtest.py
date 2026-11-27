@@ -219,12 +219,13 @@ def build_system_prompt(player, persona, fixture, mode, focus='gameplay', live_s
             'social_mode, attack_mode, planner_done, editor_done).\n'
             '- If `pause_menu_open` is true, immediately click `Resume Game` or press `esc` to unpause.\n'
         )
+    playbook_block = f'\n{playbook}\n' if playbook else ''
     return (
         f'You are an autonomous QA playtester controlling player "{player}" ({persona["title"]}) '
         f'in a live multiplayer SporeCoop game (fixture={fixture}, current_stage={st}, mode={mode}).\n\n'
         f'Your persona & goals:\n{persona["goal"]}\n'
         f'{focus_rules}'
-        f'{("\n" + playbook + "\n") if playbook else ""}\n'
+        f'{playbook_block}\n'
         'Rules:\n'
         '1. ALWAYS call `observe` first and after significant actions so you know the real game state.\n'
         '2. Play ONLY through real player inputs (`perform_actions`, `click_hud`, `click_target`, `click_ui`, '
