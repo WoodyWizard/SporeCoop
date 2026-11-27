@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.8.2.3] - 2026-11-26
+
+Comprehensive static disassembly audit and Tribe Rivals social befriending release fixing 3 P0 crash bugs, 7 P1 broken features, 7 P2 logic/guard bugs, and guest musical instruments & alliance progress in Tribe Rivals, plus adding a build-time static guard linter.
+
+### Added
+- **Build-Time Static Guard Linter (`tools/static_guard_lint.py`)**: wired into `make unit-lint` (`make test`) to statically catch off-by-N/undersized `skg::readable` guards before `F<T>`/`field<T>` accesses and invalid `vcall` byte-offset or `cSpatialObject` `+0x0C` casts across all `mods/` files. (BUG-1588)
+
+### Fixed
+- **Tribe Rivals Guest Musical Instruments, Social Meter UI & Alliance Progress Bar** (`tribe.rivals_social`, `rivals.tribe_alliance_sync`): enabled `BUG-1561` guest social performance handling in Tribe Rivals with per-player `SocialSession` tracking on the host (`tribe_social_host_tick` / `host_social_play`), fixed `AbilityBar_Rebuild` on guests when buying a 2nd or 3rd instrument rack (both Together and Rivals), extended `host_eval_tick` to track native NPC Alliances for all guest players (not only the host), broadcast `SK_NPC_RELS` immediately on social/gift relation changes, updated the guest's native Tribe progress bar (`cPlayer+0x10F0` / `+0x10F4`) from the guest's own allied/conquered NPC count, and added a Diplomacy panel notice when socializing with another player's tribe. (BUG-1587)
+- **P0 Crashes Across Civ, Space & Cell Rivals**: hooked `cCivilization::~cCivilization` (`0x00BF3830`) to un-alias borrowed `+0x470` superweapon tools before teardown and isolated per-civ `+0x490` superweapon cooldown timers (preventing double-free crashes and host/guest cooldown cross-contamination); guarded `host_cleanup_homeworld_civ_leftovers_task` against null `oldCiv` (`+0x590`) and null `GetCivilizationByPoliticalID(mp)` before calling `cCity::ChangeOwner`; and fixed `cell_rivals::drop_rival_meat` passing interior address `res + 0xD4` instead of dereferenced `*(void**)(res + 0xD4)` (`cCellResourceRef*`) to `Cell::SpawnLoot` (plus widened `buf[64]` to `buf[256]`). (BUG-1588)
+- **P1 Broken Features Across Tribe, Civ, Space, Creature & Shared Library**: fixed `tribe_rivals::override_choose_action` reading OOB `+0x109C` instead of `0x12C` (`kSelectedOff`) for guest selection and returning `0x0A` instead of `0x0B` (`Hunt`) / `0x29` (`Tame`) for wild animals; fixed `cCivilization::FireSuperweapon` (`0x00BF8BB0`) `void` ABI in `h_FireSW` with deterministic fire detection via wealth/timer/global-flag delta; fixed Together-mode Civ planner building/turret sales refunding `$0` and bypassing held/refund accounting; fixed Space Rivals homeworld cleanup leaving rival turrets on hostile political ID (`city+0x2E2 = 1`) and duplicating `cCivData` records; fixed `creature_rivals::override_relationship` forcing `kRelAllied (6)` on `(nullptr, nullptr)` / `(avatar, nullptr)` species queries; and fixed `creations_library::decode_png_info` reading `authorName` (`+0x28`) instead of `creationName` (`+0x40`, cap raised 128 -> 256). (BUG-1588)
+- **P2 Logic & Memory Guards**: blocked Tribe Rivals food-bundle (`0x018C431C`) stealing on Neutral/Allied/shielded rivals; fixed off-by-4 `skg::readable` guards in `tribe.cpp`, `tribe_rivals.cpp`, and `creature_rivals.cpp`, added `comb` vtable readability check and `g_cons_active[8]` lifecycle reset, and guarded `herd+0x40` `mb[i]` loops; pre-validated Rivals wealth before building in `kCmdPlannerSync`; restricted Civ diplomatic gift spend tracking to `civ_rivals::my_civ()` with strict `polB == me`; cleared any non-zero `cCombatant::GetState` (`hall+0x154`) in `restore_protected_city_hp`; and published `S_NONE` on host `kWorldChange` plus rejected manual `offer()` in Rivals in `space_contracts.cpp`. (BUG-1588)
+
 ## [0.8.2.2] - 2026-11-26
 
 Critical Tribe Rivals crash hotfix fixing Guest crashes when selling a tribe tool hut.
