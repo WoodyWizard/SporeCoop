@@ -342,6 +342,7 @@ class SporeMcpEngine:
         self._anomaly_keys = set()
         self._shot_seq = 0
         self.session_locked = False
+        self.external_pause_active = False
 
     def _ensure_run_dir(self):
         if not self.run_dir:
@@ -1047,7 +1048,7 @@ class SporeMcpEngine:
             has_pause = bool(pauses and 'none' not in pauses.lower() and re.search(r'[1-9]', pauses))
             planner_only_pause = has_pause and ('04BF38A6=' in pauses) and ('04BF38A4=' not in pauses)
             pause_limit = 90.0 if planner_only_pause else 25.0
-            if in_gameplay and has_pause:
+            if in_gameplay and has_pause and not self.external_pause_active:
                 if pauses != sl.last_pause_sig:
                     sl.last_pause_sig = pauses
                     sl.pause_since = now

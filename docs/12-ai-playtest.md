@@ -13,6 +13,7 @@ SporeCoop includes a zero-dependency Model Context Protocol (MCP) server ([spore
 2. **4-Agent DeepSeek Runner (`tools/ai_playtest.py`)**:
    - Runs 2..4 concurrent agents with distinct gameplay personas (`--focus gameplay` default: Strategic Leader, Builder/Economist/Diplomat, Military Aggressor, Explorer/Planner/Stress QA) plus dynamic per-stage playbooks (`cell`, `creature`, `tribe`, `civ`, `space`, `editor`) that adapt automatically if an overnight campaign transitions between stages.
    - Keeps persistent per-player round memory (`memory_<player>.txt`), allows multimodal `deepseek-v4.1-flash` agents to visually `Read` their own PNG screenshots to click icon-only Spore palettes/planners/editors, and checkpoints `out/ai-playtest/<timestamp>/report.md` every 60 seconds during long overnight runs.
+   - **Automatic 5-hour quota pause & recovery (`QuotaPauseController`)**: if OpenCode Go / DeepSeek hits a 5-hour or rate limit (`429`, `usage limit`, `quota`), all 4 agents pause automatically, the host Spore game is paused via the Pause Menu (suppressing false Oracle `stuck_pause` alerts), the `--minutes` play budget freezes while waiting, and a lightweight probe checks recovery every 5-15 minutes (`--quota-probe-minutes`) before unpausing and continuing seamlessly from `memory_<player>.txt`.
 
 ## Quick Start
 

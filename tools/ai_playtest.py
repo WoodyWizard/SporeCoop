@@ -30,8 +30,10 @@ import argparse
 import datetime
 import json
 import os
+import re
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -386,13 +388,222 @@ def trim_messages(messages, max_tail=14):
     return head + tail
 
 
-def run_agent_loop(player, persona, client, llm, openai_tools, fixture, mode, stop_evt, max_steps, pace_s):
+QUOTA_ERROR_RE = re.compile(
+    r'(?:\b429\b|rate[\s_-]*limit|usage[\s_-]*limit|5[\s-]*hour|quota|too many requests|'
+    r'limit[\s_-]*exceeded|insufficient[\s_-]*(?:quota|balance|credits?)|'
+    r'credits?[\s_-]*exhausted|try again in\b|resets? (?:in|at)\b|weekly[\s_-]*limit)',
+    re.IGNORECASE,
+)
+
+
+def is_quota_error(text):
+    return bool(text and QUOTA_ERROR_RE.search(text))
+
+
+def parse_retry_after_seconds(text):
+    """Extract an explicit reset/retry wait duration (seconds) from a provider quota message, or None."""
+    if not text:
+        return None
+    # Match combined "Xh Ym" first (e.g. "resets in 2h 15m" or "2 hours 30 minutes")
+    m_hm = re.search(r'(\d+)\s*(?:h|hr|hrs|hour|hours)\s*(?:and\s*)?(\d+)\s*(?:m|min|mins|minute|minutes)\b',
+                     text, re.IGNORECASE)
+    if m_hm:
+        secs = int(m_hm.group(1)) * 3600 + int(m_hm.group(2)) * 60
+        return max(60, min(21600, secs))
+    m_h = re.search(r'(?:in|after|wait)\s+(\d+)\s*(?:h|hr|hrs|hour|hours)\b', text, re.IGNORECASE)
+    if m_h:
+        return max(60, min(21600, int(m_h.group(1)) * 3600))
+    m_m = re.search(r'(?:in|after|wait)\s+(\d+)\s*(?:m|min|mins|minute|minutes)\b', text, re.IGNORECASE)
+    if m_m:
+        return max(60, min(21600, int(m_m.group(1)) * 60))
+    m_s = re.search(r'(?:retry[- ]after[:\s]+|in\s+)(\d+)\s*(?:s|sec|secs|second|seconds)?\b', text, re.IGNORECASE)
+    if m_s and int(m_s.group(1)) >= 10:
+        return max(30, min(21600, int(m_s.group(1))))
+    return None
+
+
+class QuotaPauseController:
+    """Coordinates pausing all 4 AI agents + pausing the live Spore host when LLM/OpenCode 5-hour quota runs out,
+    periodically probes recovery, extends the playtest deadline so quota sleep does not burn play minutes,
+    and cleanly resumes gameplay once limits recover."""
+
+    def __init__(self, client, engine=None, probe_fn=None, probe_minutes=10.0, extend_deadline=True):
+        self.client = client
+        self.engine = engine
+        self.probe_fn = probe_fn
+        self.probe_minutes = max(0.05, float(probe_minutes))
+        self.extend_deadline = bool(extend_deadline)
+        self._lock = threading.Lock()
+        self._resume_evt = threading.Event()
+        self._resume_evt.set()
+        self.paused = False
+        self.pause_started_at = 0.0
+        self.total_paused_s = 0.0
+        self.pause_count = 0
+        self.last_reason = ''
+        self._we_paused_host = False
+
+    def current_paused_total_s(self):
+        with self._lock:
+            cur = (time.time() - self.pause_started_at) if self.paused and self.pause_started_at else 0.0
+            return self.total_paused_s + cur
+
+    def wait_if_paused(self, stop_evt):
+        while not stop_evt.is_set() and not self._resume_evt.is_set():
+            self._resume_evt.wait(1.0)
+
+    def _pause_game(self):
+        if self.engine is not None:
+            self.engine.external_pause_active = True
+        self._we_paused_host = False
+        try:
+            obs = self.client.call_tool('observe', {'player': 'host'})
+            if not obs.get('ok'):
+                return
+            if obs.get('stage') == 'editor' or obs.get('planner_open') or obs.get('pause_menu_open'):
+                return
+            if (obs.get('f9_window') or {}).get('open'):
+                self.client.call_tool('press_key', {'player': 'host', 'key': 'esc'})
+                time.sleep(0.5)
+            self.client.call_tool('press_key', {'player': 'host', 'key': 'esc'})
+            time.sleep(0.5)
+            self._we_paused_host = True
+            print('[QUOTA] Host Spore game paused (Pause Menu) while waiting for quota recovery.', flush=True)
+        except Exception as e:
+            print(f'[QUOTA] Warning: could not pause host game: {e}', file=sys.stderr, flush=True)
+
+    def _resume_game(self):
+        try:
+            if self._we_paused_host:
+                obs = self.client.call_tool('observe', {'player': 'host'})
+                if obs.get('ok') and obs.get('pause_menu_open'):
+                    res = self.client.call_tool('click_ui', {'player': 'host', 'caption': 'Resume Game'})
+                    if not res.get('ok'):
+                        self.client.call_tool('press_key', {'player': 'host', 'key': 'esc'})
+                    time.sleep(0.5)
+                self._we_paused_host = False
+                print('[QUOTA] Host Spore game unpaused; resuming 4-player playtest.', flush=True)
+        except Exception as e:
+            print(f'[QUOTA] Warning: could not unpause host game: {e}', file=sys.stderr, flush=True)
+        finally:
+            if self.engine is not None:
+                self.engine.external_pause_active = False
+
+    def handle_quota_hit(self, player, reason_text, stop_evt):
+        """Called by any agent thread when a 5-hour/rate limit error occurs. First caller manages pause+probing;
+        all other threads wait cleanly until quota recovers or stop_evt is set."""
+        with self._lock:
+            if self.paused:
+                manage = False
+            else:
+                self.paused = True
+                self.pause_started_at = time.time()
+                self.pause_count += 1
+                self.last_reason = (reason_text or 'quota/rate limit').strip()[:220]
+                self._resume_evt.clear()
+                manage = True
+        if not manage:
+            self.wait_if_paused(stop_evt)
+            return
+
+        hint_s = parse_retry_after_seconds(reason_text)
+        print(f'[QUOTA] Limit hit by {player}: {self.last_reason}', flush=True)
+        self._pause_game()
+
+        attempt = 0
+        base_s = self.probe_minutes * 60.0
+        try:
+            while not stop_evt.is_set():
+                attempt += 1
+                if attempt == 1 and hint_s is not None:
+                    wait_s = min(hint_s + 20.0, max(base_s * 1.5, 1800.0))
+                elif attempt == 1:
+                    wait_s = min(base_s, 300.0)
+                else:
+                    wait_s = min(base_s * (1.5 if attempt >= 3 else 1.0), 900.0)
+                print(f'[QUOTA] Sleeping {wait_s / 60.0:.1f} min before recovery probe #{attempt}...', flush=True)
+                # Sleep in short slices so Ctrl+C / stop_evt exits promptly
+                wake_at = time.time() + wait_s
+                while not stop_evt.is_set() and time.time() < wake_at:
+                    stop_evt.wait(min(5.0, max(0.1, wake_at - time.time())))
+                if stop_evt.is_set():
+                    break
+                if self.probe_fn is None:
+                    break
+                try:
+                    recovered, detail = self.probe_fn()
+                except Exception as e:
+                    recovered, detail = False, str(e)
+                if recovered:
+                    elapsed_m = (time.time() - self.pause_started_at) / 60.0
+                    print(f'[QUOTA] Quota recovered after {elapsed_m:.1f} min! ({detail})', flush=True)
+                    break
+                print(f'[QUOTA] Probe #{attempt} still limited: {detail[:160]}', flush=True)
+                new_hint = parse_retry_after_seconds(detail)
+                if new_hint is not None:
+                    hint_s = new_hint
+        finally:
+            if not stop_evt.is_set():
+                self._resume_game()
+            elif self.engine is not None:
+                self.engine.external_pause_active = False
+            with self._lock:
+                if self.paused and self.pause_started_at:
+                    self.total_paused_s += time.time() - self.pause_started_at
+                self.paused = False
+                self.pause_started_at = 0.0
+                self._resume_evt.set()
+
+
+def make_opencode_probe(model):
+    """Lightweight standalone probe checking whether OpenCode Go 5-hour quota has recovered."""
+    def _probe():
+        tmp = tempfile.mkdtemp(prefix='spore_oc_probe_')
+        try:
+            cmd = [
+                'opencode', 'run', '--standalone', '--auto', '--archived',
+                '--model', model,
+                '--title', 'SporeCoop quota probe',
+                'Reply with only OK',
+            ]
+            p = subprocess.run(cmd, cwd=tmp, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=60)
+            out = (p.stdout or '').strip()
+            if p.returncode == 0 and not is_quota_error(out):
+                return True, 'opencode probe ok'
+            return False, (out.splitlines()[-1] if out else f'rc={p.returncode}')[:180]
+        except Exception as e:
+            return False, str(e)
+        finally:
+            try:
+                import shutil
+                shutil.rmtree(tmp, ignore_errors=True)
+            except Exception:
+                pass
+    return _probe
+
+
+def make_api_probe(llm):
+    def _probe():
+        try:
+            llm.chat([{'role': 'user', 'content': 'Reply OK'}], [])
+            return True, 'api probe ok'
+        except Exception as e:
+            return False, str(e)
+    return _probe
+
+
+def run_agent_loop(player, persona, client, llm, openai_tools, fixture, mode, stop_evt, max_steps, pace_s,
+                   quota_ctrl=None):
     messages = [
         {'role': 'system', 'content': build_system_prompt(player, persona, fixture, mode)},
         {'role': 'user', 'content': f'Begin playtesting as "{player}". Start by calling observe(player="{player}").'},
     ]
     steps = 0
     while not stop_evt.is_set() and (max_steps <= 0 or steps < max_steps):
+        if quota_ctrl is not None:
+            quota_ctrl.wait_if_paused(stop_evt)
+            if stop_evt.is_set():
+                break
         steps += 1
         messages = trim_messages(messages, max_tail=16)
         try:
@@ -404,10 +615,18 @@ def run_agent_loop(player, persona, client, llm, openai_tools, fixture, mode, st
             except Exception:
                 pass
             print(f'[{player}] LLM HTTP {e.code}: {body}', file=sys.stderr, flush=True)
+            if quota_ctrl is not None and (e.code == 429 or is_quota_error(body)):
+                quota_ctrl.handle_quota_hit(player, f'HTTP {e.code}: {body}', stop_evt)
+                steps -= 1
+                continue
             time.sleep(5.0)
             continue
         except Exception as e:
             print(f'[{player}] LLM error: {e}', file=sys.stderr, flush=True)
+            if quota_ctrl is not None and is_quota_error(str(e)):
+                quota_ctrl.handle_quota_hit(player, str(e), stop_evt)
+                steps -= 1
+                continue
             time.sleep(3.0)
             continue
 
@@ -460,7 +679,8 @@ def run_oracle_loop(client, stop_evt, interval_s=5.0):
 
 
 def run_opencode_agent_loop(player, persona, model, work_dir, run_dir, fixture, mode, stop_evt, max_rounds,
-                            round_timeout_s, focus='gameplay', stage_getter=None, round_tracker=None):
+                            round_timeout_s, focus='gameplay', stage_getter=None, round_tracker=None,
+                            quota_ctrl=None):
     """Run one autonomous player via `opencode run --standalone --auto --archived` connected to sporecoop MCP."""
     log_path = os.path.join(run_dir, f'agent_{player}.log')
     mem_path = os.path.join(run_dir, f'memory_{player}.txt')
@@ -468,6 +688,10 @@ def run_opencode_agent_loop(player, persona, model, work_dir, run_dir, fixture, 
     memory_entries = []
     rounds = 0
     while not stop_evt.is_set() and (max_rounds <= 0 or rounds < max_rounds):
+        if quota_ctrl is not None:
+            quota_ctrl.wait_if_paused(stop_evt)
+            if stop_evt.is_set():
+                break
         rounds += 1
         live_stage = stage_getter(player) if stage_getter else _stage_from_fixture(fixture)
         if live_stage == 'offline':
@@ -561,6 +785,12 @@ def run_opencode_agent_loop(player, persona, model, work_dir, run_dir, fixture, 
             with open(log_path, 'a', encoding='utf-8') as f:
                 f.write(f'\n=== Round {rounds} ({model}, stage={live_stage}, rc={proc.returncode}, {time.time() - t_start:.1f}s) ===\n')
                 f.write(''.join(chunks))
+            if quota_ctrl is not None and not stop_evt.is_set() and is_quota_error(out_txt):
+                # Do not count a quota-aborted round against max_rounds or pollute gameplay memory
+                rounds -= 1
+                err_tail = ' | '.join([l.strip() for l in out_txt.splitlines() if l.strip()][-3:])
+                quota_ctrl.handle_quota_hit(player, err_tail or out_txt[:220], stop_evt)
+                continue
             last_lines = [l.strip() for l in out_txt.splitlines() if l.strip()][-3:]
             summary_note = ' | '.join(last_lines)[:260]
             if summary_note:
@@ -582,7 +812,7 @@ def run_opencode_agent_loop(player, persona, model, work_dir, run_dir, fixture, 
 
 
 def write_markdown_report(run_dir, status, anomalies, bugs, actions, llm, elapsed_s,
-                          total_actions=None, rounds_info=None, stages_seen=None):
+                          total_actions=None, rounds_info=None, stages_seen=None, quota_ctrl=None):
     os.makedirs(run_dir, exist_ok=True)
     path = os.path.join(run_dir, 'report.md')
     act_total = total_actions if total_actions is not None else len(actions)
@@ -603,6 +833,11 @@ def write_markdown_report(run_dir, status, anomalies, bugs, actions, llm, elapse
         lines.append(f'- Rounds completed: {r_str}')
     if stages_seen:
         lines.append(f'- Stages reached: {", ".join(sorted(stages_seen))}')
+    if quota_ctrl is not None and (quota_ctrl.pause_count > 0 or quota_ctrl.paused):
+        state_lbl = 'PAUSED (waiting for quota reset)' if quota_ctrl.paused else 'active'
+        lines.append(
+            f'- Quota pauses: {quota_ctrl.pause_count} (total paused {quota_ctrl.current_paused_total_s() / 60.0:.1f} min, status: {state_lbl})'
+        )
     lines.extend(['', '## Confirmed Engine Anomalies (Oracle)', ''])
     if not anomalies:
         lines.append('No engine crashes, faults, freezes, or stuck pauses detected.')
@@ -659,6 +894,10 @@ def main(argv=None):
                     help='Model for --backend api, or override all OpenCode agents (leave empty/default for per-role Go models)')
     ap.add_argument('--round-timeout', type=float, default=150.0,
                     help='Per-round timeout in seconds for --backend opencode (default 150)')
+    ap.add_argument('--quota-probe-minutes', type=float, default=10.0,
+                    help='Minutes between recovery probes when a 5-hour/rate limit is hit (default 10; first probe <=5 min)')
+    ap.add_argument('--no-extend-on-quota', action='store_true',
+                    help='Do NOT extend --minutes deadline while paused for quota recovery')
     ap.add_argument('--api-key', default=os.environ.get('DEEPSEEK_API_KEY', ''))
     ap.add_argument('--mock', action='store_true', help='Use offline MockLLMClient (no API key required)')
     ap.add_argument('--keep-open', action='store_true', help='Do not kill launched game instances on exit')
@@ -741,6 +980,15 @@ def main(argv=None):
             pass
         return _stage_from_fixture(args.fixture)
 
+    override_model = args.model if (args.model and args.model != 'deepseek-chat') else ''
+    probe_model = override_model or OPENCODE_MODELS.get('host', 'opencode-go/deepseek-v4.1-flash')
+    probe_fn = None if args.mock else (make_opencode_probe(probe_model) if args.backend == 'opencode' else make_api_probe(llm))
+    quota_ctrl = QuotaPauseController(
+        client, engine=engine, probe_fn=probe_fn,
+        probe_minutes=args.quota_probe_minutes,
+        extend_deadline=not args.no_extend_on_quota,
+    )
+
     threads = []
     if args.backend == 'opencode':
         oc_work = os.path.join(run_dir, 'oc-work')
@@ -757,14 +1005,13 @@ def main(argv=None):
         }
         with open(os.path.join(oc_work, 'opencode.json'), 'w', encoding='utf-8') as f:
             json.dump(oc_cfg, f, indent=2)
-        override_model = args.model if (args.model and args.model != 'deepseek-chat') else ''
         for p in active_players:
             persona = persona_map.get(p, persona_map['guest1'])
             model = override_model or OPENCODE_MODELS.get(p, 'opencode-go/deepseek-v4.1-flash')
             th = threading.Thread(
                 target=run_opencode_agent_loop,
                 args=(p, persona, model, oc_work, run_dir, args.fixture, args.mode, stop_evt,
-                      args.steps, args.round_timeout, args.focus, get_stage, track_round),
+                      args.steps, args.round_timeout, args.focus, get_stage, track_round, quota_ctrl),
                 daemon=True,
             )
             th.start()
@@ -775,17 +1022,20 @@ def main(argv=None):
             persona = persona_map.get(p, persona_map['guest1'])
             th = threading.Thread(
                 target=run_agent_loop,
-                args=(p, persona, client, llm, openai_tools, args.fixture, args.mode, stop_evt, args.steps, args.pace),
+                args=(p, persona, client, llm, openai_tools, args.fixture, args.mode, stop_evt,
+                      args.steps, args.pace, quota_ctrl),
                 daemon=True,
             )
             th.start()
             threads.append(th)
 
     last_ckpt = t0
+    play_budget_s = max(5.0, args.minutes * 60.0)
     try:
         while any(th.is_alive() for th in threads):
             now = time.time()
-            if args.steps <= 0 and now >= deadline:
+            active_elapsed = (now - t0) - (quota_ctrl.current_paused_total_s() if quota_ctrl.extend_deadline else 0.0)
+            if args.steps <= 0 and active_elapsed >= play_budget_s:
                 stop_evt.set()
                 break
             # Periodic live report checkpoint every 60s so overnight runs always have an up-to-date report.md
@@ -799,6 +1049,7 @@ def main(argv=None):
                         run_dir, engine.session_status(), list(engine.anomalies), list(engine.bugs),
                         list(engine.actions), llm, now - t0,
                         total_actions=engine.total_actions, rounds_info=ri, stages_seen=ss,
+                        quota_ctrl=quota_ctrl,
                     )
                 except Exception:
                     pass
@@ -824,7 +1075,7 @@ def main(argv=None):
         ss = set(stages_seen)
     report_path = write_markdown_report(
         run_dir, final_status, anomalies, bugs, actions, llm, time.time() - t0,
-        total_actions=total_acts, rounds_info=ri, stages_seen=ss,
+        total_actions=total_acts, rounds_info=ri, stages_seen=ss, quota_ctrl=quota_ctrl,
     )
     print(f'\nPlaytest finished. Report written to: {report_path}', flush=True)
 

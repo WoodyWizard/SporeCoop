@@ -172,6 +172,26 @@ def test_mcp_protocol_and_tools():
         assert eng.get_player_stage('guest1') == 'civ'
         assert set(('cell', 'creature', 'tribe', 'civ', 'space', 'editor')) <= set(ai_playtest.STAGE_PLAYBOOKS.keys())
 
+        # 2c. 5-hour quota pause & auto-resume controller
+        assert ai_playtest.is_quota_error('HTTP 429: 5-hour usage limit reached, resets in 1h 20m')
+        assert not ai_playtest.is_quota_error('DONE: built a house and bought a tank')
+        assert ai_playtest.parse_retry_after_seconds('Quota exceeded, resets in 1h 20m') == 4800
+        assert ai_playtest.parse_retry_after_seconds('Rate limit, try again in 15 minutes') == 900
+        probe_calls = []
+
+        def fake_probe():
+            probe_calls.append(1)
+            return (len(probe_calls) >= 2, 'still limited' if len(probe_calls) == 1 else 'ok')
+
+        qc = ai_playtest.QuotaPauseController(eng, engine=eng, probe_fn=fake_probe, probe_minutes=0.05)
+        # Override sleep granularity by testing with tiny probe_minutes (3s would slow selftest; patch directly)
+        qc.probe_minutes = 0.001
+        stop_q = threading.Event()
+        qc.handle_quota_hit('guest2', '5-hour usage limit reached', stop_q)
+        assert qc.pause_count == 1 and not qc.paused and len(probe_calls) == 2
+        assert eng.external_pause_active is False
+        assert any('key esc' in c for c in fakes['host'].cmds)
+
         # 3. Oracle fault detection + evidence bundle creation
         assert eng.check_anomalies()['new_anomalies'] == []
         fakes['guest2'].faults = 1
