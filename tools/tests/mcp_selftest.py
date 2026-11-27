@@ -167,9 +167,12 @@ def test_mcp_protocol_and_tools():
             {'type': 'click_hud', 'name': 'buy_land_vehicle'},
             {'type': 'press_key', 'key': 'tab'},
             {'type': 'wheel', 'x': 720, 'y': 540, 'notches': -4},
+            {'type': 'wheel', 'x': 720, 'y': 540, 'delta': 3},
+            {'type': 'wheel', 'x': 720, 'y': 540, 'direction': 'up', 'amount': 2},
             {'type': 'wait', 'seconds': 0.1},
         ])
-        assert batch['ok'] and batch['executed'] == 6 and batch['succeeded'] == 6
+        assert batch['ok'] and batch['executed'] == 8 and batch['succeeded'] == 8
+        assert batch['results'][5]['notches'] == 3 and batch['results'][6]['notches'] == 2
         assert 'cell_advance' in spore_mcp.STAGE_FIXED_HUD_1440['cell']
         assert 'mate_call' in spore_mcp.STAGE_FIXED_HUD_1440['cell']
         assert eng.get_player_stage('guest1') == 'civ'

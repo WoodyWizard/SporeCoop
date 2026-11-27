@@ -55,7 +55,10 @@ COOP_FIX("core.host_busy_save", "BUG-1217", g_save_fix,
 static bool g_long_wait_fix = true;
 COOP_FIX("core.editor_long_wait", "BUG-1419", g_long_wait_fix,
          "core: the host tells its guests before an editor loads, and a guest waits longer for a host in an editor or a load");
-static uint32_t g_long_waits_told;
+static bool g_resume_guard_fix = true;
+COOP_FIX("core.host_busy_resume_guard", "BUG-1605", g_resume_guard_fix,
+         "core: do not call cGameTimeManager::Resume(0x4BF38A7) when the pause count is already 0 after a stage transition");
+static uint32_t g_long_waits_told, g_underflows_prevented;
 static uint32_t g_normal_timeout_ms; // the session's own timeout (read once)
 
 static busy_model::Announcer g_ann;
@@ -97,8 +100,17 @@ static bool hold(bool on, int stage, const char* why)
             modes::set_cell_hold(false);
         else if (void* tm = time_manager()) {
             static uintptr_t resume = H->sym("Simulator::cGameTimeManager::Resume");
-            if (resume)
-                skg::thiscall<int>(resume, tm, kWaitReason);
+            static uintptr_t get_cnt = H->sym("Simulator::cGameTimeManager::GetPauseCount");
+            if (resume) {
+                int cnt = (g_resume_guard_fix && get_cnt) ? skg::thiscall<int>(get_cnt, tm, kWaitReason) : 1;
+                if (cnt > 0)
+                    skg::thiscall<int>(resume, tm, kWaitReason);
+                else {
+                    g_underflows_prevented++;
+                    LOG("host busy: skipped Resume(0x%08X) because pause count is %d (stage transition reset, BUG-1605)",
+                        kWaitReason, cnt);
+                }
+            }
         }
         g_hold = Hold::None;
         g_resumes++;
@@ -277,12 +289,12 @@ std::string host_busy_status()
     char b[420];
     snprintf(b, sizeof b,
              "host busy: fix=%d role=%s now=%s why=%04X told=%s sent=%u | view heard=%d host=%s why=%04X settled=%s rx=%u "
-             "dropped=%u | wait=%s waits=%u resumes=%u | long_wait fix=%d told=%u timeout=%u ms\n",
+             "dropped=%u | wait=%s waits=%u resumes=%u underflows=%u | long_wait fix=%d told=%u timeout=%u ms\n",
              (int)g_host_busy_fix, g_sess.role() == net::Role::Host ? "host" : "guest", busy_model::state_name(g_host_now.state),
              g_host_now.why, busy_model::state_name(g_ann.sent.state), g_sent, (int)g_view.heard,
              busy_model::state_name(g_view.last.state), g_view.last.why, busy_model::state_name(g_edge.to), g_rx, g_rx_dropped,
-             g_hold == Hold::None ? "none" : g_hold == Hold::Cell ? "cell" : "time", g_waits, g_resumes, (int)g_long_wait_fix,
-             g_long_waits_told, g_sess.timeout_ms);
+             g_hold == Hold::None ? "none" : g_hold == Hold::Cell ? "cell" : "time", g_waits, g_resumes,
+             g_underflows_prevented, (int)g_long_wait_fix, g_long_waits_told, g_sess.timeout_ms);
     if (g_hold != Hold::None) {
         size_t l = strlen(b);
         if (l > 0 && l + 40 < sizeof b)

@@ -658,6 +658,17 @@ struct CellProgressMemory {
         auto it = by_key.find(key);
         return it == by_key.end() ? nullptr : &it->second;
     }
+
+    // Legitimate host-authoritative food rollback (rival ate chunk first) lowers the saved floor too.
+    void apply_rollback(const std::string& key, int32_t amount)
+    {
+        if (key.empty() || amount <= 0)
+            return;
+        auto it = by_key.find(key);
+        if (it == by_key.end())
+            return;
+        it->second.food = std::max(0, it->second.food - amount);
+    }
 };
 
 struct RestoreProgressMsg {

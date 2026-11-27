@@ -25,6 +25,7 @@
 #include "creations.h"
 #include "creature_hp.h"
 #include "creature_rivals.h"
+#include "drama.h"
 #include "rivals.h"
 #include "social.h"
 #include "social_logic.h"
@@ -607,6 +608,11 @@ static bool update_filter(void* c)
     if (!g_enabled || !is_guest() || !npc_stage())
         return true;
     if (game::is_puppet(c) || c == game::avatar())
+        return true;
+    // BUG-1604: keep the guest's active Mate (picked or spawned locally by cDramaManager at the guest's rival nest,
+    // +0xB58 & 0x10) alive so Mating Call works natively in Creature Rivals.
+    if (c == drama::mate() ||
+        (skg::readable((const uint8_t*)c + 0xB58, 4) && ((*(const uint32_t*)((const uint8_t*)c + 0xB58) & 0x10u) != 0)))
         return true;
     // the host left the world: the guest plays on alone with its own NPCs; BUG-0412: the host is not here yet
     // (D3: npc_proxy_rules.h; host_here is asked only when the host is not away and nothing is mirrored)
@@ -3487,9 +3493,10 @@ static void remove_saved_strays(double now)
     game::for_each_object(
         [](void* o, uint32_t noun, void* u) {
             auto* a = (Acc*)u;
-            if (noun != 0x18EB45Eu || o == a->av || g_console_npcs.count(o) || !game::object_alive(o) || IsBadReadPtr(o, 0x1680) ||
-                *(void**)((uint8_t*)o + 0xE84) || !game::species_profile(o) || game::is_puppet(o) || is_proxy(o) ||
-                game::destroy_pending(o))
+            if (noun != 0x18EB45Eu || o == a->av || o == drama::mate() || g_console_npcs.count(o) ||
+                !game::object_alive(o) || IsBadReadPtr(o, 0x1680) ||
+                (*(const uint32_t*)((const uint8_t*)o + 0xB58) & 0x10u) != 0 || *(void**)((uint8_t*)o + 0xE84) ||
+                !game::species_profile(o) || game::is_puppet(o) || is_proxy(o) || game::destroy_pending(o))
                 return true;
             if (own_kind_herd(game::herd_of(o)))
                 a->v.push_back(o);

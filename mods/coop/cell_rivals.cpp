@@ -60,7 +60,8 @@ struct RivalsStats {
 
 static RivalPlayer g_rp[rivals::kMaxPlayers];
 static std::string g_slot_key[rivals::kMaxPlayers];
-static bool g_rejoin_checked[rivals::kMaxPlayers] = {};
+static double g_rejoin_window_until[rivals::kMaxPlayers] = {};
+static double g_last_restore_tx[rivals::kMaxPlayers] = {};
 static cell_rivals_logic::CellProgressMemory g_saved_prog;
 static RivalsStats g_rv;
 static uint8_t g_overscaled_puppets_mask = 0;
@@ -86,7 +87,8 @@ static void rivals_reset_session()
     for (int i = 0; i < rivals::kMaxPlayers; i++) {
         g_rp[i] = RivalPlayer{};
         g_slot_key[i].clear();
-        g_rejoin_checked[i] = false;
+        g_rejoin_window_until[i] = 0.0;
+        g_last_restore_tx[i] = -100.0;
         g_host_prog_dirty[i] = false;
         g_war_pvp_last_hit[i] = 0.0;
     }
@@ -452,6 +454,8 @@ void rivals_on_late_food(uint8_t from, int food)
 {
     if (!is_host() || !rivals_active() || from == 0 || food <= 0)
         return;
+    if (g_fix_cell_rejoin_progress && from < rivals::kMaxPlayers && !g_slot_key[from].empty())
+        g_saved_prog.apply_rollback(g_slot_key[from], food);
     net::Writer w;
     cell_rivals_logic::write_food_rollback(w, -food);
     if (rivals::send_faction_to(from, rivals::Stage::Cell, cell_rivals_logic::kSubFoodRollback, w))
@@ -511,13 +515,15 @@ static void on_faction_message(uint8_t from, uint8_t subkind, net::Reader& r)
         if (!pkey.empty())
             g_slot_key[from] = pkey;
         auto& rp = g_rp[from];
-        // BUG-1603: on a guest's first progress report after (re)joining, restore their saved Cell Rivals food and
-        // unlocked parts if the reload dropped them back to the host's lower evolution bar.
-        if (g_fix_cell_rejoin_progress && !g_rejoin_checked[from] && !pkey.empty()) {
-            g_rejoin_checked[from] = true;
+        double now = H ? H->time_seconds() : 0.0;
+        // BUG-1603: keep a 45 s post-join restore window so a rejoining guest that reports its old local food BEFORE
+        // finishing the host save reload still gets its saved food & parts restored right after the save loads.
+        if (g_fix_cell_rejoin_progress && !pkey.empty()) {
             if (const auto* saved = g_saved_prog.find(pkey)) {
+                if (!rp.reported && now + 45.0 > g_rejoin_window_until[from])
+                    g_rejoin_window_until[from] = now + 45.0;
                 uint16_t missing_parts = (uint16_t)(saved->parts_mask & ~pm.parts_mask);
-                if (saved->food > pm.food || missing_parts != 0) {
+                if (now <= g_rejoin_window_until[from] && (saved->food > pm.food || missing_parts != 0)) {
                     int32_t target_food = std::max(saved->food, pm.food);
                     uint16_t target_parts = (uint16_t)(saved->parts_mask | pm.parts_mask);
                     rp.food = target_food;
@@ -527,13 +533,16 @@ static void on_faction_message(uint8_t from, uint8_t subkind, net::Reader& r)
                     rp.reported = true;
                     g_host_prog_dirty[from] = true;
                     push_player_progress_host(from);
-                    net::Writer rw;
-                    write_restore_progress(rw, {target_food, target_parts});
-                    if (rivals::send_faction_to(from, rivals::Stage::Cell, kSubRestoreProgress, rw)) {
-                        g_rv.rejoin_restores_sent++;
-                        H->log(M, SK_INFO,
-                               "cell_rivals: restoring rejoined guest %u (%s) progress food %d -> %d parts=0x%04X (BUG-1603)",
-                               (unsigned)from, pkey.c_str(), (int)pm.food, (int)target_food, (unsigned)target_parts);
+                    if (now - g_last_restore_tx[from] >= 1.5) {
+                        g_last_restore_tx[from] = now;
+                        net::Writer rw;
+                        write_restore_progress(rw, {target_food, target_parts});
+                        if (rivals::send_faction_to(from, rivals::Stage::Cell, kSubRestoreProgress, rw)) {
+                            g_rv.rejoin_restores_sent++;
+                            H->log(M, SK_INFO,
+                                   "cell_rivals: restoring rejoined guest %u (%s) progress food %d -> %d parts=0x%04X (BUG-1603)",
+                                   (unsigned)from, pkey.c_str(), (int)pm.food, (int)target_food, (unsigned)target_parts);
+                        }
                     }
                     if (!rivals::race_state().stage_finished && bar_is_full(rp.food) &&
                         rivals::race_state().players[from].finish_rank == 0)
@@ -845,7 +854,8 @@ void rivals_on_player_leave(int id)
         }
         g_rp[id] = RivalPlayer{};
         g_slot_key[id].clear();
-        g_rejoin_checked[id] = false;
+        g_rejoin_window_until[id] = H ? H->time_seconds() + 45.0 : 45.0;
+        g_last_restore_tx[id] = -100.0;
         g_host_prog_dirty[id] = false;
         g_war_pvp_last_hit[id] = 0.0;
     }

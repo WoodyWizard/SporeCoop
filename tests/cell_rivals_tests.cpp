@@ -512,6 +512,14 @@ static void test_rejoin_progress_persistence()
           "memory clamps food to 1000 and merges newly unlocked parts");
     CHECK(mem.find("s:unknown") == nullptr && mem.find("") == nullptr, "missing/empty key returns nullptr");
 
+    // Legitimate host food rollback lowers the saved floor without going below 0
+    mem.apply_rollback("s:dave", 24);
+    e = mem.find("s:dave");
+    CHECK(e != nullptr && e->food == kCellFullFood - 24, "apply_rollback lowers saved food floor cleanly");
+    mem.apply_rollback("s:dave", 5000);
+    e = mem.find("s:dave");
+    CHECK(e != nullptr && e->food == 0, "apply_rollback clamps at 0");
+
     // Wire codec round-trip & bounds validation
     net::Writer w;
     write_restore_progress(w, {834, (uint16_t)((1u << 2) | (1u << 7))});

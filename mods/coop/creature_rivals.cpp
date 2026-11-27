@@ -59,8 +59,13 @@ static bool g_starter_guard_fix = true;
 COOP_FIX("rivals.creature_starter_guard", "BUG-1583", g_starter_guard_fix,
          "rivals: prevent Creature Rivals guests from auto-spawning as Civ-armored or outfitted creatures at brain level 0");
 
+static bool g_guest_mate_fix = true;
+COOP_FIX("rivals.creature_guest_mate", "BUG-1604", g_guest_mate_fix,
+         "rivals: route CreatureGame_NestHerdFor to the guest's assigned rival nest so Mating Call picks/spawns a mate natively");
+
 // Resolved game symbols (all verified in data/symbols/overrides_dc04aee5.sym)
 static uintptr_t a_JoinNestHerd = 0;
+static uintptr_t a_NestHerdFor = 0;
 static uintptr_t a_HerdNestPos = 0;
 static uintptr_t a_HerdSetEnabled = 0;
 static uintptr_t a_HerdSetBestFriends = 0;
@@ -87,6 +92,8 @@ typedef int(SK_CDECL* CursorKind_t)(void*);
 static CursorKind_t o_CursorKind = nullptr;
 typedef int(SK_THISCALL* SocialMode_t)(void*);
 static SocialMode_t o_SocialMode = nullptr;
+typedef void*(SK_CDECL* NestHerdFor_t)(bool);
+static NestHerdFor_t o_NestHerdFor = nullptr;
 
 // Call guard to avoid re-entrancy inside GetRelationship / MakeExtinct hooks
 static bool g_in_rel_hook = false;
@@ -149,7 +156,7 @@ static uint32_t g_pvp_blocked = 0, g_pvp_allowed = 0;
 static uint32_t g_home_extinct_blocked = 0;
 static uint32_t g_draft_unlocked = 0, g_draft_payouts = 0;
 static uint32_t g_wins_detected = 0, g_transitions_triggered = 0;
-static uint32_t g_family_spawns = 0, g_starter_guards = 0, g_cursor_overrides = 0;
+static uint32_t g_family_spawns = 0, g_starter_guards = 0, g_cursor_overrides = 0, g_nest_herd_overrides = 0;
 static std::vector<SpeciesEntry> g_guest_last_table; // guest: last received personal species table
 
 static bool connected() { return C.sess && C.sess->connected(); }
@@ -1431,9 +1438,35 @@ static uint8_t puppet_player_owner(void* obj)
     return 255;
 }
 
+static void* SK_CDECL h_NestHerdFor(bool other)
+{
+    // BUG-1604: cDramaManager::Update (0x00D52776) calls CreatureGame_NestHerdFor(true) every 5 s to pick or spawn
+    // the player's Mate (+0xB58 |= 0x10). With other=true, vanilla Spore filters herds by PlayerSpecies() (the host's
+    // species), returning the host's nest instead of the guest's assigned rival nest. Return the guest's own rival
+    // nest herd directly so Mating Call picks/spawns a mate right at the guest's nest.
+    if (g_guest_mate_fix && active() && is_guest() && game::in_creature_stage() && game::on_main()) {
+        uint8_t me = my_id();
+        if (rivals::valid_player(me) && g_nests[me].assigned) {
+            void* h = game::live(g_nests[me].herd);
+            if (!h && finite3(g_nests[me].nest_pos.x, g_nests[me].nest_pos.y, g_nests[me].nest_pos.z)) {
+                h = find_herd_near(g_nests[me].nest_pos, 10.0f);
+                if (h)
+                    g_nests[me].herd = game::live_ref(h, game::kHerdNoun);
+            }
+            if (h && game::herd_nest(h)) {
+                g_nest_herd_overrides++;
+                return h;
+            }
+        }
+    }
+    return o_NestHerdFor(other);
+}
+
 static int SK_CDECL h_CursorKind(void* obj)
 {
     int native = o_CursorKind(obj);
+    if (native == 9) // Preserve Mate (Heart) cursor unconditionally (BUG-1604)
+        return native;
     if (!g_pvp_symmetry_fix || !connected() || !game::in_creature_stage() || !game::on_main() || !obj)
         return native;
     if (!game::listed(obj, 0x18EB45Eu) || game::is_dead(obj) || obj == game::avatar())
@@ -1474,6 +1507,8 @@ static int SK_THISCALL h_SocialMode(void* c)
     if (g_pvp_symmetry_fix && active() && game::in_creature_stage() && game::on_main() && c && c != game::avatar()) {
         uint8_t me = my_id();
         uint8_t owner = creature_player_owner(c);
+        if (owner == me)
+            return 0; // Own family in Creature Rivals never starts a wild-species Impress/Hunt session (BUG-1606)
         if (owner != 255 && owner != me) {
             if (rivals::at_war(me, owner) || settings::on(settings::kFriendlyFire))
                 return 0; // No social game with a hostile rival or rival's family
@@ -1492,22 +1527,23 @@ bool override_relationship(void* a, void* b, int& rel_out)
     // Only substitute game::avatar() when exactly one creature is null and the non-null side is not our own avatar;
     // never substitute for (nullptr, nullptr) species-only lookups (e.g. egg-steal cursor / friendly-nest check).
     void* av = g_pvp_symmetry_fix ? game::avatar() : nullptr;
-    bool substituted = false;
     void* ea = a;
     void* eb = b;
     if (av && (a == nullptr) != (b == nullptr)) {
         if (!ea && eb != av) {
             ea = av;
-            substituted = true;
         } else if (!eb && ea != av) {
             eb = av;
-            substituted = true;
         }
     }
     if (ea && eb && readable(ea, game::kHerdOff + 4) && readable(eb, game::kHerdOff + 4)) {
         uint8_t pa = creature_player_owner(ea);
         uint8_t pb = creature_player_owner(eb);
-        if (pa != 255 && pb != 255 && (!substituted || pa != pb)) {
+        if (pa != 255 && pb != 255) {
+            if (pa == pb) {
+                rel_out = 6; // Own family / own species is always allied (BUG-1606)
+                return true;
+            }
             bool ff = g_pvp_symmetry_fix && settings::on(settings::kFriendlyFire);
             rel_out = resolve_player_pair_relation(pa, pb, rivals::at_war(pa, pb), rivals::allied(pa, pb), ff);
             return true;
@@ -2076,14 +2112,15 @@ std::string status_summary()
     bool has_ah = ah && herd_nest_pos(ah, ah_pos);
     snprintf(b, sizeof b,
              "crivals: fix=%d active=%d role=%s me=%u dist=%s assign_tx=%u assign_rx=%u rel_tx=%u rel_rx=%u "
-             "persp_swaps=%u herd_swaps=%u fam_spawns=%u starter_guards=%u cursor_ov=%u inf_earned=%u inf_acts=%u inf_buys=%u pvp_allow=%u pvp_block=%u "
+             "persp_swaps=%u herd_swaps=%u fam_spawns=%u starter_guards=%u cursor_ov=%u mate_nest_ov=%u inf_earned=%u inf_acts=%u inf_buys=%u pvp_allow=%u pvp_block=%u "
              "home_ext_block=%u wins=%u draft_unlock=%u draft_pay=%u trans=%u\n"
              "own_nest: assigned=%d swapped=%d persp=%d target=(%.1f %.1f %.1f) avatar_herd=%p avatar_nest=(%.1f %.1f %.1f) "
              "brain=%d dna=%.0f\n",
              (int)g_creature_rivals_fix, (int)active(), is_host() ? "host" : (is_guest() ? "guest" : "none"),
              (unsigned)me, rivals::distance_name(rivals::base_distance()), g_assigns_tx, g_assigns_rx, g_rels_tx,
              g_rels_rx, g_persp_swaps, g_herd_swaps, g_family_spawns, g_starter_guards, g_cursor_overrides,
-             g_inf_earned, g_inf_actions, g_inf_buys, g_pvp_allowed, g_pvp_blocked, g_home_extinct_blocked,
+             g_nest_herd_overrides, g_inf_earned, g_inf_actions, g_inf_buys, g_pvp_allowed, g_pvp_blocked,
+             g_home_extinct_blocked,
              g_wins_detected, g_draft_unlocked, g_draft_payouts, g_transitions_triggered, (int)g_nests[me].assigned,
              (int)g_nests[me].species_swapped, (int)g_nests[me].perspective_applied, g_nests[me].nest_pos.x,
              g_nests[me].nest_pos.y, g_nests[me].nest_pos.z, ah, has_ah ? ah_pos.x : 0.f, has_ah ? ah_pos.y : 0.f,
@@ -2271,6 +2308,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     reset_state();
 
     a_JoinNestHerd = H->sym("SporeCoop::CreatureGame_JoinNestHerd");
+    a_NestHerdFor = H->sym("SporeCoop::CreatureGame_NestHerdFor");
     a_HerdNestPos = H->sym("SporeCoop::Herd_NestPosition");
     a_HerdSetEnabled = H->sym("Simulator::cHerd::SetEnabled");
     a_HerdSetBestFriends = H->sym("SporeCoop::cHerd_SetBestFriends");
@@ -2296,6 +2334,8 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_CursorKind, (void*)h_CursorKind, (void**)&o_CursorKind);
     if (a_SocialMode)
         H->hook_create(M, (void*)a_SocialMode, (void*)h_SocialMode, (void**)&o_SocialMode);
+    if (a_NestHerdFor)
+        H->hook_create(M, (void*)a_NestHerdFor, (void*)h_NestHerdFor, (void**)&o_NestHerdFor);
 
     rivals::register_faction_handler(rivals::Stage::Creature, on_faction_msg);
     rivals::register_npc_influence_callback(rivals::Stage::Creature, on_npc_influence);

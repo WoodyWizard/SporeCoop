@@ -145,12 +145,16 @@ STAGE_PLAYBOOKS = {
     ),
     'creature': (
         'CREATURE STAGE PLAYBOOK:\n'
+        '- WATCH YOUR ORANGE HUNGER BAR (bottom-right below green HP): if it empties, your HP drains until you starve '
+        'to death! Eat fruit trees (`fruittree`, herbivores/omnivores) or meat carcasses (carnivores/omnivores) regularly!\n'
+        '- If a letterboxed cinematic (black bars top/bottom, e.g. stage intro or death message) is on screen, click the '
+        'green checkmark at bottom-right `click_screen(1414, 1058)` or `press_key("enter")` to continue.\n'
         '- Click nearby wild creatures or fruit trees (`click_target`), move with `press_key` (w/a/s/d, hold_ms 800..1500), '
         'and orbit camera via `drag_screen(..., button="right")`.\n'
         '- Toggle Social vs Combat stance with `press_key("tab")`, then chain abilities `1`, `2`, `3`, `4` with short '
         '`wait` steps inside ONE `perform_actions` call to impress or hunt wild species!\n'
-        '- Eat fruit trees (`fruittree`) or carcasses when hungry; when you have DNA, return to nest and try mating/Creature Editor.\n'
-        '- Dismiss `Brain power!` or `You were killed` popups immediately with `press_key("enter")` or `click_ui("OK")`.'
+        '- When you have DNA, return to your nest, press `backspace` (Mating Call), and click your heart-marked mate to '
+        'enter the Creature Editor; dismiss `Brain power!` popups with `press_key("enter")` or `click_ui("OK")`.'
     ),
     'tribe': (
         'TRIBE STAGE PLAYBOOK:\n'

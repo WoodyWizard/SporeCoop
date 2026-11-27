@@ -817,7 +817,17 @@ class SporeMcpEngine:
                 elif t == 'wheel':
                     wx = int(raw_step.get('x', 720))
                     wy = int(raw_step.get('y', 540))
-                    notches = max(-12, min(12, int(raw_step.get('notches', -3))))
+                    if 'notches' in raw_step and raw_step['notches'] is not None:
+                        raw_n = int(raw_step['notches'])
+                    elif 'delta' in raw_step and raw_step['delta'] is not None:
+                        raw_n = int(raw_step['delta'])
+                    elif 'direction' in raw_step or 'amount' in raw_step:
+                        amt = abs(int(raw_step.get('amount', 3)))
+                        d = str(raw_step.get('direction', 'down')).strip().lower()
+                        raw_n = amt if d in ('up', 'in', 'forward', '+') else -amt
+                    else:
+                        raw_n = -3
+                    notches = max(-12, min(12, raw_n))
                     r = sl.call(f'wheel {wx} {wy} {notches}')
                     self._record_action(player, 'wheel', f'({wx},{wy}) notches={notches}')
                     res = {'ok': bool(r.get('ok')), 'x': wx, 'y': wy, 'notches': notches}
@@ -1047,12 +1057,15 @@ class SporeMcpEngine:
                             self.anomalies.append(rec)
                         new_found.append(rec)
 
-            # 4. Stuck pause check (non-empty pause reasons unchanged for >25s during gameplay stage;
-            # allow up to 90s when only the City/Tribe Planner pause 04BF38A6 is active so active building isn't flagged)
+            # 4. Stuck pause check (actually paused=1 with unchanged reasons for >25s during gameplay stage;
+            # allow up to 90s for Planner pause 04BF38A6 or vanilla cinematic pause 0600C4AE waiting for checkmark)
             in_gameplay = mode in ('cell', 'creature', 'tribe', 'civ', 'space')
-            has_pause = bool(pauses and 'none' not in pauses.lower() and re.search(r'[1-9]', pauses))
-            planner_only_pause = has_pause and ('04BF38A6=' in pauses) and ('04BF38A4=' not in pauses)
-            pause_limit = 90.0 if planner_only_pause else 25.0
+            pl_low = (pauses or '').lower()
+            has_pause = bool(
+                pauses and 'none' not in pl_low and ('paused=1' in pl_low or ('paused=' not in pl_low and re.search(r'[1-9]', pauses)))
+            )
+            long_ok_pause = has_pause and (('04BF38A6=' in pauses) or ('0600C4AE=' in pauses)) and ('04BF38A4=' not in pauses)
+            pause_limit = 90.0 if long_ok_pause else 25.0
             if in_gameplay and has_pause and not self.external_pause_active:
                 if pauses != sl.last_pause_sig:
                     sl.last_pause_sig = pauses
