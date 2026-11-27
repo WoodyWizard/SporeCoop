@@ -27,9 +27,12 @@ enum Kind : uint8_t {
     K_ACT = 4,     // host -> guests (R): authoritative act change (seq, act)
     K_OUTCOME = 5, // host -> guests (R): authoritative win (5) or loss (6) outcome (seq, state)
     K_DEATH = 6,   // any -> host / host -> guests (R): mirrored non-creature scenario object death count
-    K_HIT = 7,     // guest -> host (R): guest captain hit on a paired host adventure creature
-    K_ACTORS = 8,  // host -> guests (U): batch of host adventure creature states (<= 20)
+    K_HIT = 7,      // guest -> host (R): guest captain hit on a paired host adventure creature
+    K_ACTORS = 8,   // host -> guests (U): batch of host adventure creature states (<= 20)
+    K_HOST_ADV = 9, // host -> guests (R): host adventure invite/title for Quick Play join (BUG-1607)
 };
+
+constexpr size_t kMaxTitleLen = 96;
 
 inline bool finite4(const float* v)
 {
@@ -355,6 +358,31 @@ struct ActorBatch {
             actors.push_back(s);
         }
         return true;
+    }
+};
+
+// K_HOST_ADV (host -> guests, reliable): active Quick Play / Space adventure announcement for guest join & F9 hint (BUG-1607)
+struct HostAdventure {
+    uint8_t active = 0; // 1 = host playing adventure (Play mode), 0 = host left adventure
+    Key3 raw_key;       // host's real DBPF adventure resource key {inst, type, group}
+    Key3 mission;       // host's stable content-based mission key (BUG-0963)
+    std::string title;  // UTF-8 adventure title (<= kMaxTitleLen bytes)
+
+    void write(net::Writer& w) const
+    {
+        w.u8(active ? 1u : 0u);
+        put_key(w, raw_key);
+        put_key(w, mission);
+        std::string t = title.size() > kMaxTitleLen ? title.substr(0, kMaxTitleLen) : title;
+        w.str8(t);
+    }
+    bool read(net::Reader& r)
+    {
+        active = r.u8();
+        raw_key = get_key(r);
+        mission = get_key(r);
+        title = r.str8();
+        return r.ok() && active <= 1u && title.size() <= kMaxTitleLen;
     }
 };
 

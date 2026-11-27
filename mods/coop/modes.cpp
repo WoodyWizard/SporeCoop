@@ -574,29 +574,136 @@ std::string tag_info() { return g_tag_info; }
 // adventure identity: cScenarioMode (*ptr) -> mpData (+0x74) -> mpResource (+0x10) -> resource key (+8)
 static uint32_t S2(const char* n);
 static uint32_t g_adventure_forced = 0;
+static bool g_content_identity_fix = true;
+COOP_FIX("adventure.content_identity", "BUG-0963", g_content_identity_fix,
+         "adventure: match Play-mode adventures by immutable blueprint content signature so Quick Play copies with different local instance IDs share place & sync");
+
 void adventure_force_place(uint32_t id) { g_adventure_forced = id; }
-bool adventure_key(uint32_t& inst, uint32_t& group)
+
+static uint8_t* adventure_resource_ptr()
 {
     uintptr_t p = S2("App::cScenarioMode::ptr");
     uint8_t* sm = p ? *(uint8_t**)p : nullptr;
     if (!sm || !skg::readable(sm, 0xD0))
-        return false;
+        return nullptr;
     uint8_t* data = *(uint8_t**)(sm + 0x74);
     uint8_t* res = data && skg::readable(data, 0x14) ? *(uint8_t**)(data + 0x10) : nullptr;
     if (!res || !skg::readable(res, 0x14))
+        return nullptr;
+    return res;
+}
+
+bool adventure_raw_key(uint32_t out[3])
+{
+    uint8_t* res = adventure_resource_ptr();
+    if (!res)
         return false;
-    inst = *(uint32_t*)(res + 8), group = *(uint32_t*)(res + 16);
+    out[0] = *(uint32_t*)(res + 8);
+    out[1] = *(uint32_t*)(res + 12);
+    out[2] = *(uint32_t*)(res + 16);
     return true;
 }
+
+bool adventure_key(uint32_t& inst, uint32_t& group)
+{
+    uint32_t rk[3] = {};
+    if (!adventure_raw_key(rk))
+        return false;
+    inst = rk[0];
+    group = rk[2];
+    return true;
+}
+
+bool adventure_content_key(uint32_t out[3])
+{
+    if (adventure_sub_mode() == 1)
+        return false; // Edit Mode modifies markers/acts live and uses the raw draft key (adv_editor.cpp)
+    uint8_t* res = adventure_resource_ptr();
+    if (!res || !skg::readable(res, 0x2C2C))
+        return false;
+    uint32_t raw_inst = *(uint32_t*)(res + 8);
+    uint32_t raw_grp = *(uint32_t*)(res + 16);
+
+    // cScenarioResource layout (docs/re/adventure.md):
+    //   +0x150..+0x15B avatar spawn pos[3]
+    //   +0x23C..+0x243 acts vector (begin, end, stride 0x534)
+    //   +0x2BF4..+0x2BFB classes vector (begin, end, stride 0x27E8)
+    //   +0x2C10..+0x2C17 marker slot pool (begin, end, stride 0x238; slot+0 bit31=free, slot+4=cScenarioMarker)
+    constexpr uintptr_t kSpawnOff = 0x150;
+    constexpr uintptr_t kActsBegOff = 0x23C, kActsEndOff = 0x240, kActStride = 0x534;
+    constexpr uintptr_t kClsBegOff = 0x2BF4, kClsEndOff = 0x2BF8, kClsStride = 0x27E8;
+    constexpr uintptr_t kMrkBegOff = 0x2C10, kMrkEndOff = 0x2C14, kMrkStride = 0x238;
+
+    uint8_t* ab = *(uint8_t**)(res + kActsBegOff);
+    uint8_t* ae = *(uint8_t**)(res + kActsEndOff);
+    uint32_t num_acts = (ab && ae && ae >= ab) ? (uint32_t)std::min<size_t>((size_t)(ae - ab) / kActStride, 64u) : 0u;
+
+    uint8_t* cb = *(uint8_t**)(res + kClsBegOff);
+    uint8_t* ce = *(uint8_t**)(res + kClsEndOff);
+    uint32_t num_classes = (cb && ce && ce >= cb) ? (uint32_t)std::min<size_t>((size_t)(ce - cb) / kClsStride, 1024u) : 0u;
+
+    uint8_t* mb = *(uint8_t**)(res + kMrkBegOff);
+    uint8_t* me = *(uint8_t**)(res + kMrkEndOff);
+    size_t mrk_slots = (mb && me && me >= mb) ? std::min<size_t>((size_t)(me - mb) / kMrkStride, 1024u) : 0u;
+
+    // Cache per loaded cScenarioResource blueprint so the scan runs once on adventure load and stays immutable during play.
+    static uint8_t* s_res = nullptr;
+    static uint32_t s_raw_inst = 0, s_raw_grp = 0, s_acts = 0, s_cls = 0;
+    static size_t s_slots = 0;
+    static uint32_t s_key[3] = {};
+    static bool s_ok = false;
+    if (res == s_res && raw_inst == s_raw_inst && raw_grp == s_raw_grp && num_acts == s_acts && num_classes == s_cls &&
+        mrk_slots == s_slots && s_ok) {
+        out[0] = s_key[0];
+        out[1] = s_key[1];
+        out[2] = s_key[2];
+        return true;
+    }
+
+    adventure::ContentSummary sum;
+    sum.num_acts = num_acts;
+    sum.num_classes = num_classes;
+    sum.set_spawn(*(const float*)(res + kSpawnOff + 0), *(const float*)(res + kSpawnOff + 4),
+                  *(const float*)(res + kSpawnOff + 8));
+    for (size_t i = 0; i < mrk_slots; i++) {
+        uint8_t* slot = mb + i * kMrkStride;
+        if (!skg::readable(slot, 0x28))
+            break;
+        if ((*(const uint32_t*)slot & 0x80000000u) != 0)
+            continue; // free slot in pool
+        const uint8_t* mk = slot + 4;
+        int32_t cls_id = *(const int32_t*)(mk + 0x00);
+        float px = *(const float*)(mk + 0x04);
+        float py = *(const float*)(mk + 0x08);
+        float pz = *(const float*)(mk + 0x0C);
+        float sc = *(const float*)(mk + 0x20);
+        sum.add_marker(cls_id, px, py, pz, sc);
+    }
+
+    uint32_t lo = 0, hi = 0;
+    if (!adventure::content_signature(sum, lo, hi))
+        return false;
+    auto mk = adventure::content_mission_key(lo, hi);
+    s_res = res;
+    s_raw_inst = raw_inst;
+    s_raw_grp = raw_grp;
+    s_acts = num_acts;
+    s_cls = num_classes;
+    s_slots = mrk_slots;
+    s_key[0] = mk.v[0];
+    s_key[1] = mk.v[1];
+    s_key[2] = mk.v[2];
+    s_ok = true;
+    out[0] = mk.v[0];
+    out[1] = mk.v[1];
+    out[2] = mk.v[2];
+    return true;
+}
+
 bool adventure_mission_key(uint32_t out[3])
 {
-    uintptr_t p = S2("App::cScenarioMode::ptr");
-    uint8_t* sm = p ? *(uint8_t**)p : nullptr;
-    if (!sm || !skg::readable(sm, 0xD0))
-        return false;
-    uint8_t* data = *(uint8_t**)(sm + 0x74);
-    uint8_t* res = data && skg::readable(data, 0x14) ? *(uint8_t**)(data + 0x10) : nullptr;
-    if (!res || !skg::readable(res, 0x14))
+    uint32_t rk[3] = {};
+    if (!adventure_raw_key(rk))
         return false;
     if (g_adventure_forced) {
         out[0] = g_adventure_forced;
@@ -604,9 +711,11 @@ bool adventure_mission_key(uint32_t out[3])
         out[2] = 0;
         return true;
     }
-    out[0] = *(uint32_t*)(res + 8);
-    out[1] = *(uint32_t*)(res + 12);
-    out[2] = *(uint32_t*)(res + 16);
+    if (g_content_identity_fix && adventure_sub_mode() != 1 && adventure_content_key(out))
+        return true;
+    out[0] = rk[0];
+    out[1] = rk[1];
+    out[2] = rk[2];
     return true;
 }
 void* adventure_play_mode()
@@ -646,6 +755,11 @@ static uint32_t adventure_place()
         return 0;
     if (g_adventure_forced)
         return g_adventure_forced;
+    if (g_content_identity_fix && adventure_sub_mode() != 1) {
+        uint32_t ck[3] = {};
+        if (adventure_content_key(ck))
+            return adventure::content_place(ck[0]);
+    }
     return (inst ^ (group * 0x9E3779B1u)) | 1u;
 }
 

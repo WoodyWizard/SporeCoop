@@ -62,6 +62,9 @@ struct Api {
     // planet's name (false: none, then "Send my world" stays greyed out); resume_do loads it, `said` for the status
     std::function<bool(std::string& planet)> resume;
     std::function<bool(std::string& said)> resume_do;
+    // BUG-1607: guest in Galaxy Menu while host plays a Quick Play adventure locally available for 1-click launch
+    std::function<bool(std::string& title)> join_adventure_offer;
+    std::function<bool(std::string& err)> join_adventure_do;
     // own creation of the current stage: kind 0 creature / 1 cell / 2 ship, its name ("" = the
     // world's own), how many own creations of that kind exist; false = not shown. cycle: -1 / +1
     std::function<bool(int& kind, std::string& name, int& own)> creation;

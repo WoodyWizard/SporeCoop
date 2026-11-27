@@ -1300,6 +1300,18 @@ static void build_dialog()
         g_dirty = true;
     });
     D.share_btn = add_button(L, "share", {260, 510, 480, 550}, T("Send my world", "Отправить мир"), [] {
+        if (A.role() != 1) { // BUG-1607: guest 1-click Join Adventure in Galaxy Menu
+            std::string err;
+            if (A.join_adventure_do && A.join_adventure_do(err)) {
+                set_status(T("Joining host's adventure...", "Вход в приключение хоста..."), kYellow, 8);
+                open(false);
+            } else {
+                set_status(err.empty() ? T("Cannot join adventure right now", "Сейчас нельзя войти в приключение") : err,
+                           kRed, 8);
+            }
+            g_dirty = true;
+            return;
+        }
         int why = share_blocked();
         std::string planet, said;
         if (why == 1 && A.resume && A.resume(planet) && A.resume_do) { // BUG-1434: Continue <planet>
@@ -1873,13 +1885,16 @@ static void refresh_lobby()
         text(D.ready_btn, T("Evolve now", "Эволюция"));
     else
         text(D.ready_btn, A.ready() ? T("Not ready", "Не готов") : T("I'm ready", "Я готов"));
-    show(D.share_btn, host);
+    std::string adv_join_title;
+    bool guest_join_adv = !host && A.join_adventure_offer && A.join_adventure_offer(adv_join_title);
+    show(D.share_btn, host || guest_join_adv);
     std::string resume; // BUG-1434: a host in the galaxy menu continues the co-op world it played last
     bool can_resume = host && share_why == 1 && A.resume && A.resume(resume);
     if (can_resume && resume.size() > 14)
         resume = resume.substr(0, 13) + ".";
-    enable(D.share_btn, !share_why || can_resume);
-    text(D.share_btn, A.vote_active && A.vote_active() ? T("Start now", "Начать сейчас")
+    enable(D.share_btn, guest_join_adv || !share_why || can_resume);
+    text(D.share_btn, guest_join_adv                  ? T("Join Adventure", "Войти в приключение")
+                      : A.vote_active && A.vote_active() ? T("Start now", "Начать сейчас")
                       : can_resume                    ? std::string(T("Continue ", "Продолжить ")) + resume
                                                       : T("Send my world", "Отправить мир"));
     text(D.leave_btn, host ? T("Close session", "Закрыть сессию") : T("Leave", "Выйти"));

@@ -2011,6 +2011,29 @@ std::string ui_world_line()
     if (host_mode == modes::kEdit || host_mode == modes::kEditor) // BUG-1258: in Creature each its own creature
         return evolve_own_text(g_mode) ? g_sess.name_of(0) + " is in the editor"
                                        : g_sess.name_of(0) + " is evolving the species in the editor: everybody gets the new body";
+    // BUG-1607: clear Galactic Adventures Quick Play guidance instead of "Waiting for the host's world..."
+    if (g_sess.role() == net::Role::Client && g_sess.connected() && g_mode != modes::kScenario) {
+        std::string adv_title;
+        bool can_join = false;
+        if (adventure::host_invite(adv_title, can_join) || host_mode == modes::kScenario) {
+            bool ru = coop_ui::russian();
+            std::string hname = g_sess.name_of(0);
+            std::string nm = adv_title.empty() ? (ru ? "Приключение" : "Adventure") : adv_title;
+            if (can_join)
+                return ru ? (hname + " в приключении \"" + nm + "\" - нажмите Войти в приключение")
+                          : (hname + " is playing adventure \"" + nm + "\" - click Join Adventure");
+            return ru ? (hname + " в приключении \"" + nm + "\" - откройте его в Быстрой игре")
+                      : (hname + " is playing adventure \"" + nm + "\" - open the same adventure in Quick Play");
+        }
+    }
+    if (g_sess.role() == net::Role::Host && g_mode == modes::kScenario && g_sess.players().size() > 1) {
+        bool ru = coop_ui::russian();
+        std::string nm = adventure::own_title();
+        if (nm.empty())
+            nm = ru ? "Приключение" : "Adventure";
+        return ru ? ("Приключение \"" + nm + "\" - гости могут войти через F9 или Быструю игру")
+                  : ("Playing adventure \"" + nm + "\" - guests can join via F9 or Quick Play");
+    }
     if (g_sess.role() == net::Role::Host && g_sess.players().size() > 1 && !(g_adapter && g_local))
         return "Load or start a game: the guests get your world automatically";
     if (g_sess.role() == net::Role::Client && g_sess.connected() && !g_adapter)
@@ -2428,6 +2451,11 @@ void init_ui()
     };
     a.fov_step = [] { return fov::step(); };
     a.cycle_fov = [] { return fov::cycle_step(); };
+    a.join_adventure_offer = [](std::string& title) {
+        bool can = false;
+        return adventure::host_invite(title, can) && can;
+    };
+    a.join_adventure_do = [](std::string& err) { return adventure::join_host_adventure(err); };
     a.default_port = default_port();
     coop_ui::init(H, M, std::move(a));
 }
@@ -3086,6 +3114,7 @@ static void init_tribe_and_creations()
         };
         ac.notice = [](const std::string& t) { notice(t, -1); };
         ac.feed = feed;
+        ac.russian = [] { return coop_ui::russian(); };
         adventure::init(H, M, std::move(ac));
     }
     {

@@ -2,6 +2,7 @@
 #include "creations_library.h"
 #include "captain_logic.h"
 #include "lineage_cells.h"
+#include "species_line_core.h"
 
 namespace creations {
 
@@ -425,6 +426,36 @@ bool key_exists(const Key& k)
 }
 
 bool key_known(const Key& k) { return key_exists(k); }
+
+std::string creation_name(const Key& k)
+{
+    if (!k.instance)
+        return {};
+    static std::map<std::pair<uint32_t, uint32_t>, std::string> s_names;
+    auto ck = std::make_pair(k.instance, k.group);
+    if (auto it = s_names.find(ck); it != s_names.end())
+        return it->second;
+    std::string out;
+    std::vector<dbpf::Record> recs;
+    records_from_game({k.instance, kMeta, k.group}, recs);
+    for (const auto& r : recs) {
+        if (r.key.type != kMeta || r.data.empty())
+            continue;
+        std::string author, name;
+        if (dbpf::metadata_names(r.data, author, name) && !name.empty()) {
+            out = std::move(name);
+            break;
+        }
+        if (species::extract_metadata_name(r.data.data(), r.data.size(), author, name) && !name.empty()) {
+            out = std::move(name);
+            break;
+        }
+    }
+    if (s_names.size() > 512)
+        s_names.clear();
+    s_names[ck] = out;
+    return out;
+}
 
 // ---- BUG-0341: creatures with parts of a pack this game does not have ----
 // A Steam player without the "Creepy & Cute" parts pack crashed at 0x441F3B (a model bake with a

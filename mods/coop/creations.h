@@ -49,6 +49,7 @@ struct Ctx {
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx);
 bool key_known(const Key& k); // some registered database has this resource (RM FindRecord)
+std::string creation_name(const Key& k); // UTF-8 display name from pollen_metadata (0x030BDEE3), cached (BUG-1607)
 void tick(double now);
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_player_join(uint8_t id); // host: everybody's creations to the newcomer

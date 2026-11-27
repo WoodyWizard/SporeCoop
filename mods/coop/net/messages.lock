@@ -3,7 +3,7 @@
 # or wire files changed and its rev / minor in net/messages.def did not.
 session 1 5 42bf2fe2013c2a50
 world 1 2 89607c04f7164b48
-creature 1 5 d16994543bb0712a
+creature 1 6 512553caf13bf4da
 npc 1 3 9581b24c163e42bc
 cell 1 4 81ca1ff89546a75e
 tribe 1 3 97d372dc1ab7a351

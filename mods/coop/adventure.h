@@ -22,11 +22,22 @@ struct Ctx {
     std::function<void*(uint8_t)> puppet_of;        // live partner captain puppet on this game, or null
     std::function<void(const std::string&)> notice; // broadcast notice
     std::function<void(const std::string&)> feed;   // local feed line
+    std::function<bool()> russian;                  // localized notices (BUG-1607)
 };
 
 void init(const SkHost* host, SkMod* mod, Ctx ctx);
 void tick(double now);
 void on_message(uint8_t from, net::Reader& r);
+void send_invite_to(uint8_t id); // host: send active adventure invite to newly joined guest (BUG-1607)
+
+// Guest F9 lobby invite info: returns true when host is actively playing an adventure.
+// `title` is the host adventure's UTF-8 title (may be empty if unknown); `can_join` is true when guest is in
+// Galaxy Menu and has the adventure locally for 1-click launch.
+bool host_invite(std::string& title, bool& can_join);
+// Host's own active adventure title (empty when not in Play-mode adventure).
+std::string own_title();
+// Guest 1-click launch of host's Quick Play adventure from Galaxy Menu via ScenarioRequest_Reset (BUG-1607).
+bool join_host_adventure(std::string& err);
 
 // Called by game.cpp h_NPCTickAI: true suppresses NPCTickAI on paired guest adventure creatures while host stream runs.
 bool should_skip_ai(void* creature);

@@ -2343,7 +2343,9 @@ void tick(net::Session& s)
                 } else {
                     p.next_try = now + g_share_retry_ms;
                     p.on_planet = why.rfind("leave the planet", 0) == 0;
-                    if (!p.told)
+                    // BUG-1607: do not alarm players with "a player is waiting for the world: finish or quit the
+                    // adventure..." while hosting a Galactic Adventure (adventure.cpp posts the Quick Play join hint).
+                    if (!p.told && !(g_adventure_fix && game::mode_id() == modes::kScenario))
                         g_feed("a player is waiting for the world: " + why);
                     p.told = true;
                 }

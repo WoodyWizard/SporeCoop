@@ -27,6 +27,8 @@ constexpr float kLegacyPuppetScaleK = 1.15f; // BUG-1254 legacy Creature puppet 
 
 // Goal kinds in Spore Galactic Adventures (docs/re/adventure.md)
 constexpr uint32_t kGoalKindDefeat = 3;
+constexpr uint32_t kAdventureResourceType = 0x366A930Du;
+constexpr uint32_t kAdventureGroup = 0x408A0000u;
 
 // Deterministic FNV-1a 32-bit hash for scenario object signatures across machines
 inline uint32_t fnv1a_32(const void* data, size_t len, uint32_t h = 2166136261u)
@@ -38,6 +40,89 @@ inline uint32_t fnv1a_32(const void* data, size_t len, uint32_t h = 2166136261u)
     }
     return h;
 }
+
+inline uint32_t fmix32(uint32_t h)
+{
+    h ^= h >> 16;
+    h *= 0x85EBCA6Bu;
+    h ^= h >> 13;
+    h *= 0xC2B2AE35u;
+    h ^= h >> 16;
+    return h;
+}
+
+inline uint32_t rotl32(uint32_t v, unsigned r) { return (v << r) | (v >> (32u - r)); }
+
+inline int32_t quantize_f(float v, float scale)
+{
+    if (!std::isfinite(v))
+        return 0;
+    double d = (double)v * (double)scale;
+    if (d > 1e8)
+        d = 1e8;
+    else if (d < -1e8)
+        d = -1e8;
+    return (int32_t)std::llround(d);
+}
+
+// ---- BUG-0963: Stable content-based adventure identity ----
+// Two players launching Quick Play copies of the same adventure can receive different local DBPF instance IDs
+// (cScenarioResource +0x08). Hashing the immutable Play-mode blueprint (act count, class count, avatar spawn pos,
+// and an order-independent mix of live marker placements) yields identical place & mission keys across machines
+// without depending on local instance IDs or per-player captain keys.
+struct ContentSummary {
+    uint32_t num_acts = 0;
+    uint32_t num_classes = 0;
+    uint32_t live_markers = 0;
+    int32_t spawn_q[3] = {};
+    uint32_t marker_sum = 0;
+    uint32_t marker_xor = 0;
+
+    void set_spawn(float x, float y, float z)
+    {
+        spawn_q[0] = quantize_f(x, 10.f);
+        spawn_q[1] = quantize_f(y, 10.f);
+        spawn_q[2] = quantize_f(z, 10.f);
+    }
+
+    void add_marker(int32_t class_id, float x, float y, float z, float scale)
+    {
+        int32_t rec[5] = {class_id, quantize_f(x, 10.f), quantize_f(y, 10.f), quantize_f(z, 10.f),
+                          quantize_f(scale, 100.f)};
+        uint32_t h = fmix32(fnv1a_32(rec, sizeof(rec)));
+        marker_sum += h;
+        marker_xor ^= rotl32(h, 13u);
+        live_markers++;
+    }
+};
+
+inline bool content_signature(const ContentSummary& s, uint32_t& out_lo, uint32_t& out_hi)
+{
+    if (s.num_acts == 0 && s.num_classes == 0 && s.live_markers == 0)
+        return false;
+    uint32_t words[8] = {
+        s.num_acts,
+        s.num_classes,
+        s.live_markers,
+        (uint32_t)s.spawn_q[0],
+        (uint32_t)s.spawn_q[1],
+        (uint32_t)s.spawn_q[2],
+        s.marker_sum,
+        s.marker_xor,
+    };
+    uint32_t a = fmix32(fnv1a_32(words, sizeof(words), 2166136261u));
+    uint32_t b = fmix32(fnv1a_32(words, sizeof(words), 0x9E3779B9u));
+    out_lo = a | 1u;
+    out_hi = b | 1u;
+    return true;
+}
+
+inline wire::Key3 content_mission_key(uint32_t sig_lo, uint32_t sig_hi)
+{
+    return wire::Key3{{sig_lo | 1u, kAdventureResourceType, sig_hi | 1u}};
+}
+
+inline uint32_t content_place(uint32_t sig_lo) { return sig_lo | 1u; }
 
 // Deterministic marker signature from scenario marker (+0x18, 0x24 bytes: class, pos, rot, scale) and class (+0x1C).
 // Both machines load the same adventure resource so marker bytes 0..0x24 are identical; wave-spawned creatures with a

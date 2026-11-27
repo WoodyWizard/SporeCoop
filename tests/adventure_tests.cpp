@@ -322,6 +322,78 @@ static void test_wire_codecs()
     }
 }
 
+static void test_content_identity_and_host_adv()
+{
+    printf("adventure: BUG-0963 content signature & BUG-1607 K_HOST_ADV codec\n");
+    using namespace adventure;
+    namespace wa = wire::adventure;
+
+    // Empty summary returns false
+    ContentSummary empty;
+    uint32_t lo = 0, hi = 0;
+    CHECK(!content_signature(empty, lo, hi));
+
+    // Two copies of the same adventure with markers in different pool slot orders yield identical signature
+    ContentSummary a, b;
+    a.num_acts = 3;
+    a.num_classes = 12;
+    a.set_spawn(10.04f, -20.02f, 5.01f);
+    a.add_marker(1, 1.0f, 2.0f, 3.0f, 1.0f);
+    a.add_marker(2, -4.5f, 0.25f, 8.75f, 1.5f);
+    a.add_marker(5, 12.0f, 3.0f, -1.0f, 0.8f);
+
+    b.num_acts = 3;
+    b.num_classes = 12;
+    b.set_spawn(10.01f, -19.99f, 5.03f); // sub-0.05 m float noise quantizes identically
+    b.add_marker(5, 12.0f, 3.0f, -1.0f, 0.8f);
+    b.add_marker(1, 1.0f, 2.0f, 3.0f, 1.0f);
+    b.add_marker(2, -4.5f, 0.25f, 8.75f, 1.5f);
+
+    uint32_t alo = 0, ahi = 0, blo = 0, bhi = 0;
+    CHECK(content_signature(a, alo, ahi));
+    CHECK(content_signature(b, blo, bhi));
+    CHECK(alo == blo && ahi == bhi);
+    CHECK((alo & 1u) == 1u && (ahi & 1u) == 1u);
+    CHECK(content_place(alo) == content_place(blo));
+    CHECK(content_mission_key(alo, ahi) == content_mission_key(blo, bhi));
+
+    // Different adventure (extra act or moved marker) produces a distinct signature
+    ContentSummary c = a;
+    c.num_acts = 4;
+    uint32_t clo = 0, chi = 0;
+    CHECK(content_signature(c, clo, chi));
+    CHECK(clo != alo || chi != ahi);
+
+    ContentSummary d = a;
+    d.add_marker(7, 50.0f, 10.0f, -5.0f, 1.0f);
+    uint32_t dlo = 0, dhi = 0;
+    CHECK(content_signature(d, dlo, dhi));
+    CHECK(dlo != alo || dhi != ahi);
+
+    // K_HOST_ADV roundtrip + prefix truncation + invalid active rejection
+    wa::HostAdventure ha;
+    ha.active = 1;
+    ha.raw_key = {{0xBF0CE0D0u, 0x366A930Du, 0x408A0000u}};
+    ha.mission = content_mission_key(alo, ahi);
+    ha.title = "The Arena of Oorama";
+    check_roundtrip_and_prefixes(ha);
+
+    wa::HostAdventure ha_off;
+    ha_off.active = 0;
+    check_roundtrip_and_prefixes(ha_off);
+
+    {
+        net::Writer w;
+        w.u8(2); // invalid active (> 1)
+        wire::put_key(w, ha.raw_key);
+        wire::put_key(w, ha.mission);
+        w.str8("Test");
+        net::Reader r(w.data.data(), w.data.size());
+        wa::HostAdventure bad;
+        CHECK(!bad.read(r));
+    }
+}
+
 int main()
 {
     test_marker_sig();
@@ -329,6 +401,7 @@ int main()
     test_actor_pairing_and_expiry();
     test_captain_scale_and_compat();
     test_wire_codecs();
+    test_content_identity_and_host_adv();
     printf(g_fail ? "adventure_tests: FAILED (%d)\n" : "adventure_tests: ALL OK\n", g_fail);
     return g_fail ? 1 : 0;
 }

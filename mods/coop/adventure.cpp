@@ -29,6 +29,7 @@
 
 #include "adventure_logic.h"
 #include "call_guard.h"
+#include "creations.h"
 #include "driver.h"
 #include "fixes.h"
 #include "game.h"
@@ -62,6 +63,10 @@ static bool g_body_side_fix = true;
 COOP_FIX("adventure.body_side", "BUG-1474", g_body_side_fix,
          "adventure: host sets partner captain puppet political ID (+0x30) so adventure enemies attack partner captains too");
 
+static bool g_quick_join_fix = true;
+COOP_FIX("adventure.quick_join", "BUG-1607", g_quick_join_fix,
+         "adventure: host announces active Quick Play adventure (title & resource key) so guests see a clear F9 hint and 1-click Join Adventure button");
+
 // ---------------- Constants & Game Layout ----------------
 constexpr uint32_t kCreatureNoun = 0x018EB45Eu;
 constexpr uint32_t kBuildingNoun = 0x070703B3u;
@@ -84,6 +89,8 @@ static CreditGoal_t o_CreditGoal;
 static SetCurrentAct_t o_SetCurrentAct;
 static SetState_t o_SetState;
 static uintptr_t a_JumpToAct;
+static uintptr_t a_ScenarioRequestReset;
+static uintptr_t a_StateManagerGet;
 
 static bool g_adv_applying = false;
 CALL_GUARD("adventure.applying", g_adv_applying);
@@ -162,6 +169,29 @@ static uint32_t g_outcomes_sent = 0, g_outcomes_applied = 0, g_guest_fail_held =
 static uint32_t g_hits_forwarded = 0, g_hits_applied = 0, g_deaths_mirrored = 0, g_extras_removed = 0;
 static uint32_t g_actor_batches_tx = 0, g_actor_batches_rx = 0;
 
+// Quick Play adventure invite state (BUG-1607)
+struct HostAdvInvite {
+    bool active = false;
+    wire::Key3 raw_key;
+    wire::Key3 mission;
+    std::string title;
+    bool have_local = false;
+};
+static HostAdvInvite g_host_adv_sent; // host: last K_HOST_ADV broadcast
+static HostAdvInvite g_host_adv;      // guest: latest K_HOST_ADV received from host
+static bool g_adv_join_queued = false;
+static uint32_t g_adv_join_key[3] = {};
+
+static void clear_invite_state()
+{
+    g_host_adv_sent = {};
+    g_host_adv = {};
+    g_adv_join_queued = false;
+}
+
+SESSION_STATE("adventure.invite", nullptr, clear_invite_state,
+              []() -> size_t { return (g_host_adv.active ? 1u : 0u) + (g_host_adv_sent.active ? 1u : 0u); });
+
 // ---------------- Role & Capability Helpers ----------------
 static bool connected() { return C.sess && C.sess->connected(); }
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
@@ -205,6 +235,76 @@ static wire::Key3 current_mission()
     modes::adventure_mission_key(k.v);
     return k;
 }
+
+static wire::Key3 current_raw_key()
+{
+    wire::Key3 k;
+    modes::adventure_raw_key(k.v);
+    return k;
+}
+
+static bool has_local_adventure(const wire::Key3& raw)
+{
+    if (!raw.v[0])
+        return false;
+    uint32_t grp = raw.v[2] ? raw.v[2] : kAdventureGroup;
+    return creations::key_known({raw.v[0], kAdventureResourceType, grp}) ||
+           creations::key_known({raw.v[0], 0x030BDEE3u, grp});
+}
+
+static std::string read_scenario_data_title()
+{
+    uint8_t* data = (uint8_t*)modes::adventure_data();
+    if (!data || !skg::readable(data, 0x58))
+        return {};
+    // Verified in cScenarioData ctor (0xF3F9DB..0xF3F9EB) & LoadResource (0xF44B2B..0xF44B3D):
+    // cScenarioData +0x4C is eastl::string16 mName {begin, end, cap}.
+    const uint16_t* beg = *(const uint16_t* const*)(data + 0x4C);
+    const uint16_t* end = *(const uint16_t* const*)(data + 0x50);
+    if (!beg || !end || end <= beg)
+        return {};
+    size_t n = (size_t)(end - beg);
+    if (n > 128 || !skg::readable(beg, n * 2))
+        return {};
+    std::string out;
+    out.reserve(n);
+    for (size_t i = 0; i < n; i++) {
+        uint32_t c = beg[i];
+        if (c == 0)
+            break;
+        if (c < 0x20u || c == 0x7Fu)
+            continue;
+        if (c < 0x80u) {
+            out.push_back((char)c);
+        } else if (c < 0x800u) {
+            out.push_back((char)(0xC0u | (c >> 6)));
+            out.push_back((char)(0x80u | (c & 0x3Fu)));
+        } else {
+            out.push_back((char)(0xE0u | (c >> 12)));
+            out.push_back((char)(0x80u | ((c >> 6) & 0x3Fu)));
+            out.push_back((char)(0x80u | (c & 0x3Fu)));
+        }
+    }
+    if (out.size() > wire::adventure::kMaxTitleLen)
+        out.resize(wire::adventure::kMaxTitleLen);
+    return out;
+}
+
+static std::string current_adventure_title(const wire::Key3& raw)
+{
+    std::string nm = read_scenario_data_title();
+    if (!nm.empty())
+        return nm;
+    if (!raw.v[0])
+        return {};
+    uint32_t grp = raw.v[2] ? raw.v[2] : kAdventureGroup;
+    nm = creations::creation_name({raw.v[0], 0x030BDEE3u, grp});
+    if (nm.size() > wire::adventure::kMaxTitleLen)
+        nm.resize(wire::adventure::kMaxTitleLen);
+    return nm;
+}
+
+static bool is_ru() { return C.russian && C.russian(); }
 
 static bool play_info(void*& pm, int32_t& state, int32_t& act, int32_t& completed)
 {
@@ -1089,12 +1189,50 @@ static void guest_journal_tick(double now, void* pm, int32_t state, int32_t act)
 }
 
 // ---------------- Message Handlers ----------------
+static void handle_host_adv(uint8_t from, net::Reader& r)
+{
+    wire::adventure::HostAdventure msg;
+    if (!is_guest() || from != 0 || !msg.read(r) || !g_quick_join_fix)
+        return;
+    if (!msg.active) {
+        g_host_adv = {};
+        return;
+    }
+    bool changed = !g_host_adv.active || g_host_adv.raw_key != msg.raw_key || g_host_adv.mission != msg.mission ||
+                   g_host_adv.title != msg.title;
+    g_host_adv.active = true;
+    g_host_adv.raw_key = msg.raw_key;
+    g_host_adv.mission = msg.mission;
+    g_host_adv.title = msg.title;
+    g_host_adv.have_local = has_local_adventure(msg.raw_key);
+    if (changed && !in_scenario() && C.feed) {
+        std::string host_nm = C.sess ? C.sess->name_of(0) : "Host";
+        std::string nm = g_host_adv.title.empty() ? (is_ru() ? "Приключение" : "Adventure") : g_host_adv.title;
+        if (g_host_adv.have_local) {
+            C.feed(is_ru() ? (host_nm + " начал приключение \"" + nm + "\" - нажмите F9 -> Войти в приключение")
+                           : (host_nm + " started adventure \"" + nm + "\" - press F9 -> Join Adventure"));
+        } else {
+            C.feed(is_ru() ? (host_nm + " начал приключение \"" + nm + "\" - откройте его в Быстрой игре")
+                           : (host_nm + " started adventure \"" + nm + "\" - open the same adventure in Quick Play"));
+        }
+        H->log(M, SK_INFO, "adventure: received host invite raw=%08X/%08X mission=%08X/%08X title='%s' have_local=%d (BUG-1607)",
+               g_host_adv.raw_key.v[0], g_host_adv.raw_key.v[2], g_host_adv.mission.v[0], g_host_adv.mission.v[2],
+               g_host_adv.title.c_str(), (int)g_host_adv.have_local);
+    }
+}
+
 void on_message(uint8_t from, net::Reader& r)
 {
-    if (!shared_enabled() || !connected() || !in_scenario())
+    if (!connected())
         return;
     uint8_t kind = r.u8();
     if (!r.ok())
+        return;
+    if (kind == wire::adventure::K_HOST_ADV) {
+        handle_host_adv(from, r);
+        return;
+    }
+    if (!shared_enabled() || !in_scenario())
         return;
 
     void* pm = nullptr;
@@ -1382,11 +1520,123 @@ bool damage_filter(void* creature, float& damage, int type, void* attacker)
     return true;
 }
 
+static void send_host_adv_to(uint8_t peer, bool active)
+{
+    if (!g_quick_join_fix || !is_host() || !C.sess)
+        return;
+    wire::adventure::HostAdventure msg;
+    msg.active = active ? 1u : 0u;
+    if (active) {
+        msg.raw_key = g_host_adv_sent.raw_key;
+        msg.mission = g_host_adv_sent.mission;
+        msg.title = g_host_adv_sent.title;
+    }
+    if (peer == 0xFF) {
+        for (const auto& p : C.sess->players()) {
+            if (p.id != 0 && peer_reads_adv(p.id))
+                send_to_peer(p.id, wire::adventure::K_HOST_ADV, msg, true);
+        }
+    } else if (peer != 0 && peer_reads_adv(peer)) {
+        send_to_peer(peer, wire::adventure::K_HOST_ADV, msg, true);
+    }
+}
+
+void send_invite_to(uint8_t id)
+{
+    if (!g_quick_join_fix || !is_host() || !in_scenario() || !g_host_adv_sent.active)
+        return;
+    send_host_adv_to(id, true);
+}
+
+bool host_invite(std::string& title, bool& can_join)
+{
+    title.clear();
+    can_join = false;
+    if (!g_quick_join_fix || !connected() || !is_guest() || !g_host_adv.active)
+        return false;
+    title = g_host_adv.title;
+    can_join = (game::mode_id() == modes::kMenu) && g_host_adv.have_local && a_ScenarioRequestReset && a_StateManagerGet;
+    return true;
+}
+
+std::string own_title()
+{
+    if (!in_scenario())
+        return {};
+    if (is_host() && g_host_adv_sent.active && !g_host_adv_sent.title.empty())
+        return g_host_adv_sent.title;
+    return current_adventure_title(current_raw_key());
+}
+
+bool join_host_adventure(std::string& err)
+{
+    err.clear();
+    if (!g_quick_join_fix) {
+        err = "disabled by adventure.quick_join";
+        return false;
+    }
+    if (!connected() || !is_guest() || !g_host_adv.active) {
+        err = is_ru() ? "Хост сейчас не в приключении" : "The host is not currently in an adventure";
+        return false;
+    }
+    if (game::mode_id() != modes::kMenu) {
+        err = is_ru() ? "Выйдите в главное меню галактики, чтобы войти в приключение"
+                      : "Return to the Galaxy Menu first to join the adventure";
+        return false;
+    }
+    if (!g_host_adv.have_local || !g_host_adv.raw_key.v[0]) {
+        err = is_ru() ? "Это приключение не найдено локально - откройте его вручную в Быстрой игре"
+                      : "Adventure not found locally - open it manually in Quick Play";
+        return false;
+    }
+    if (!a_ScenarioRequestReset || !a_StateManagerGet) {
+        err = "ScenarioRequest_Reset or IStateManager unavailable";
+        return false;
+    }
+    if (g_adv_join_queued)
+        return true;
+    g_adv_join_key[0] = g_host_adv.raw_key.v[0];
+    g_adv_join_key[1] = g_host_adv.raw_key.v[1] ? g_host_adv.raw_key.v[1] : kAdventureResourceType;
+    g_adv_join_key[2] = g_host_adv.raw_key.v[2] ? g_host_adv.raw_key.v[2] : kAdventureGroup;
+    g_adv_join_queued = true;
+    H->log(M, SK_INFO, "adventure: guest launching host adventure raw=%08X/%08X/%08X title='%s' (BUG-1607)",
+           g_adv_join_key[0], g_adv_join_key[1], g_adv_join_key[2], g_host_adv.title.c_str());
+    H->run_outside_frame(
+        [](void*) {
+            g_adv_join_queued = false;
+            if (game::mode_id() != modes::kMenu || !a_ScenarioRequestReset || !a_StateManagerGet)
+                return;
+            uint32_t* req = skg::cdecl_call<uint32_t*>(a_ScenarioRequestReset);
+            if (!req || !skg::readable(req, 0x30))
+                return;
+            req[0] = g_adv_join_key[0];
+            req[1] = g_adv_join_key[1];
+            req[2] = g_adv_join_key[2];
+            req[0x24 / 4] = 2u; // subMode = 2 (Play Mode, verified in GAMenu_Play 0xDFBDE9)
+            req[0x28 / 4] = 1u; // entryKind = 1 (Play-only entry from Galaxy Menu, 0xDFBDF0)
+            // Leave req[6..8] (+0x18 captain key) zero so cScenarioMode::OnEnter (0xEF1F22) uses the adventure's captain.
+            void* stm = skg::cdecl_call<void*>(a_StateManagerGet);
+            if (!stm || !skg::readable(stm, 4))
+                return;
+            uintptr_t vt = *(uintptr_t*)stm;
+            if (!vt || !skg::readable((void*)(vt + 0x28), 4))
+                return;
+            uintptr_t fn = *(uintptr_t*)(vt + 0x28);
+            skg::thiscall<void>(fn, stm, 0x21851EBEu);
+        },
+        nullptr);
+    return true;
+}
+
 // ---------------- Frame Tick & Init ----------------
 void tick(double now)
 {
     g_now = now;
     if (!connected() || !in_scenario()) {
+        if (connected() && is_host() && g_host_adv_sent.active) {
+            g_host_adv_sent = {};
+            send_host_adv_to(0xFF, false);
+        }
         if (g_host_journal.active() || g_guest_journal.run_id != 0 || !g_driven.empty())
             reset_adventure_state("left scenario");
         return;
@@ -1396,6 +1646,26 @@ void tick(double now)
     int32_t state = -1, act = -1, completed = -1;
     if (!play_info(pm, state, act, completed))
         return;
+
+    if (is_host() && g_quick_join_fix) {
+        wire::Key3 rk = current_raw_key();
+        wire::Key3 mk = current_mission();
+        if (rk.v[0] && (!g_host_adv_sent.active || g_host_adv_sent.raw_key != rk || g_host_adv_sent.mission != mk)) {
+            g_host_adv_sent.active = true;
+            g_host_adv_sent.raw_key = rk;
+            g_host_adv_sent.mission = mk;
+            g_host_adv_sent.title = current_adventure_title(rk);
+            send_host_adv_to(0xFF, true);
+            if (C.sess && C.sess->players().size() > 1 && C.feed) {
+                std::string nm = g_host_adv_sent.title.empty() ? (is_ru() ? "Приключение" : "Adventure")
+                                                               : g_host_adv_sent.title;
+                C.feed(is_ru() ? ("Приключение \"" + nm + "\": гости в меню могут нажать F9 -> Войти в приключение или открыть его в Быстрой игре")
+                               : ("Adventure \"" + nm + "\": guests in the menu can click F9 -> Join Adventure or open it in Quick Play"));
+            }
+            H->log(M, SK_INFO, "adventure: host announced adventure raw=%08X/%08X/%08X mission=%08X/%08X title='%s' (BUG-1607)",
+                   rk.v[0], rk.v[1], rk.v[2], mk.v[0], mk.v[2], g_host_adv_sent.title.c_str());
+        }
+    }
 
     if (is_host() && shared_enabled()) {
         // Detect replay via completed count dropping
@@ -1427,6 +1697,8 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     M = mod;
     C = std::move(ctx);
     a_JumpToAct = H->sym("SporeCoop::ScenarioPlay_JumpToAct");
+    a_ScenarioRequestReset = H->sym("SporeCoop::ScenarioRequest_Reset");
+    a_StateManagerGet = H->sym("App::IStateManager::Get");
     if (uintptr_t a = H->sym("SporeCoop::ScenarioCreditGoal"))
         H->hook_create(M, (void*)a, (void*)h_CreditGoal, (void**)&o_CreditGoal);
     if (uintptr_t a = H->sym("SporeCoop::ScenarioPlay_SetCurrentAct"))
@@ -1448,18 +1720,37 @@ std::string command(const std::vector<std::string>& args)
         return buf;
     }
 
+    // `join` launches host's Quick Play adventure from Galaxy Menu (BUG-1607)
+    if (!args.empty() && args[0] == "join") {
+        std::string err;
+        if (join_host_adventure(err))
+            return "joining host adventure...\n";
+        return "cannot join adventure: " + err + "\n";
+    }
+
     void* pm = nullptr;
     int32_t state = -1, act = -1, completed = -1;
-    if (!play_info(pm, state, act, completed))
+    if (!play_info(pm, state, act, completed)) {
+        if (g_host_adv.active) {
+            char buf[256];
+            snprintf(buf, sizeof buf, "no adventure (host invite: raw=%08X/%08X mission=%08X/%08X local=%d title='%s')\n",
+                     g_host_adv.raw_key.v[0], g_host_adv.raw_key.v[2], g_host_adv.mission.v[0],
+                     g_host_adv.mission.v[2], (int)g_host_adv.have_local, g_host_adv.title.c_str());
+            return buf;
+        }
         return "no adventure";
+    }
 
     uint32_t ki = 0, kg = 0;
     modes::adventure_key(ki, kg);
+    uint32_t ck[3] = {};
+    modes::adventure_mission_key(ck);
     uint32_t place = modes::current_place(modes::for_mode(modes::kScenario));
+    std::string ttl = own_title();
 
-    char head[256];
-    snprintf(head, sizeof head, "adventure playmode=%p state=%d act=%d key=%08X/%08X place=%08X\n",
-             pm, state, act, ki, kg, place);
+    char head[320];
+    snprintf(head, sizeof head, "adventure playmode=%p state=%d act=%d key=%08X/%08X mission=%08X/%08X place=%08X title='%s'\n",
+             pm, state, act, ki, kg, ck[0], ck[2], place, ttl.c_str());
 
     if (args.empty() || args[0] == "status") {
         uint32_t run = is_host() ? g_host_journal.run_id : g_guest_journal.run_id;

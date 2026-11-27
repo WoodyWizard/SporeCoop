@@ -926,6 +926,7 @@ void setup_callbacks()
         host_busy_join(p.id); // C3 (BUG-1142): the host's busy state as last told
         wsync::on_player_join();
         creations::on_player_join(p.id);
+        adventure::send_invite_to(p.id);
         species::on_player_join(p.id); // WP-0 (BUG-1270): after the creations (the rows name their creatures)
         npc::on_player_leave(p.id); // a newcomer under a reused id knows no NPCs yet (BUG-0125)
         if (g_player_forget_fix && p.id != g_sess.my_id())

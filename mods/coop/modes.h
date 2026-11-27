@@ -65,11 +65,15 @@ bool rts_marker_moving(const Adapter* a, void* e, double within);
 // `ptr_still=` (BUG-0416: the monitor judges a partner's copy only of a pointer that stood still)
 double rts_marker_still(const Adapter* a, void* e);
 uint32_t current_place(const Adapter* a); // adapter place() or current_world()
-// tests (BUG-0845): the adventure's resource key (instance, group) the place id is made of; a place id forced for every
-// adventure (0: off) so that two games in their own copies of one adventure count as the same place (puppets)
+// tests (BUG-0845): the adventure's raw resource key (instance, group); a place id forced for every
+// adventure (0: off) overrides both place and mission key for legacy tests.
 bool adventure_key(uint32_t& instance, uint32_t& group);
-// Full 3-dword adventure mission key (instance, type, group); when adventure_force_place is set, returns {forced, 0, 0}
-// so two games with distinct local tutorial copies still match under the forced place id.
+// Raw 3-dword DBPF key of the loaded cScenarioResource (+0x08, +0x0C, +0x10), never hashed or forced.
+bool adventure_raw_key(uint32_t out[3]);
+// Stable content-based 3-dword mission key in Play Mode (BUG-0963); returns false in Edit Mode or if unreadable.
+bool adventure_content_key(uint32_t out[3]);
+// Full 3-dword adventure mission key (instance, type, group): forced place -> content signature in Play Mode (BUG-0963)
+// -> raw DBPF key in Edit Mode or when adventure.content_identity is off.
 bool adventure_mission_key(uint32_t out[3]);
 // cScenarioPlayMode* (cScenarioMode +0x78) when in kScenario, else nullptr
 void* adventure_play_mode();
