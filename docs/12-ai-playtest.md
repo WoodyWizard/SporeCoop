@@ -16,7 +16,19 @@ SporeCoop includes a zero-dependency Model Context Protocol (MCP) server ([spore
 
 ## Quick Start
 
-### 1. Run 4 DeepSeek agents directly (recommended)
+### 1. Run 4 DeepSeek agents via OpenCode Go subscription (no API key env needed)
+
+Uses `opencode-go/deepseek-v4-pro` for Host Leader and Guest 3 (Chaos QA), and `opencode-go/deepseek-v4.1-flash` for Guest 1 (Diplomat) and Guest 2 (Aggressor):
+
+```bash
+# 4 players in Tribe Rivals for 10 minutes on lab lane 2
+SPORE_LANE=2 python3 tools/ai_playtest.py --backend opencode --players 4 --fixture tribe --mode rivals --minutes 10 --lane 2
+
+# 4 players in Civ Rivals for 10 minutes on lab lane 2
+SPORE_LANE=2 python3 tools/ai_playtest.py --backend opencode --players 4 --fixture civ_npc --mode rivals --minutes 10 --lane 2
+```
+
+### 2. Run 4 DeepSeek agents directly via DeepSeek API
 
 ```bash
 export DEEPSEEK_API_KEY="sk-..."

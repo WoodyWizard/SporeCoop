@@ -266,6 +266,7 @@ class SporeMcpEngine:
         self.bugs = []
         self._anomaly_keys = set()
         self._shot_seq = 0
+        self.session_locked = False
 
     def _ensure_run_dir(self):
         if not self.run_dir:
@@ -1069,6 +1070,8 @@ class SporeMcpEngine:
 
     def call_tool(self, name, args=None):
         args = args or {}
+        if self.session_locked and name in ('session_start', 'session_stop', 'session_attach'):
+            return {'ok': False, 'error': 'Session lifecycle is managed by the playtest orchestrator'}
         dispatch = {
             'session_start': lambda a: self.session_start(
                 fixture=a.get('fixture', 'tribe'),
@@ -1200,13 +1203,30 @@ def make_http_server(engine, host='127.0.0.1', port=8765):
             body = json.dumps(obj, ensure_ascii=False).encode('utf-8')
             self.send_response(code)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Mcp-Session-Id', 'sporecoop-mcp-session')
             self.send_header('Content-Length', str(len(body)))
             self.end_headers()
             self.wfile.write(body)
 
+        def do_OPTIONS(self):
+            self.send_response(204)
+            self.send_header('Allow', 'GET, POST, DELETE, OPTIONS')
+            self.end_headers()
+
+        def do_DELETE(self):
+            self.send_response(200)
+            self.send_header('Mcp-Session-Id', 'sporecoop-mcp-session')
+            self.end_headers()
+
         def do_GET(self):
             if self.path == '/health':
                 self._send_json(200, {'ok': True, 'server': SERVER_INFO, 'session': engine.session_status()})
+                return
+            if self.path in ('/mcp', '/'):
+                # Per MCP Streamable HTTP spec, 405 tells clients this server uses POST JSON responses without SSE.
+                self.send_response(405)
+                self.send_header('Allow', 'POST, DELETE, OPTIONS')
+                self.end_headers()
                 return
             self._send_json(404, {'ok': False, 'error': 'Use POST /mcp or GET /health'})
 
@@ -1228,6 +1248,7 @@ def make_http_server(engine, host='127.0.0.1', port=8765):
             resp = handle_jsonrpc(engine, req)
             if resp is None:
                 self.send_response(202)
+                self.send_header('Mcp-Session-Id', 'sporecoop-mcp-session')
                 self.end_headers()
                 return
             self._send_json(200, resp)
@@ -1255,22 +1276,52 @@ def main(argv=None):
                     help='Serve Streamable HTTP MCP (e.g. 127.0.0.1:8765) instead of stdio')
     ap.add_argument('--attach', default='',
                     help='Attach to running SporeKit instances, e.g. host=1,guest1=2')
+    ap.add_argument('--start-fixture', default='',
+                    help='Launch a live session on startup (cell, creature, tribe, civ_npc, space_free)')
+    ap.add_argument('--players', type=int, default=4, choices=[2, 3, 4],
+                    help='Player count for --start-fixture (default 4)')
+    ap.add_argument('--mode', default='rivals', choices=['rivals', 'together'],
+                    help='Rivals or Together preset for --start-fixture')
+    ap.add_argument('--oracle-interval', type=float, default=5.0,
+                    help='Background Oracle polling interval in seconds when --http is active (0 = off)')
     ap.add_argument('--lane', type=int, default=None, help='Default SPORE_LANE for session_start (1..10)')
     args = ap.parse_args(argv)
 
     engine = SporeMcpEngine(default_lane=args.lane)
     if args.attach:
         engine.session_attach(parse_attach_arg(args.attach))
+    elif args.start_fixture:
+        sys.stderr.write(f'[spore-mcp] starting {args.players}p {args.start_fixture} ({args.mode})...\n')
+        st = engine.session_start(fixture=args.start_fixture, players=args.players, mode=args.mode, lane_num=args.lane)
+        sys.stderr.write(f'[spore-mcp] session ready: {json.dumps(st, ensure_ascii=False)}\n')
 
     if args.http:
         host, port_s = args.http.rsplit(':', 1) if ':' in args.http else ('127.0.0.1', args.http)
         srv = make_http_server(engine, host, int(port_s))
+        stop_evt = threading.Event()
+        oracle_t = None
+        if args.oracle_interval > 0:
+            def _oracle():
+                while not stop_evt.is_set():
+                    if engine.players:
+                        try:
+                            res = engine.check_anomalies()
+                            for a in (res.get('new_anomalies') or []):
+                                sys.stderr.write(
+                                    f'[spore-mcp][ORACLE][{a.get("severity")}] {a.get("player")}: {a.get("summary")}\n'
+                                )
+                        except Exception as e:
+                            sys.stderr.write(f'[spore-mcp][ORACLE] error: {e}\n')
+                    stop_evt.wait(args.oracle_interval)
+            oracle_t = threading.Thread(target=_oracle, daemon=True)
+            oracle_t.start()
         sys.stderr.write(f'[spore-mcp] listening on http://{host}:{port_s}/mcp (health: /health)\n')
         try:
             srv.serve_forever()
         except KeyboardInterrupt:
             pass
         finally:
+            stop_evt.set()
             srv.server_close()
             engine.session_stop()
     else:

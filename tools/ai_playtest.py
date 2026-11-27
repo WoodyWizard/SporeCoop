@@ -30,6 +30,7 @@ import argparse
 import datetime
 import json
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -41,6 +42,16 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
 import spore_mcp  # noqa: E402
+
+# Default OpenCode Go DeepSeek models per role:
+# - deepseek-v4-pro for Host Leader & Chaos QA (deeper bug analysis & edge-case exploration)
+# - deepseek-v4.1-flash for Diplomat & Aggressor (fast real-time interaction cadence)
+OPENCODE_MODELS = {
+    'host': 'opencode-go/deepseek-v4-pro',
+    'guest1': 'opencode-go/deepseek-v4.1-flash',
+    'guest2': 'opencode-go/deepseek-v4.1-flash',
+    'guest3': 'opencode-go/deepseek-v4-pro',
+}
 
 PERSONAS = {
     'host': {
@@ -326,6 +337,74 @@ def run_oracle_loop(client, stop_evt, interval_s=5.0):
         stop_evt.wait(interval_s)
 
 
+def run_opencode_agent_loop(player, persona, model, work_dir, run_dir, fixture, mode, stop_evt, max_rounds, round_timeout_s):
+    """Run one autonomous player via `opencode run --standalone --auto --archived` connected to sporecoop MCP."""
+    log_path = os.path.join(run_dir, f'agent_{player}.log')
+    rounds = 0
+    while not stop_evt.is_set() and (max_rounds <= 0 or rounds < max_rounds):
+        rounds += 1
+        prompt = (
+            f'You are autonomous QA playtester "{player}" ({persona["title"]}) in a LIVE multiplayer '
+            f'SporeCoop game (fixture={fixture}, mode={mode}, round={rounds}).\n'
+            f'Role goal: {persona["goal"]}\n\n'
+            'STRICT RULES:\n'
+            f'- Use ONLY the `sporecoop` MCP tools with player="{player}". NEVER use bash, file tools, or edit files.\n'
+            '- Do NOT call session_start, session_stop, or session_attach.\n'
+            '- Execute a concrete sequence of 6 to 10 gameplay actions this round:\n'
+            '  1. Call `observe` first to see stage, resources, F9 UI, visible dialogs, and screen_targets.\n'
+            '  2. Interact like a real player (`press_key`, `click_ui`, `click_f9_row`, `click_target`, '
+            '`click_screen`, `drag_screen`, `pan_camera`, `type_text`, `reconnect_player`).\n'
+            '  3. Call `observe` after actions to verify whether the game actually responded as expected.\n'
+            '  4. If ANY action fails unexpectedly, a button does nothing, a modal gets stuck, guest tools/UI break, '
+            'or progress/resources do not update, IMMEDIATELY call `report_bug` with exact expected vs actual.\n'
+            '  5. End with a 2-line summary of what you tested and whether you found any issues.'
+        )
+        cmd = [
+            'opencode', 'run', '--standalone', '--auto', '--archived',
+            '--model', model,
+            '--title', f'SporeCoop QA {player} r{rounds}',
+            prompt,
+        ]
+        print(f'[{player}] launching OpenCode round {rounds} ({model})...', flush=True)
+        proc = None
+        try:
+            proc = subprocess.Popen(
+                cmd, cwd=work_dir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            )
+            t_start = time.time()
+            chunks = []
+            while proc.poll() is None:
+                if stop_evt.is_set() or (time.time() - t_start) > round_timeout_s:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                    break
+                time.sleep(0.5)
+            out_txt = ''
+            if proc.stdout:
+                try:
+                    out_txt = proc.stdout.read()
+                except Exception:
+                    pass
+            chunks.append(out_txt)
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(f'\n=== Round {rounds} ({model}, rc={proc.returncode}, {time.time() - t_start:.1f}s) ===\n')
+                f.write(''.join(chunks))
+            last_lines = [l.strip() for l in out_txt.splitlines() if l.strip()][-2:]
+            preview = ' | '.join(last_lines)[:180]
+            print(f'[{player}] round {rounds} done (rc={proc.returncode}, {time.time() - t_start:.1f}s): {preview}',
+                  flush=True)
+        except Exception as e:
+            print(f'[{player}] OpenCode error: {e}', file=sys.stderr, flush=True)
+            if proc and proc.poll() is None:
+                proc.kill()
+            time.sleep(3.0)
+        if not stop_evt.is_set():
+            stop_evt.wait(1.0)
+
+
 def write_markdown_report(run_dir, status, anomalies, bugs, actions, llm, elapsed_s):
     os.makedirs(run_dir, exist_ok=True)
     path = os.path.join(run_dir, 'report.md')
@@ -389,24 +468,33 @@ def main(argv=None):
     ap.add_argument('--lane', type=int, default=None, help='SPORE_LANE (1..10)')
     ap.add_argument('--attach', default='', help='Attach to running instances instead of launching, e.g. host=1,guest1=2')
     ap.add_argument('--mcp-url', default='', help='Connect to an external `spore_mcp.py --http` server URL')
+    ap.add_argument('--backend', default='api', choices=['api', 'opencode'],
+                    help='LLM backend: "api" (direct DeepSeek HTTP API) or "opencode" (OpenCode Go CLI agents)')
     ap.add_argument('--base-url', default=os.environ.get('DEEPSEEK_BASE_URL', 'https://api.deepseek.com/v1'))
-    ap.add_argument('--model', default=os.environ.get('DEEPSEEK_MODEL', 'deepseek-chat'))
+    ap.add_argument('--model', default=os.environ.get('DEEPSEEK_MODEL', 'deepseek-chat'),
+                    help='Model for --backend api, or override all OpenCode agents (leave empty/default for per-role Go models)')
+    ap.add_argument('--round-timeout', type=float, default=120.0,
+                    help='Per-round timeout in seconds for --backend opencode (default 120)')
     ap.add_argument('--api-key', default=os.environ.get('DEEPSEEK_API_KEY', ''))
-    ap.add_argument('--mock', action='store_true', help='Use offline MockLLMClient (no API key or Wine needed if combined with --mock-game)')
+    ap.add_argument('--mock', action='store_true', help='Use offline MockLLMClient (no API key required)')
     ap.add_argument('--keep-open', action='store_true', help='Do not kill launched game instances on exit')
     args = ap.parse_args(argv)
 
-    if not args.mock and not args.api_key:
-        print('Error: set DEEPSEEK_API_KEY env var (or pass --api-key, or use --mock for offline testing)',
+    if args.backend == 'api' and not args.mock and not args.api_key:
+        print('Error: set DEEPSEEK_API_KEY env var (or use --backend opencode / --mock)',
               file=sys.stderr)
         return 2
 
-    llm = MockLLMClient() if args.mock else DeepSeekClient(args.api_key, base_url=args.base_url, model=args.model)
+    llm = MockLLMClient() if (args.mock or args.backend == 'opencode') else DeepSeekClient(
+        args.api_key, base_url=args.base_url, model=args.model
+    )
 
     engine = None
+    http_srv = None
     launched = False
-    if args.mcp_url:
-        client = RemoteMcpClient(args.mcp_url)
+    mcp_url = args.mcp_url
+    if mcp_url:
+        client = RemoteMcpClient(mcp_url)
         status = client.call_tool('session_status', {})
         if not status.get('players'):
             if args.attach:
@@ -424,13 +512,21 @@ def main(argv=None):
         else:
             status = engine.session_start(fixture=args.fixture, players=args.players, mode=args.mode, lane_num=args.lane)
             launched = True
+        if args.backend == 'opencode':
+            engine.session_locked = True
+            http_srv = spore_mcp.make_http_server(engine, '127.0.0.1', 0)
+            port = http_srv.server_address[1]
+            threading.Thread(target=http_srv.serve_forever, daemon=True).start()
+            mcp_url = f'http://127.0.0.1:{port}/mcp'
+            print(f'[playtest] internal MCP HTTP server listening at {mcp_url}', flush=True)
 
     active_players = [p['player'] for p in (status.get('players') or [])]
     if not active_players:
         print('Error: no active players in session:', status, file=sys.stderr)
         return 1
 
-    openai_tools = mcp_tools_to_openai(client.tool_definitions())
+    run_dir = status.get('run_dir') or os.path.join(spore_mcp.ROOT, 'out', 'ai-playtest', spore_mcp._utc_stamp())
+    os.makedirs(run_dir, exist_ok=True)
     stop_evt = threading.Event()
     t0 = time.time()
     deadline = t0 + max(5.0, args.minutes * 60.0)
@@ -439,15 +535,44 @@ def main(argv=None):
     oracle_t.start()
 
     threads = []
-    for p in active_players:
-        persona = PERSONAS.get(p, PERSONAS['guest1'])
-        th = threading.Thread(
-            target=run_agent_loop,
-            args=(p, persona, client, llm, openai_tools, args.fixture, args.mode, stop_evt, args.steps, args.pace),
-            daemon=True,
-        )
-        th.start()
-        threads.append(th)
+    if args.backend == 'opencode':
+        oc_work = os.path.join(run_dir, 'oc-work')
+        os.makedirs(oc_work, exist_ok=True)
+        oc_cfg = {
+            'mcp': {
+                'servers': {
+                    'sporecoop': {
+                        'type': 'remote',
+                        'url': mcp_url,
+                    }
+                }
+            }
+        }
+        with open(os.path.join(oc_work, 'opencode.json'), 'w', encoding='utf-8') as f:
+            json.dump(oc_cfg, f, indent=2)
+        override_model = args.model if (args.model and args.model != 'deepseek-chat') else ''
+        for p in active_players:
+            persona = PERSONAS.get(p, PERSONAS['guest1'])
+            model = override_model or OPENCODE_MODELS.get(p, 'opencode-go/deepseek-v4.1-flash')
+            th = threading.Thread(
+                target=run_opencode_agent_loop,
+                args=(p, persona, model, oc_work, run_dir, args.fixture, args.mode, stop_evt,
+                      args.steps, args.round_timeout),
+                daemon=True,
+            )
+            th.start()
+            threads.append(th)
+    else:
+        openai_tools = mcp_tools_to_openai(client.tool_definitions())
+        for p in active_players:
+            persona = PERSONAS.get(p, PERSONAS['guest1'])
+            th = threading.Thread(
+                target=run_agent_loop,
+                args=(p, persona, client, llm, openai_tools, args.fixture, args.mode, stop_evt, args.steps, args.pace),
+                daemon=True,
+            )
+            th.start()
+            threads.append(th)
 
     try:
         while any(th.is_alive() for th in threads):
@@ -461,17 +586,21 @@ def main(argv=None):
 
     stop_evt.set()
     for th in threads:
-        th.join(timeout=10.0)
+        th.join(timeout=15.0)
     oracle_t.join(timeout=5.0)
 
+    if engine is not None:
+        engine.session_locked = False
     final_status = client.call_tool('session_status', {})
-    run_dir = final_status.get('run_dir') or os.path.join(spore_mcp.ROOT, 'out', 'ai-playtest', spore_mcp._utc_stamp())
     anomalies = engine.anomalies if engine is not None else []
     bugs = engine.bugs if engine is not None else []
     actions = engine.actions if engine is not None else []
     report_path = write_markdown_report(run_dir, final_status, anomalies, bugs, actions, llm, time.time() - t0)
     print(f'\nPlaytest finished. Report written to: {report_path}', flush=True)
 
+    if http_srv is not None:
+        http_srv.shutdown()
+        http_srv.server_close()
     if launched and not args.keep_open:
         client.call_tool('session_stop', {})
     return 0
