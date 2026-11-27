@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.8.2.2] - 2026-11-26
+
+Critical Tribe Rivals crash hotfix fixing Guest crashes when selling a tribe tool hut.
+
+### Fixed
+- **Tribe Rivals Guest Crash When Selling a Tribe Building / Tool Hut** (`rivals.tribe_sell_cast`): fixed `h_CommunityEditorSell` in `mods/coop/tribe_rivals.cpp` to cast its `cSpatialObject*` argument using vtable offset `+0xB8` (`cTribeTool` `0x0116D858`, matching native `CommunityEditor_Sell` `0x00D09D70`) instead of `+0x0C`, eliminating the Guest crash in `CommunityEditor_Drop` / `Simulator::cTribe::GetToolByType` when selling a tool hut. (BUG-1586)
+
 ## [0.8.2.1] - 2026-11-26
 
 Critical Tribe Rivals hotfix fixing NPC village hut conquest and stage progression blocked by the Game Over message guard.
