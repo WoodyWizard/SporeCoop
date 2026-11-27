@@ -272,6 +272,7 @@ unit-tools:
 	python3 tools/tests/state_fields_check.py
 	python3 tools/tests/test_lint.py
 	python3 tools/tests/harness_selftest.py
+	python3 tools/tests/mcp_selftest.py
 
 # B5 (BUG-1123): crash_triage.py symbolises coop.dll / sporekit.dll frames with the debug symbols of the
 # report's version (symbols_pack.sh of the local build, a fake gh for the download; no network)
