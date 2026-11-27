@@ -145,16 +145,17 @@ def _parse_uistate(raw):
             cols = [p for p in rest.split("'")[1::2]]
             if cols:
                 st['rows'].append(cols)
-        elif key == 'rrow':
+        elif key in ('rrow', 'srow'):
             idx_tok = rest.split(' ', 1)[0]
             cols = [p for p in rest.split("'")[1::2]]
             if idx_tok.isdigit() and cols:
                 ridx = int(idx_tok)
                 rtxt = cols[0]
                 rbtn = cols[1] if len(cols) > 1 else ''
-                st['rivals_rows'].append({'index': ridx, 'text': rtxt, 'button': rbtn})
-        elif key == 'rpage':
-            st['rivals_page'] = rest.strip()
+                prefix = 'rbtn' if key == 'rrow' else 'sbtn'
+                st['rivals_rows'].append({'index': ridx, 'text': rtxt, 'button': rbtn, 'btn_prefix': prefix})
+        elif key in ('rpage', 'spage'):
+            st['rivals_page' if key == 'rpage' else 'space_page'] = rest.strip()
         elif key == 'chat':
             st['chat'].append(rest.strip("'"))
         elif key in ('status', 'session', 'world', 'creation', 'hostaddr'):
@@ -486,7 +487,7 @@ class SporeMcpEngine:
         # Check visible modal / dialog captions so agents immediately spot popups
         visible_dialogs = []
         captions_to_scan = list(DIALOG_CAPTIONS)
-        if uistate.get('modal') == '1' or uistate.get('pause_buttons'):
+        if uistate.get('modal') == '1':
             captions_to_scan.extend(MODAL_ONLY_DIALOG_CAPTIONS)
         for cap in captions_to_scan:
             found = _parse_uifind(sl.out(f'coop.ui find "{cap}"'))
@@ -585,13 +586,14 @@ class SporeMcpEngine:
         if not ui['open']:
             return {'ok': False, 'error': 'F9 window is not open; press_key(player, "f9") first'}
 
-        # 1. Match parsed `rrow <i> '<text>' '<button>'` -> widget `rbtn<i>` (real coop.uistate Rivals format)
+        # 1. Match parsed `rrow <i>` / `srow <i>` -> widget `rbtn<i>` / `sbtn<i>`
         by_widget = {b.get('widget'): b for b in ui['buttons']}
         for rr in ui.get('rivals_rows', []):
             rtxt = (rr.get('text') or '').lower()
             rbtn_cap = (rr.get('button') or '').lower()
             if needle in rtxt or (rbtn_cap and needle in rbtn_cap):
-                b = by_widget.get(f'rbtn{rr["index"]}')
+                pref = rr.get('btn_prefix') or 'rbtn'
+                b = by_widget.get(f'{pref}{rr["index"]}')
                 if b:
                     sl.call(f'move {b["x"]} {b["y"]}')
                     time.sleep(0.15)

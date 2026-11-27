@@ -692,6 +692,13 @@ void session_event(bool connected, const std::string& why)
         set_status(std::string(T("Disconnected: ", "Отключено: ")) + why, kRed, 30);
 }
 
+void flash_status(const std::string& text, bool error, double ttl)
+{
+    if (!g_status_fix || !g_ok || text.empty())
+        return;
+    set_status(text, error ? kRed : kYellow, ttl);
+}
+
 static void save_str(const char* section, const char* key, const std::string& v)
 {
     // BUG-0245: SporeKit refuses a value that is not ASCII when the file could not be made Unicode
@@ -2177,6 +2184,8 @@ static void refresh_space()
 {
     auto rows = spaceext::rows_all();
     int n = (int)rows.size(), pages = std::max(1, (n + kSpaceRows - 1) / kSpaceRows);
+    if (g_space_first < 0)
+        g_space_first = 0;
     if (g_space_first >= n)
         g_space_first = (pages - 1) * kSpaceRows;
     for (int i = 0; i < kSpaceRows; i++) {
@@ -2190,12 +2199,40 @@ static void refresh_space()
         text(D.space_text[i], rows[k].text);
         color(D.space_text[i], rows[k].color ? rows[k].color : kWhite);
         text(D.space_button[i], rows[k].button);
+        // BUG-1596: dynamically widen Space row buttons with full native border padding (+58 px, up to 280 px)
+        // so captions like "Propose alliance" and "Switch to allies" never wrap or collide vertically.
+        if (!rows[k].button.empty() && rows[k].on_click && D.space_button[i]) {
+            float want_w = std::min(280.f, std::max(165.f, std::round(caption_width(rows[k].button) + 58.f)));
+            float bx1 = 720.f - want_w;
+            Rect br = sui::area(D.space_button[i]);
+            if (std::abs(br.x1 - bx1) > 0.5f) {
+                br.x1 = bx1;
+                sui::set_area(D.space_button[i], br);
+            }
+            if (D.space_text[i]) {
+                auto& tc = g_cache[D.space_text[i]];
+                float tx2 = bx1 - 8.f;
+                if (std::abs(tc.box.x2 - tx2) > 0.5f) {
+                    tc.box.x2 = tx2;
+                    fit(D.space_text[i], tc);
+                }
+            }
+        } else if (D.space_text[i]) {
+            auto& tc = g_cache[D.space_text[i]];
+            if (std::abs(tc.box.x2 - 720.f) > 0.5f) {
+                tc.box.x2 = 720.f;
+                fit(D.space_text[i], tc);
+            }
+        }
     }
     if (rows.empty())
         text(D.space_text[0], T("Nothing here yet", "Пока ничего"));
     show(D.space_text[0], true);
     show(D.space_prev, pages > 1);
     show(D.space_next, pages > 1);
+    // BUG-1597: disable < / > pager buttons at first/last Space page just like Rivals/Settings pages.
+    enable(D.space_prev, g_space_first > 0);
+    enable(D.space_next, g_space_first + kSpaceRows < n);
     show(D.space_pageno, pages > 1);
     text(D.space_pageno, std::to_string(g_space_first / kSpaceRows + 1) + "/" + std::to_string(pages));
 }
@@ -3274,6 +3311,13 @@ std::string debug_state()
     s += "status '" + g_status + "'\n";
     s += "joinline '" + g_join_line + "'\n";
     s += "spage first=" + std::to_string(g_space_first) + " rows=" + std::to_string(kSpaceRows) + "\n";
+    if (g_space_page) {
+        for (int i = 0; i < kSpaceRows; i++)
+            if (D.space_text[i] && sui::visible(D.space_text[i]))
+                s += "srow " + std::to_string(i) + " '" + sui::caption(D.space_text[i]) + "' '" +
+                     (D.space_button[i] && sui::visible(D.space_button[i]) ? sui::caption(D.space_button[i]) : "") +
+                     "'\n";
+    }
     s += "rpage first=" + std::to_string(g_rivals_first) + " rows=" + std::to_string(kRivalsRows) + "\n";
     if (g_rivals_page) {
         for (int i = 0; i < kRivalsRows; i++)

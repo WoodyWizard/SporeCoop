@@ -153,6 +153,8 @@ extern bool g_lan_pages_fix; // tests: `coop.fix core.lan_pages off` lists the f
 extern bool g_status_fix; // tests: `coop.fix core.ui_status off` keeps the status of the last button (BUG-0104)
 // the session was joined (connected) or ended (why): replaces the status line of the join
 void session_event(bool connected, const std::string& why);
+// BUG-1599: flash a transient notice/error on the F9 status line (visible in both UI and coop.uistate)
+void flash_status(const std::string& text, bool error = false, double ttl = 5.0);
 extern bool g_recenter_fix;  // tests: `coop.fix core.window_recenter off` keeps the first position (BUG-0113)
 extern bool g_menu_drop_fix; // tests: `coop.fix core.menu_drop off` keeps the menu item pointer after the menu (BUG-0163)
 // tests: the window goes back to its first start (the name step), as with no name chosen yet

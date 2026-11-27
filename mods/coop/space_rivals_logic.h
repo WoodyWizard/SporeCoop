@@ -3,6 +3,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -775,7 +776,22 @@ struct SpaceNpcUiItem {
 
 inline std::string format_space_npc_label(const SpaceNpcSnapshot& s, int ordinal)
 {
-    std::string nm = s.name.empty() ? ("Empire #" + std::to_string(ordinal)) : s.name;
+    auto is_missing_name = [](const std::string& v) {
+        size_t a = 0, b = v.size();
+        while (a < b && (unsigned char)v[a] <= ' ')
+            a++;
+        while (b > a && (unsigned char)v[b - 1] <= ' ')
+            b--;
+        if (a == b)
+            return true;
+        std::string lo;
+        lo.reserve(b - a);
+        for (size_t i = a; i < b; i++)
+            lo.push_back((char)std::tolower((unsigned char)v[i]));
+        return lo == "unknown" || lo == "(unknown)";
+    };
+    // BUG-1601: replace empty or literal "unknown" empire placeholder strings with a clean "Empire #N" label.
+    std::string nm = is_missing_name(s.name) ? ("Empire #" + std::to_string(ordinal)) : s.name;
     float r = std::isfinite(s.rel) ? s.rel : 0.0f;
     bool ally = s.flag_ally || r >= kSpaceNpcAllyRel;
     bool war = s.flag_war || (!ally && r <= kSpaceNpcHostileRel);

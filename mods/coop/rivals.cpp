@@ -1463,6 +1463,8 @@ std::vector<UiRow> ui_rows()
                 const BreakNotice* bn = g_state.rel.find_break_notice(me, p.id);
                 bool in_ally = g_state.rel.has_proposal(p.id, me, ProposalKind::Ally);
                 bool in_peace = g_state.rel.has_proposal(p.id, me, ProposalKind::Peace);
+                bool out_ally = g_state.rel.has_proposal(me, p.id, ProposalKind::Ally);
+                bool out_peace = g_state.rel.has_proposal(me, p.id, ProposalKind::Peace);
                 std::string btn;
                 RelAction act = RelAction::ProposeAlly;
                 if (bn) {
@@ -1478,6 +1480,14 @@ std::vector<UiRow> ui_rows()
                              tr("peace offered", "предложен мир"));
                     btn = tr("Accept peace", "Принять мир");
                     act = RelAction::AcceptPeace;
+                } else if (out_ally) {
+                    // BUG-1598: show clear pending confirmation to the sender of an outgoing alliance proposal.
+                    snprintf(buf, sizeof buf, "  %s: %s (%s)", p.name.c_str(), tr_rel(rel),
+                             tr("ally sent", "союз предложен"));
+                } else if (out_peace) {
+                    // BUG-1598: show clear pending confirmation to the sender of an outgoing peace proposal.
+                    snprintf(buf, sizeof buf, "  %s: %s (%s)", p.name.c_str(), tr_rel(rel),
+                             tr("peace sent", "мир предложен"));
                 } else if (rel == Relation::Neutral) {
                     snprintf(buf, sizeof buf, "  %s: %s", p.name.c_str(), tr_rel(rel));
                     btn = tr("Propose ally", "Союз");

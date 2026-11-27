@@ -1736,6 +1736,22 @@ static std::vector<rivals::NpcUiEntry> on_npc_ui_list(uint8_t viewer)
             names[inst] = std::move(nm);
     }
     auto rows = build_wild_npc_ui_list(g_tables, viewer, discovered, names.empty() ? nullptr : &names, ru());
+    // BUG-1600: prioritize allied/hostile/interacted species first and cap UI rows to avoid 30-page NPC bloat.
+    std::stable_sort(rows.begin(), rows.end(), [&](const WildNpcUiRow& a, const WildNpcUiRow& b) {
+        auto pri = [&](const WildNpcUiRow& x) -> int {
+            if (x.allied)
+                return 0;
+            if (x.hostile)
+                return 1;
+            if (g_tables.get_relation(viewer, x.npc_id) != 0)
+                return 2;
+            return 3;
+        };
+        return pri(a) < pri(b);
+    });
+    constexpr size_t kMaxCreatureUiNpcs = 12;
+    if (rows.size() > kMaxCreatureUiNpcs)
+        rows.resize(kMaxCreatureUiNpcs);
     out.reserve(rows.size());
     for (auto& r : rows) {
         rivals::NpcUiEntry e{};

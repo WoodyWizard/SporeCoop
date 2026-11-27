@@ -136,6 +136,14 @@ def test_mcp_protocol_and_tools():
         row_click2 = eng.click_f9_row('guest1', 'Alice')
         assert row_click2['ok'] and row_click2['button'] == 'Declare war' and row_click2['widget'] == 'rbtn1'
 
+        # Also test Space tab `srow` -> `sbtnN` parsing and pause_buttons not triggering Done/Save when modal=0
+        sp_ui = spore_mcp._parse_uistate(
+            "open=1 page=space modal=0\npausebtn 100 100 200 130 'Resume Game'\n"
+            "spage first=0 rows=12\nsrow 0 '  Bob: neutral' 'Propose alliance'\nsbtn0 550 200 710 227 1 'Propose alliance'\n"
+        )
+        assert len(sp_ui['rivals_rows']) == 1 and sp_ui['rivals_rows'][0]['btn_prefix'] == 'sbtn'
+        assert len(sp_ui['rows']) == 1 and sp_ui['rows'][0][1] == 'Propose alliance'
+
         tgt_click = eng.click_target('guest1', 'hut1', button='right')
         assert tgt_click['ok'] and tgt_click['target']['x'] == 510
 
