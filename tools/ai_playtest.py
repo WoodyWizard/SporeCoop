@@ -44,13 +44,13 @@ if HERE not in sys.path:
 import spore_mcp  # noqa: E402
 
 # Default OpenCode Go DeepSeek models per role:
-# - deepseek-v4-pro for Host Leader & Chaos QA (deeper bug analysis & edge-case exploration)
-# - deepseek-v4.1-flash for Diplomat & Aggressor (fast real-time interaction cadence)
+# deepseek-v4.1-flash (1017) is faster (~175 tok/s), natively multimodal (can inspect its own screenshots),
+# and matches or beats v4-pro on agentic benchmarks.
 OPENCODE_MODELS = {
-    'host': 'opencode-go/deepseek-v4-pro',
+    'host': 'opencode-go/deepseek-v4.1-flash',
     'guest1': 'opencode-go/deepseek-v4.1-flash',
     'guest2': 'opencode-go/deepseek-v4.1-flash',
-    'guest3': 'opencode-go/deepseek-v4-pro',
+    'guest3': 'opencode-go/deepseek-v4.1-flash',
 }
 
 PERSONAS = {
@@ -350,14 +350,15 @@ def run_opencode_agent_loop(player, persona, model, work_dir, run_dir, fixture, 
             'STRICT RULES:\n'
             f'- Use ONLY the `sporecoop` MCP tools with player="{player}". NEVER use bash, file tools, or edit files.\n'
             '- Do NOT call session_start, session_stop, or session_attach.\n'
-            '- Execute a concrete sequence of 6 to 10 gameplay actions this round:\n'
+            '- Execute a focused batch of AT MOST 6 to 8 tool calls this round, then STOP and finish:\n'
             '  1. Call `observe` first to see stage, resources, F9 UI, visible dialogs, and screen_targets.\n'
             '  2. Interact like a real player (`press_key`, `click_ui`, `click_f9_row`, `click_target`, '
-            '`click_screen`, `drag_screen`, `pan_camera`, `type_text`, `reconnect_player`).\n'
-            '  3. Call `observe` after actions to verify whether the game actually responded as expected.\n'
-            '  4. If ANY action fails unexpectedly, a button does nothing, a modal gets stuck, guest tools/UI break, '
-            'or progress/resources do not update, IMMEDIATELY call `report_bug` with exact expected vs actual.\n'
-            '  5. End with a 2-line summary of what you tested and whether you found any issues.'
+            '`click_screen`, `drag_screen`, `pan_camera`, `type_text`, `reconnect_player`, `screenshot`).\n'
+            '  3. Call `observe` (or `screenshot` + inspect it) after actions to verify real game response.\n'
+            '  4. If ANY action fails unexpectedly, a button wraps/overlaps or does nothing, a modal gets stuck, '
+            'guest tools/UI break, or progress/resources/HUD show wrong values, IMMEDIATELY call `report_bug` '
+            'with exact expected vs actual BEFORE finishing.\n'
+            '  5. STOP after at most 8 tool calls and output a 2-line summary of what you tested and found.'
         )
         cmd = [
             'opencode', 'run', '--standalone', '--auto', '--archived',

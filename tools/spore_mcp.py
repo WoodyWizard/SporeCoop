@@ -617,7 +617,16 @@ class SporeMcpEngine:
 
     def press_key(self, player, key, mode='tap', hold_ms=0):
         sl = self._slot(player)
-        k = re.sub(r'[^a-zA-Z0-9_]', '', str(key or ''))
+        k = re.sub(r'[^a-zA-Z0-9_]', '', str(key or '')).lower()
+        if k.startswith('key') and len(k) > 3:
+            k = k[3:]
+        key_aliases = {
+            'escape': 'esc',
+            'return': 'enter',
+            'backspace': 'back',
+            'delete': 'del',
+        }
+        k = key_aliases.get(k, k)
         if not k:
             return {'ok': False, 'error': 'invalid key'}
         hold_ms = max(0, min(5000, int(hold_ms or 0)))
@@ -1201,12 +1210,15 @@ def make_http_server(engine, host='127.0.0.1', port=8765):
 
         def _send_json(self, code, obj):
             body = json.dumps(obj, ensure_ascii=False).encode('utf-8')
-            self.send_response(code)
-            self.send_header('Content-Type', 'application/json; charset=utf-8')
-            self.send_header('Mcp-Session-Id', 'sporecoop-mcp-session')
-            self.send_header('Content-Length', str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.send_response(code)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Mcp-Session-Id', 'sporecoop-mcp-session')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
 
         def do_OPTIONS(self):
             self.send_response(204)
