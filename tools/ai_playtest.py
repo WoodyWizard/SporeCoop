@@ -132,12 +132,16 @@ GAMEPLAY_PERSONAS = {
 STAGE_PLAYBOOKS = {
     'cell': (
         'CELL STAGE PLAYBOOK:\n'
+        '- CHECK YOUR DIET FIRST in `observe().stage_state.pool` (`diet=herb` vs `diet=carn` vs `diet=omni`)!\n'
+        '  * Herbivore (`diet=herb`, filter mouth) can ONLY eat GREEN plant chunks; red meat chunks and clear air bubbles '
+        'give ZERO food (do NOT waste turns chasing red meat or file a bug when meat gives 0 food!).\n'
+        '  * Carnivore (`diet=carn`) eats red/pink meat chunks and hunts smaller cells.\n'
         '- Swim continuously using `perform_actions` with `press_key` (w/a/s/d, hold_ms 700..1400) and left-clicks on '
-        'nearby meat/plant food or smaller cells from `screen_targets`.\n'
+        'edible food from `screen_targets` (use parameter `target_key`) or your 1:1 `screenshot`.\n'
         '- Avoid much larger predators; if at war with a rival player cell, chase and bite them.\n'
-        '- Take a `screenshot` and `Read` it to spot food clusters, mate call icon (bottom bar), or the Advance Stage '
-        'button when the bottom DNA/growth bar fills up.\n'
-        '- If you enter the Cell Editor, drag a part or click green checkmark (`click_hud("editor_done")`) to return to the pool.'
+        '- Click `click_hud("mate_call")` when you want to enter the Cell Editor; exit via `click_hud("editor_done")`.\n'
+        '- CRITICAL FOR STAGE ADVANCE: once your evolution bar reaches 100% (`food=1000`, glowing cyan bottom bar and '
+        'Cell->Creature icon at bottom-right), click `click_hud("cell_advance")` to evolve into Creature stage!'
     ),
     'creature': (
         'CREATURE STAGE PLAYBOOK:\n'

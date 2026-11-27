@@ -493,6 +493,40 @@ static void test_wscale_solo_safety_and_fluid_viewbox()
     }
 }
 
+static void test_rejoin_progress_persistence()
+{
+    printf("cell_rivals: guest rejoin progress persistence & restore codec (BUG-1603)\n");
+    using namespace cell_rivals_logic;
+    CellProgressMemory mem;
+    mem.remember("s:dave", 706, (uint16_t)((1u << 1) | (1u << 6)), 2);
+    // Transient lower value from host save reload must NOT overwrite higher saved progress
+    mem.remember("s:dave", 580, (uint16_t)(1u << 1), 0);
+    const auto* e = mem.find("s:dave");
+    CHECK(e != nullptr && e->food == 706 && e->parts_mask == ((1u << 1) | (1u << 6)) && e->kills == 2,
+          "memory preserves max food, unioned parts_mask, and max kills");
+    // Higher progress updates cleanly and clamps to kCellFullFood (1000)
+    mem.remember("s:dave", 1250, (uint16_t)(1u << 8), 3);
+    e = mem.find("s:dave");
+    CHECK(e != nullptr && e->food == kCellFullFood && e->parts_mask == ((1u << 1) | (1u << 6) | (1u << 8)) &&
+              e->kills == 3,
+          "memory clamps food to 1000 and merges newly unlocked parts");
+    CHECK(mem.find("s:unknown") == nullptr && mem.find("") == nullptr, "missing/empty key returns nullptr");
+
+    // Wire codec round-trip & bounds validation
+    net::Writer w;
+    write_restore_progress(w, {834, (uint16_t)((1u << 2) | (1u << 7))});
+    net::Reader r(w.data.data(), w.data.size());
+    RestoreProgressMsg out{};
+    CHECK(read_restore_progress(r, out) && out.food == 834 && out.parts_mask == ((1u << 2) | (1u << 7)),
+          "restore_progress round-trips cleanly");
+
+    net::Writer bad_w;
+    bad_w.u32(1500); // > kCellFullFood
+    bad_w.u16(0xFFFF);
+    net::Reader bad_r(bad_w.data.data(), bad_w.data.size());
+    CHECK(!read_restore_progress(bad_r, out), "out-of-range restore food rejected");
+}
+
 int main()
 {
     test_progress_and_parts();
@@ -507,6 +541,7 @@ int main()
     test_poison_cloud_pvp_attribution();
     test_catchup_wscale_policy();
     test_wscale_solo_safety_and_fluid_viewbox();
+    test_rejoin_progress_persistence();
     printf("cell_rivals_tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

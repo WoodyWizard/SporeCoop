@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -22,8 +23,9 @@ constexpr float kMeatDropRadius = 2.0f;
 constexpr float kMeatDropSpeed = 2.5f;
 
 // Stage-custom MSG_RIVALS_FACTION (81) subkinds for Stage::Cell (wire/rivals_faction.h SK_STAGE_CUSTOM = 16).
-constexpr uint8_t kSubPvpKill = 16;      // victim guest -> host: rival cell killed at War, drop physical meat
-constexpr uint8_t kSubFoodRollback = 17; // host -> guest: chunk already eaten first by someone else, refund food
+constexpr uint8_t kSubPvpKill = 16;          // victim guest -> host: rival cell killed at War, drop physical meat
+constexpr uint8_t kSubFoodRollback = 17;     // host -> guest: chunk already eaten first by someone else, refund food
+constexpr uint8_t kSubRestoreProgress = 18;  // host -> guest: restore persisted Cell Rivals food & unlocked parts after rejoin (BUG-1603)
 
 // Operations carried by wire::rivals_faction::SK_DRAFT_APPLY (7) for Stage::Cell.
 constexpr uint8_t kDraftOpUnlockPart = 1; // u32 part_idx (0..12)
@@ -621,6 +623,62 @@ inline bool read_food_rollback(net::Reader& r, FoodRollbackMsg& out)
     if (!r.ok() || d >= 0 || d < -999)
         return false;
     out.delta = d;
+    return true;
+}
+
+// ---- BUG-1603: Per-player Cell Rivals rejoin progress persistence ----
+struct SavedCellEntry {
+    int32_t food = 0;
+    uint16_t parts_mask = 0;
+    uint16_t kills = 0;
+};
+
+struct CellProgressMemory {
+    std::map<std::string, SavedCellEntry> by_key;
+
+    void clear() { by_key.clear(); }
+
+    void remember(const std::string& key, int32_t food, uint16_t parts_mask, uint16_t kills)
+    {
+        if (key.empty())
+            return;
+        auto& e = by_key[key];
+        int32_t clamped = std::clamp(food, 0, kCellFullFood);
+        if (clamped > e.food)
+            e.food = clamped;
+        e.parts_mask = (uint16_t)((e.parts_mask | parts_mask) & ((1u << kCellParts) - 1u));
+        if (kills > e.kills)
+            e.kills = kills;
+    }
+
+    const SavedCellEntry* find(const std::string& key) const
+    {
+        if (key.empty())
+            return nullptr;
+        auto it = by_key.find(key);
+        return it == by_key.end() ? nullptr : &it->second;
+    }
+};
+
+struct RestoreProgressMsg {
+    int32_t food = 0;
+    uint16_t parts_mask = 0;
+};
+
+inline void write_restore_progress(net::Writer& w, const RestoreProgressMsg& m)
+{
+    w.u32((uint32_t)std::clamp(m.food, 0, kCellFullFood));
+    w.u16((uint16_t)(m.parts_mask & ((1u << kCellParts) - 1u)));
+}
+
+inline bool read_restore_progress(net::Reader& r, RestoreProgressMsg& out)
+{
+    int32_t food = (int32_t)r.u32();
+    uint16_t mask = r.u16();
+    if (!r.ok() || food < 0 || food > kCellFullFood)
+        return false;
+    out.food = food;
+    out.parts_mask = (uint16_t)(mask & ((1u << kCellParts) - 1u));
     return true;
 }
 

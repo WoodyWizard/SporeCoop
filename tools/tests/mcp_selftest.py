@@ -163,12 +163,15 @@ def test_mcp_protocol_and_tools():
 
         batch = eng.perform_actions('guest1', [
             {'type': 'click_target', 'target_key': 'hut1', 'button': 'left'},
+            {'type': 'click_target', 'key': 'hut1', 'button': 'right'},
             {'type': 'click_hud', 'name': 'buy_land_vehicle'},
             {'type': 'press_key', 'key': 'tab'},
             {'type': 'wheel', 'x': 720, 'y': 540, 'notches': -4},
             {'type': 'wait', 'seconds': 0.1},
         ])
-        assert batch['ok'] and batch['executed'] == 5 and batch['succeeded'] == 5
+        assert batch['ok'] and batch['executed'] == 6 and batch['succeeded'] == 6
+        assert 'cell_advance' in spore_mcp.STAGE_FIXED_HUD_1440['cell']
+        assert 'mate_call' in spore_mcp.STAGE_FIXED_HUD_1440['cell']
         assert eng.get_player_stage('guest1') == 'civ'
         assert set(('cell', 'creature', 'tribe', 'civ', 'space', 'editor')) <= set(ai_playtest.STAGE_PLAYBOOKS.keys())
 

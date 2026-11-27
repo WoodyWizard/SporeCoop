@@ -2549,6 +2549,48 @@ static int c_cityradius(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// BUG-1602: UTFWin::UILayout::FindWindowByID (0x00810650, thiscall void*(UILayout*, uint32_t id, bool recursive)
+// ret 8) dereferences [ecx+0x14] without checking ecx != nullptr. When a Civ Rivals guest clicks the City Planner's
+// Anthem (music) tab on an NPC-origin city, 0x00EA304B passes [esi+0x14]==nullptr into FindWindowByID and faults
+// (0xC0000005, data=0x14). The caller at 0x00EA305A already checks `test eax, eax; je` and exits cleanly on nullptr.
+static bool g_uilayout_find_null_fix = true;
+COOP_FIX("game.uilayout_find_null", "BUG-1602", g_uilayout_find_null_fix,
+         "game: guard UTFWin::UILayout::FindWindowByID against null this pointer (Civ Rivals City Planner Anthem tab crash)");
+using UILayoutFindFn = void*(__thiscall*)(void*, uint32_t, bool);
+static UILayoutFindFn g_uilayout_find_orig = nullptr;
+static uintptr_t g_uilayout_find_addr = 0;
+static std::atomic<unsigned> g_uilayout_find_guarded{0};
+
+static void* __fastcall uilayout_find_guard(void* layout, void*, uint32_t id, bool recursive)
+{
+    if (g_uilayout_find_null_fix && (!layout || !readable(layout, 0x18))) {
+        unsigned n = ++g_uilayout_find_guarded;
+        if (n <= 8 || (n & 0xFFu) == 0)
+            H->log(M, SK_WARN,
+                   "game fixes: guarded null/unreadable UILayout in UTFWin::UILayout::FindWindowByID (layout=%p id=0x%08X mode=%08X, BUG-1602, #%u)",
+                   layout, (unsigned)id, game::mode_id(), n);
+        return nullptr;
+    }
+    return g_uilayout_find_orig(layout, id, recursive);
+}
+
+static int c_uilayoutguard(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc > 1 && !strcmp(argv[1], "probe")) {
+        if (!g_uilayout_find_addr) {
+            H->out_printf(out, "uilayoutguard: UTFWin::UILayout::FindWindowByID missing\n");
+            return 1;
+        }
+        void* r = skg::thiscall<void*>(g_uilayout_find_addr, (void*)nullptr, 0x04EFC540u, true);
+        H->out_printf(out, "uilayoutguard probe: r=%p fix=%d guarded=%u\n", r, (int)g_uilayout_find_null_fix,
+                      g_uilayout_find_guarded.load());
+        return 0;
+    }
+    H->out_printf(out, "uilayoutguard: hooked=%d fix=%d guarded=%u\n", (int)(g_uilayout_find_orig != nullptr),
+                  (int)g_uilayout_find_null_fix, g_uilayout_find_guarded.load());
+    return 0;
+}
+
 void frame()
 {
     fxcut_frame();
@@ -2843,6 +2885,16 @@ void init(const SkHost* host, SkMod* mod)
     H->command_add(M, "coop.cityradius",
                    "coop.cityradius [probe] - cCity::GetBoundingRadius null mpCityWalls (+0x324) guard (BUG-1589)",
                    c_cityradius, nullptr, SK_CMD_MAIN_THREAD);
+    uintptr_t uif = H->sym("UTFWin::UILayout::FindWindowByID");
+    g_uilayout_find_addr = uif;
+    bool uif_ok = uif && H->hook_create(M, (void*)uif, (void*)&uilayout_find_guard, (void**)&g_uilayout_find_orig) == 0;
+    if (!uif_ok)
+        g_uilayout_find_orig = nullptr;
+    H->log(M, SK_INFO, "game fixes: UTFWin::UILayout::FindWindowByID null layout guard %s (BUG-1602)",
+           uif_ok ? "on" : "off");
+    H->command_add(M, "coop.uilayoutguard",
+                   "coop.uilayoutguard [probe] - UTFWin::UILayout::FindWindowByID null layout guard (BUG-1602)",
+                   c_uilayoutguard, nullptr, SK_CMD_MAIN_THREAD);
 }
 
 void shutdown()
@@ -2886,7 +2938,8 @@ std::string status()
            std::to_string(g_empire_contact_guarded.load()) + " (SpaceGameUI badges " +
            std::to_string(g_planet_ui_guarded.load()) + "), creature bone nulls guarded " +
            std::to_string(g_bone_xf_guarded.load()) + "/" + std::to_string(g_bone_attach_guarded.load()) +
-           ", city walls nulls guarded " + std::to_string(g_city_radius_guarded.load()) + ", " +
+           ", city walls nulls guarded " + std::to_string(g_city_radius_guarded.load()) +
+           ", null UILayouts guarded " + std::to_string(g_uilayout_find_guarded.load()) + ", " +
            reset_status() + "\n";
 }
 

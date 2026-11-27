@@ -78,6 +78,10 @@ HUD_CONTROL_IDS = {
 # Verified 1440x1080 HUD coordinates for icon-only Spore controls that lack captions,
 # automatically scaled to the active game window resolution.
 STAGE_FIXED_HUD_1440 = {
+    'cell': {
+        'mate_call': (720, 1013),
+        'cell_advance': (1400, 1060),
+    },
     'tribe': {
         'social_mode': (725, 1030),
         'attack_mode': (795, 1030),
@@ -791,7 +795,8 @@ class SporeMcpEngine:
             t = str(raw_step.get('type') or raw_step.get('action') or '').strip().lower()
             try:
                 if t == 'click_target':
-                    res = self.click_target(player, raw_step.get('target_key', ''), button=raw_step.get('button', 'left'))
+                    tkey = raw_step.get('target_key') or raw_step.get('key') or raw_step.get('target') or ''
+                    res = self.click_target(player, tkey, button=raw_step.get('button', 'left'))
                 elif t == 'click_ui':
                     res = self.click_ui(player, raw_step.get('caption', ''), button=raw_step.get('button', 'left'))
                 elif t == 'click_hud':
