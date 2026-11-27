@@ -23,6 +23,7 @@
 #include "space_ext.h"
 #include "history.h"
 #include "history_logic.h"
+#include "civ_rivals.h"
 #include "i18n.h"
 #include "rivals.h"
 #include "settings.h"
@@ -2198,6 +2199,40 @@ static void refresh_space()
 static void refresh_rivals()
 {
     auto rows = rivals::ui_rows();
+    // BUG-1590: direct 1-click Civ Rivals starting specialty picker at the top of the guest's Rivals page
+    // (available while the guest still owns only their starting capital; zero impact on lobby/Together/host).
+    if (A.role() == 2 && civ_rivals::can_pick_my_specialty()) {
+        int cur = civ_rivals::my_capital_specialty();
+        const char* cur_lbl = g_ru ? civ_rivals_logic::civ_specialty_name_ru(cur)
+                                   : civ_rivals_logic::civ_specialty_name(cur);
+        std::string hdr = std::string(T("Starting Specialty (before 2nd city): ",
+                                        "Стартовая специализация (до 2-го города): ")) +
+                          (cur_lbl[0] ? cur_lbl : T("None", "Нет"));
+        std::vector<rivals::UiRow> top;
+        top.push_back({hdr, "", nullptr, kGold});
+        static const char* const kSpecEn[3] = {
+            "  Military (tanks / conquer)",
+            "  Religious (convert cities)",
+            "  Economic (trade / buy cities)",
+        };
+        static const char* const kSpecRu[3] = {
+            "  Военная (танки / захват)",
+            "  Религиозная (обращение городов)",
+            "  Торговая (торговля / выкуп)",
+        };
+        for (int sp = 0; sp <= 2; sp++) {
+            bool active_sp = (cur == sp);
+            top.push_back({g_ru ? kSpecRu[sp] : kSpecEn[sp],
+                           active_sp ? "" : T("Choose", "Выбрать"),
+                           active_sp ? std::function<void()>(nullptr) : std::function<void()>([sp] {
+                               std::string err = civ_rivals::request_spec_pick(sp);
+                               if (!err.empty())
+                                   set_status(err, kRed, 5.0);
+                           }),
+                           active_sp ? kGreen : kWhite});
+        }
+        rows.insert(rows.begin(), std::make_move_iterator(top.begin()), std::make_move_iterator(top.end()));
+    }
     // BUG-1565: compact guest starting-path / Space philosophy picker on the Rivals page (no lobby/Together impact)
     if (A.role() == 2 && history::can_pick_ui()) {
         const uint32_t m = A.mode ? A.mode() : 0;

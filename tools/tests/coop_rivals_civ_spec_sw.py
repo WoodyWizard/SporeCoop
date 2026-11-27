@@ -299,6 +299,48 @@ def main():
             f'(drop={drop:.0f}, dom={dom_post}, exp={exp_post}, sw_spent={h_hdr_post.get("sw_spent")}, '
             f'guest_money={g_money_post})',
         )
+
+        # ---- Scenario 3: Guest starting specialty picker (BUG-1590, rivals.civ_spec_pick) ----
+        # Guest starts as Economic (2) above and still owns only 1 city (its capital): switch to Military (0), then Religious (1).
+        r_mil = (guest.call('coop.civ rivals spec mil').get('out') or '').strip()
+        mil_ok = wait_for(
+            lambda: (
+                parse_cr(cr_out(host))[1].get(1, {}).get('spec') == 0
+                and any(
+                    r['pol'] == guest_pol and r['spec'] == 0
+                    for r in parse_city_ptrs(guest.call('coop.civ').get('out') or '')
+                )
+            ),
+            6.0,
+        )
+        r_rel = (guest.call('coop.civ rivals spec rel').get('out') or '').strip()
+        rel_ok = wait_for(
+            lambda: (
+                parse_cr(cr_out(host))[1].get(1, {}).get('spec') == 1
+                and any(
+                    r['pol'] == guest_pol and r['spec'] == 1
+                    for r in parse_city_ptrs(guest.call('coop.civ').get('out') or '')
+                )
+            ),
+            6.0,
+        )
+        h_hdr_sp, h_nat_sp = parse_cr(cr_out(host))
+        hist_sp = host.call('coop.history status').get('out') or ''
+        print(
+            f'  guest spec pick: mil="{r_mil}" rel="{r_rel}" spec_picked={h_hdr_sp.get("spec_picked")} '
+            f'host_spec={h_nat_sp.get(1, {}).get("spec")}',
+            flush=True,
+        )
+        ck(
+            r_mil == 'ok'
+            and bool(mil_ok)
+            and r_rel == 'ok'
+            and bool(rel_ok)
+            and int(h_hdr_sp.get('spec_picked', '0')) >= 2
+            and 'start=3' in hist_sp,
+            f'guest switched starting specialty Eco -> Mil -> Rel on host & guest (BUG-1590: '
+            f'mil={mil_ok}, rel={rel_ok}, spec_picked={h_hdr_sp.get("spec_picked")})',
+        )
     finally:
         twoinst.forget_settings()
     ck.faults(host=host, guest=guest)

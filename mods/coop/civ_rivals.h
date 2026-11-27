@@ -37,6 +37,9 @@ bool is_reserved_city(void* city);
 bool is_player_capital(void* city, uint8_t* owner_out = nullptr);
 bool capital_softlock_fix_enabled();
 int my_capital_specialty();
+bool can_pick_my_specialty();
+std::string request_spec_pick(int target_spec);
+bool on_tribe_card_picked(uint8_t pid, uint32_t tribe_card);
 int foreign_city_count(void* civ);
 
 // Host ownership sync (replaces Together mode's host_assign_cities while Civ Rivals is active)

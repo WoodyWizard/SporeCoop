@@ -21,6 +21,7 @@
 #include "game.h"
 #include "history.h"
 #include "history_logic.h"
+#include "i18n.h"
 #include "lifecycle.h"
 #include "modes.h"
 #include "rivals.h"
@@ -53,6 +54,12 @@ COOP_FIX("rivals.civ", "BUG-1549", g_fix_rivals_civ,
 static bool g_fix_civ_spec_convert = true;
 COOP_FIX("rivals.civ_spec_convert", "BUG-1563", g_fix_civ_spec_convert,
          "civ: convert taken-over guest nation and capital city specialty to match the player's Tribe card");
+
+// BUG-1590: allow a Civ Rivals guest to choose or switch their starting nation specialty (Military / Religious /
+// Economic) via F9 -> Rivals (or Tribe card mid-game pick / console) while they still own only their starting capital.
+static bool g_fix_civ_spec_pick = true;
+COOP_FIX("rivals.civ_spec_pick", "BUG-1590", g_fix_civ_spec_pick,
+         "civ: allow Civ Rivals guests to choose their starting nation specialty (Military/Religious/Economic) before capturing a second city");
 
 // BUG-1563: validate and deduct guest superweapon costs directly on mWealth (+0x98) in Civ Rivals so guest
 // superweapons cannot bypass insufficient funds or trigger NPC budget refill on mIsPlayer == 0 civilizations.
@@ -155,6 +162,7 @@ static uint32_t g_saved_store_serial = 0;
 static NpcRelationTable g_npc_rels;
 static std::map<uint32_t, float> g_guest_npc_rels; // guest's received per-player NPC relations
 static bool g_swap_applied = false;
+static bool g_spec_hint_shown = false;
 static uint32_t g_orig_host_pol = 0;
 static bool g_assign_dirty = false;
 static bool g_npcrel_dirty = false;
@@ -244,6 +252,7 @@ static struct {
     uint32_t draft_applied = 0;
     uint32_t allied_trades = 0;
     uint32_t spec_converted = 0;
+    uint32_t spec_picked = 0;
     uint32_t sw_spent = 0;
     uint32_t sw_refused_funds = 0;
     uint32_t designs_synced = 0;
@@ -967,6 +976,18 @@ static void apply_guest_perspective()
         if (H && M)
             H->log(M, SK_INFO, "civ_rivals: guest perspective swapped to nation pol=0x%08X (civ=%p wealth=%.0f, BUG-1549)",
                    (unsigned)my_pol, my_civ, me.wealth);
+        if (g_fix_civ_spec_pick && !g_spec_hint_shown && can_pick_my_specialty() && C.notice) {
+            g_spec_hint_shown = true;
+            int sp = my_capital_specialty();
+            const char* sp_nm = i18n::tr(civ_specialty_name(sp), civ_specialty_name_ru(sp));
+            char nb[220];
+            snprintf(nb, sizeof nb, "%s: %s. %s",
+                     i18n::tr("Starting specialty", "Стартовая специализация"),
+                     sp_nm[0] ? sp_nm : i18n::tr("Unknown", "Неизвестно"),
+                     i18n::tr("Choose Military / Religious / Economic in F9 -> Rivals (before 2nd city)",
+                              "Выбрать Военную / Религиозную / Торговую можно в F9 -> Соперники (до 2-го города)"));
+            C.notice(nb);
+        }
     }
 }
 
@@ -992,6 +1013,7 @@ static void reset_state()
     g_saved_store_serial = 0;
     g_npc_rels.clear();
     g_guest_npc_rels.clear();
+    g_spec_hint_shown = false;
     g_orig_host_pol = 0;
     g_assign_dirty = false;
     g_npcrel_dirty = false;
@@ -2128,6 +2150,98 @@ static std::string request_gift(uint8_t target_pid, GiftKind kind, float amount)
     return "not connected";
 }
 
+// ---- BUG-1590: Guest Civ Rivals starting specialty choice (Military / Religious / Economic) ----
+bool can_pick_my_specialty()
+{
+    if (!g_fix_civ_spec_pick || !active() || !is_guest())
+        return false;
+    uint8_t me = my_id();
+    if (me == 0 || me >= kMaxPlayers || !g_nations[me].assigned)
+        return false;
+    void* mc = civ_by_pol(g_nations[me].pol_id);
+    if (!mc)
+        return false;
+    int cities = (int)civ::vec_of((uint8_t*)mc + civ::kCivCities).size();
+    return can_pick_starting_specialty(true, cities, kCitySpecMilitary);
+}
+
+static std::string host_apply_spec_pick(uint8_t pid, int target_spec)
+{
+    if (!g_fix_civ_spec_pick || !active() || !is_host())
+        return "not host in Civ Rivals";
+    if (pid == 0 || pid >= kMaxPlayers || !g_nations[pid].assigned)
+        return "player nation not assigned";
+    if (!valid_native_specialty(target_spec))
+        return "invalid specialty";
+    void* gc = civ_by_pol(g_nations[pid].pol_id);
+    if (!gc)
+        return "player nation not found";
+    auto cs = civ::vec_of((uint8_t*)gc + civ::kCivCities);
+    if (!can_pick_starting_specialty(true, (int)cs.size(), target_spec))
+        return i18n::tr("Cannot change starting specialty after capturing another city",
+                        "Нельзя сменить стартовую специализацию после захвата второго города");
+    int old_spec = skg::readable(cs[0], civ::kCitySpecialty + 4) ? F<int>(cs[0], civ::kCitySpecialty) : -1;
+    apply_city_specialty(cs[0], gc, target_spec);
+    ensure_civ_vehicle_designs(gc, pid, target_spec);
+    g_nations[pid].cap_specialty = (int8_t)target_spec;
+    std::string pkey = !g_slot_key[pid].empty() ? g_slot_key[pid] : player_stable_key(pid);
+    if (g_fix_civ_rejoin_nation && !pkey.empty())
+        g_saved_nations.remember(pkey, g_nations[pid].pol_id, g_nations[pid].cap_pos, (int8_t)target_spec);
+    uint8_t hist_spec = history::native_city_spec_to_history(target_spec);
+    if (hist_spec != history::kCivSpecNone)
+        history::set_civ_start_specialty(pid, hist_spec);
+    g_st.spec_picked++;
+    if (old_spec != target_spec)
+        g_st.spec_converted++;
+    g_designs_dirty = true;
+    host_broadcast_assign(now_s());
+    if (H && M)
+        H->log(M, SK_INFO, "civ_rivals: player %u (%s) picked starting specialty %d -> %d (%s, BUG-1590)",
+               (unsigned)pid, C.sess ? C.sess->name_of(pid).c_str() : "?", old_spec, target_spec,
+               civ_specialty_name(target_spec));
+    if (C.notice && C.sess) {
+        char b[160];
+        snprintf(b, sizeof b, "%s: %s (%s)", C.sess->name_of(pid).c_str(),
+                 i18n::tr("starting specialty", "стартовая специализация"),
+                 i18n::tr(civ_specialty_name(target_spec), civ_specialty_name_ru(target_spec)));
+        C.notice(b);
+    }
+    return "";
+}
+
+std::string request_spec_pick(int target_spec)
+{
+    if (!g_fix_civ_spec_pick)
+        return "disabled by rivals.civ_spec_pick";
+    if (!active())
+        return "Civ Rivals not active";
+    if (!valid_native_specialty(target_spec))
+        return "invalid specialty";
+    if (!is_guest())
+        return "guest only";
+    if (!can_pick_my_specialty())
+        return i18n::tr("Cannot change starting specialty after capturing another city",
+                        "Нельзя сменить стартовую специализацию после захвата второго города");
+    net::Writer w;
+    write_spec_pick(w, {(uint8_t)target_spec});
+    if (!rivals::send_faction_to(0, rivals::Stage::Civ, kSkSpecPick, w))
+        return "host does not support MSG_RIVALS_FACTION";
+    return "";
+}
+
+bool on_tribe_card_picked(uint8_t pid, uint32_t tribe_card)
+{
+    if (!g_fix_civ_spec_pick || !active() || !is_host() || pid == 0 || pid >= kMaxPlayers)
+        return false;
+    int pref_h = history::civ_spec_for_tribe_card(tribe_card);
+    if (pref_h < 0)
+        return false;
+    int want_native = history::history_spec_to_native_city((uint8_t)(pref_h + 1));
+    if (!valid_native_specialty(want_native))
+        return false;
+    return host_apply_spec_pick(pid, want_native).empty();
+}
+
 // ---- MSG_RIVALS_FACTION (Stage::Civ) handler ----
 static void on_faction_msg(uint8_t from, uint8_t subkind, net::Reader& r)
 {
@@ -2194,6 +2308,15 @@ static void on_faction_msg(uint8_t from, uint8_t subkind, net::Reader& r)
                 C.notice(b);
             }
         }
+        return;
+    }
+    if (subkind == kSkSpecPick) {
+        if (!g_fix_civ_spec_pick || !is_host() || from == 0 || from >= kMaxPlayers)
+            return;
+        SpecPickMsg sp;
+        if (!read_spec_pick(r, sp))
+            return;
+        host_apply_spec_pick(from, (int)sp.specialty);
         return;
     }
     if (subkind == SK_DRAFT_APPLY) {
@@ -2337,16 +2460,23 @@ static std::vector<rivals::UiRow> hook_extra_ui_rows()
         return rows;
     uint32_t kGold = 0xFFF2D479, kGreen = 0xFF7BE882;
     char buf[192];
-    rows.push_back({"Civ Rivals: Nations & Capitals", "", nullptr, kGold});
+    rows.push_back({i18n::tr("Civ Rivals: Nations & Capitals", "Цивилизация Rivals: Нации и столицы"), "", nullptr, kGold});
     uint8_t me = my_id();
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!g_nations[i].assigned)
             continue;
         std::string nm = C.sess->name_of((uint8_t)i);
         bool is_ally = (i != me) && rivals::allied(me, (uint8_t)i);
-        snprintf(buf, sizeof buf, "  %s: $%.0f (capital protected)", nm.c_str(), g_nations[i].wealth);
+        const char* sp_nm = i18n::tr(civ_specialty_name(g_nations[i].cap_specialty),
+                                     civ_specialty_name_ru(g_nations[i].cap_specialty));
+        if (sp_nm[0])
+            snprintf(buf, sizeof buf, "  %s [%s]: $%.0f (%s)", nm.c_str(), sp_nm, g_nations[i].wealth,
+                     i18n::tr("capital protected", "столица защищена"));
+        else
+            snprintf(buf, sizeof buf, "  %s: $%.0f (%s)", nm.c_str(), g_nations[i].wealth,
+                     i18n::tr("capital protected", "столица защищена"));
         uint8_t tid = (uint8_t)i;
-        rows.push_back({buf, is_ally ? "Gift $500" : "",
+        rows.push_back({buf, is_ally ? i18n::tr("Gift $500", "Дар $500") : "",
                         is_ally ? std::function<void()>([tid] { request_gift(tid, GiftKind::Money, 500.0f); }) : nullptr,
                         i == me ? kGreen : 0});
     }
@@ -2516,6 +2646,24 @@ std::string debug(const std::vector<std::string>& a)
         std::string err = request_gift(to, k, amt);
         return err.empty() ? "ok\n" : ("error: " + err + "\n");
     }
+    if (!a.empty() && a[0] == "spec" && a.size() >= 2) {
+        if (is_guest()) {
+            int sp = parse_civ_specialty_arg(a[1].c_str());
+            if (!valid_native_specialty(sp))
+                return "usage: coop.civ rivals spec <mil|rel|eco>\n";
+            std::string err = request_spec_pick(sp);
+            return err.empty() ? "ok\n" : ("error: " + err + "\n");
+        }
+        if (is_host() && a.size() >= 3) {
+            uint8_t pid = (uint8_t)atoi(a[1].c_str());
+            int sp = parse_civ_specialty_arg(a[2].c_str());
+            if (!valid_native_specialty(sp))
+                return "usage: coop.civ rivals spec <pid> <mil|rel|eco>\n";
+            std::string err = host_apply_spec_pick(pid, sp);
+            return err.empty() ? "ok\n" : ("error: " + err + "\n");
+        }
+        return "usage: coop.civ rivals spec [pid] <mil|rel|eco>\n";
+    }
     if (!a.empty() && a[0] == "assign" && is_host()) {
         if (!active())
             return "error: Civ Rivals not active\n";
@@ -2656,7 +2804,7 @@ std::string debug(const std::vector<std::string>& a)
              "inf_buy=%u inf_turn=%u inf_prot=%u inf_smooth=%u inf_trade=%u inf_diplo=%u rel_readbacks=%u "
              "assign_tx=%u assign_rx=%u npcrel_tx=%u npcrel_rx=%u "
              "race_ended=%d draft_started=%d draft_applied=%u draft_payouts=%u transition_ready=%d "
-             "spec_converted=%u sw_spent=%u sw_refused_funds=%u designs_synced=%u\n",
+             "spec_converted=%u spec_picked=%u sw_spent=%u sw_refused_funds=%u designs_synced=%u\n",
              (int)g_fix_rivals_civ, (int)active(), assigned_n, (unsigned)g_saved_nations.by_key.size(), (int)g_swap_applied,
              (unsigned)cur_pol, (unsigned)api_pol, cur_money, g_st.takeovers, g_st.reclaimed, g_st.ai_blocked,
              g_st.swap_hits, g_st.cap_blocked, g_st.conv_blocked, g_st.sw_blocked, g_st.sw_guest_borrows,
@@ -2664,7 +2812,8 @@ std::string debug(const std::vector<std::string>& a)
              g_st.spice_gifts, g_st.diplo_gifts, g_st.inf_bought, g_st.inf_turned, g_st.inf_protected, g_st.inf_smoothed,
              g_st.inf_trade, g_st.inf_diplomacy, g_st.rel_readbacks, g_st.assign_tx, g_st.assign_rx, g_st.npcrel_tx,
              g_st.npcrel_rx, (int)g_race_ended, (int)g_draft_started, g_st.draft_applied, g_st.draft_payouts,
-             (int)g_transition_ready, g_st.spec_converted, g_st.sw_spent, g_st.sw_refused_funds, g_st.designs_synced);
+             (int)g_transition_ready, g_st.spec_converted, g_st.spec_picked, g_st.sw_spent, g_st.sw_refused_funds,
+             g_st.designs_synced);
     std::string out = b;
 
     for (int i = 0; i < kMaxPlayers; i++) {

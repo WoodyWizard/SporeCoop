@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <map>
@@ -298,6 +299,7 @@ inline bool can_apply_diplo_gift(uint8_t from, uint8_t to, float amount, float s
 constexpr uint8_t kCmdPlannerSync = 9;
 constexpr uint8_t kCmdSellVehicle = 11;
 constexpr uint8_t kSkDiploGift = 17; // MSG_RIVALS_FACTION subkind: vanilla diplomacy Sporebucks gift
+constexpr uint8_t kSkSpecPick = 18;  // MSG_RIVALS_FACTION subkind: guest starting specialty choice (BUG-1590)
 constexpr float kDefaultTurretCost = 500.0f;
 
 struct PlannerBuildingItem {
@@ -909,6 +911,39 @@ inline const char* civ_specialty_name(int specialty)
     }
 }
 
+inline const char* civ_specialty_name_ru(int specialty)
+{
+    switch (specialty) {
+    case 0: return "Военная";
+    case 1: return "Религиозная";
+    case 2: return "Торговая";
+    default: return "";
+    }
+}
+
+inline int parse_civ_specialty_arg(const char* s)
+{
+    if (!s)
+        return -1;
+    std::string lo;
+    for (const unsigned char* p = (const unsigned char*)s; *p; ++p)
+        lo.push_back((char)std::tolower(*p));
+    if (lo == "0" || lo == "mil" || lo == "military")
+        return kCitySpecMilitary;
+    if (lo == "1" || lo == "rel" || lo == "religious")
+        return kCitySpecReligious;
+    if (lo == "2" || lo == "eco" || lo == "econ" || lo == "economic")
+        return kCitySpecEconomic;
+    return -1;
+}
+
+// BUG-1590: a Civ Rivals guest may choose/switch their starting nation specialty while they still own only their
+// starting capital (1 city). Once a second city is captured/converted, starting specialty is locked.
+inline bool can_pick_starting_specialty(bool assigned, int owned_cities, int target_spec)
+{
+    return assigned && owned_cities == 1 && valid_native_specialty(target_spec);
+}
+
 struct CivNpcSnapshot {
     uint32_t pol_id = 0;
     int specialty = -1; // 0=Military, 1=Religious, 2=Economic, -1=unknown
@@ -1280,6 +1315,22 @@ inline bool read_diplo_gift(net::Reader& r, DiploGiftMsg& out)
     if (!r.ok() || t >= kMaxPlayers || !std::isfinite(amt) || amt <= 0.0f || amt > kMaxGiftAmount)
         return false;
     out = {t, amt};
+    return true;
+}
+
+// kSkSpecPick (18): u8 specialty (0=Military, 1=Religious, 2=Economic; BUG-1590)
+struct SpecPickMsg {
+    uint8_t specialty = 0;
+};
+
+inline void write_spec_pick(net::Writer& w, const SpecPickMsg& m) { w.u8(m.specialty); }
+
+inline bool read_spec_pick(net::Reader& r, SpecPickMsg& out)
+{
+    uint8_t sp = r.u8();
+    if (!r.ok() || !valid_native_specialty((int)sp))
+        return false;
+    out = {sp};
     return true;
 }
 

@@ -627,6 +627,46 @@ static void test_diplo_gift_capital_softlock_and_clean_notice()
     assert(n5.find("reclaimed") != std::string::npos);
 }
 
+static void test_guest_starting_specialty_pick()
+{
+    // BUG-1590: eligibility rule (only while owning starting capital = 1 city)
+    assert(can_pick_starting_specialty(true, 1, kCitySpecMilitary));
+    assert(can_pick_starting_specialty(true, 1, kCitySpecReligious));
+    assert(can_pick_starting_specialty(true, 1, kCitySpecEconomic));
+    assert(!can_pick_starting_specialty(false, 1, kCitySpecMilitary)); // unassigned
+    assert(!can_pick_starting_specialty(true, 0, kCitySpecMilitary));  // 0 cities
+    assert(!can_pick_starting_specialty(true, 2, kCitySpecMilitary));  // already expanded past capital
+    assert(!can_pick_starting_specialty(true, 1, 3));                  // invalid specialty
+    assert(!can_pick_starting_specialty(true, 1, -1));
+
+    // CLI / arg parsing + RU names
+    assert(parse_civ_specialty_arg("mil") == kCitySpecMilitary);
+    assert(parse_civ_specialty_arg("Military") == kCitySpecMilitary);
+    assert(parse_civ_specialty_arg("0") == kCitySpecMilitary);
+    assert(parse_civ_specialty_arg("rel") == kCitySpecReligious);
+    assert(parse_civ_specialty_arg("Religious") == kCitySpecReligious);
+    assert(parse_civ_specialty_arg("eco") == kCitySpecEconomic);
+    assert(parse_civ_specialty_arg("economic") == kCitySpecEconomic);
+    assert(parse_civ_specialty_arg("invalid") == -1);
+    assert(civ_specialty_name_ru(kCitySpecMilitary)[0] != '\0');
+    assert(civ_specialty_name_ru(kCitySpecReligious)[0] != '\0');
+    assert(civ_specialty_name_ru(kCitySpecEconomic)[0] != '\0');
+
+    // kSkSpecPick wire codec roundtrip + malformed rejection
+    for (uint8_t sp = 0; sp <= 2; sp++) {
+        net::Writer w;
+        write_spec_pick(w, {sp});
+        net::Reader r(w.data.data(), w.data.size());
+        SpecPickMsg out;
+        assert(read_spec_pick(r, out) && out.specialty == sp);
+    }
+    net::Writer wbad;
+    wbad.u8(3);
+    net::Reader rbad(wbad.data.data(), wbad.data.size());
+    SpecPickMsg out_bad;
+    assert(!read_spec_pick(rbad, out_bad));
+}
+
 int main()
 {
     test_base_distance_selection();
@@ -643,6 +683,7 @@ int main()
     test_superweapon_borrow_safety();
     test_planner_sync_codec_and_wealth_clamp();
     test_diplo_gift_capital_softlock_and_clean_notice();
+    test_guest_starting_specialty_pick();
     printf("civ_rivals_tests: all passed\n");
     return 0;
 }

@@ -13,6 +13,7 @@
 #include <string>
 
 #include "actor_scope.h"
+#include "civ_rivals.h"
 #include "fixes.h"
 #include "game.h"
 #include "history_logic.h"
@@ -699,6 +700,8 @@ void on_message(uint8_t from, net::Reader& r)
         LOG("history: %s picked starting path -> cards %08X %08X %08X %08X %08X (mask=%X ch=%X)",
             S->name_of(from).c_str(), x->cards[0], x->cards[1], x->cards[2], x->cards[3], x->cards[4],
             (unsigned)x->picked_mask, ch);
+        if ((ch & (1u << kTribe)) && m == modes::kCiv)
+            civ_rivals::on_tribe_card_picked(from, x->cards[kTribe]);
         if (peer_reads_history(from)) {
             wire::history::Record rec;
             rec.flags = wire::history::kFlagOwn;
