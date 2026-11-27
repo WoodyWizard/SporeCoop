@@ -14,11 +14,11 @@ Zero external pip dependencies (Python 3 stdlib only).
 Usage:
   export DEEPSEEK_API_KEY="sk-..."
 
-  # Launch 4 players in Tribe Rivals for 15 minutes on lane 2:
-  SPORE_LANE=2 python3 tools/ai_playtest.py --players 4 --fixture tribe --mode rivals --minutes 15
+  # Deep gameplay test on Civ Rivals (15 min, OpenCode Go DeepSeek):
+  LAB_LANE=2 python3 tools/ai_playtest.py --backend opencode --focus gameplay --players 4 --fixture civ_npc --mode rivals --minutes 15
 
-  # Launch 4 players in Civ Rivals for 20 minutes:
-  SPORE_LANE=2 python3 tools/ai_playtest.py --players 4 --fixture civ_npc --mode rivals --minutes 20
+  # Overnight 6-hour autonomous marathon from Cell (or Tribe/Civ) with live report checkpoints:
+  LAB_LANE=2 python3 tools/ai_playtest.py --backend opencode --focus gameplay --players 4 --fixture cell --mode rivals --minutes 360 --round-timeout 150
 
   # Connect to an already-running MCP HTTP server:
   python3 tools/ai_playtest.py --mcp-url http://127.0.0.1:8765/mcp --minutes 10
@@ -88,31 +88,152 @@ PERSONAS = {
     },
 }
 
+GAMEPLAY_PERSONAS = {
+    'host': {
+        'title': 'Host / Strategic Progression Leader',
+        'goal': (
+            'Drive real stage progression like a dedicated human player: gather resources, build structures/units, '
+            'ally or conquer NPCs, enter editors to upgrade your creature/vehicle/city, and push toward stage victory '
+            'and the next stage transition. Do NOT camp in F9 menus; spend 85%+ of actions playing the 3D world.'
+        ),
+    },
+    'guest1': {
+        'title': 'Guest 1 / Builder, Economist & Diplomat',
+        'goal': (
+            'Play the peaceful/economic path in the live 3D world: in Civ pick Economic or Religious specialty once '
+            'in round 1 then close F9, open City Planner to build Houses/Factories/Entertainment, buy vehicles, capture '
+            'spice geysers, and trade/convert NPC cities; in Tribe gather food, build instrument huts and befriend NPC '
+            'tribes in social_mode; in Creature socialize (Tab -> social, 1-4) and evolve; in Space trade spice and terraform.'
+        ),
+    },
+    'guest2': {
+        'title': 'Guest 2 / Military Aggressor & Raider',
+        'goal': (
+            'Play the military/combat path in the live 3D world: build combat vehicles or weapon huts, box-select your '
+            'units, claim spice geysers, raid/besiege NPC tribes/cities or hostile rival players, test combat abilities '
+            'and superweapons when unlocked, and push aggressively toward stage victory.'
+        ),
+    },
+    'guest3': {
+        'title': 'Guest 3 / Explorer, Planner & Stress QA',
+        'goal': (
+            'Actively exercise planners, editors, and map exploration: open City/Tribe Planner or Creature/Cell Editor '
+            'to add/move/sell buildings or parts and save cleanly, explore across the planet/galaxy with pan_camera and '
+            'wheel zoom, fight or socialize with distant NPCs, and every ~6 rounds run reconnect_player mid-match to '
+            'verify persistence without crashes or lockups.'
+        ),
+    },
+}
+
+# Stage-specific real-gameplay playbooks (100% real mouse/keyboard/UI inputs, zero cheats).
+# Injected dynamically based on each player's LIVE stage so overnight multi-stage runs adapt automatically.
+STAGE_PLAYBOOKS = {
+    'cell': (
+        'CELL STAGE PLAYBOOK:\n'
+        '- Swim continuously using `perform_actions` with `press_key` (w/a/s/d, hold_ms 700..1400) and left-clicks on '
+        'nearby meat/plant food or smaller cells from `screen_targets`.\n'
+        '- Avoid much larger predators; if at war with a rival player cell, chase and bite them.\n'
+        '- Take a `screenshot` and `Read` it to spot food clusters, mate call icon (bottom bar), or the Advance Stage '
+        'button when the bottom DNA/growth bar fills up.\n'
+        '- If you enter the Cell Editor, drag a part or click green checkmark (`click_hud("editor_done")`) to return to the pool.'
+    ),
+    'creature': (
+        'CREATURE STAGE PLAYBOOK:\n'
+        '- Click nearby wild creatures or fruit trees (`click_target`), move with `press_key` (w/a/s/d, hold_ms 800..1500), '
+        'and orbit camera via `drag_screen(..., button="right")`.\n'
+        '- Toggle Social vs Combat stance with `press_key("tab")`, then chain abilities `1`, `2`, `3`, `4` with short '
+        '`wait` steps inside ONE `perform_actions` call to impress or hunt wild species!\n'
+        '- Eat fruit trees (`fruittree`) or carcasses when hungry; when you have DNA, return to nest and try mating/Creature Editor.\n'
+        '- Dismiss `Brain power!` or `You were killed` popups immediately with `press_key("enter")` or `click_ui("OK")`.'
+    ),
+    'tribe': (
+        'TRIBE STAGE PLAYBOOK:\n'
+        '- Select your own tribe members via `click_target("member1")` or box-select (`drag_screen` across your village).\n'
+        '- Switch stance via `click_hud("social_mode")` or `click_hud("attack_mode")`, then right-click (`button="right"`) '
+        'fruit trees/fish/animals to gather food, or right-click rival/NPC huts and members to raid or serenade!\n'
+        '- Click your own main hut (`hut*`) and take a `screenshot` + `Read` it to open the Tribe Planner / buy tool huts '
+        '(Axe, Spear, Horn, Didgeridoo, Maracas) and place them on green slots, or buy babies when you have food.\n'
+        '- When social/combat concert starts, press `1`, `2`, `3` matching the requested instruments!'
+    ),
+    'civ': (
+        'CIVILIZATION STAGE PLAYBOOK:\n'
+        '- Round 1 (guests only): optionally open F9 -> Rivals ONCE to pick starting specialty (Military/Religious/Economic), '
+        'then close F9 (`press_key("esc")`) and play the 3D planet!\n'
+        '- Click your own city (`click_target`), then check `observe().hud_buttons`:\n'
+        '  * `click_hud("city_planner")` opens the City Planner! Take a `screenshot` + `Read` it to click building palette '
+        'icons (House, Factory, Entertainment, Turret) and click open slots inside the city ring, then `click_hud("planner_done")`.\n'
+        '  * `click_hud("buy_land_vehicle")` / `buy_water_vehicle` / `buy_air_vehicle` buys vehicles!\n'
+        '- Select your vehicle (`click_target` or drag-select) and right-click (`button="right"`) Spice Geysers or NPC/rival '
+        'cities (`attack_city` / `convert_city` HUD buttons when shown) to expand your empire!\n'
+        '- Answer captured-city specialty popups (`Military` / `Religious` / `Economic`) via `click_ui`.'
+    ),
+    'space': (
+        'SPACE STAGE PLAYBOOK:\n'
+        '- Use `perform_actions` with `wheel` (`notches=-5` twice at center 720,540) to zoom out Planet -> Solar System -> '
+        'Galaxy View, then `screenshot` + `Read` to click neighboring stars and fly between systems!\n'
+        '- Zoom back in (`notches=5`) to enter a star system and click planets to land; move your ship with clicks or WASD.\n'
+        '- Inspect the bottom tool/cargo palette on screenshots to pick up/sell Spice, fire lasers at pirates/enemies, '
+        'place colonies, or accept/complete empire missions.\n'
+        '- If the Captain Equipment panel opens (`Equipment` dialog), close it via `click_ui("OK")`.'
+    ),
+    'editor': (
+        'EDITOR PLAYBOOK:\n'
+        '- You are currently inside a Spore Editor (Cell / Creature / Building / Vehicle / Outfitter)!\n'
+        '- Take a `screenshot` + `Read` it: optionally drag 1 part onto your creation or click a paint/part tab to test '
+        'editor stability, then click the green checkmark (`click_hud("editor_done")` or bottom-right check) to save & '
+        'exit cleanly back to live gameplay! Watch closely for stuck saves or broken models on exit.'
+    ),
+}
+
 # Only player-facing tools are exposed to DeepSeek agents (never session_start/stop or cheats)
 PLAYER_TOOL_NAMES = {
-    'observe', 'click_ui', 'click_f9_row', 'click_target', 'click_screen',
-    'drag_screen', 'press_key', 'type_text', 'pan_camera', 'reconnect_player',
+    'observe', 'click_ui', 'click_f9_row', 'click_hud', 'click_target', 'click_screen',
+    'drag_screen', 'press_key', 'type_text', 'pan_camera', 'perform_actions', 'reconnect_player',
     'screenshot', 'report_bug',
 }
 
 
-def build_system_prompt(player, persona, fixture, mode):
+def build_system_prompt(player, persona, fixture, mode, focus='gameplay', live_stage=''):
+    st = (live_stage or _stage_from_fixture(fixture)).lower()
+    playbook = STAGE_PLAYBOOKS.get(st, '')
+    focus_rules = ''
+    if focus == 'gameplay':
+        focus_rules = (
+            '\nDEEP GAMEPLAY FOCUS:\n'
+            '- Spend 85%+ of your actions playing the real 3D game world, NOT clicking F9 menus!\n'
+            '- Keep the F9 window CLOSED during normal play (only open F9 briefly in Round 1 for initial setup '
+            'like Civ starting specialty/war, or every ~5 rounds to check race progress/proposals, then press Esc to close it).\n'
+            '- Use `perform_actions` to batch 4..10 real mouse/keyboard/HUD steps in ONE call so you play at human speed!\n'
+            '- Use `hud_buttons` from `observe()` + `click_hud` for native Spore controls (city_planner, buy_land_vehicle, '
+            'social_mode, attack_mode, planner_done, editor_done).\n'
+            '- If `pause_menu_open` is true, immediately click `Resume Game` or press `esc` to unpause.\n'
+        )
     return (
         f'You are an autonomous QA playtester controlling player "{player}" ({persona["title"]}) '
-        f'in a live multiplayer SporeCoop game (fixture={fixture}, mode={mode}).\n\n'
-        f'Your persona & goals:\n{persona["goal"]}\n\n'
+        f'in a live multiplayer SporeCoop game (fixture={fixture}, current_stage={st}, mode={mode}).\n\n'
+        f'Your persona & goals:\n{persona["goal"]}\n'
+        f'{focus_rules}'
+        f'{("\n" + playbook + "\n") if playbook else ""}\n'
         'Rules:\n'
         '1. ALWAYS call `observe` first and after significant actions so you know the real game state.\n'
-        '2. Play ONLY through real player inputs (`click_ui`, `click_f9_row`, `click_target`, '
-        '`click_screen`, `drag_screen`, `press_key`, `type_text`, `pan_camera`, `reconnect_player`).\n'
+        '2. Play ONLY through real player inputs (`perform_actions`, `click_hud`, `click_target`, `click_ui`, '
+        '`click_f9_row`, `click_screen`, `drag_screen`, `press_key`, `type_text`, `pan_camera`, `reconnect_player`).\n'
         '3. Always pass player="' + player + '" to every tool call.\n'
-        '4. Watch carefully for player-facing bugs: buttons that do nothing, stuck modal dialogs, '
-        'broken guest features (instruments, specialization choice, building sell, planner spend, '
-        'diplomacy, progress bar not updating, missing units/cities), or UI glitches.\n'
+        '4. Watch carefully for player-facing bugs: broken gameplay loops (units ignoring orders, vehicles not spawning, '
+        'money/food not updating, planner/editor failing to open/save/spend, attacks/social doing nothing, stuck modals, '
+        'missing guest cities/tribes/ships, progress bars frozen, desyncs).\n'
         '5. Whenever an action clearly fails to do what a real Spore player expects, IMMEDIATELY call '
-        '`report_bug` with clear expected vs actual behavior and steps, then keep testing other flows.\n'
-        '6. Keep replies very brief (1 sentence max) and focus on taking concrete tool actions.'
+        '`report_bug` with clear expected vs actual behavior and steps, then keep playing.\n'
+        '6. Keep replies very brief (2 lines max: what you did + next plan).'
     )
+
+
+def _stage_from_fixture(fixture):
+    fx = (fixture or '').lower()
+    for name in ('cell', 'creature', 'tribe', 'civ', 'space'):
+        if name in fx:
+            return name
+    return 'unknown'
 
 
 def mcp_tools_to_openai(tool_defs):
@@ -337,36 +458,82 @@ def run_oracle_loop(client, stop_evt, interval_s=5.0):
         stop_evt.wait(interval_s)
 
 
-def run_opencode_agent_loop(player, persona, model, work_dir, run_dir, fixture, mode, stop_evt, max_rounds, round_timeout_s):
+def run_opencode_agent_loop(player, persona, model, work_dir, run_dir, fixture, mode, stop_evt, max_rounds,
+                            round_timeout_s, focus='gameplay', stage_getter=None, round_tracker=None):
     """Run one autonomous player via `opencode run --standalone --auto --archived` connected to sporecoop MCP."""
     log_path = os.path.join(run_dir, f'agent_{player}.log')
+    mem_path = os.path.join(run_dir, f'memory_{player}.txt')
+    shots_dir = os.path.join(run_dir, 'shots')
+    memory_entries = []
     rounds = 0
     while not stop_evt.is_set() and (max_rounds <= 0 or rounds < max_rounds):
         rounds += 1
+        live_stage = stage_getter(player) if stage_getter else _stage_from_fixture(fixture)
+        if live_stage == 'offline':
+            print(f'[{player}] instance offline before round {rounds}; pausing 5s...', flush=True)
+            stop_evt.wait(5.0)
+            continue
+        playbook = STAGE_PLAYBOOKS.get(live_stage, STAGE_PLAYBOOKS.get(_stage_from_fixture(fixture), ''))
+        mem_block = ''
+        if memory_entries:
+            mem_block = (
+                '\nYOUR RECENT MEMORY (continue your campaign from here; do NOT redo finished setup):\n'
+                + '\n'.join(f'- {m}' for m in memory_entries[-6:])
+                + '\n'
+            )
+        if focus == 'gameplay':
+            f9_rule = (
+                'Round 1 ONLY: if you are a guest in Civ, you may quickly pick starting specialty in F9 -> Rivals, '
+                'or declare 1 war/ally, then IMMEDIATELY close F9 (`press_key("esc")`) and play the 3D world!'
+                if rounds == 1 else
+                'KEEP F9 CLOSED this round unless you are checking a stage-victory/draft/proposal event! '
+                'Spend 85%+ of your actions playing the real 3D Spore world (moving, building, buying units, fighting, allying, editors).'
+            )
+            call_budget = '8 to 12'
+            gameplay_block = (
+                f'\n{playbook}\n\n'
+                'GAMEPLAY EXECUTION RULES:\n'
+                f'- {f9_rule}\n'
+                '- Use `perform_actions` to execute 4..10 real clicks/keys/HUD presses/waits in ONE tool call (human speed!).\n'
+                '- Call `screenshot` and inspect the returned PNG with the `Read` tool whenever you need to click '
+                'icon-only Spore controls (planner building palette, building slots, tool wheel, galaxy stars, editor parts, advance button).\n'
+                '- If `observe().pause_menu_open` is true, immediately click `Resume Game` or press `esc` to unpause.\n'
+                '- If `observe().planner_open` is true, place/modify buildings then close via `click_hud("planner_done")`.\n'
+            )
+        else:
+            call_budget = '6 to 8'
+            gameplay_block = ''
+
         prompt = (
             f'You are autonomous QA playtester "{player}" ({persona["title"]}) in a LIVE multiplayer '
-            f'SporeCoop game (fixture={fixture}, mode={mode}, round={rounds}).\n'
-            f'Role goal: {persona["goal"]}\n\n'
-            'STRICT RULES:\n'
-            f'- Use ONLY the `sporecoop` MCP tools with player="{player}". NEVER use bash, file tools, or edit files.\n'
+            f'SporeCoop game (fixture={fixture}, live_stage={live_stage}, mode={mode}, round={rounds}).\n'
+            f'Role goal: {persona["goal"]}\n'
+            f'{mem_block}'
+            f'{gameplay_block}\n'
+            'STRICT TOOL RULES:\n'
+            f'- Use ONLY `sporecoop` MCP tools with player="{player}", PLUS you may use `Read` ONLY on PNG '
+            f'screenshots inside `{shots_dir}` returned by `screenshot` so you can visually see the game.\n'
+            '- NEVER use bash, edit, write, grep, or read any source files.\n'
             '- Do NOT call session_start, session_stop, or session_attach.\n'
-            '- Execute a focused batch of AT MOST 6 to 8 tool calls this round, then STOP and finish:\n'
-            '  1. Call `observe` first to see stage, resources, F9 UI, visible dialogs, and screen_targets.\n'
-            '  2. Interact like a real player (`press_key`, `click_ui`, `click_f9_row`, `click_target`, '
-            '`click_screen`, `drag_screen`, `pan_camera`, `type_text`, `reconnect_player`, `screenshot`).\n'
-            '  3. Call `observe` (or `screenshot` + inspect it) after actions to verify real game response.\n'
-            '  4. If ANY action fails unexpectedly, a button wraps/overlaps or does nothing, a modal gets stuck, '
-            'guest tools/UI break, or progress/resources/HUD show wrong values, IMMEDIATELY call `report_bug` '
+            f'- Execute a focused gameplay batch of AT MOST {call_budget} tool calls this round, then STOP:\n'
+            '  1. Call `observe` first to see stage, resources, hud_buttons, visible_dialogs, and screen_targets.\n'
+            '  2. Play actively using `perform_actions`, `click_hud`, `click_target`, `click_ui`, `click_screen`, '
+            '`drag_screen`, `press_key`, `pan_camera`, `screenshot` (and `Read` on your PNG to aim at icons/world).\n'
+            '  3. Call `observe` (or `screenshot`) after your action sequence to verify real game state changed.\n'
+            '  4. If ANY real gameplay action fails unexpectedly (unit ignores order, planner/editor broken, vehicle/hut '
+            'cannot be bought, money/food/progress desyncs, modal stuck, UI broken), IMMEDIATELY call `report_bug` '
             'with exact expected vs actual BEFORE finishing.\n'
-            '  5. STOP after at most 8 tool calls and output a 2-line summary of what you tested and found.'
+            '  5. STOP and output a concise 2-line summary:\n'
+            '     DONE: <what you built/fought/explored/verified in this round>\n'
+            '     NEXT: <your concrete gameplay plan for the next round>'
         )
         cmd = [
             'opencode', 'run', '--standalone', '--auto', '--archived',
             '--model', model,
-            '--title', f'SporeCoop QA {player} r{rounds}',
+            '--title', f'SporeCoop QA {player} r{rounds} ({live_stage})',
             prompt,
         ]
-        print(f'[{player}] launching OpenCode round {rounds} ({model})...', flush=True)
+        print(f'[{player}] launching OpenCode round {rounds} ({model}, stage={live_stage})...', flush=True)
         proc = None
         try:
             proc = subprocess.Popen(
@@ -391,11 +558,18 @@ def run_opencode_agent_loop(player, persona, model, work_dir, run_dir, fixture, 
                     pass
             chunks.append(out_txt)
             with open(log_path, 'a', encoding='utf-8') as f:
-                f.write(f'\n=== Round {rounds} ({model}, rc={proc.returncode}, {time.time() - t_start:.1f}s) ===\n')
+                f.write(f'\n=== Round {rounds} ({model}, stage={live_stage}, rc={proc.returncode}, {time.time() - t_start:.1f}s) ===\n')
                 f.write(''.join(chunks))
-            last_lines = [l.strip() for l in out_txt.splitlines() if l.strip()][-2:]
-            preview = ' | '.join(last_lines)[:180]
-            print(f'[{player}] round {rounds} done (rc={proc.returncode}, {time.time() - t_start:.1f}s): {preview}',
+            last_lines = [l.strip() for l in out_txt.splitlines() if l.strip()][-3:]
+            summary_note = ' | '.join(last_lines)[:260]
+            if summary_note:
+                entry = f'r{rounds} [{live_stage}]: {summary_note}'
+                memory_entries.append(entry)
+                with open(mem_path, 'a', encoding='utf-8') as mf:
+                    mf.write(entry + '\n')
+            if round_tracker is not None:
+                round_tracker(player, rounds, live_stage)
+            print(f'[{player}] round {rounds} done (rc={proc.returncode}, stage={live_stage}, {time.time() - t_start:.1f}s): {summary_note[:180]}',
                   flush=True)
         except Exception as e:
             print(f'[{player}] OpenCode error: {e}', file=sys.stderr, flush=True)
@@ -406,23 +580,29 @@ def run_opencode_agent_loop(player, persona, model, work_dir, run_dir, fixture, 
             stop_evt.wait(1.0)
 
 
-def write_markdown_report(run_dir, status, anomalies, bugs, actions, llm, elapsed_s):
+def write_markdown_report(run_dir, status, anomalies, bugs, actions, llm, elapsed_s,
+                          total_actions=None, rounds_info=None, stages_seen=None):
     os.makedirs(run_dir, exist_ok=True)
     path = os.path.join(run_dir, 'report.md')
+    act_total = total_actions if total_actions is not None else len(actions)
     lines = [
         '# SporeCoop AI Playtest Report',
         '',
         f'- Generated: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
         f'- Fixture: `{status.get("fixture") or "attached"}` ({status.get("mode_preset") or "-"})',
-        f'- Duration: {elapsed_s:.1f} s',
+        f'- Duration: {elapsed_s:.1f} s ({elapsed_s / 60.0:.1f} min)',
         f'- Players: {len(status.get("players") or [])}',
-        f'- LLM calls: {llm.calls} (prompt tokens: {llm.prompt_tokens}, completion tokens: {llm.completion_tokens})',
+        f'- Total real player actions executed: **{act_total}**',
+        f'- LLM calls (API backend): {llm.calls} (prompt tokens: {llm.prompt_tokens}, completion tokens: {llm.completion_tokens})',
         f'- Engine anomalies detected by Oracle: **{len(anomalies)}**',
         f'- Gameplay/UX bugs reported by AI agents: **{len(bugs)}**',
-        '',
-        '## Confirmed Engine Anomalies (Oracle)',
-        '',
     ]
+    if rounds_info:
+        r_str = ', '.join(f'{k}={v}' for k, v in sorted(rounds_info.items()))
+        lines.append(f'- Rounds completed: {r_str}')
+    if stages_seen:
+        lines.append(f'- Stages reached: {", ".join(sorted(stages_seen))}')
+    lines.extend(['', '## Confirmed Engine Anomalies (Oracle)', ''])
     if not anomalies:
         lines.append('No engine crashes, faults, freezes, or stuck pauses detected.')
     else:
@@ -463,8 +643,10 @@ def main(argv=None):
     ap.add_argument('--players', type=int, default=4, choices=[2, 3, 4], help='Number of players (default 4)')
     ap.add_argument('--fixture', default='tribe', help='Fixture save: cell, creature, tribe, civ_npc, space_free')
     ap.add_argument('--mode', default='rivals', choices=['rivals', 'together'], help='Rivals or Together preset')
-    ap.add_argument('--minutes', type=float, default=15.0, help='Playtest duration in minutes (default 15)')
-    ap.add_argument('--steps', type=int, default=0, help='Max turns per agent (0 = time-limited only)')
+    ap.add_argument('--focus', default='gameplay', choices=['gameplay', 'balanced', 'ui'],
+                    help='Testing focus: gameplay (85%+ real 3D play + editors + batching), balanced, or ui')
+    ap.add_argument('--minutes', type=float, default=15.0, help='Playtest duration in minutes (default 15; use 240-360 for overnight)')
+    ap.add_argument('--steps', type=int, default=0, help='Max rounds/turns per agent (0 = time-limited only)')
     ap.add_argument('--pace', type=float, default=1.5, help='Pause in seconds between turns per agent')
     ap.add_argument('--lane', type=int, default=None, help='SPORE_LANE (1..10)')
     ap.add_argument('--attach', default='', help='Attach to running instances instead of launching, e.g. host=1,guest1=2')
@@ -474,8 +656,8 @@ def main(argv=None):
     ap.add_argument('--base-url', default=os.environ.get('DEEPSEEK_BASE_URL', 'https://api.deepseek.com/v1'))
     ap.add_argument('--model', default=os.environ.get('DEEPSEEK_MODEL', 'deepseek-chat'),
                     help='Model for --backend api, or override all OpenCode agents (leave empty/default for per-role Go models)')
-    ap.add_argument('--round-timeout', type=float, default=120.0,
-                    help='Per-round timeout in seconds for --backend opencode (default 120)')
+    ap.add_argument('--round-timeout', type=float, default=150.0,
+                    help='Per-round timeout in seconds for --backend opencode (default 150)')
     ap.add_argument('--api-key', default=os.environ.get('DEEPSEEK_API_KEY', ''))
     ap.add_argument('--mock', action='store_true', help='Use offline MockLLMClient (no API key required)')
     ap.add_argument('--keep-open', action='store_true', help='Do not kill launched game instances on exit')
@@ -535,6 +717,29 @@ def main(argv=None):
     oracle_t = threading.Thread(target=run_oracle_loop, args=(client, stop_evt, 5.0), daemon=True)
     oracle_t.start()
 
+    persona_map = GAMEPLAY_PERSONAS if args.focus == 'gameplay' else PERSONAS
+    progress_lock = threading.Lock()
+    rounds_info = {}
+    stages_seen = {_stage_from_fixture(args.fixture)}
+
+    def track_round(pl, rnum, stg):
+        with progress_lock:
+            rounds_info[pl] = rnum
+            if stg and stg not in ('unknown', 'offline'):
+                stages_seen.add(stg)
+
+    def get_stage(pl):
+        if engine is not None:
+            return engine.get_player_stage(pl)
+        try:
+            st = client.call_tool('session_status', {})
+            for entry in (st.get('players') or []):
+                if entry.get('player') == pl:
+                    return entry.get('stage') or _stage_from_fixture(args.fixture)
+        except Exception:
+            pass
+        return _stage_from_fixture(args.fixture)
+
     threads = []
     if args.backend == 'opencode':
         oc_work = os.path.join(run_dir, 'oc-work')
@@ -553,12 +758,12 @@ def main(argv=None):
             json.dump(oc_cfg, f, indent=2)
         override_model = args.model if (args.model and args.model != 'deepseek-chat') else ''
         for p in active_players:
-            persona = PERSONAS.get(p, PERSONAS['guest1'])
+            persona = persona_map.get(p, persona_map['guest1'])
             model = override_model or OPENCODE_MODELS.get(p, 'opencode-go/deepseek-v4.1-flash')
             th = threading.Thread(
                 target=run_opencode_agent_loop,
                 args=(p, persona, model, oc_work, run_dir, args.fixture, args.mode, stop_evt,
-                      args.steps, args.round_timeout),
+                      args.steps, args.round_timeout, args.focus, get_stage, track_round),
                 daemon=True,
             )
             th.start()
@@ -566,7 +771,7 @@ def main(argv=None):
     else:
         openai_tools = mcp_tools_to_openai(client.tool_definitions())
         for p in active_players:
-            persona = PERSONAS.get(p, PERSONAS['guest1'])
+            persona = persona_map.get(p, persona_map['guest1'])
             th = threading.Thread(
                 target=run_agent_loop,
                 args=(p, persona, client, llm, openai_tools, args.fixture, args.mode, stop_evt, args.steps, args.pace),
@@ -575,11 +780,27 @@ def main(argv=None):
             th.start()
             threads.append(th)
 
+    last_ckpt = t0
     try:
         while any(th.is_alive() for th in threads):
-            if args.steps <= 0 and time.time() >= deadline:
+            now = time.time()
+            if args.steps <= 0 and now >= deadline:
                 stop_evt.set()
                 break
+            # Periodic live report checkpoint every 60s so overnight runs always have an up-to-date report.md
+            if engine is not None and (now - last_ckpt) >= 60.0:
+                last_ckpt = now
+                try:
+                    with progress_lock:
+                        ri = dict(rounds_info)
+                        ss = set(stages_seen)
+                    write_markdown_report(
+                        run_dir, engine.session_status(), list(engine.anomalies), list(engine.bugs),
+                        list(engine.actions), llm, now - t0,
+                        total_actions=engine.total_actions, rounds_info=ri, stages_seen=ss,
+                    )
+                except Exception:
+                    pass
             time.sleep(0.5)
     except KeyboardInterrupt:
         print('\nStopping playtest (Ctrl+C)...', flush=True)
@@ -596,7 +817,14 @@ def main(argv=None):
     anomalies = engine.anomalies if engine is not None else []
     bugs = engine.bugs if engine is not None else []
     actions = engine.actions if engine is not None else []
-    report_path = write_markdown_report(run_dir, final_status, anomalies, bugs, actions, llm, time.time() - t0)
+    total_acts = engine.total_actions if engine is not None else len(actions)
+    with progress_lock:
+        ri = dict(rounds_info)
+        ss = set(stages_seen)
+    report_path = write_markdown_report(
+        run_dir, final_status, anomalies, bugs, actions, llm, time.time() - t0,
+        total_actions=total_acts, rounds_info=ri, stages_seen=ss,
+    )
     print(f'\nPlaytest finished. Report written to: {report_path}', flush=True)
 
     if http_srv is not None:

@@ -49,7 +49,8 @@ SERVER_INFO = {'name': 'sporecoop-mcp', 'version': '0.1.0'}
 # Common dialog / modal captions scanned during observe() (EN + RU)
 DIALOG_CAPTIONS = (
     'OK', 'Accept', 'Decline', 'Yes', 'No', 'Cancel', 'Continue',
-    'Alas',
+    'Alas', 'Brain power!', 'You were killed', 'Do you want to save your game?',
+    'Resume Game', 'Equipment', "Don't Save",
     'I accept your offer! Start shipments immediately!',
     'We happily accept your surrender.',
     'Agreed. Bye for now.',
@@ -60,6 +61,39 @@ MODAL_ONLY_DIALOG_CAPTIONS = (
     'Done', 'Save', 'Close', 'Military', 'Religious', 'Economic',
     'Готово', 'Сохранить', 'Закрыть', 'Военная', 'Религиозная', 'Торговая',
 )
+
+# Verified native Spore UTFWin HUD control IDs queried live via `coop.ui where <ids>`
+# (exact visible center coordinates, never stale when hidden).
+HUD_CONTROL_IDS = {
+    'pause_menu': '064C23F8',
+    'buy_land_vehicle': '062D6902',
+    'buy_water_vehicle': '062D6908',
+    'buy_air_vehicle': '062D690F',
+    'city_planner': '062D5618',
+    'attack_city': '037E95B9',
+    'convert_city': '037E95BA',
+    'planner_open_marker': '272EB68E',
+}
+
+# Verified 1440x1080 HUD coordinates for icon-only Spore controls that lack captions,
+# automatically scaled to the active game window resolution.
+STAGE_FIXED_HUD_1440 = {
+    'tribe': {
+        'social_mode': (725, 1030),
+        'attack_mode': (795, 1030),
+        'minimap_center': (110, 980),
+    },
+    'civ': {
+        'planner_done': (1412, 1054),
+        'minimap_center': (110, 980),
+    },
+    'editor': {
+        'editor_done': (1412, 1054),
+    },
+    'space': {
+        'planner_done': (1412, 1054),
+    },
+}
 
 # Error patterns scanned in recent SporeKit logs by the Oracle
 LOG_ERROR_RE = re.compile(
@@ -145,6 +179,10 @@ def _parse_uistate(raw):
             cols = [p for p in rest.split("'")[1::2]]
             if cols:
                 st['rows'].append(cols)
+        elif key == 'screen':
+            wh = rest.split()
+            if len(wh) >= 2 and wh[0].isdigit() and wh[1].isdigit():
+                st['screen'] = [int(wh[0]), int(wh[1])]
         elif key in ('rrow', 'srow'):
             idx_tok = rest.split(' ', 1)[0]
             cols = [p for p in rest.split("'")[1::2]]
@@ -234,6 +272,23 @@ def _parse_uifind(raw):
     return res
 
 
+def _parse_uiwhere(raw):
+    """Parse `coop.ui where <id1> <id2> ...` -> {HEX_ID: (cx, cy, [x0, y0, x1, y1])} for visible windows only."""
+    found = {}
+    for line in (raw or '').splitlines():
+        m = re.match(r'\s*([0-9A-Fa-f]{6,8})\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)', line)
+        if m:
+            wid = m.group(1).upper().zfill(8)
+            x0, y0, x1, y1 = (int(m.group(i)) for i in range(2, 6))
+            found[wid] = ((x0 + x1) // 2, (y0 + y1) // 2, [x0, y0, x1, y1])
+    return found
+
+
+def _scale_pt(pt, screen_wh):
+    sw, sh = screen_wh if (screen_wh and screen_wh[0] > 0 and screen_wh[1] > 0) else (1440, 1080)
+    return int(round(pt[0] * sw / 1440.0)), int(round(pt[1] * sh / 1080.0))
+
+
 def _parse_fault_count(exc_out):
     m = re.search(r'total faults:\s*(\d+)', exc_out or '', re.IGNORECASE)
     if m:
@@ -279,7 +334,8 @@ class SporeMcpEngine:
         self.fixture = ''
         self.mode_preset = ''
         self.run_dir = ''
-        self.actions = collections.deque(maxlen=300)
+        self.actions = collections.deque(maxlen=1000)
+        self.total_actions = 0
         self.anomalies = []
         self.bugs = []
         self._anomaly_keys = set()
@@ -302,6 +358,40 @@ class SporeMcpEngine:
         }
         with self.lock:
             self.actions.append(entry)
+            self.total_actions += 1
+
+    def get_player_stage(self, player):
+        """Fast live stage query (supports overnight multi-stage transitions Cell -> Space)."""
+        try:
+            sl = self._slot(player)
+            if not sl.ok('ping'):
+                return 'offline'
+            return _detect_stage(sl.out('game.mode'))
+        except Exception:
+            return 'unknown'
+
+    def _scan_hud_buttons(self, sl, stage, screen_wh):
+        """Query verified native Spore HUD buttons via `coop.ui where` + scaled stage icon coordinates."""
+        ids = ['064C23F8']  # always check pause_menu
+        if stage in ('civ', 'space'):
+            ids.extend(['062D6902', '062D6908', '062D690F', '062D5618', '037E95B9', '037E95BA', '272EB68E'])
+        where = _parse_uiwhere(sl.out('coop.ui where ' + ' '.join(ids)))
+        hud = {}
+        pause_open = '064C23F8' in where
+        planner_open = '272EB68E' in where
+        for name, wid in HUD_CONTROL_IDS.items():
+            if name in ('pause_menu', 'planner_open_marker'):
+                continue
+            if wid in where:
+                cx, cy, _ = where[wid]
+                hud[name] = {'x': cx, 'y': cy, 'source': 'ui_where'}
+        fixed = STAGE_FIXED_HUD_1440.get(stage) or {}
+        for name, pt in fixed.items():
+            if name == 'planner_done' and not planner_open:
+                continue
+            sx, sy = _scale_pt(pt, screen_wh)
+            hud[name] = {'x': sx, 'y': sy, 'source': 'stage_hud'}
+        return hud, pause_open, planner_open
 
     def _slot(self, player):
         with self.lock:
@@ -484,10 +574,14 @@ class SporeMcpEngine:
             stage_info['space_star'] = _truncate_lines(sl.out('coop.space star'), 14, 1000)
             stage_info['fleet'] = _truncate_lines(sl.out('coop.fleet list'), 14, 1000)
 
+        # Scan verified native Spore HUD buttons & exact pause/planner visibility
+        screen_wh = uistate.get('screen') or [1440, 1080]
+        hud_buttons, pause_menu_open, planner_open = self._scan_hud_buttons(sl, stage, screen_wh)
+
         # Check visible modal / dialog captions so agents immediately spot popups
         visible_dialogs = []
         captions_to_scan = list(DIALOG_CAPTIONS)
-        if uistate.get('modal') == '1':
+        if uistate.get('modal') == '1' or pause_menu_open:
             captions_to_scan.extend(MODAL_ONLY_DIALOG_CAPTIONS)
         for cap in captions_to_scan:
             found = _parse_uifind(sl.out(f'coop.ui find "{cap}"'))
@@ -503,14 +597,18 @@ class SporeMcpEngine:
             'alive': True,
             'stage': stage,
             'mode': mode_raw,
+            'screen': screen_wh,
             'frame': frame,
             'faults': faults,
             'pauses': pauses_raw,
+            'pause_menu_open': pause_menu_open,
+            'planner_open': planner_open,
             'session': _truncate_lines(status_raw, 14, 1000),
             'avatar': _truncate_lines(avatar_raw, 6, 400),
             'resources': _truncate_lines(res_raw, 6, 400),
             'rivals': _truncate_lines(rivals_raw, 18, 1400),
             'f9_window': uistate,
+            'hud_buttons': hud_buttons,
             'visible_dialogs': visible_dialogs,
             'screen_targets': targets,
             'stage_state': stage_info,
@@ -650,6 +748,94 @@ class SporeMcpEngine:
         r = sl.call(f'click {hit["x"]} {hit["y"]} {btn}')
         self._record_action(player, 'click_target', f'{target_key} ({btn}) at ({hit["x"]},{hit["y"]})')
         return {'ok': bool(r.get('ok')), 'target': hit, 'button': btn}
+
+    def click_hud(self, player, name, button='left'):
+        """Click a live native Spore HUD icon button listed in observe().hud_buttons."""
+        sl = self._slot(player)
+        btn = button if button in ('left', 'right', 'middle') else 'left'
+        key = str(name or '').strip().lower()
+        if not key:
+            return {'ok': False, 'error': 'name is required'}
+        stage = _detect_stage(sl.out('game.mode'))
+        ui = _parse_uistate(sl.out('coop.uistate'))
+        screen_wh = ui.get('screen') or [1440, 1080]
+        hud, _, _ = self._scan_hud_buttons(sl, stage, screen_wh)
+        hit = hud.get(key)
+        if not hit:
+            return {'ok': False, 'error': f'HUD button "{name}" not currently visible in stage={stage}',
+                    'available': sorted(hud.keys())}
+        sl.call(f'move {hit["x"]} {hit["y"]}')
+        time.sleep(0.15)
+        r = sl.call(f'click {hit["x"]} {hit["y"]} {btn}')
+        time.sleep(0.25)
+        self._record_action(player, 'click_hud', f'{key} ({btn}) at ({hit["x"]},{hit["y"]})')
+        return {'ok': bool(r.get('ok')), 'name': key, 'x': hit['x'], 'y': hit['y'], 'button': btn}
+
+    def perform_actions(self, player, steps, stop_on_error=False):
+        """Execute a human-speed batch of 1..12 real mouse/keyboard/UI actions in a single MCP tool call."""
+        if not isinstance(steps, list) or not steps:
+            return {'ok': False, 'error': 'steps must be a non-empty list of action dicts'}
+        sl = self._slot(player)
+        results = []
+        executed = 0
+        stopped_early = False
+        for raw_step in steps[:12]:
+            if not isinstance(raw_step, dict):
+                results.append({'ok': False, 'error': 'step must be an object'})
+                if stop_on_error:
+                    stopped_early = True
+                    break
+                continue
+            t = str(raw_step.get('type') or raw_step.get('action') or '').strip().lower()
+            try:
+                if t == 'click_target':
+                    res = self.click_target(player, raw_step.get('target_key', ''), button=raw_step.get('button', 'left'))
+                elif t == 'click_ui':
+                    res = self.click_ui(player, raw_step.get('caption', ''), button=raw_step.get('button', 'left'))
+                elif t == 'click_hud':
+                    res = self.click_hud(player, raw_step.get('name', ''), button=raw_step.get('button', 'left'))
+                elif t == 'click_f9_row':
+                    res = self.click_f9_row(player, raw_step.get('text_contains', ''))
+                elif t == 'click_screen':
+                    res = self.click_screen(player, raw_step['x'], raw_step['y'], button=raw_step.get('button', 'left'))
+                elif t == 'drag_screen':
+                    res = self.drag_screen(player, raw_step['x1'], raw_step['y1'], raw_step['x2'], raw_step['y2'],
+                                           button=raw_step.get('button', 'left'))
+                elif t == 'press_key':
+                    res = self.press_key(player, raw_step.get('key', ''), mode=raw_step.get('mode', 'tap'),
+                                         hold_ms=raw_step.get('hold_ms', 0))
+                elif t == 'pan_camera':
+                    res = self.pan_camera(player, direction=raw_step.get('direction', 'left'),
+                                          duration_ms=raw_step.get('duration_ms', 500))
+                elif t == 'wheel':
+                    wx = int(raw_step.get('x', 720))
+                    wy = int(raw_step.get('y', 540))
+                    notches = max(-12, min(12, int(raw_step.get('notches', -3))))
+                    r = sl.call(f'wheel {wx} {wy} {notches}')
+                    self._record_action(player, 'wheel', f'({wx},{wy}) notches={notches}')
+                    res = {'ok': bool(r.get('ok')), 'x': wx, 'y': wy, 'notches': notches}
+                elif t == 'wait':
+                    secs = max(0.1, min(5.0, float(raw_step.get('seconds', 1.0))))
+                    time.sleep(secs)
+                    res = {'ok': True, 'waited_s': round(secs, 2)}
+                else:
+                    res = {'ok': False, 'error': f'unsupported step type "{t}"'}
+            except Exception as e:
+                res = {'ok': False, 'error': str(e)}
+            executed += 1
+            results.append({'step': executed, 'type': t, 'ok': bool(res.get('ok')),
+                            **({k: v for k, v in res.items() if k != 'ok'})})
+            if not res.get('ok') and stop_on_error:
+                stopped_early = True
+                break
+        ok_count = sum(1 for r in results if r.get('ok'))
+        return {
+            'ok': ok_count > 0 and not stopped_early,
+            'executed': executed,
+            'succeeded': ok_count,
+            'stopped_early': stopped_early,
+            'results': results,
+        }
 
     def click_screen(self, player, x, y, button='left'):
         sl = self._slot(player)
@@ -1018,6 +1204,62 @@ class SporeMcpEngine:
                 },
             },
             {
+                'name': 'click_hud',
+                'description': 'Click a live native Spore HUD icon button listed in observe().hud_buttons (e.g. city_planner, buy_land_vehicle, buy_water_vehicle, buy_air_vehicle, attack_city, convert_city, planner_done, social_mode, attack_mode, editor_done).',
+                'inputSchema': {
+                    'type': 'object',
+                    'properties': {
+                        'player': player_prop,
+                        'name': {'type': 'string', 'description': 'Key from observe().hud_buttons.'},
+                        'button': {'type': 'string', 'enum': ['left', 'right'], 'default': 'left'},
+                    },
+                    'required': ['player', 'name'],
+                },
+            },
+            {
+                'name': 'perform_actions',
+                'description': 'Execute a fast human-speed sequence of 1..12 real mouse/keyboard/UI actions in ONE tool call (avoids waiting an entire LLM turn per click). Step types: click_target, click_ui, click_hud, click_f9_row, click_screen, drag_screen, press_key, pan_camera, wheel, wait.',
+                'inputSchema': {
+                    'type': 'object',
+                    'properties': {
+                        'player': player_prop,
+                        'steps': {
+                            'type': 'array',
+                            'maxItems': 12,
+                            'items': {
+                                'type': 'object',
+                                'properties': {
+                                    'type': {'type': 'string', 'enum': [
+                                        'click_target', 'click_ui', 'click_hud', 'click_f9_row',
+                                        'click_screen', 'drag_screen', 'press_key', 'pan_camera', 'wheel', 'wait',
+                                    ]},
+                                    'target_key': {'type': 'string'},
+                                    'caption': {'type': 'string'},
+                                    'name': {'type': 'string'},
+                                    'text_contains': {'type': 'string'},
+                                    'x': {'type': 'integer'},
+                                    'y': {'type': 'integer'},
+                                    'x1': {'type': 'integer'},
+                                    'y1': {'type': 'integer'},
+                                    'x2': {'type': 'integer'},
+                                    'y2': {'type': 'integer'},
+                                    'button': {'type': 'string', 'enum': ['left', 'right', 'middle']},
+                                    'key': {'type': 'string'},
+                                    'hold_ms': {'type': 'integer'},
+                                    'direction': {'type': 'string'},
+                                    'duration_ms': {'type': 'integer'},
+                                    'notches': {'type': 'integer'},
+                                    'seconds': {'type': 'number'},
+                                },
+                                'required': ['type'],
+                            },
+                        },
+                        'stop_on_error': {'type': 'boolean', 'default': False},
+                    },
+                    'required': ['player', 'steps'],
+                },
+            },
+            {
                 'name': 'click_screen',
                 'description': 'Move mouse and click at explicit client screen coordinates (x, y).',
                 'inputSchema': {
@@ -1149,6 +1391,9 @@ class SporeMcpEngine:
             'click_ui': lambda a: self.click_ui(a['player'], a['caption'], button=a.get('button', 'left')),
             'click_f9_row': lambda a: self.click_f9_row(a['player'], a['text_contains']),
             'click_target': lambda a: self.click_target(a['player'], a['target_key'], button=a.get('button', 'left')),
+            'click_hud': lambda a: self.click_hud(a['player'], a['name'], button=a.get('button', 'left')),
+            'perform_actions': lambda a: self.perform_actions(a['player'], a.get('steps') or [],
+                                                              stop_on_error=bool(a.get('stop_on_error', False))),
             'click_screen': lambda a: self.click_screen(a['player'], a['x'], a['y'], button=a.get('button', 'left')),
             'drag_screen': lambda a: self.drag_screen(a['player'], a['x1'], a['y1'], a['x2'], a['y2'],
                                                       button=a.get('button', 'left')),

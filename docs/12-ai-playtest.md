@@ -5,14 +5,14 @@ SporeCoop includes a zero-dependency Model Context Protocol (MCP) server ([spore
 ## Architecture
 
 1. **MCP Server (`tools/spore_mcp.py`)**:
-   - Exposes structured text/JSON perception (`observe`) so text-only LLMs like DeepSeek can play accurately without pixel guessing: stage, resources, F9 Co-op window rows/buttons/chat, visible modal dialogs, stage entities (tribes, cities, vehicles, NPCs, star systems), Rivals state, and live on-screen 2D target coordinates (`coop.targets objs`).
-   - Exposes real player input actions (`click_ui`, `click_f9_row`, `click_target`, `click_screen`, `drag_screen`, `press_key`, `type_text`, `pan_camera`, `reconnect_player`).
+   - Exposes structured perception (`observe`) so LLMs can play accurately without pixel guessing: stage, resources, F9 Co-op window rows/buttons/chat, live native Spore HUD icon buttons (`hud_buttons` via `coop.ui where`), `pause_menu_open` / `planner_open` flags, visible modal dialogs, stage entities (tribes, cities, vehicles, NPCs, star systems), Rivals state, and live on-screen 2D target coordinates (`coop.targets objs`).
+   - Exposes real player input actions (`perform_actions` for 1..12 batched human-speed steps per tool call, `click_hud`, `click_ui`, `click_f9_row`, `click_target`, `click_screen`, `drag_screen`, `press_key`, `type_text`, `pan_camera`, `reconnect_player`, `screenshot`).
    - Runs an automated **Oracle** (`check_anomalies`) checking all instances for crashes, caught faults (`exc`), frame freezes, stuck pauses (`coop.pauses`), and severe log errors, automatically saving multi-player evidence bundles (screenshots + logs + state + action timeline) to `out/ai-playtest/<timestamp>/bugs/`.
    - Supports both **stdio** transport (for standard MCP clients) and **Streamable HTTP** (`--http 127.0.0.1:8765`, `POST /mcp`, `GET /health`) so 4 independent agents can share one live 4-player session concurrently.
 
 2. **4-Agent DeepSeek Runner (`tools/ai_playtest.py`)**:
-   - Runs 2..4 concurrent threads with distinct human QA personas (`host` Normal Leader, `guest1` Diplomat/Social, `guest2` Aggressor/Combat, `guest3` Chaos QA Tester) against DeepSeek (`deepseek-chat` / `deepseek-reasoner`) or any OpenAI-compatible API.
-   - Writes a consolidated Markdown report to `out/ai-playtest/<timestamp>/report.md`.
+   - Runs 2..4 concurrent agents with distinct gameplay personas (`--focus gameplay` default: Strategic Leader, Builder/Economist/Diplomat, Military Aggressor, Explorer/Planner/Stress QA) plus dynamic per-stage playbooks (`cell`, `creature`, `tribe`, `civ`, `space`, `editor`) that adapt automatically if an overnight campaign transitions between stages.
+   - Keeps persistent per-player round memory (`memory_<player>.txt`), allows multimodal `deepseek-v4.1-flash` agents to visually `Read` their own PNG screenshots to click icon-only Spore palettes/planners/editors, and checkpoints `out/ai-playtest/<timestamp>/report.md` every 60 seconds during long overnight runs.
 
 ## Quick Start
 
@@ -21,11 +21,20 @@ SporeCoop includes a zero-dependency Model Context Protocol (MCP) server ([spore
 Uses `opencode-go/deepseek-v4.1-flash` (fast + multimodal screenshot inspection) across all 4 players by default (override via `--model`):
 
 ```bash
-# 4 players in Tribe Rivals for 10 minutes on lab lane 2
-SPORE_LANE=2 python3 tools/ai_playtest.py --backend opencode --players 4 --fixture tribe --mode rivals --minutes 10 --lane 2
+# Deep gameplay test on Civ Rivals (15 minutes, lane 2)
+LAB_LANE=2 python3 tools/ai_playtest.py --backend opencode --focus gameplay --players 4 --fixture civ_npc --mode rivals --minutes 15
 
-# 4 players in Civ Rivals for 10 minutes on lab lane 2
-SPORE_LANE=2 python3 tools/ai_playtest.py --backend opencode --players 4 --fixture civ_npc --mode rivals --minutes 10 --lane 2
+# Deep gameplay test on Tribe Rivals (20 minutes, lane 2)
+LAB_LANE=2 python3 tools/ai_playtest.py --backend opencode --focus gameplay --players 4 --fixture tribe --mode rivals --minutes 20
+
+# Overnight autonomous marathon (e.g. 6 hours from Cell -> Space, live report.md updated every 60s)
+LAB_LANE=2 python3 tools/ai_playtest.py --backend opencode --focus gameplay --players 4 --fixture cell --mode rivals --minutes 360 --round-timeout 150
+```
+
+During an overnight run, monitor live progress at any time:
+```bash
+# Latest report (updated every 60 seconds)
+ls -td out/ai-playtest/*/report.md | head -1 | xargs cat
 ```
 
 ### 2. Run 4 DeepSeek agents directly via DeepSeek API

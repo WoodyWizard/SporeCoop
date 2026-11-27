@@ -77,6 +77,14 @@ class FakeConsole:
             }
         if line == 'coop.targets objs':
             return {'ok': True, 'out': 'member 1 0 320 240\nobj hut1 12.5 510 300'}
+        if line.startswith('coop.ui where '):
+            return {
+                'ok': True,
+                'out': '\n'.join([
+                    '062D5618 120 960 180 1020',
+                    '062D6902 220 960 280 1020',
+                ]),
+            }
         if line.startswith('coop.ui find '):
             if '"OK"' in line:
                 return {'ok': True, 'out': '- 0x1 id=0x1 cmd=0 fl=0x1 [500 300 600 340]'}
@@ -146,6 +154,23 @@ def test_mcp_protocol_and_tools():
 
         tgt_click = eng.click_target('guest1', 'hut1', button='right')
         assert tgt_click['ok'] and tgt_click['target']['x'] == 510
+
+        # 2b. HUD buttons scan, click_hud, and perform_actions multi-step batching
+        assert 'city_planner' in obs['hud_buttons'] and 'buy_land_vehicle' in obs['hud_buttons']
+        assert obs['pause_menu_open'] is False and obs['planner_open'] is False
+        hud_res = eng.click_hud('guest1', 'city_planner')
+        assert hud_res['ok'] and hud_res['x'] == 150 and hud_res['y'] == 990
+
+        batch = eng.perform_actions('guest1', [
+            {'type': 'click_target', 'target_key': 'hut1', 'button': 'left'},
+            {'type': 'click_hud', 'name': 'buy_land_vehicle'},
+            {'type': 'press_key', 'key': 'tab'},
+            {'type': 'wheel', 'x': 720, 'y': 540, 'notches': -4},
+            {'type': 'wait', 'seconds': 0.1},
+        ])
+        assert batch['ok'] and batch['executed'] == 5 and batch['succeeded'] == 5
+        assert eng.get_player_stage('guest1') == 'civ'
+        assert set(('cell', 'creature', 'tribe', 'civ', 'space', 'editor')) <= set(ai_playtest.STAGE_PLAYBOOKS.keys())
 
         # 3. Oracle fault detection + evidence bundle creation
         assert eng.check_anomalies()['new_anomalies'] == []
