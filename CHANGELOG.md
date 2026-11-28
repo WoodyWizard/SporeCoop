@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.8.2.5] - 2026-11-27
+
+Galactic Adventures Quick Play auto-matching and 1-click Join Adventure invite for guests (community Discord report), plus Tribe Rivals personal notice isolation and chieftain knockout banner deduplication from a 4.5-hour 4-player Tribe Rivals AI playtest.
+
+### Added
+- **Galactic Adventures Quick Play Invite & 1-Click Join Adventure Button** (`adventure.quick_join`): when the host launches a Galactic Adventures Quick Play mission, the host reads the live adventure title directly from `cScenarioData` (`+0x4C`, with creation-metadata fallback) and broadcasts `K_HOST_ADV` (`creature 1.6`); guests in the Galaxy Menu now see localized guidance naming the host's adventure across all 5 languages (`EN`, `RU`, `HU`, `ES`, `ZH`) alongside a 1-click **Join Adventure** button in F9 (and `coop.adventure join`) that launches the matching Play Mode mission directly, while the misleading `"a player is waiting for the world: finish or quit the adventure..."` host notice is suppressed during Quick Play. (BUG-1607)
+
+### Fixed
+- **Galactic Adventures Quick Play Captains Never Match Across Separate Local Copies** (`adventure.content_identity`): replaced raw local DBPF instance-ID hashing in Play Mode (`sub_mode != 1`) with an order-independent blueprint content hash of `cScenarioResource` (`num_acts`, `num_classes`, avatar spawn position, and live marker definitions), so host and guests playing separate local copies of the same Quick Play adventure automatically derive identical `adventure_place()` and `adventure_mission_key()` values and see each other's captains without `coop.adventure place`, while Edit Mode (`sub_mode == 1`) continues to isolate drafts by raw key. (BUG-0963)
+- **Tribe Rivals Personal Notices Broadcast Globally & Stacking Chieftain Knockout Banners** (`rivals.tribe_local_notices`): routed per-player Tribe Rivals notices (`CustomOp::ChiefRespawn` chieftain KO/recovery, `CustomOp::Immunity` PvP shield, `DraftApplyKind::Payout` food payouts, and host-local hints) through local `tribe::C.feed` instead of session-wide `tribe::C.notice`, eliminating false `"Your Chieftain was knocked out!"` banners on host/other guests and 3x duplicate `"PvP shield for 5:00"` echoes; also preserved host chieftain KO tracking across wipe ticks and added a 15-second KO notice cooldown debounce on guests so banners never stack. (BUG-1608)
+
 ## [0.8.2.4] - 2026-11-27
 
 Creature Rivals guest mating and own-family fix (community Discord report), Civ City Planner Anthem crash guard, Cell Rivals rejoin progress persistence, pause counter underflow fix, and Rivals/F9 UI quality-of-life improvements discovered during extended 4-player AI playtests.
