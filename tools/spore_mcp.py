@@ -85,6 +85,7 @@ STAGE_FIXED_HUD_1440 = {
     'tribe': {
         'social_mode': (725, 1030),
         'attack_mode': (795, 1030),
+        'planner_done': (1412, 1054),
         'minimap_center': (110, 980),
     },
     'civ': {
@@ -231,21 +232,29 @@ def _parse_uistate(raw):
     return st
 
 
-def _parse_targets(raw, limit=25):
+def _parse_targets(raw, limit=25, screen_wh=None):
     """Parse `coop.targets objs` -> list of visible on-screen targets."""
     items = []
     if not raw or raw.startswith('(console error'):
         return items
+    sw = int(screen_wh[0]) if screen_wh and len(screen_wh) >= 2 else None
+    sh = int(screen_wh[1]) if screen_wh and len(screen_wh) >= 2 else None
     for line in raw.splitlines():
         f = line.split()
         if len(f) == 5 and f[0] == 'member':
             try:
-                items.append({'key': 'member' + f[1], 'x': int(f[3]), 'y': int(f[4]), 'dist': -1.0})
+                x, y = int(f[3]), int(f[4])
+                if sw is not None and not (0 <= x < sw and 0 <= y < sh):
+                    continue
+                items.append({'key': 'member' + f[1], 'x': x, 'y': y, 'dist': -1.0})
             except ValueError:
                 pass
         elif len(f) == 5 and f[0] == 'obj':
             try:
-                items.append({'key': f[1], 'x': int(f[3]), 'y': int(f[4]), 'dist': round(float(f[2]), 1)})
+                x, y = int(f[3]), int(f[4])
+                if sw is not None and not (0 <= x < sw and 0 <= y < sh):
+                    continue
+                items.append({'key': f[1], 'x': x, 'y': y, 'dist': round(float(f[2]), 1)})
             except ValueError:
                 pass
     # Prefer closer objects first (negative dist = own tribe members first)
@@ -376,15 +385,20 @@ class SporeMcpEngine:
         except Exception:
             return 'unknown'
 
-    def _scan_hud_buttons(self, sl, stage, screen_wh):
+    def _scan_hud_buttons(self, sl, stage, screen_wh, pauses_raw=''):
         """Query verified native Spore HUD buttons via `coop.ui where` + scaled stage icon coordinates."""
         ids = ['064C23F8']  # always check pause_menu
         if stage in ('civ', 'space'):
             ids.extend(['062D6902', '062D6908', '062D690F', '062D5618', '037E95B9', '037E95BA', '272EB68E'])
+        elif stage == 'tribe':
+            ids.append('272EB68E')
         where = _parse_uiwhere(sl.out('coop.ui where ' + ' '.join(ids)))
         hud = {}
         pause_open = '064C23F8' in where
-        planner_open = '272EB68E' in where
+        # Native cCommunityEditor (City Planner / Tribe Planner) uses marker 272EB68E and/or pause reason 04BF38A4
+        planner_open = ('272EB68E' in where) or (
+            stage in ('tribe', 'civ', 'space') and not pause_open and '04BF38A4' in (pauses_raw or '')
+        )
         for name, wid in HUD_CONTROL_IDS.items():
             if name in ('pause_menu', 'planner_open_marker'):
                 continue
@@ -558,7 +572,6 @@ class SporeMcpEngine:
         pauses_raw = sl.out('coop.pauses')
         uistate = _parse_uistate(sl.out('coop.uistate'))
         rivals_raw = sl.out('coop.rivals')
-        targets = _parse_targets(sl.out('coop.targets objs'), limit=25)
         exc_raw = sl.out('exc')
         faults = _parse_fault_count(exc_raw)
 
@@ -582,7 +595,8 @@ class SporeMcpEngine:
 
         # Scan verified native Spore HUD buttons & exact pause/planner visibility
         screen_wh = uistate.get('screen') or [1440, 1080]
-        hud_buttons, pause_menu_open, planner_open = self._scan_hud_buttons(sl, stage, screen_wh)
+        targets = _parse_targets(sl.out('coop.targets objs'), limit=25, screen_wh=screen_wh)
+        hud_buttons, pause_menu_open, planner_open = self._scan_hud_buttons(sl, stage, screen_wh, pauses_raw=pauses_raw)
 
         # Check visible modal / dialog captions so agents immediately spot popups
         visible_dialogs = []
@@ -744,11 +758,20 @@ class SporeMcpEngine:
         """Click a live on-screen world object listed in observe().screen_targets by its key."""
         sl = self._slot(player)
         btn = button if button in ('left', 'right', 'middle') else 'left'
-        targets = _parse_targets(sl.out('coop.targets objs'), limit=80)
-        hit = next((t for t in targets if t['key'] == target_key), None)
+        ui = _parse_uistate(sl.out('coop.uistate'))
+        screen_wh = ui.get('screen') or [1440, 1080]
+        sw, sh = int(screen_wh[0]), int(screen_wh[1])
+        all_targets = _parse_targets(sl.out('coop.targets objs'), limit=80)
+        on_screen = [t for t in all_targets if 0 <= t['x'] < sw and 0 <= t['y'] < sh]
+        hit = next((t for t in on_screen if t['key'] == target_key), None)
         if not hit:
+            off = next((t for t in all_targets if t['key'] == target_key), None)
+            if off:
+                return {'ok': False,
+                        'error': f'Target "{target_key}" is off-screen at ({off["x"]},{off["y"]}) for screen {sw}x{sh}',
+                        'target': off, 'available_keys': [t['key'] for t in on_screen[:15]]}
             return {'ok': False, 'error': f'Target "{target_key}" not currently on screen',
-                    'available_keys': [t['key'] for t in targets[:15]]}
+                    'available_keys': [t['key'] for t in on_screen[:15]]}
         sl.call(f'move {hit["x"]} {hit["y"]}')
         time.sleep(0.15)
         r = sl.call(f'click {hit["x"]} {hit["y"]} {btn}')
@@ -764,8 +787,9 @@ class SporeMcpEngine:
             return {'ok': False, 'error': 'name is required'}
         stage = _detect_stage(sl.out('game.mode'))
         ui = _parse_uistate(sl.out('coop.uistate'))
+        pauses_raw = sl.out('coop.pauses')
         screen_wh = ui.get('screen') or [1440, 1080]
-        hud, _, _ = self._scan_hud_buttons(sl, stage, screen_wh)
+        hud, _, _ = self._scan_hud_buttons(sl, stage, screen_wh, pauses_raw=pauses_raw)
         hit = hud.get(key)
         if not hit:
             return {'ok': False, 'error': f'HUD button "{name}" not currently visible in stage={stage}',
@@ -812,8 +836,9 @@ class SporeMcpEngine:
                     res = self.press_key(player, raw_step.get('key', ''), mode=raw_step.get('mode', 'tap'),
                                          hold_ms=raw_step.get('hold_ms', 0))
                 elif t == 'pan_camera':
-                    res = self.pan_camera(player, direction=raw_step.get('direction', 'left'),
-                                          duration_ms=raw_step.get('duration_ms', 500))
+                    res = self.pan_camera(player, direction=raw_step.get('direction') or raw_step.get('dir'),
+                                          duration_ms=raw_step.get('duration_ms', 500),
+                                          dx=raw_step.get('dx'), dy=raw_step.get('dy'))
                 elif t == 'wheel':
                     wx = int(raw_step.get('x', 720))
                     wy = int(raw_step.get('y', 540))
@@ -911,11 +936,21 @@ class SporeMcpEngine:
         self._record_action(player, 'type_text', f'"{clean[:60]}"')
         return {'ok': bool(r.get('ok')), 'sent_chat': False, 'text': clean}
 
-    def pan_camera(self, player, direction='left', duration_ms=500):
+    def pan_camera(self, player, direction=None, duration_ms=500, dx=None, dy=None):
         key_map = {'up': 'w', 'down': 's', 'left': 'a', 'right': 'd', 'in': 'wheel_in', 'out': 'wheel_out'}
-        d = (direction or 'left').lower()
+        d = (str(direction).strip().lower() if direction is not None else '')
+        if not d and (dx is not None or dy is not None):
+            try:
+                fx = float(dx or 0)
+                fy = float(dy or 0)
+            except (TypeError, ValueError):
+                fx, fy = 0.0, 0.0
+            if abs(fx) >= abs(fy) and fx != 0:
+                d = 'right' if fx > 0 else 'left'
+            elif fy != 0:
+                d = 'down' if fy > 0 else 'up'
         if d not in key_map:
-            return {'ok': False, 'error': 'direction must be up|down|left|right|in|out'}
+            return {'ok': False, 'error': 'direction must be up|down|left|right|in|out (or provide non-zero dx/dy)'}
         sl = self._slot(player)
         if d in ('in', 'out'):
             notches = 3 if d == 'in' else -3
@@ -923,7 +958,10 @@ class SporeMcpEngine:
             self._record_action(player, 'pan_camera', f'zoom {d}')
             return {'ok': bool(r.get('ok')), 'direction': d}
         ms = max(100, min(2500, int(duration_ms or 500)))
-        return self.press_key(player, key_map[d], hold_ms=ms)
+        res = self.press_key(player, key_map[d], hold_ms=ms)
+        if isinstance(res, dict):
+            res['direction'] = d
+        return res
 
     def reconnect_player(self, player):
         """Disconnect a guest and rejoin the host session (tests rejoin/persistence/cleanup paths)."""
@@ -1423,8 +1461,9 @@ class SporeMcpEngine:
             'press_key': lambda a: self.press_key(a['player'], a['key'], mode=a.get('mode', 'tap'),
                                                   hold_ms=a.get('hold_ms', 0)),
             'type_text': lambda a: self.type_text(a['player'], a['text'], send_chat=bool(a.get('send_chat', False))),
-            'pan_camera': lambda a: self.pan_camera(a['player'], direction=a.get('direction', 'left'),
-                                                    duration_ms=a.get('duration_ms', 500)),
+            'pan_camera': lambda a: self.pan_camera(a['player'], direction=a.get('direction') or a.get('dir'),
+                                                    duration_ms=a.get('duration_ms', 500),
+                                                    dx=a.get('dx'), dy=a.get('dy')),
             'reconnect_player': lambda a: self.reconnect_player(a['player']),
             'screenshot': lambda a: self.screenshot(a['player'], label=a.get('label', 'shot')),
             'check_anomalies': lambda a: self.check_anomalies(),

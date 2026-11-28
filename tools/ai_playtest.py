@@ -160,7 +160,10 @@ STAGE_PLAYBOOKS = {
         'TRIBE STAGE PLAYBOOK:\n'
         '- Select your own tribe members via `click_target("member1")` or box-select (`drag_screen` across your village).\n'
         '- Switch stance via `click_hud("social_mode")` or `click_hud("attack_mode")`, then right-click (`button="right"`) '
-        'fruit trees/fish/animals to gather food, or right-click rival/NPC huts and members to raid or serenade!\n'
+        'fruit trees/fish/animals to gather food (note: carnivore species cannot harvest fruit trees; hunt wild animals or fish instead), '
+        'or right-click NPC huts and members to raid or serenade!\n'
+        '- In Rivals mode, other player tribes start Neutral (hostile right-clicks on Neutral/Allied/shielded player tribes are blocked '
+        'by design): open F9 -> Rivals and declare War first if you intend to fight another player.\n'
         '- Click your own main hut (`hut*`) and take a `screenshot` + `Read` it to open the Tribe Planner / buy tool huts '
         '(Axe, Spear, Horn, Didgeridoo, Maracas) and place them on green slots, or buy babies when you have food.\n'
         '- When social/combat concert starts, press `1`, `2`, `3` matching the requested instruments!'
@@ -398,15 +401,27 @@ def trim_messages(messages, max_tail=14):
 
 
 QUOTA_ERROR_RE = re.compile(
-    r'(?:\b429\b|rate[\s_-]*limit|usage[\s_-]*limit|5[\s-]*hour|quota|too many requests|'
-    r'limit[\s_-]*exceeded|insufficient[\s_-]*(?:quota|balance|credits?)|'
-    r'credits?[\s_-]*exhausted|try again in\b|resets? (?:in|at)\b|weekly[\s_-]*limit)',
+    r'(?:(?:http|status|error|code)[:\s]+429\b|rate[\s_-]*limit(?:ed|[\s_-]*(?:exceeded|reached|hit))?|'
+    r'usage[\s_-]*limit|5[\s-]*hour[\s_-]*(?:usage[\s_-]*)?limit|quota[\s_-]*(?:exceeded|reached|exhausted|limit)|'
+    r'too many requests|limit[\s_-]*exceeded|insufficient[\s_-]*(?:quota|balance|credits?)|'
+    r'credits?[\s_-]*exhausted|weekly[\s_-]*limit)',
     re.IGNORECASE,
 )
 
 
 def is_quota_error(text):
     return bool(text and QUOTA_ERROR_RE.search(text))
+
+
+def is_opencode_quota_error(out_txt, returncode):
+    """Detect real OpenCode/provider quota errors without false-triggering on normal gameplay summaries."""
+    if not out_txt:
+        return False
+    # A clean rc=0 round that produced a gameplay summary (DONE:/NEXT:) succeeded; never treat
+    # coordinates (e.g. x=429) or gameplay prose as a quota error.
+    if returncode == 0 and re.search(r'(?m)^\s*(?:DONE|NEXT):', out_txt):
+        return False
+    return is_quota_error(out_txt)
 
 
 def parse_retry_after_seconds(text):
@@ -794,7 +809,7 @@ def run_opencode_agent_loop(player, persona, model, work_dir, run_dir, fixture, 
             with open(log_path, 'a', encoding='utf-8') as f:
                 f.write(f'\n=== Round {rounds} ({model}, stage={live_stage}, rc={proc.returncode}, {time.time() - t_start:.1f}s) ===\n')
                 f.write(''.join(chunks))
-            if quota_ctrl is not None and not stop_evt.is_set() and is_quota_error(out_txt):
+            if quota_ctrl is not None and not stop_evt.is_set() and is_opencode_quota_error(out_txt, proc.returncode):
                 # Do not count a quota-aborted round against max_rounds or pollute gameplay memory
                 rounds -= 1
                 err_tail = ' | '.join([l.strip() for l in out_txt.splitlines() if l.strip()][-3:])

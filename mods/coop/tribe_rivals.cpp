@@ -82,6 +82,20 @@ static bool g_fix_tribe_guest_camera = true;
 COOP_FIX("rivals.tribe_guest_camera", "BUG-1592", g_fix_tribe_guest_camera,
          "tribe: center guest camera on their own tribe hut after perspective swap in Tribe Rivals");
 
+static bool g_tribe_local_notices_fix = true;
+COOP_FIX("rivals.tribe_local_notices", "BUG-1608", g_tribe_local_notices_fix,
+         "tribe: route personal Tribe Rivals notices (chieftain KO/recovery, PvP shield, draft payouts, hints) to local feed instead of global broadcast and debounce KO notices");
+
+static void local_notice(const std::string& msg)
+{
+    if (should_use_local_feed_for_personal_notice(g_tribe_local_notices_fix)) {
+        if (tribe::C.feed)
+            tribe::C.feed(msg);
+    } else if (tribe::C.notice) {
+        tribe::C.notice(msg);
+    }
+}
+
 // ---- Game addresses (verified GOG 2024 dc04aee5, docs/re/tribe.md#tribe-rivals-re) ----
 static uintptr_t a_SetPlayerTribe = 0;
 static uintptr_t a_PlannerUpdate = 0;
@@ -370,6 +384,7 @@ static double g_last_raid_at[rivals::kMaxPlayers] = {};
 static double g_last_peace_ai_tick = 0.0;
 static double g_chief_ko_until[rivals::kMaxPlayers] = {};
 static bool g_chief_ko_active[rivals::kMaxPlayers] = {};
+static ChiefKoNoticeState g_chief_ko_notice;
 static double g_last_chief_ko_tx = 0.0;
 
 // Save-strip temporary backup for host & guest species slots
@@ -654,11 +669,11 @@ static int SK_THISCALL h_HutTD(void* comb, float dmg, uint32_t pol, int type, co
                 }
             }
             if (clamped <= 0.0f) {
-                if (g_tribe_polish_fix && war && rivals::valid_player(ao) && rivals::valid_player(vo) && tribe::C.notice) {
+                if (g_tribe_polish_fix && war && rivals::valid_player(ao) && rivals::valid_player(vo) && ao == 0) {
                     double now = H ? H->time_seconds() : 0.0;
                     if (now - g_last_hut_floor_notice >= 30.0) {
                         g_last_hut_floor_notice = now;
-                        tribe::C.notice(i18n::tr("Rival main hut is protected from destruction (attacks raid food instead)."));
+                        local_notice(i18n::tr("Rival main hut is protected from destruction (attacks raid food instead)."));
                     }
                 }
                 return 0;
@@ -938,14 +953,13 @@ static float SK_THISCALL h_ApplyRel(void* mgr, uint32_t polA, uint32_t polB, uin
             if (g_tribe_alliance_sync_fix && next != prev)
                 host_sync_npc_rels_to_guests();
         } else if (g_tribe_alliance_sync_fix && rivals::valid_player(actor) && rivals::valid_player(target_owner) &&
-                   actor != target_owner && !rivals::allied(actor, target_owner)) {
+                   actor != target_owner && actor == 0 && !rivals::allied(actor, target_owner)) {
             double now = H ? H->time_seconds() : 0.0;
             if (now - g_last_pvp_social_hint >= 8.0) {
                 g_last_pvp_social_hint = now;
-                if (tribe::C.notice)
-                    tribe::C.notice(i18n::tr(
-                        "To ally with another player in Rivals, use the Rivals Diplomacy panel.",
-                        "Чтобы заключить союз с другим игроком в Соперниках, используйте панель дипломатии Rivals."));
+                local_notice(i18n::tr(
+                    "To ally with another player in Rivals, use the Rivals Diplomacy panel.",
+                    "Чтобы заключить союз с другим игроком в Соперниках, используйте панель дипломатии Rivals."));
             }
         }
     }
@@ -1740,8 +1754,7 @@ static void on_faction_message(uint8_t from, uint8_t subkind, net::Reader& r)
             g_draft_unlocked++;
         } else if (m.kind == DraftApplyKind::Payout && m.value > 0) {
             g_draft_payouts_applied++;
-            if (tribe::C.notice)
-                tribe::C.notice("Creature draft payout: +" + std::to_string(m.value) + " food!");
+            local_notice("Creature draft payout: +" + std::to_string(m.value) + " food!");
             if (H && M)
                 H->log(M, SK_INFO, "tribe_rivals: received +%u Tribe food Creature draft payout", (unsigned)m.value);
         }
@@ -1764,10 +1777,12 @@ static void on_faction_message(uint8_t from, uint8_t subkind, net::Reader& r)
             bool was = is_player_immune(g_wipe[m.player_id], now);
             g_wipe[m.player_id].wiping = (m.tools_mask & 1u) != 0;
             g_wipe[m.player_id].immune_until = m.value > 0 ? (now + (double)m.value) : 0.0;
-            if (!was && m.value > 0 && tribe::C.notice && S) {
+            // BUG-1608: local feed only (Host already broadcasts wipe/respawn globally; using C.notice here caused
+            // every guest to echo "PvP shield for 5:00" back to Host & all other guests 3x).
+            if (!was && m.value > 0 && S) {
                 std::string who = m.player_id == my_id() ? std::string(i18n::tr("Your tribe"))
                                                          : (S->name_of(m.player_id) + i18n::tr("'s tribe"));
-                tribe::C.notice(who + i18n::tr(" has a PvP shield for ") + fmt_mmss((double)m.value));
+                local_notice(who + i18n::tr(" has a PvP shield for ") + fmt_mmss((double)m.value));
             }
         } else if (is_host() && from != 0 && m.op == CustomOp::BuyMember) {
             handle_guest_baby(from, 0.f, 0.f, 0.f);
@@ -1795,17 +1810,18 @@ static void on_faction_message(uint8_t from, uint8_t subkind, net::Reader& r)
             }
         } else if (is_guest() && from == 0 && m.op == CustomOp::ChiefRespawn && rivals::valid_player(m.player_id)) {
             double now = H ? H->time_seconds() : 0.0;
-            bool was_ko = g_chief_ko_active[m.player_id];
             bool now_ko = (m.tools_mask & 1u) != 0 && m.value > 0;
             g_chief_ko_active[m.player_id] = now_ko;
             g_chief_ko_until[m.player_id] = now_ko ? (now + (double)m.value) : 0.0;
-            if (m.player_id == my_id() && tribe::C.notice) {
-                if (!was_ko && now_ko)
-                    tribe::C.notice(std::string(i18n::tr("Your Chieftain was knocked out! Reviving in ")) +
-                                    fmt_mmss((double)m.value) + ".");
-                else if (was_ko && !now_ko)
-                    tribe::C.notice(i18n::tr("Your Chieftain has recovered!"));
-            }
+            // BUG-1608: local feed only + cooldown debounce so one guest's chieftain KO never broadcasts
+            // "Your Chieftain was knocked out!" to Host/other guests or stacks repeated banners.
+            auto act = decide_chief_ko_notice(g_chief_ko_notice, g_tribe_local_notices_fix, m.player_id == my_id(),
+                                              now_ko, m.value, now);
+            if (act == ChiefKoNoticeAction::KnockedOut)
+                local_notice(std::string(i18n::tr("Your Chieftain was knocked out! Reviving in ")) +
+                             fmt_mmss((double)m.value) + ".");
+            else if (act == ChiefKoNoticeAction::Recovered)
+                local_notice(i18n::tr("Your Chieftain has recovered!"));
         }
         return;
     }
@@ -2102,8 +2118,7 @@ static void host_deliver_creature_payouts()
         tribe_add_food(pt, food);
         g_draft_payouts_applied++;
         if (pid == 0) {
-            if (tribe::C.notice)
-                tribe::C.notice("Creature draft payout: +" + std::to_string(food) + " food!");
+            local_notice("Creature draft payout: +" + std::to_string(food) + " food!");
         } else {
             host_send_food(pid, true);
             net::Writer w;
@@ -2656,10 +2671,12 @@ static void host_wipe_recovery_tick(double now)
         int live = live_tribe_members(pt);
         if (live > 0)
             ensure_live_chieftain(pt);
-        // BUG-1580: Track knocked-out guest chieftain (while tribe still has other living members) and relay timer.
-        if (g_tribe_082_fix && p != 0 && live > 0 && skg::readable(pt, kTribeChiefKoTimerOff + 4)) {
+        // BUG-1580 & BUG-1608: Track knocked-out guest chieftain and relay timer without wipe-tick oscillation.
+        if (g_tribe_082_fix && p != 0 && skg::readable(pt, kTribeChiefKoTimerOff + 4)) {
             void* ch = F<void*>(pt, 0x11C);
-            bool ko_now = ch && game::listed(ch, kCitizenNoun) && citizen_knocked_out(ch);
+            bool has_chief = ch && game::listed(ch, kCitizenNoun);
+            bool chief_ko = has_chief && citizen_knocked_out(ch);
+            bool ko_now = host_chief_ko_state(has_chief, chief_ko, live, g_chief_ko_active[p], g_tribe_local_notices_fix);
             if (ko_now) {
                 float ko_t = F<float>(pt, kTribeChiefKoTimerOff);
                 if (!g_chief_ko_active[p]) {
@@ -2768,6 +2785,7 @@ static void reset_runtime(bool restore_game)
         g_chief_ko_until[i] = 0.0;
         g_chief_ko_active[i] = false;
     }
+    g_chief_ko_notice = ChiefKoNoticeState{};
     g_last_wipe_tick = 0.0;
     g_last_immune_tx = 0.0;
     g_last_chief_ko_tx = 0.0;
@@ -2950,15 +2968,15 @@ std::string status_summary()
              "planner_skipped=%u pvp_hits=%u pvp_blocked=%u hut_clamped=%u tool_pvp=%u conquer_blocked=%u "
              "gifts=%u raids=%u inf_earned=%u draft_unlocked=%u draft_payouts=%u species_swaps=%u "
              "pack_pets_spawned=%u pop_go_blocked=%u wipes=%u recovered=%u immune_blocked=%u immune_broken=%u "
-             "polish=%d foodmat_blocked=%u babies_capped=%u mission_blocked=%u tools_sold=%u peace_cleared=%u "
+             "polish=%d local_notices=%d foodmat_blocked=%u babies_capped=%u mission_blocked=%u tools_sold=%u peace_cleared=%u "
              "sleep_suppressed=%u npcs=%u win_needed=%d\n",
              (int)g_rivals_tribe_fix, (int)active(), (int)g_swapped, g_orig_pt, mt, tribe_pol(mt),
              mt ? tribe_food(mt) : 0, g_planner_skipped, g_pvp_hits, g_pvp_blocked, g_hut_clamped, g_tool_pvp_hits,
              g_conquer_blocked, g_gifts_done, g_raids_done, g_inf_earned, g_draft_unlocked, g_draft_payouts_applied,
              g_species_swaps, g_pack_pets_spawned, g_pop_gameover_blocked, g_wipes_detected, g_wipes_recovered,
-             g_immune_blocked, g_immune_broken, (int)g_tribe_polish_fix, g_foodmat_blocked, g_babies_capped,
-             g_rival_mission_blocked, g_tools_sold, g_peace_aggro_cleared, g_sleep_suppressed, g_last_npc_count,
-             g_last_win_needed);
+             g_immune_blocked, g_immune_broken, (int)g_tribe_polish_fix, (int)g_tribe_local_notices_fix,
+             g_foodmat_blocked, g_babies_capped, g_rival_mission_blocked, g_tools_sold, g_peace_aggro_cleared,
+             g_sleep_suppressed, g_last_npc_count, g_last_win_needed);
     std::string out = b;
     double now = H ? H->time_seconds() : 0.0;
     if (is_host() && active()) {

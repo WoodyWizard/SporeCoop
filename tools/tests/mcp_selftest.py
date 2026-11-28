@@ -178,11 +178,27 @@ def test_mcp_protocol_and_tools():
         assert eng.get_player_stage('guest1') == 'civ'
         assert set(('cell', 'creature', 'tribe', 'civ', 'space', 'editor')) <= set(ai_playtest.STAGE_PLAYBOOKS.keys())
 
-        # 2c. 5-hour quota pause & auto-resume controller
+        # 2c. 5-hour quota pause & auto-resume controller + false-positive regression checks
         assert ai_playtest.is_quota_error('HTTP 429: 5-hour usage limit reached, resets in 1h 20m')
         assert not ai_playtest.is_quota_error('DONE: built a house and bought a tank')
+        assert not ai_playtest.is_quota_error('Clicked fruit tree at (429, 540), food=429, try again in next round')
+        assert not ai_playtest.is_opencode_quota_error('DONE: hit quota test at (429, 300)\nNEXT: keep playing', 0)
+        assert ai_playtest.is_opencode_quota_error('Error: 5-hour usage limit reached, resets in 1h 20m', 1)
         assert ai_playtest.parse_retry_after_seconds('Quota exceeded, resets in 1h 20m') == 4800
         assert ai_playtest.parse_retry_after_seconds('Rate limit, try again in 15 minutes') == 900
+
+        # 2d. Off-screen target filtering, Tribe planner_open detection, and pan_camera validation
+        filt = spore_mcp._parse_targets('member 1 0 -124 300\nobj hut1 10.0 1500 200\nobj ok1 5.0 500 400',
+                                        screen_wh=[1440, 1080])
+        assert len(filt) == 1 and filt[0]['key'] == 'ok1'
+        fakes['guest1'].cmds.clear()
+        bad_pan = eng.pan_camera('guest1', direction=None)
+        assert not bad_pan['ok']
+        dx_pan = eng.pan_camera('guest1', dx=100, dy=0, duration_ms=100)
+        assert dx_pan['ok'] and dx_pan['direction'] == 'right' and dx_pan['key'] == 'd'
+        assert 'planner_done' in spore_mcp.STAGE_FIXED_HUD_1440['tribe']
+        hud_t, _, pl_t = eng._scan_hud_buttons(eng._slot('guest1'), 'tribe', [1440, 1080], pauses_raw='04BF38A4=1')
+        assert pl_t is True and 'planner_done' in hud_t
         probe_calls = []
 
         def fake_probe():

@@ -1141,4 +1141,61 @@ inline std::vector<uint32_t> take_pack_pets_to_spawn(PackPetPlan& plan, bool fix
     return out;
 }
 
+// ---------------- BUG-1608: Local personal notices & Chieftain KO notice debounce ----------------
+constexpr double kChiefKoNoticeCooldown = 15.0;
+
+inline bool should_use_local_feed_for_personal_notice(bool fix_on)
+{
+    return fix_on;
+}
+
+enum class ChiefKoNoticeAction : uint8_t {
+    None = 0,
+    KnockedOut = 1,
+    Recovered = 2,
+};
+
+struct ChiefKoNoticeState {
+    bool ko_active = false;
+    double ko_until = 0.0;
+    double last_ko_notice_at = -1e9;
+};
+
+// Pure guest state machine for CustomOp::ChiefRespawn notices (BUG-1608):
+// - Only notifies the owning player (is_me).
+// - Never spams on periodic 2s sync updates while already KO.
+// - Debounces repeated KO notices within kChiefKoNoticeCooldown seconds (e.g. reconnect/flicker).
+inline ChiefKoNoticeAction decide_chief_ko_notice(ChiefKoNoticeState& st, bool fix_on, bool is_me, bool now_ko,
+                                                  int32_t rem_s, double now)
+{
+    bool was_ko = st.ko_active;
+    st.ko_active = now_ko;
+    st.ko_until = (now_ko && rem_s > 0) ? (now + (double)rem_s) : 0.0;
+    if (!is_me)
+        return ChiefKoNoticeAction::None;
+    if (!was_ko && now_ko) {
+        if (!fix_on || (now - st.last_ko_notice_at >= kChiefKoNoticeCooldown)) {
+            st.last_ko_notice_at = now;
+            return ChiefKoNoticeAction::KnockedOut;
+        }
+        return ChiefKoNoticeAction::None;
+    }
+    if (was_ko && !now_ko)
+        return ChiefKoNoticeAction::Recovered;
+    return ChiefKoNoticeAction::None;
+}
+
+// Pure host decision for tracking a guest chieftain's KO state (BUG-1608):
+// Keeps KO active while the chieftain object is still knocked out even if live_members briefly hits 0 during a wipe,
+// preventing ko -> recovered -> ko oscillation.
+inline bool host_chief_ko_state(bool has_chief, bool chief_ko, int live_members, bool prev_ko, bool fix_on)
+{
+    if (!fix_on)
+        return live_members > 0 && has_chief && chief_ko;
+    if (has_chief && chief_ko)
+        return true;
+    (void)prev_ko;
+    return false;
+}
+
 } // namespace tribe_rivals

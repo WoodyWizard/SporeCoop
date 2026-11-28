@@ -727,6 +727,42 @@ static void test_bug1585_npc_hut_conquest_goal_listener()
     CHECK(kSpatialObjectTypeId == 0x01186577u);
 }
 
+static void test_bug1608_local_notices_and_chief_ko_debounce()
+{
+    printf("BUG-1608: local personal notices & Chieftain KO debounce/stability\n");
+    CHECK(should_use_local_feed_for_personal_notice(true));
+    CHECK(!should_use_local_feed_for_personal_notice(false));
+
+    ChiefKoNoticeState st;
+    // Another player's KO packet never triggers a local toast
+    CHECK(decide_chief_ko_notice(st, true, false, true, 90, 100.0) == ChiefKoNoticeAction::None);
+    // Own chieftain KO fires once
+    st = ChiefKoNoticeState{};
+    CHECK(decide_chief_ko_notice(st, true, true, true, 90, 100.0) == ChiefKoNoticeAction::KnockedOut);
+    CHECK(st.ko_active && std::fabs(st.ko_until - 190.0) < 1e-6);
+    // Periodic 2s sync updates while still KO never re-announce
+    CHECK(decide_chief_ko_notice(st, true, true, true, 88, 102.0) == ChiefKoNoticeAction::None);
+    CHECK(decide_chief_ko_notice(st, true, true, true, 86, 104.0) == ChiefKoNoticeAction::None);
+    // Brief flicker (false then true within cooldown) does not stack another KO banner
+    CHECK(decide_chief_ko_notice(st, true, true, false, 0, 105.0) == ChiefKoNoticeAction::Recovered);
+    CHECK(decide_chief_ko_notice(st, true, true, true, 84, 106.0) == ChiefKoNoticeAction::None);
+    // After cooldown expires and chief recovers, a genuinely new KO announces again
+    CHECK(decide_chief_ko_notice(st, true, true, false, 0, 120.0) == ChiefKoNoticeAction::Recovered);
+    CHECK(decide_chief_ko_notice(st, true, true, true, 90, 125.0) == ChiefKoNoticeAction::KnockedOut);
+
+    // Fix OFF reproduces legacy un-debounced KO banner stacking
+    ChiefKoNoticeState st_off;
+    CHECK(decide_chief_ko_notice(st_off, false, true, true, 90, 100.0) == ChiefKoNoticeAction::KnockedOut);
+    CHECK(decide_chief_ko_notice(st_off, false, true, false, 0, 101.0) == ChiefKoNoticeAction::Recovered);
+    CHECK(decide_chief_ko_notice(st_off, false, true, true, 88, 102.0) == ChiefKoNoticeAction::KnockedOut);
+
+    // Host KO state stays true during a wipe (live_members == 0) while chieftain is still knocked out
+    CHECK(host_chief_ko_state(true, true, 0, true, true));
+    CHECK(!host_chief_ko_state(true, true, 0, true, false)); // legacy flickered off on wipe
+    CHECK(!host_chief_ko_state(true, false, 2, true, true));
+    CHECK(!host_chief_ko_state(false, false, 0, true, true));
+}
+
 int main()
 {
     test_pick_rival_tribe();
@@ -749,6 +785,7 @@ int main()
     test_bug1580_persisted_assign_and_destroyed_exclusion();
     test_bug1580_alliance_buy_influence_sell_and_ko();
     test_bug1585_npc_hut_conquest_goal_listener();
+    test_bug1608_local_notices_and_chief_ko_debounce();
     if (g_fail) {
         printf("tribe_rivals_tests: %d FAILED\n", g_fail);
         return 1;
